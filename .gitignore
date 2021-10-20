@@ -12,4 +12,10 @@
 *.out
 
 # Dependency directories (remove the comment below to include it)
-# vendor/
+vendor/
+go.mod
+go.sum
+terraform-provider-keyfactor
+.terraform.lock.hcl
+.terraform/
+terraform.tfstate

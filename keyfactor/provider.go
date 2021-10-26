@@ -6,15 +6,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"keyfactor-go-client/pkg/keyfactor"
 )
-
-type APIClient struct {
-	KfHostname string
-	KfUsername string
-	KfPassword string
-	KfAppkey   string
-	Domain     string
-}
 
 // init provider block
 func Provider() *schema.Provider {
@@ -66,6 +59,7 @@ func Provider() *schema.Provider {
 		},
 		ResourcesMap: map[string]*schema.Resource{
 			"keyfactor_certificate": resourceCertificate(),
+			"keyfactor_store":       resourceStore(),
 		},
 		DataSourcesMap:       map[string]*schema.Resource{},
 		ConfigureContextFunc: providerConfigure,
@@ -74,22 +68,20 @@ func Provider() *schema.Provider {
 
 func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	var client APIClient
+	var client keyfactor.APIClient
 	hostname := d.Get("hostname").(string)
 	username := d.Get("kf_username").(string)
 	password := d.Get("kf_password").(string)
-	appkey := d.Get("kf_appkey").(string)
 	domain := d.Get("domain").(string)
 
 	hostname = strings.TrimRight(hostname, "/") // remove trailing slash, if it exists
 
 	if (hostname != "") && (username != "") && (password != "") {
-		client = APIClient{
-			KfHostname: hostname,
-			KfUsername: username,
-			KfPassword: password,
-			KfAppkey:   appkey,
-			Domain:     domain,
+		client = keyfactor.APIClient{
+			Hostname: hostname,
+			Username: username,
+			Password: password,
+			Domain:   domain,
 		}
 	} else {
 		diags = append(diags, diag.Diagnostic{

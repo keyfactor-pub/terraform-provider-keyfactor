@@ -48,27 +48,6 @@ resource "keyfactor_certificate" "PFXCertificate" {
     }
 }
 
-output "certificate_sn" {
-    value = keyfactor_certificate.PFXCertificate.certificate[0].certificates
-}
-
-resource "keyfactor_store" "PEM1" {
-    provider = keyfactor.command
-    store {
-        client_machine  = "computer"
-        store_path      = "/opt/dev/foo"
-        cert_store_type = 2
-        properties_json = ["{\"privateKeyPath\":\"/opt/dev/foo\"}",
-            "{\"separatePrivateKey\":\"true\"}"]
-        inventory_schedule {
-            immediate     = true
-            interval {
-                minutes     = 60
-            }
-        }
-        agent_id        = "9283489327498234892374982asdf"
-        password {
-            value         = "foo12345"
-        }
-    }
+output "pfxCertificate" {
+    value = keyfactor_certificate.PFXCertificate.certificate[0]
 }

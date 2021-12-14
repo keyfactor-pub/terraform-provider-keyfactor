@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"keyfactor-go-client/pkg/keyfactor"
 )
 
 // init provider block

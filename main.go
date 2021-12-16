@@ -3,14 +3,21 @@ package main
 import (
 	"context"
 	"flag"
+	"log"
+
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/plugin"
-	"log"
 
 	"terraform-provider-keyfactor/keyfactor"
 )
 
-// "github.com/m8rmclaren/terraform-provider-keyfactor/keyfactor" eventually
+// If you do not have terraform installed, you can remove the formatting command, but its suggested to
+// ensure the documentation is formatted properly.
+//go:generate terraform fmt -recursive ./examples/
+
+// Run the docs generation tool, check its repository for more information on how it works and how docs
+// can be customized.
+//go:generate go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs
 
 func main() {
 	var debugMode bool

@@ -1,4 +1,4 @@
-package keyfactor
+package provider
 
 /*
 func TestFlattenCreateStoreResponse(t *testing.T) {

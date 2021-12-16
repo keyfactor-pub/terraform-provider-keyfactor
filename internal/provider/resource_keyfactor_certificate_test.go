@@ -1,4 +1,4 @@
-package keyfactor
+package provider
 
 import (
 	"keyfactor-go-client/pkg/keyfactor"

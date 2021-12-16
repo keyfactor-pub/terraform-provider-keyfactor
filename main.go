@@ -5,10 +5,9 @@ import (
 	"flag"
 	"log"
 
+	"github.com/Keyfactor/terraform-provider-keyfactor/internal/provider"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/plugin"
-
-	"terraform-provider-keyfactor/keyfactor"
 )
 
 // If you do not have terraform installed, you can remove the formatting command, but its suggested to
@@ -26,7 +25,7 @@ func main() {
 
 	opts := &plugin.ServeOpts{
 		ProviderFunc: func() *schema.Provider {
-			return keyfactor.Provider()
+			return provider.Provider()
 		},
 	}
 

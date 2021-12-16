@@ -1,4 +1,4 @@
-module terraform-provider-keyfactor
+module github.com/Keyfactor/terraform-provider-keyfactor
 
 go 1.17
 

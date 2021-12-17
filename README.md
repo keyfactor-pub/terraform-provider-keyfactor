@@ -9,7 +9,7 @@ your operating system (IE darwin, linux, etc.) and hardware architecture (IE amd
 ## Building the Keyfactor Provider
 
 1. Define the ```terraform-provider-keyfactor/``` directory as the root of the module
-    ```asm
+    ```bash
     go mod init terraform-provider-keyfactor
     ```
     * The ```go.mod``` file declares the current module and finds any dependancies required. The ```go.mod``` file
@@ -17,7 +17,7 @@ included with the repository requires that the ```keyfactor-go-client``` and ```
 
 
 2. Create the ```vendor``` directory
-    ```asm
+    ```bash
     go mod vendor
     ```
     * The ```vendor``` directory holds all modules required by the package. The command ```go mod vendor``` 
@@ -25,7 +25,7 @@ included with the repository requires that the ```keyfactor-go-client``` and ```
 
 
 3. Install the provider using the Makefile
-    ```asm
+    ```bash
     make install
     ```
    * The ```install``` command builds the module, creates a directory inside ```~/.terraform.d/plugins/```, and moves
@@ -35,18 +35,18 @@ included with the repository requires that the ```keyfactor-go-client``` and ```
 ## Referencing private go repos in import() statement
 * The best way to clone private repositories in the import statement is to use SSH. Create an SSH key, import the private 
 key to the ~./git directory, and run the following commands
-    ```asm
+    ```bash
     git config --global url.ssh://git@github.com/.insteadOf https://github.com/
     ```
 
 * Then, export a GOPRIVATE environment variable for the organization or repository.
-    ```asm
+    ```bash
     go env -w GOPRIVATE=github.com/<organization>
     GIT_TERMINAL_PROMPT=1
     ```
 
 * For example:
-    ```asm
+    ```bash
     go env -w GOPRIVATE=github.com/Keyfactor
     ```
   

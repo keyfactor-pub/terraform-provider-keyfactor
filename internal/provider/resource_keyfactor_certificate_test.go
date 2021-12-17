@@ -1,11 +1,75 @@
 package provider
 
 import (
-	"keyfactor-go-client/pkg/keyfactor"
-	"reflect"
+	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"regexp"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
+func TestAccKeyfactorCertificateBasic(t *testing.T) {
+	cN := "TerraformAccTestBasic"
+	keyPassword := "TerraformAccTestBasic"
+	cA := "keyfactor.thedemodrive.com\\\\Keyfactor Demo Drive CA 1"
+	template := "DDWebServer1yr"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { testAccPreCheck(t) },
+		ProviderFactories: providerFactories,
+		CheckDestroy:      nil,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCheckKeyfactorCertificateBasic(cN, keyPassword, cA, template),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestMatchResourceAttr(
+						"keyfactor_certificate.pfx",
+						"certificate[0].certificate_authority",
+						regexp.MustCompile(cA),
+					),
+					resource.TestMatchResourceAttr(
+						"keyfactor_certificate.pfx",
+						"certificate[0].key_password",
+						regexp.MustCompile(keyPassword),
+					),
+					resource.TestMatchResourceAttr(
+						"keyfactor_certificate.pfx",
+						"certificate[0].cert_template",
+						regexp.MustCompile(template),
+					),
+					resource.TestMatchResourceAttr(
+						"keyfactor_certificate.pfx",
+						"certificate[0].subject.subject_common_name",
+						regexp.MustCompile(cN),
+					),
+				),
+			},
+		},
+	})
+}
+
+func testAccCheckKeyfactorCertificateBasic(commonName string, password string, ca string, template string) string {
+	// Return the minimum (basic) required fields to enroll PRX certificate
+	return fmt.Sprintf(`
+	resource "keyfactor_certificate" "pfx" {
+		certificate {
+			subject {
+				subject_common_name = %s
+			}
+			key_password = %s
+			certificate_authority = %s
+			cert_template = %s
+		}
+	}
+	`, commonName, password, ca, template)
+}
+
+func testAccCheckKeyfactorCertificateDestroy(s *terraform.State) error {
+	return nil
+}
+
+/*
 func TestFlattenEnrollResponse(t *testing.T) {
 	cases := []struct {
 		Input  *keyfactor.EnrollResponse
@@ -50,3 +114,4 @@ func TestFlattenEnrollResponse(t *testing.T) {
 		}
 	}
 }
+*/

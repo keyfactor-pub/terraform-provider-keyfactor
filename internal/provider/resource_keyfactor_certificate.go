@@ -77,12 +77,12 @@ func resourceCertificate() *schema.Resource {
 						},
 						"certificate_authority": &schema.Schema{
 							Type:        schema.TypeString,
-							Optional:    true,
+							Required:    true,
 							Description: "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
 						},
 						"cert_template": &schema.Schema{
 							Type:        schema.TypeString,
-							Optional:    true,
+							Required:    true,
 							Description: "Short name of certificate template to be deployed",
 						},
 						"sans": &schema.Schema{

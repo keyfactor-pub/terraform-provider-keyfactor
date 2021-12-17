@@ -46,7 +46,7 @@ func Provider() *schema.Provider {
 			"domain": &schema.Schema{
 				Type:        schema.TypeString,
 				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("DOMAIN", nil),
+				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_DOMAIN", nil),
 				Description: "Domain that Keyfactor instance is hosted on",
 			},
 

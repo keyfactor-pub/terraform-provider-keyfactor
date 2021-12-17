@@ -12,7 +12,6 @@ provider "keyfactor" {
     hostname    = "sedemo.thedemodrive.com"
     kf_username = "HRoszell"
     kf_password = "Ferrari1!"
-    dev_mode    = true
 }
 
 resource "keyfactor_store" "AKS1" {

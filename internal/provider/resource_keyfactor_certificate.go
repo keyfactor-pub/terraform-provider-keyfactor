@@ -19,55 +19,55 @@ func resourceCertificate() *schema.Resource {
 		UpdateContext: resourceCertificateUpdate,
 		DeleteContext: resourceCertificateDelete,
 		Schema: map[string]*schema.Schema{
-			"certificate": &schema.Schema{
+			"certificate": {
 				Type:     schema.TypeList,
 				MaxItems: 1,
 				Required: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"csr": &schema.Schema{
+						"csr": {
 							Type:        schema.TypeString,
 							Optional:    true,
 							Description: "Base-64 encoded certificate signing request (CSR)",
 						},
-						"key_password": &schema.Schema{
+						"key_password": {
 							Type:        schema.TypeString,
 							Optional:    true,
 							Description: "Password to protect certificate and private key with",
 						},
-						"subject": &schema.Schema{
+						"subject": {
 							Type:        schema.TypeList,
 							MaxItems:    1,
 							Required:    true,
 							Description: "Certificate subject",
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
-									"subject_common_name": &schema.Schema{
+									"subject_common_name": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Subject common name for new certificate",
 									},
-									"subject_locality": &schema.Schema{
+									"subject_locality": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Subject locality for new certificate",
 									},
-									"subject_organization": &schema.Schema{
+									"subject_organization": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Subject organization for new certificate",
 									},
-									"subject_state": &schema.Schema{
+									"subject_state": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Subject state for new certificate",
 									},
-									"subject_country": &schema.Schema{
+									"subject_country": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Subject country for new certificate",
 									},
-									"subject_organizational_unit": &schema.Schema{
+									"subject_organizational_unit": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Subject organizational unit for new certificate",
@@ -75,36 +75,36 @@ func resourceCertificate() *schema.Resource {
 								},
 							},
 						},
-						"certificate_authority": &schema.Schema{
+						"certificate_authority": {
 							Type:        schema.TypeString,
 							Required:    true,
 							Description: "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
 						},
-						"cert_template": &schema.Schema{
+						"cert_template": {
 							Type:        schema.TypeString,
 							Required:    true,
 							Description: "Short name of certificate template to be deployed",
 						},
-						"sans": &schema.Schema{
+						"sans": {
 							Type:        schema.TypeList,
 							MaxItems:    1,
 							Optional:    true,
 							Description: "Certificate subject-alternative names",
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
-									"san_ip4": &schema.Schema{
+									"san_ip4": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "List of IPv4 addresses to use as subjects of the certificate",
 										Elem:        &schema.Schema{Type: schema.TypeString},
 									},
-									"san_uri": &schema.Schema{
+									"san_uri": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "List of IPv6 addresses to use as subjects of the certificate",
 										Elem:        &schema.Schema{Type: schema.TypeString},
 									},
-									"san_dns": &schema.Schema{
+									"san_dns": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "List of DNS names to use as subjects of the certificate",
@@ -113,19 +113,19 @@ func resourceCertificate() *schema.Resource {
 								},
 							},
 						},
-						"metadata": &schema.Schema{
+						"metadata": {
 							Type:        schema.TypeList,
 							Optional:    true,
 							Description: "Metadata key-value pairs to be attached to certificate",
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
-									"name": &schema.Schema{
+									"name": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Name of metadata field as seen in Keyfactor",
 										Elem:        &schema.Schema{Type: schema.TypeString},
 									},
-									"value": &schema.Schema{
+									"value": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Metadata value",
@@ -134,31 +134,31 @@ func resourceCertificate() *schema.Resource {
 								},
 							},
 						},
-						"collection_id": &schema.Schema{
+						"collection_id": {
 							Type:        schema.TypeInt,
 							Optional:    true,
 							Description: "Collection identifier used to validate user permissions (if service account has global permissions, this is not needed)",
 						},
-						"deployment": &schema.Schema{
+						"deployment": {
 							Type:        schema.TypeList,
 							Optional:    true,
 							MaxItems:    1,
 							Description: "PFX certificate deployment options (certificate format must be STORE)",
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
-									"store_ids": &schema.Schema{
+									"store_ids": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "List of store IDs to deploy PFX certificate into",
 										Elem:        &schema.Schema{Type: schema.TypeString},
 									},
-									"store_type_ids": &schema.Schema{
+									"store_type_ids": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "List of store IDs to deploy PFX certificate into",
 										Elem:        &schema.Schema{Type: schema.TypeInt},
 									},
-									"alias": &schema.Schema{
+									"alias": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "Alias that certificate will be stored under in new certificate",
@@ -167,37 +167,37 @@ func resourceCertificate() *schema.Resource {
 								},
 							},
 						},
-						"serial_number": &schema.Schema{
+						"serial_number": {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "Serial number of newly enrolled certificate",
 						},
-						"issuer_dn": &schema.Schema{
+						"issuer_dn": {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "Issuer distinguished name that signed the certificate",
 						},
-						"thumbprint": &schema.Schema{
+						"thumbprint": {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "Thumbprint of newly enrolled certificate",
 						},
-						"keyfactor_id": &schema.Schema{
+						"keyfactor_id": {
 							Type:        schema.TypeInt,
 							Computed:    true,
 							Description: "Keyfactor certificate ID",
 						},
-						"keyfactor_request_id": &schema.Schema{
+						"keyfactor_request_id": {
 							Type:        schema.TypeInt,
 							Computed:    true,
 							Description: "Keyfactor request ID necessary for deploying certificate",
 						},
-						"certificate_pem": &schema.Schema{
+						"certificate_pem": {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "PEM formatted certificate",
 						},
-						"pkcs12": &schema.Schema{
+						"pkcs12": {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "PKCS#12 formatted certificate",
@@ -211,14 +211,14 @@ func resourceCertificate() *schema.Resource {
 
 func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	kfClientData := m.(*keyfactor.APIClient)
+	kfClient := m.(*keyfactor.Client)
 
 	certificates := d.Get("certificate").([]interface{})
 
 	for _, certificate := range certificates {
 		i := certificate.(map[string]interface{})
 		subject := i["subject"].([]interface{})[0].(map[string]interface{}) // Extract subject data from schema
-		sans := i["sans"].([]interface{})[0].(map[string]interface{})       // Extract SANs from schema
+		sans := i["sans"].([]interface{})                                   // Extract SANs from schema
 		metadata := i["metadata"].([]interface{})
 
 		var deploy = false
@@ -236,7 +236,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 				CertificateSANs:      getSans(sans),
 				CertificateMetadata:  interfaceArrayToStringTuple(metadata),
 			}
-			enrollResponse, err := keyfactor.EnrollCSR(CSRArgs, kfClientData)
+			enrollResponse, err := kfClient.EnrollCSR(CSRArgs)
 			if err != nil {
 				return diag.FromErr(err)
 			}
@@ -266,7 +266,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 				},
 			}
 			// Error checking for invalid fields inside PFX enrollment function
-			enrollResponse, err := keyfactor.EnrollPFX(PFXArgs, kfClientData) // If no CSR is present, enroll a PFX certificate
+			enrollResponse, err := kfClient.EnrollPFX(PFXArgs) // If no CSR is present, enroll a PFX certificate
 			if err != nil {
 				return diag.FromErr(err)
 			}
@@ -324,7 +324,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 						JobTime:       nil,
 					}
 
-					deployResp, err := keyfactor.DeployPFXCertificate(deployPFXArgs, kfClientData)
+					deployResp, err := kfClient.DeployPFXCertificate(deployPFXArgs)
 					if err != nil {
 						return diag.FromErr(err)
 					}
@@ -351,26 +351,30 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 	return diags
 }
 
-func getSans(s interface{}) *keyfactor.SANs {
+func getSans(s []interface{}) *keyfactor.SANs {
 	sans := &keyfactor.SANs{}
 
-	// Retrieve individual SANs for each category and append to new SANs data structure
-	// Maybe separate these for loops to their own function?
-	for _, san := range s.(map[string]interface{})["san_ip4"].([]interface{}) {
-		sans.IP4 = append(sans.IP4, san.(string))
-	}
-	for _, san := range s.(map[string]interface{})["san_uri"].([]interface{}) {
-		sans.URI = append(sans.URI, san.(string))
-	}
-	for _, san := range s.(map[string]interface{})["san_dns"].([]interface{}) {
-		sans.DNS = append(sans.DNS, san.(string))
+	if len(s) > 0 {
+		temp := s[0].(map[string]interface{})
+		// Retrieve individual SANs for each category and append to new SANs data structure
+		// Maybe separate these for loops to their own function?
+		for _, san := range temp["san_ip4"].([]interface{}) {
+			sans.IP4 = append(sans.IP4, san.(string))
+		}
+		for _, san := range temp["san_uri"].([]interface{}) {
+			sans.URI = append(sans.URI, san.(string))
+		}
+		for _, san := range temp["san_dns"].([]interface{}) {
+			sans.DNS = append(sans.DNS, san.(string))
+		}
+		return sans
 	}
 
-	return sans
+	return nil
 }
 
-func resourceCertificateRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	kfClientData := m.(*keyfactor.APIClient)
+func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+	kfClient := m.(*keyfactor.Client)
 
 	var diags diag.Diagnostics
 
@@ -387,7 +391,7 @@ func resourceCertificateRead(ctx context.Context, d *schema.ResourceData, m inte
 		CollectionId:     nil,
 		Id:               CertificateId,
 	}
-	certificateData, err := keyfactor.GetCertificateContext(args, kfClientData)
+	certificateData, err := kfClient.GetCertificateContext(args)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -397,16 +401,16 @@ func resourceCertificateRead(ctx context.Context, d *schema.ResourceData, m inte
 	password := schemaState[0].(map[string]interface{})["key_password"].(string)
 
 	// Download and assign certificates to proper location
-	err, pem := recoverCertificate(certificateData.Id, password, kfClientData, "PEM")
+	err, pem := recoverCertificate(certificateData.Id, password, kfClient, "PEM")
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	err, pkcs12 := recoverCertificate(certificateData.Id, password, kfClientData, "PFX")
+	err, pkcs12 := recoverCertificate(certificateData.Id, password, kfClient, "PFX")
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	certificateItems := flattenCertificateItems(certificateData, kfClientData, pem, pkcs12, password) // Set schema
+	certificateItems := flattenCertificateItems(certificateData, kfClient, pem, pkcs12, password) // Set schema
 	if err := d.Set("certificate", certificateItems); err != nil {
 		return diag.FromErr(err)
 	}
@@ -414,7 +418,7 @@ func resourceCertificateRead(ctx context.Context, d *schema.ResourceData, m inte
 	return diags
 }
 
-func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, api *keyfactor.APIClient, pem string, pkcs12 string, password string) []interface{} {
+func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, pkcs12 string, password string) []interface{} {
 	if certificateContext != nil {
 		temp := make([]interface{}, 1, 1)
 		data := make(map[string]interface{})
@@ -427,7 +431,7 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 		data["keyfactor_request_id"] = certificateContext.CertRequestId
 
 		// Assign non-computed schema
-		templates, err := keyfactor.GetTemplate(certificateContext.TemplateId, api)
+		templates, err := kfClient.GetTemplate(certificateContext.TemplateId)
 		if err != nil {
 			return make([]interface{}, 0)
 		}
@@ -450,7 +454,7 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 	return make([]interface{}, 0)
 }
 
-func recoverCertificate(id int, password string, api *keyfactor.APIClient, format string) (error, string) {
+func recoverCertificate(id int, password string, kfClient *keyfactor.Client, format string) (error, string) {
 	recoverArgs := &keyfactor.RecoverCertArgs{
 		CertId:       id,
 		Password:     password,
@@ -458,7 +462,7 @@ func recoverCertificate(id int, password string, api *keyfactor.APIClient, forma
 		CertFormat:   format,
 	}
 
-	resp, err := keyfactor.RecoverCertificate(recoverArgs, api)
+	resp, err := kfClient.RecoverCertificate(recoverArgs)
 	if err != nil {
 		return err, ""
 	}
@@ -569,33 +573,19 @@ func mapSanIDToName(sanID int) string {
 	return ""
 }
 
-func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceCertificateUpdate(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	return diags
 }
 
-func updateMetadata(id int, api *keyfactor.APIClient, metadata []keyfactor.StringTuple) error {
-	args := &keyfactor.UpdateMetadataArgs{
-		CertID:              id,
-		CertificateMetadata: metadata,
-	}
-
-	err := keyfactor.UpdateMetadata(args, api)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func resourceCertificateDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	log.Println("[INFO] Deleting certificate resource")
 
 	// When Terraform Destroy is called, we want Keyfactor to revoke the certificate.
-	kfClientData := m.(*keyfactor.APIClient)
+	kfClient := m.(*keyfactor.Client)
 
 	certificates := d.Get("certificate").([]interface{})
 
@@ -610,7 +600,7 @@ func resourceCertificateDelete(ctx context.Context, d *schema.ResourceData, m in
 			CollectionId:   i["collection_id"].(int),
 		}
 
-		err := keyfactor.RevokeCert(revokeArgs, kfClientData)
+		err := kfClient.RevokeCert(revokeArgs)
 		if err != nil {
 			return diag.FromErr(err)
 		}

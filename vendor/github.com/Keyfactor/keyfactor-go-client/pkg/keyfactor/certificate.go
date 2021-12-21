@@ -11,318 +11,9 @@ import (
 	"strings"
 )
 
-// SANs holds arrays of strings associated with IPv4 (IP4), IPv6 (IP6), DNS, and URI SANs.
-type SANs struct {
-	IP4 []string `json:"ip4,omitempty"`
-	IP6 []string `json:"ip6,omitempty"`
-	DNS []string `json:"dns,omitempty"`
-	URI []string `json:"uri,omitempty"`
-}
-
-// EnrollPFXFctArgs holds the function arguments used for calling the EnrollPFX method.
-type EnrollPFXFctArgs struct {
-	CustomFriendlyName          string
-	KeyPassword                 string
-	PopulateMissingValuesFromAD bool
-	CertificateAuthority        string
-	Template                    string
-	IncludeChain                bool
-	RenewalCertificateId        int
-	CertFormat                  string
-	CertificateSubject          CertificateSubject
-	CertificateMetadata         []StringTuple
-	CertificateSANs             *SANs
-}
-
-// EnrollCSRFctArgs holds the function arguments used for calling the EnrollCSR method.
-type EnrollCSRFctArgs struct {
-	CSR                  string
-	CertificateAuthority string
-	Template             string
-	IncludeChain         bool
-	CertFormat           string
-	CertificateMetadata  []StringTuple
-	CertificateSANs      *SANs
-}
-
-// RevokeCertArgs holds the function arguments used for calling the RevokeCert method.
-type RevokeCertArgs struct {
-	CertificateIds []int  `json:"CertificateIds"`
-	Reason         int    `json:"Reason"`
-	Comment        string `json:"Comment"`
-	EffectiveDate  string `json:"EffectiveDate"`
-	CollectionId   int    `json:"CollectionId,omitempty"`
-}
-
-// DownloadCertArgs holds the function arguments used for calling the DownloadCertificate method.
-type DownloadCertArgs struct {
-	CertID       int
-	SerialNumber string
-	IssuerDN     string
-	Thumbprint   string
-	IncludeChain bool
-	CollectionId int
-	CertFormat   string
-}
-
-// UpdateMetadataArgs holds the function arguments used for calling the UpdateMetadata method.
-type UpdateMetadataArgs struct {
-	CertID              int                    `json:"Id"`
-	CertificateMetadata []StringTuple          `json:"-"`
-	Metadata            map[string]interface{} `json:"Metadata"`
-	CollectionId        int                    `json:"CollectionId"`
-}
-
-// GetCertificateContextArgs holds the function arguments used for calling the GetCertificateContext method.
-type GetCertificateContextArgs struct {
-	IncludeMetadata  *bool // Query
-	IncludeLocations *bool // Query
-	CollectionId     *int  // Query
-	Id               int   // Query
-}
-
-// DeployPFXArgs holds the function arguments used for calling the DeployPFXCertificate method.
-type DeployPFXArgs struct {
-	StoreIds      []string     `json:"StoreIds"`
-	Password      string       `json:"Password"`
-	StoreTypes    []StoreTypes `json:"StoreTypes"`
-	CertificateId int          `json:"CertificateId"`
-	RequestId     int          `json:"RequestId"`
-	JobTime       *string      `json:"JobTime,omitempty"`
-}
-
-// RecoverCertArgs holds the function arguments used for calling the RevokeCert method.
-type RecoverCertArgs struct {
-	CertId       int    `json:"CertId,omitempty"`
-	CertFormat   string `json:"-"` // Header
-	Password     string `json:"Password,omitempty"`
-	SerialNumber string `json:"SerialNumber,omitempty"`
-	IssuerDN     string `json:"IssuerDN,omitempty"`
-	Thumbprint   string `json:"Thumbprint,omitempty"`
-	IncludeChain bool   `json:"IncludeChain,omitempty"`
-}
-
-// StoreTypes holds necessary store type metadata for creating and deploying certificates.
-type StoreTypes struct {
-	StoreTypeId int       `json:"StoreTypeId"`
-	Alias       *string   `json:"Alias,omitempty"`
-	Overwrite   *bool     `json:"Overwrite,omitempty"`
-	Properties  *[]string `json:"Properties,omitempty"`
-}
-
-// DeployPFXResp holds response data from the DeployPFXCertificate method.
-type DeployPFXResp struct {
-	SuccessfulStores []string `json:"SuccessfulStores"`
-	FailedStores     []string `json:"FailedStores"`
-}
-
-// CertificateSubject contains string elements for X.509V3 certificate distinguished name (subject)
-type CertificateSubject struct {
-	SubjectCommonName         string
-	SubjectLocality           string
-	SubjectOrganization       string
-	SubjectCountry            string
-	SubjectOrganizationalUnit string
-	SubjectState              string
-}
-
-// enrollPFXBody is the API POST request body for PFX enrollment (EnrollPFX).
-type enrollPFXBody struct {
-	CustomFriendlyName          string                 `json:"CustomFriendlyName,omitempty"`
-	Password                    string                 `json:"Password"`
-	PopulateMissingValuesFromAD bool                   `json:"PopulateMissingValuesFromAD"`
-	Subject                     string                 `json:"Subject"`
-	IncludeChain                bool                   `json:"IncludeChain"`
-	RenewalCertificateId        int                    `json:"RenewalCertificateId,omitempty"`
-	CertificateAuthority        string                 `json:"CertificateAuthority"`
-	Timestamp                   string                 `json:"Timestamp"`
-	Template                    string                 `json:"Template"`
-	SANs                        *SANs                  `json:"SANs,omitempty"`
-	Metadata                    map[string]interface{} `json:"Metadata,omitempty"`
-}
-
-// enrollCSRBody is the API POST request body for PFX enrollment (EnrollCSR).
-type enrollCSRBody struct {
-	CSR                  string
-	Timestamp            string                 `json:"Timestamp"`
-	Template             string                 `json:"Template"`
-	CertificateAuthority string                 `json:"CertificateAuthority"`
-	IncludeChain         bool                   `json:"IncludeChain"`
-	SANs                 *SANs                  `json:"SANs"`
-	Metadata             map[string]interface{} `json:"Metadata"`
-}
-
-// downloadCertificateBody is the API POST request body for PFX enrollment (DownloadCertificate).
-type downloadCertificateBody struct {
-	CertID       int
-	SerialNumber string
-	IssuerDN     string
-	Thumbprint   string
-	IncludeChain bool
-}
-
-// revokeCertBody is the API POST request body for PFX enrollment (RevokeCert).
-type revokeCertBody struct {
-	CertificateIds []int  `json:"CertificateIds"`
-	Reason         int    `json:"Reason"`
-	Comment        string `json:"Comment"`
-	EffectiveDate  string `json:"EffectiveDate"`
-	CollectionId   int    `json:"CollectionId,omitempty"`
-}
-
-// EnrollResponse is the outer certificate enrollment response. When Enroll functions are called, the certificates are
-// placed inside the Certificates element, and certificate information is placed inside CertificateInformation
-type EnrollResponse struct {
-	Certificates           []string
-	CertificateInformation CertificateInformation `json:"CertificateInformation"`
-}
-
-// CertificateInformation contains response data from the Enroll methods.
-type CertificateInformation struct {
-	SerialNumber       string      `json:"SerialNumber"`
-	IssuerDN           string      `json:"IssuerDN"`
-	Thumbprint         string      `json:"Thumbprint"`
-	KeyfactorID        int         `json:"KeyfactorID"`
-	KeyfactorRequestID int         `json:"KeyfactorRequestId"`
-	PKCS12Blob         string      `json:"PKCS12Blob"`
-	Certificates       []string    `json:"Certificates"`
-	RequestDisposition string      `json:"RequestDisposition"`
-	DispositionMessage string      `json:"DispositionMessage"`
-	EnrollmentContext  interface{} `json:"EnrollmentContext"`
-}
-
-// GetCertificateResponse contains the response elements returned from the GetCertificateContext method.
-type GetCertificateResponse struct {
-	Id                       int    `json:"Id"`
-	Thumbprint               string `json:"Thumbprint"`
-	SerialNumber             string `json:"SerialNumber"`
-	IssuedDN                 string `json:"IssuedDN"`
-	IssuedCN                 string `json:"IssuedCN"`
-	ImportDate               string `json:"ImportDate"`
-	NotBefore                string `json:"NotBefore"`
-	NotAfter                 string `json:"NotAfter"`
-	IssuerDN                 string `json:"IssuerDN"`
-	PrincipalId              string `json:"PrincipalId"`
-	TemplateId               int    `json:"TemplateId"`
-	CertState                int    `json:"CertState"`
-	KeySizeInBits            int    `json:"KeySizeInBits"`
-	KeyType                  int    `json:"KeyType"`
-	RequesterId              int    `json:"RequesterId"`
-	IssuedOU                 string `json:"IssuedOU"`
-	KeyUsage                 int    `json:"KeyUsage"`
-	SigningAlgorithm         string `json:"SigningAlgorithm"`
-	CertStateString          string `json:"CertStateString"`
-	KeyTypeString            string `json:"KeyTypeString"`
-	RevocationEffDate        string `json:"RevocationEffDate"`
-	RevocationReason         int    `json:"RevocationReason"`
-	RevocationComment        string `json:"RevocationComment"`
-	CertificateAuthorityId   int    `json:"CertificateAuthorityId"`
-	CertificateAuthorityName string `json:"CertificateAuthorityName"`
-	TemplateName             string `json:"TemplateName"`
-	ArchivedKey              bool   `json:"ArchivedKey"`
-	HasPrivateKey            bool   `json:"HasPrivateKey"`
-	PrincipalName            string `json:"PrincipalName"`
-	CertRequestId            int    `json:"CertRequestId"`
-	RequesterName            string `json:"RequesterName"`
-	ContentBytes             string `json:"ContentBytes"`
-	ExtendedKeyUsages        []interface{}
-	SubjectAltNameElements   []SubjectAltNameElements `json:"SubjectAltNameElements"`
-	CRLDistributionPoints    []CRLDistributionPoints  `json:"CRLDistributionPoints"`
-	LocationsCount           []LocationsCount         `json:"LocationsCount"`
-	SSLLocations             []SSLLocations           `json:"SSLLocations"`
-	Locations                []CertificateLocations   `json:"Locations"`
-	Metadata                 interface{}              `json:"Metadata"`
-	CertificateKeyId         int                      `json:"CertificateKeyId"`
-	CARowIndex               int                      `json:"CARowIndex"`
-	DetailedKeyUsage         []DetailedKeyUsage       `json:"detailed_key_usage"`
-	KeyRecoverable           bool                     `json:"KeyRecoverable"`
-}
-
-// GetTemplateResponse contains the response elements returned from the GetTemplate method.
-type GetTemplateResponse struct {
-	Id               int    `json:"Id,omitempty"`
-	CommonName       string `json:"CommonName,omitempty"`
-	TemplateName     string `json:"TemplateName,omitempty"`
-	Oid              string `json:"Oid,omitempty"`
-	KeySize          string `json:"KeySize,omitempty"`
-	KeyType          string `json:"KeyType,omitempty"`
-	ForestRoot       string `json:"ForestRoot,omitempty"`
-	FriendlyName     string `json:"FriendlyName,omitempty"`
-	KeyRetention     string `json:"KeyRetention,omitempty"`
-	KeyRetentionDays int    `json:"KeyRetentionDays,omitempty"`
-	KeyArchival      bool   `json:"KeyArchival,omitempty"`
-}
-
-// RecoverCertResponse contains the response elements returned from the RecoverCertificate method.
-type RecoverCertResponse struct {
-	PFX      string `json:"PFX"`
-	FileName string `json:"FileName"`
-}
-
-// DetailedKeyUsage contains key useage data returned by the GetCertificateContext method.
-type DetailedKeyUsage struct {
-	CrlSign          bool   `json:"CrlSign,omitempty"`
-	DataEncipherment bool   `json:"DataEncipherment,omitempty"`
-	DecipherOnly     bool   `json:"DecipherOnly,omitempty"`
-	DigitalSignature bool   `json:"DigitalSignature,omitempty"`
-	EncipherOnly     bool   `json:"EncipherOnly,omitempty"`
-	KeyAgreement     bool   `json:"KeyAgreement,omitempty"`
-	KeyCertSign      bool   `json:"KeyCertSign,omitempty"`
-	KeyEncipherment  bool   `json:"KeyEncipherment,omitempty"`
-	NonRepudiation   bool   `json:"NonRepudiation,omitempty"`
-	HexCode          string `json:"HexCode,omitempty"`
-}
-
-// CertificateLocations contains response and request data for the GetCertificateContext and DeployPFXCertificate
-// methods
-type CertificateLocations struct {
-	StoreMachine string `json:"StoreMachine,omitempty"`
-	StorePath    string `json:"StorePath,omitempty"`
-	StoreType    int    `json:"StoreType,omitempty"`
-	Alias        string `json:"Alias,omitempty"`
-	ChainLevel   int    `json:"ChainLevel,omitempty"`
-}
-
-// SSLLocations contains detailed information on the locations that the certificate was found in a scan.
-type SSLLocations struct {
-	StorePath   string `json:"StorePath,omitempty"`
-	AgentPool   string `json:"AgentPool,omitempty"`
-	IPAddress   string `json:"IPAddress,omitempty"`
-	Port        int    `json:"Port,omitempty"`
-	NetworkName string `json:"NetworkName,omitempty"`
-}
-
-// LocationsCount contains details on what kind of and how many stores the certificate is deployed inside.
-type LocationsCount struct {
-	Type  string `json:"Type,omitempty"`
-	Count int    `json:"Count,omitempty"`
-}
-
-// CRLDistributionPoints contains details on the CRL distribution and is returned inside GetCertificateResponse with
-// the GetCertificateContext method.
-type CRLDistributionPoints struct {
-	Id      int    `json:"Id"`
-	URL     string `json:"URL"`
-	URLHash string `json:"URLHash"`
-}
-
-// SubjectAltNameElements contains detailed information on the SANs attached to a certificate, and is returned inside
-// the GetCertificateContext method
-type SubjectAltNameElements struct {
-	Id        int    `json:"Id"`
-	Value     string `json:"Value"`
-	Type      int    `json:"Type"`
-	ValueHash string `json:"ValueHash"`
-}
-
-// DownloadCertificateResponse holds a raw string containing a Base64 encoded certificate.
-type DownloadCertificateResponse struct {
-	Content string `json:"Content"`
-}
-
-// EnrollPFX takes arguments for EnrollPFXFctArgs and APIClient to facilitate a call to Keyfactor
+// EnrollPFX takes arguments for EnrollPFXFctArgs to facilitate a call to Keyfactor
 // that enrolls a PFX certificate with the supplied arguments.
-func EnrollPFX(ea *EnrollPFXFctArgs, api *APIClient) (*EnrollResponse, error) {
+func (c *Client) EnrollPFX(ea *EnrollPFXFctArgs) (*EnrollResponse, error) {
 	log.Println("[INFO] Enrolling PFX certificate with Keyfactor")
 
 	/* Ensure required inputs exist */
@@ -352,8 +43,7 @@ func EnrollPFX(ea *EnrollPFXFctArgs, api *APIClient) (*EnrollResponse, error) {
 	}
 
 	// Set Keyfactor-specific headers
-	log.Println("[TRACE] Setting request headers")
-	headers := &APIHeaders{
+	headers := &apiHeaders{
 		Headers: []StringTuple{
 			{"x-keyfactor-api-version", "1"},
 			{"x-keyfactor-requested-with", "APIClient"},
@@ -361,16 +51,14 @@ func EnrollPFX(ea *EnrollPFXFctArgs, api *APIClient) (*EnrollResponse, error) {
 		},
 	}
 
-	log.Println("[TRACE] Creating request struct for Keyfactor client")
-	keyfactorAPIStruct := &APIRequest{
-		KFClient: api,
+	keyfactorAPIStruct := &request{
 		Method:   "POST",
 		Endpoint: "/KeyfactorAPI/Enrollment/PFX",
 		Headers:  headers,
 		Payload:  &payload,
 	}
 
-	resp, err := SendRequest(keyfactorAPIStruct)
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -400,13 +88,13 @@ func EnrollPFX(ea *EnrollPFXFctArgs, api *APIClient) (*EnrollResponse, error) {
 	return nil, errors.New(stringMessage)
 }
 
-// DownloadCertificate takes arguments for DownloadCertArgs and APIClient to facilitate a call to Keyfactor
+// DownloadCertificate takes arguments for DownloadCertArgs to facilitate a call to Keyfactor
 // that downloads a certificate in the specified format.
 // The download certificate endpoint requires one of the following to retrieve a cert:
 //  - CertID
 //  - Thumbprint
 //  - SerialNumber AND IssuerDN
-func DownloadCertificate(da *DownloadCertArgs, api *APIClient) (*DownloadCertificateResponse, error) {
+func (c *Client) DownloadCertificate(da *DownloadCertArgs) (*DownloadCertificateResponse, error) {
 	log.Println("[INFO] Downloading certificate")
 
 	/* The download certificate endpoint requires one of the following to retrieve a cert:
@@ -439,8 +127,7 @@ func DownloadCertificate(da *DownloadCertArgs, api *APIClient) (*DownloadCertifi
 	}
 
 	// Set Keyfactor-specific headers
-	log.Println("[TRACE] Setting request headers")
-	headers := &APIHeaders{
+	headers := &apiHeaders{
 		Headers: []StringTuple{
 			{"x-keyfactor-api-version", "1"},
 			{"x-keyfactor-requested-with", "APIClient"},
@@ -448,16 +135,14 @@ func DownloadCertificate(da *DownloadCertArgs, api *APIClient) (*DownloadCertifi
 		},
 	}
 
-	log.Println("[TRACE] Creating request struct for Keyfactor client")
-	keyfactorAPIStruct := &APIRequest{
-		KFClient: api,
+	keyfactorAPIStruct := &request{
 		Method:   "POST",
 		Endpoint: "/KeyfactorAPI/Certificates/Download",
 		Headers:  headers,
 		Payload:  &payload,
 	}
 
-	resp, err := SendRequest(keyfactorAPIStruct)
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -489,13 +174,13 @@ func DownloadCertificate(da *DownloadCertArgs, api *APIClient) (*DownloadCertifi
 	return nil, errors.New(stringMessage)
 }
 
-// EnrollCSR takes arguments for EnrollCSRFctArgs and APIClient to enroll a passed Certificate Signing
+// EnrollCSR takes arguments for EnrollCSRFctArgs to enroll a passed Certificate Signing
 // Request with Keyfactor. An EnrollResponse containing a signed certificate is returned upon successful
 // enrollment. Required fields to complete a CSR enrollment are:
 //  - CSR                  : string
 //  - Template             : string
 //  - CertificateAuthority : string
-func EnrollCSR(ea *EnrollCSRFctArgs, api *APIClient) (*EnrollResponse, error) {
+func (c *Client) EnrollCSR(ea *EnrollCSRFctArgs) (*EnrollResponse, error) {
 	log.Println("[INFO] Signing CSR with Keyfactor")
 
 	/* Ensure required inputs exist */
@@ -515,8 +200,7 @@ func EnrollCSR(ea *EnrollCSRFctArgs, api *APIClient) (*EnrollResponse, error) {
 	}
 
 	// Set Keyfactor-specific headers
-	log.Println("[TRACE] Setting request headers")
-	headers := &APIHeaders{
+	headers := &apiHeaders{
 		Headers: []StringTuple{
 			{"x-keyfactor-api-version", "1"},
 			{"x-keyfactor-requested-with", "APIClient"},
@@ -524,16 +208,14 @@ func EnrollCSR(ea *EnrollCSRFctArgs, api *APIClient) (*EnrollResponse, error) {
 		},
 	}
 
-	log.Println("[TRACE] Creating request struct for Keyfactor client")
-	keyfactorAPIStruct := &APIRequest{
-		KFClient: api,
+	keyfactorAPIStruct := &request{
 		Method:   "POST",
 		Endpoint: "/KeyfactorAPI/Enrollment/CSR",
 		Headers:  headers,
 		Payload:  &payload,
 	}
 
-	resp, err := SendRequest(keyfactorAPIStruct)
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -560,36 +242,33 @@ func EnrollCSR(ea *EnrollCSRFctArgs, api *APIClient) (*EnrollResponse, error) {
 	return nil, errors.New(stringMessage)
 }
 
-// UpdateMetadata takes arguments for UpdateMetadataArgs and APIClient to facilitate the
+// UpdateMetadata takes arguments for UpdateMetadataArgs to facilitate the
 // updating of metadata fields in Keyfactor. It returns nil upon successful revocation,
 // and an error if not. Required fields to update certificate metadata are:
 //  - CertID              : int
 //  - CertificateMetadata : []CertificateMetadata
-func UpdateMetadata(um *UpdateMetadataArgs, api *APIClient) error {
+func (c *Client) UpdateMetadata(um *UpdateMetadataArgs) error {
 	// Metadata in Keyfactor varies between deployments
 	// Instead of hard coding possibilities, take array of string tuple types and create
 	// string-indexed array of interfaces for JSON compilation
 	um.Metadata = mapTupleArrayToInterface(um.CertificateMetadata)
 
 	// Set Keyfactor-specific headers
-	log.Println("[TRACE] Setting request headers")
-	headers := &APIHeaders{
+	headers := &apiHeaders{
 		Headers: []StringTuple{
 			{"x-keyfactor-api-version", "1"},
 			{"x-keyfactor-requested-with", "APIClient"},
 		},
 	}
 
-	log.Println("[TRACE] Creating request struct for Keyfactor client")
-	keyfactorAPIStruct := &APIRequest{
-		KFClient: api,
+	keyfactorAPIStruct := &request{
 		Method:   "PUT",
 		Endpoint: "/KeyfactorAPI/Certificates/Metadata",
 		Headers:  headers,
 		Payload:  um,
 	}
 
-	resp, err := SendRequest(keyfactorAPIStruct)
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return err
 	}
@@ -610,22 +289,12 @@ func UpdateMetadata(um *UpdateMetadataArgs, api *APIClient) error {
 	return errors.New(stringMessage)
 }
 
-// mapTupleArrayToInterface takes an array of StringTuple structs and maps each element to
-// a map[string]interface{}
-func mapTupleArrayToInterface(i []StringTuple) map[string]interface{} {
-	temp := make(map[string]interface{}, len(i)) // Create string-index-able interface array from tuple struct
-	for _, field := range i {
-		temp[field.Elem1] = field.Elem2
-	}
-	return temp
-}
-
-// RevokeCert takes arguments for RevokeCertArgs and APIClient to facilitate the revocation of
+// RevokeCert takes arguments for RevokeCertArgs to facilitate the revocation of
 // all specified certificate IDs. It returns nil upon successful revocation, and an error if not.
 // Required fields to revoke a list of certificates in Keyfactor are:
 //  - CertificateIds : []int
 //  - Comment        : string
-func RevokeCert(ra *RevokeCertArgs, api *APIClient) error {
+func (c *Client) RevokeCert(ra *RevokeCertArgs) error {
 	log.Println("[INFO] Revoking certificates")
 	for _, certs := range ra.CertificateIds {
 		log.Printf("[TRACE] Revoking ID %d", certs)
@@ -642,24 +311,21 @@ func RevokeCert(ra *RevokeCertArgs, api *APIClient) error {
 	}
 
 	// Set Keyfactor-specific headers
-	log.Println("[TRACE] Setting request headers")
-	headers := &APIHeaders{
+	headers := &apiHeaders{
 		Headers: []StringTuple{
 			{"x-keyfactor-api-version", "1"},
 			{"x-keyfactor-requested-with", "APIClient"},
 		},
 	}
 
-	log.Println("[TRACE] Creating request struct for Keyfactor client")
-	keyfactorAPIStruct := &APIRequest{
-		KFClient: api,
+	keyfactorAPIStruct := &request{
 		Method:   "POST",
 		Endpoint: "/KeyfactorAPI/Certificates/Revoke",
 		Headers:  headers,
 		Payload:  &ra,
 	}
 
-	resp, err := SendRequest(keyfactorAPIStruct)
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return err
 	}
@@ -680,7 +346,7 @@ func RevokeCert(ra *RevokeCertArgs, api *APIClient) error {
 	return errors.New(stringMessage)
 }
 
-// DeployPFXCertificate takes pointers to DeployPFXArgs and APIClient structs holding
+// DeployPFXCertificate takes pointers to DeployPFXArgs structs holding
 // configuration data required for the deployment of a newly enrolled PFX certificate.
 // It returns a pointer to a DeployPFXResp struct if successful, and an error message
 // if not. Required fields to deploy a certificate to a store maintained by Keyfactor are:
@@ -688,31 +354,28 @@ func RevokeCert(ra *RevokeCertArgs, api *APIClient) error {
 //  - Password      : string
 //  - CertificateId : int
 //  - RequestId     : int
-func DeployPFXCertificate(args *DeployPFXArgs, api *APIClient) (*DeployPFXResp, error) {
+func (c *Client) DeployPFXCertificate(args *DeployPFXArgs) (*DeployPFXResp, error) {
 	err := validateDeployPFXArgs(args)
 	if err != nil {
 		return nil, err
 	}
 
 	// Set Keyfactor-specific headers
-	log.Println("[TRACE] Setting request headers")
-	headers := &APIHeaders{
+	headers := &apiHeaders{
 		Headers: []StringTuple{
 			{"x-keyfactor-api-version", "1"},
 			{"x-keyfactor-requested-with", "APIClient"},
 		},
 	}
 
-	log.Println("[TRACE] Creating request struct for Keyfactor client")
-	keyfactorAPIStruct := &APIRequest{
-		KFClient: api,
+	keyfactorAPIStruct := &request{
 		Method:   "POST",
 		Endpoint: "/KeyfactorAPI/Enrollment/PFX/Deploy",
 		Headers:  headers,
 		Payload:  &args,
 	}
 
-	resp, err := SendRequest(keyfactorAPIStruct)
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -738,18 +401,17 @@ func DeployPFXCertificate(args *DeployPFXArgs, api *APIClient) (*DeployPFXResp, 
 	return nil, errors.New(stringMessage)
 }
 
-// GetCertificateContext takes arguments for GetCertificateContextArgs and APIClient used to facilitate the retrieval
+// GetCertificateContext takes arguments for GetCertificateContextArgs used to facilitate the retrieval
 // of certificate context. The primary query required to get certificate context is the certificate ID. Include metadata
 // and include locations add additional data, but can be set to false if they are unneeded. A pointer to a
 // GetCertificateResponse structure is returned, containing the certificate context.
-func GetCertificateContext(gca *GetCertificateContextArgs, api *APIClient) (*GetCertificateResponse, error) {
+func (c *Client) GetCertificateContext(gca *GetCertificateContextArgs) (*GetCertificateResponse, error) {
 	if gca.Id == 0 {
 		return nil, errors.New("keyfactor certificate id required to get certificate")
 	}
 
 	// Set Keyfactor-specific headers
-	log.Println("[TRACE] Setting request headers")
-	headers := &APIHeaders{
+	headers := &apiHeaders{
 		Headers: []StringTuple{
 			{"x-keyfactor-api-version", "1"},
 			{"x-keyfactor-requested-with", "APIClient"},
@@ -757,9 +419,9 @@ func GetCertificateContext(gca *GetCertificateContextArgs, api *APIClient) (*Get
 	}
 
 	// Construct URL query for /Certificates/{ID} requests
-	var query *APIQuery
+	var query *apiQuery
 	if gca.IncludeLocations != nil || gca.CollectionId != nil || gca.IncludeMetadata != nil {
-		query = &APIQuery{
+		query = &apiQuery{
 			Query: []StringTuple{},
 		}
 		if gca.IncludeLocations != nil {
@@ -781,9 +443,7 @@ func GetCertificateContext(gca *GetCertificateContextArgs, api *APIClient) (*Get
 
 	endpoint := "/KeyfactorAPI/Certificates/" + fmt.Sprintf("%d", gca.Id) // Append ID to complete endpoint
 
-	log.Println("[TRACE] Creating request struct for Keyfactor client")
-	keyfactorAPIStruct := &APIRequest{
-		KFClient: api,
+	keyfactorAPIStruct := &request{
 		Method:   "GET",
 		Endpoint: endpoint,
 		Headers:  headers,
@@ -791,7 +451,7 @@ func GetCertificateContext(gca *GetCertificateContextArgs, api *APIClient) (*Get
 		Payload:  nil,
 	}
 
-	resp, err := SendRequest(keyfactorAPIStruct)
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -818,17 +478,16 @@ func GetCertificateContext(gca *GetCertificateContextArgs, api *APIClient) (*Get
 	return nil, errors.New(stringMessage)
 }
 
-// GetTemplate takes arguments for a template ID and APIClient used to facilitate the retrieval
+// GetTemplate takes arguments for a template ID used to facilitate the retrieval
 // of certificate template context. The primary query required to get certificate context is the template ID. A pointer
 //to a GetTemplateResponse structure is returned, containing the template context.
-func GetTemplate(Id int, api *APIClient) (*GetTemplateResponse, error) {
+func (c *Client) GetTemplate(Id int) (*GetTemplateResponse, error) {
 	if Id == 0 {
 		return nil, errors.New("template id required to get template")
 	}
 
 	// Set Keyfactor-specific headers
-	log.Println("[TRACE] Setting request headers")
-	headers := &APIHeaders{
+	headers := &apiHeaders{
 		Headers: []StringTuple{
 			{"x-keyfactor-api-version", "1"},
 			{"x-keyfactor-requested-with", "APIClient"},
@@ -837,9 +496,7 @@ func GetTemplate(Id int, api *APIClient) (*GetTemplateResponse, error) {
 
 	endpoint := "KeyfactorAPI/Templates/" + fmt.Sprintf("%d", Id) // Append ID to complete endpoint
 
-	log.Println("[TRACE] Creating request struct for Keyfactor client")
-	keyfactorAPIStruct := &APIRequest{
-		KFClient: api,
+	keyfactorAPIStruct := &request{
 		Method:   "GET",
 		Endpoint: endpoint,
 		Headers:  headers,
@@ -847,7 +504,7 @@ func GetTemplate(Id int, api *APIClient) (*GetTemplateResponse, error) {
 		Payload:  nil,
 	}
 
-	resp, err := SendRequest(keyfactorAPIStruct)
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -874,14 +531,14 @@ func GetTemplate(Id int, api *APIClient) (*GetTemplateResponse, error) {
 	return nil, errors.New(stringMessage)
 }
 
-// RecoverCertificate takes arguments for RecoverCertArgs and APIClient to facilitate a call to Keyfactor
+// RecoverCertificate takes arguments for RecoverCertArgs to facilitate a call to Keyfactor
 // that recovers a certificate and associated private key (if retained) in the specified format.
 // The download certificate endpoint requires one of the following to retrieve a cert:
 //  - CertID
 //  - Thumbprint
 //  - SerialNumber AND IssuerDN
 // Additionally, the certificate Password is required.
-func RecoverCertificate(rca *RecoverCertArgs, api *APIClient) (*RecoverCertResponse, error) {
+func (c *Client) RecoverCertificate(rca *RecoverCertArgs) (*RecoverCertResponse, error) {
 	log.Println("[INFO] Recovering certificate")
 	/* The download certificate endpoint requires one of the following to retrieve a cert:
 		- CertID
@@ -905,11 +562,8 @@ func RecoverCertificate(rca *RecoverCertArgs, api *APIClient) (*RecoverCertRespo
 		return nil, errors.New("invalid input received for cert download request")
 	}
 
-	log.Println("[TRACE] Creating request body")
-
 	// Set Keyfactor-specific headers
-	log.Println("[TRACE] Setting request headers")
-	headers := &APIHeaders{
+	headers := &apiHeaders{
 		Headers: []StringTuple{
 			{"x-keyfactor-api-version", "1"},
 			{"x-keyfactor-requested-with", "APIClient"},
@@ -917,16 +571,14 @@ func RecoverCertificate(rca *RecoverCertArgs, api *APIClient) (*RecoverCertRespo
 		},
 	}
 
-	log.Println("[TRACE] Creating request struct for Keyfactor client")
-	keyfactorAPIStruct := &APIRequest{
-		KFClient: api,
+	keyfactorAPIStruct := &request{
 		Method:   "POST",
 		Endpoint: "/KeyfactorAPI/Certificates/Recover",
 		Headers:  headers,
 		Payload:  &rca,
 	}
 
-	resp, err := SendRequest(keyfactorAPIStruct)
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -1024,4 +676,14 @@ func decodePKCS12Blob(resp *EnrollResponse) error {
 		resp.Certificates = nil
 	}
 	return nil
+}
+
+// mapTupleArrayToInterface takes an array of StringTuple structs and maps each element to
+// a map[string]interface{}
+func mapTupleArrayToInterface(i []StringTuple) map[string]interface{} {
+	temp := make(map[string]interface{}, len(i)) // Create string-index-able interface array from tuple struct
+	for _, field := range i {
+		temp[field.Elem1] = field.Elem2
+	}
+	return temp
 }

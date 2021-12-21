@@ -10,7 +10,7 @@ cloud.google.com/go/internal/version
 # cloud.google.com/go/storage v1.10.0
 ## explicit; go 1.11
 cloud.google.com/go/storage
-# github.com/Keyfactor/keyfactor-go-client v0.1.0
+# github.com/Keyfactor/keyfactor-go-client v1.0.0
 ## explicit; go 1.17
 github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor
 # github.com/Masterminds/goutils v1.1.0

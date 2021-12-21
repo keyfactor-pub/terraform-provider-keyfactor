@@ -15,7 +15,7 @@ provider "keyfactor" {
   dev_mode    = true
 }
 
-resource "keyfactor_store" "AKS1" {
+resource "keyfactor_store" "AKV1" {
   provider = keyfactor.command
   store {
     client_machine  = "aks_demo"
@@ -59,7 +59,7 @@ resource "keyfactor_store" "AKS1" {
 }
 
 output "store" {
-  value = keyfactor_store.AKS1.store[0]
+  value = keyfactor_store.AKV1.store[0]
 }
 
 
@@ -91,8 +91,8 @@ resource "keyfactor_certificate" "PFXCertificate" {
     cert_template         = "WebServer1yr"
 
     deployment {
-      store_ids      = [keyfactor_store.AKS1.store[0].keyfactor_id]
-      store_type_ids = [keyfactor_store.AKS1.store[0].cert_store_type]
+      store_ids      = [keyfactor_store.AKV1.store[0].keyfactor_id]
+      store_type_ids = [keyfactor_store.AKV1.store[0].cert_store_type]
       alias          = ["terraform"]
     }
   }

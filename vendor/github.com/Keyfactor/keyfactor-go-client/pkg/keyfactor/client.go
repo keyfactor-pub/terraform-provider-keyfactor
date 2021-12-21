@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/url"
@@ -12,55 +13,78 @@ import (
 	"time"
 )
 
-// APIClient is a struct holding all necessary client configuration data
+type Client struct {
+	hostname        string
+	httpClient      *http.Client
+	basicAuthString string
+}
+
+// AuthConfig is a struct holding all necessary client configuration data
 // for communicating with the Keyfactor API. This includes the hostname,
 // username, password, and domain.
-type APIClient struct {
+type AuthConfig struct {
 	Hostname string
 	Username string
 	Password string
 	Domain   string
 }
 
-// StringTuple is a struct holding two string elements used by the Keyfactor
-// Go Client library for data types requiring a tuple of strings
-type StringTuple struct {
-	Elem1 string
-	Elem2 string
+// NewKeyfactorClient creates a new Keyfactor client instance. A configured Client is returned with methods used to
+// interact with Keyfactor.
+func NewKeyfactorClient(auth *AuthConfig) (*Client, error) {
+	c, err := loginToKeyfactor(auth)
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
 }
 
-// APIHeaders is a struct that holds an array of StringTuples used
-// to modularize the passing of custom API headers.
-type APIHeaders struct {
-	Headers []StringTuple
-}
+// validateAuthConfig ensures that the required fields for the creation of a new Keyfactor client struct were passed
+// to the NewKeyfactorClient method. In the future, this method will be updated to ask Keyfactor for session token.
+func loginToKeyfactor(auth *AuthConfig) (*Client, error) {
+	if auth.Hostname == "" {
+		return nil, errors.New("keyfactor hostname required for creation of new client")
+	}
+	if auth.Username == "" {
+		return nil, errors.New("keyfactor username required for creation of new client")
+	}
+	if auth.Password == "" {
+		return nil, errors.New("keyfactor password required for creation of new client")
+	}
 
-// APIQuery is a struct that holds an array of StringTuples used
-// to modularize the passing of custom URL query parameters.
-type APIQuery struct {
-	Query []StringTuple
-}
+	headers := &apiHeaders{
+		Headers: []StringTuple{
+			{"x-keyfactor-api-version", "1"},
+			{"x-keyfactor-requested-with", "APIClient"},
+		},
+	}
 
-// APIRequest is a structure that holds required information for communicating with
-// the Keyfactor API. Included inside this struct is a pointer to an APIClient struct,
-// a pointer to an APIHeaders struct, a payload as an unstructured interface, and other
-// configuration information for the API call.
-type APIRequest struct {
-	KFClient *APIClient
-	Method   string
-	Endpoint string
-	Headers  *APIHeaders
-	Query    *APIQuery
-	Payload  interface{}
+	keyfactorAPIStruct := &request{
+		Method:   "GET",
+		Endpoint: "/Status/Endpoints",
+		Headers:  headers,
+	}
+
+	c := &Client{
+		hostname:        auth.Hostname,
+		httpClient:      &http.Client{Timeout: 10 * time.Second},
+		basicAuthString: buildBasicAuthString(auth),
+	}
+
+	_, err := c.sendRequest(keyfactorAPIStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return c, nil
 }
 
 // SendRequest takes an APIRequest struct as input and generates an API call
 // using the configuration data inside. It returns a pointer to an http response
 // struct and an error, if applicable.
-func SendRequest(request *APIRequest) (*http.Response, error) {
-	kfApiClientData := request.KFClient // Extract Keyfactor client data
-
-	u, err := url.Parse(kfApiClientData.Hostname) // Parse raw hostname into URL structure
+func (c *Client) sendRequest(request *request) (*http.Response, error) {
+	u, err := url.Parse(c.hostname) // Parse raw hostname into URL structure
 	if err != nil {
 		return nil, err
 	}
@@ -85,28 +109,23 @@ func SendRequest(request *APIRequest) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[INFO] Request body: %s", jsonByes)
+	log.Printf("[TRACE] Request body: %s", jsonByes)
 
 	req, err := http.NewRequest(request.Method, keyfactorPath, bytes.NewBuffer(jsonByes))
 	if err != nil {
 		return nil, err
 	}
 
-	authField := buildAuthField(request.KFClient)
-
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", authField)
+	req.Header.Set("Authorization", c.basicAuthString)
 
 	// Set custom Keyfactor headers
 	for _, headers := range request.Headers.Headers {
 		req.Header.Set(headers.Elem1, headers.Elem2)
 	}
 
-	log.Println("[TRACE] Executing request with client.Do")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -114,15 +133,15 @@ func SendRequest(request *APIRequest) (*http.Response, error) {
 	return resp, nil
 }
 
-// buildAuthField takes an APIClient struct as input and returns a base-64 encoded
-// Basic authorization field required for communication with the Keyfactor API.
-func buildAuthField(creds *APIClient) string {
+// buildBasicAuthString constructs a basic authorization string necessary for basic authorization to Keyfactor. It
+// returns a base-64 encoded auth string including the 'Basic ' prefix.
+func buildBasicAuthString(auth *AuthConfig) string {
 	var authString string
 	log.Println("[TRACE] Building Authorization field")
-	if creds.Domain == "" {
-		authString = strings.Join([]string{creds.Username, ":", creds.Password}, "")
+	if auth.Domain == "" {
+		authString = strings.Join([]string{auth.Username, ":", auth.Password}, "")
 	} else {
-		authString = strings.Join([]string{creds.Domain, "\\", creds.Username, ":", creds.Password}, "")
+		authString = strings.Join([]string{auth.Domain, "\\", auth.Username, ":", auth.Password}, "")
 	}
 	authBytes := []byte(authString)
 	authDigest := base64.StdEncoding.EncodeToString(authBytes)

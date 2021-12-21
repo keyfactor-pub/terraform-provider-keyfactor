@@ -53,7 +53,6 @@ resource "keyfactor_certificate" "PFXCertificate" {
 }
 ```
 
-#### Metadata schema
 Keyfactor enables the attachment of metadata to each certificate
 managed by Keyfactor products. Note that metadata is not directly
 attached to the contents of the certificate, but can be used as

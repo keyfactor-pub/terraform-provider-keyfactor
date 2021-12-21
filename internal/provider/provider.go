@@ -9,25 +9,25 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
-// init provider block
+// Provider init provider block
 func Provider() *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
-			"hostname": &schema.Schema{
+			"hostname": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_HOSTNAME", nil),
 				Description: "Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com",
 			},
 
-			"kf_username": &schema.Schema{
+			"kf_username": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_USERNAME", nil),
 				Description: "Username of Keyfactor service account",
 			},
 
-			"kf_password": &schema.Schema{
+			"kf_password": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Sensitive:   true,
@@ -35,7 +35,7 @@ func Provider() *schema.Provider {
 				Description: "Password of Keyfactor service account",
 			},
 
-			"kf_appkey": &schema.Schema{
+			"kf_appkey": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Sensitive:   true,
@@ -43,14 +43,14 @@ func Provider() *schema.Provider {
 				Description: "Application key provisioned by Keyfactor instance",
 			},
 
-			"domain": &schema.Schema{
+			"domain": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_DOMAIN", nil),
 				Description: "Domain that Keyfactor instance is hosted on",
 			},
 
-			"dev_mode": &schema.Schema{
+			"dev_mode": {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_DEVMODE", nil),
@@ -68,7 +68,7 @@ func Provider() *schema.Provider {
 
 func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	var client keyfactor.APIClient
+	var clientAuth *keyfactor.AuthConfig
 	hostname := d.Get("hostname").(string)
 	username := d.Get("kf_username").(string)
 	password := d.Get("kf_password").(string)
@@ -77,7 +77,7 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 	hostname = strings.TrimRight(hostname, "/") // remove trailing slash, if it exists
 
 	if (hostname != "") && (username != "") && (password != "") {
-		client = keyfactor.APIClient{
+		clientAuth = &keyfactor.AuthConfig{
 			Hostname: hostname,
 			Username: username,
 			Password: password,
@@ -91,7 +91,12 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 		})
 	}
 
-	return &client, diags
+	client, err := keyfactor.NewKeyfactorClient(clientAuth)
+	if err != nil {
+		return nil, diag.FromErr(err)
+	}
+
+	return client, diags
 }
 
 // Nice-to-have functions

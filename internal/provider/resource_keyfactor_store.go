@@ -16,59 +16,59 @@ func resourceStore() *schema.Resource {
 		UpdateContext: resourceStoreUpdate,
 		DeleteContext: resourceStoreDelete,
 		Schema: map[string]*schema.Schema{
-			"store": &schema.Schema{
+			"store": {
 				Type:     schema.TypeList,
 				MaxItems: 1,
 				Required: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"container_id": &schema.Schema{
+						"container_id": {
 							Type:        schema.TypeInt,
 							Optional:    true,
 							Description: "Container identifier of the store's associated certificate store container.",
 						},
-						"client_machine": &schema.Schema{
+						"client_machine": {
 							Type:        schema.TypeString,
 							Required:    true,
 							Description: "Client machine name; value depends on certificate store type. See API reference guide",
 						},
-						"store_path": &schema.Schema{
+						"store_path": {
 							Type:        schema.TypeString,
 							Required:    true,
 							Description: "Path to the new certificate store on a target. Format varies depending on type.",
 						},
-						"cert_store_inventory_job_id": &schema.Schema{
+						"cert_store_inventory_job_id": {
 							Type:        schema.TypeString,
 							Optional:    true,
 							Description: "GUID identifying the inventory job for the certificate store. Null if inventory is not configured",
 						},
-						"cert_store_type": &schema.Schema{
+						"cert_store_type": {
 							Type:        schema.TypeInt,
 							Required:    true,
 							Description: "Integer specifying the store type. Specific types require different parameters.",
 						},
-						"approved": &schema.Schema{
+						"approved": {
 							Type:        schema.TypeBool,
 							Optional:    true,
 							Description: "Bool that indicates the approval status of store created. Default is true, omit if unsure",
 						},
-						"create_if_missing": &schema.Schema{
+						"create_if_missing": {
 							Type:        schema.TypeBool,
 							Optional:    true,
 							Description: "Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure",
 						},
-						"property": &schema.Schema{
+						"property": {
 							Type:        schema.TypeList,
 							Optional:    true,
 							Description: "Certificate properties specific to certificate store type",
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
-									"name": &schema.Schema{
+									"name": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Name of property field required by certificate store",
 									},
-									"value": &schema.Schema{
+									"value": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Property value",
@@ -76,40 +76,40 @@ func resourceStore() *schema.Resource {
 								},
 							},
 						},
-						"agent_id": &schema.Schema{
+						"agent_id": {
 							Type:        schema.TypeString,
 							Required:    true,
 							Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store",
 						},
-						"agent_assigned": &schema.Schema{
+						"agent_assigned": {
 							Type:        schema.TypeBool,
 							Optional:    true,
 							Description: "Bool indicating if there is an orchestrator assigned to the new certificate store",
 						},
-						"container_name": &schema.Schema{
+						"container_name": {
 							Type:        schema.TypeString,
 							Optional:    true,
 							Description: "Name of certificate store's associated container, if applicable",
 						},
-						"inventory_schedule": &schema.Schema{
+						"inventory_schedule": {
 							Type:        schema.TypeList,
 							Optional:    true,
 							MaxItems:    1,
 							Description: "Inventory schedule for new certificate store",
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
-									"immediate": &schema.Schema{
+									"immediate": {
 										Type:        schema.TypeBool,
 										Optional:    true,
 										Description: "Boolean that indicates whether the job should run immediately",
 									},
-									"interval": &schema.Schema{
+									"interval": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "Indicates that the job should be scheduled to run every x minutes",
 										Elem: &schema.Resource{
 											Schema: map[string]*schema.Schema{
-												"minutes": &schema.Schema{
+												"minutes": {
 													Type:        schema.TypeInt,
 													Required:    true,
 													Description: "An integer indicating the number of minutes between each interval",
@@ -117,13 +117,13 @@ func resourceStore() *schema.Resource {
 											},
 										},
 									},
-									"daily": &schema.Schema{
+									"daily": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "Indicates that the job should be scheduled to run every day at the same time",
 										Elem: &schema.Resource{
 											Schema: map[string]*schema.Schema{
-												"time": &schema.Schema{
+												"time": {
 													Type:        schema.TypeString,
 													Required:    true,
 													Description: "The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format",
@@ -131,13 +131,13 @@ func resourceStore() *schema.Resource {
 											},
 										},
 									},
-									"exactly_once": &schema.Schema{
+									"exactly_once": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "Indicates that the job should be scheduled to run at the time specified",
 										Elem: &schema.Resource{
 											Schema: map[string]*schema.Schema{
-												"time": &schema.Schema{
+												"time": {
 													Type:        schema.TypeString,
 													Required:    true,
 													Description: "The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format",
@@ -148,19 +148,19 @@ func resourceStore() *schema.Resource {
 								},
 							},
 						},
-						"set_new_password_allowed": &schema.Schema{
+						"set_new_password_allowed": {
 							Type:        schema.TypeBool,
 							Optional:    true,
 							Description: "Indicates whether the store password can be changed",
 						},
-						"password": &schema.Schema{
+						"password": {
 							Type:        schema.TypeList,
 							Optional:    true,
 							MaxItems:    1,
 							Description: "Configures credential options for certificate store",
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
-									"value": &schema.Schema{
+									"value": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										Description: "Configures a password to be stored a Keyfactor secret",
@@ -168,7 +168,7 @@ func resourceStore() *schema.Resource {
 								},
 							},
 						},
-						"keyfactor_id": &schema.Schema{
+						"keyfactor_id": {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "Keyfactor certificate store GUID",
@@ -182,7 +182,7 @@ func resourceStore() *schema.Resource {
 
 func resourceStoreCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	kfClientData := m.(*keyfactor.APIClient)
+	kfClientData := m.(*keyfactor.Client)
 
 	stores := d.Get("store").([]interface{})
 	for _, store := range stores {
@@ -205,7 +205,7 @@ func resourceStoreCreate(ctx context.Context, d *schema.ResourceData, m interfac
 			Password:                createPasswordConfig(i["password"].([]interface{})),
 		}
 
-		createResp, err := keyfactor.CreateStore(newStoreArgs, kfClientData)
+		createResp, err := kfClientData.CreateStore(newStoreArgs)
 		if err != nil {
 			return diag.FromErr(err)
 		}
@@ -269,13 +269,13 @@ func createPasswordConfig(m []interface{}) *keyfactor.StorePasswordConfig {
 	return res
 }
 
-func resourceStoreRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	kfClientData := m.(*keyfactor.APIClient)
+func resourceStoreRead(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+	kfClientData := m.(*keyfactor.Client)
 
 	var diags diag.Diagnostics
 	storeId := d.Id()
 
-	storeData, err := keyfactor.GetCertificateStoreByID(storeId, kfClientData)
+	storeData, err := kfClientData.GetCertificateStoreByID(storeId)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -379,13 +379,13 @@ func flattenCertificateStoreInventorySched(schedule keyfactor.InventorySchedule)
 	return scheduleInterface
 }
 
-func resourceStoreUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceStoreUpdate(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
 	return nil
 }
 
-func resourceStoreDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceStoreDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	kfClientData := m.(*keyfactor.APIClient)
+	kfClientData := m.(*keyfactor.Client)
 
 	log.Println("[INFO] Deleting certificate resource")
 
@@ -396,7 +396,7 @@ func resourceStoreDelete(ctx context.Context, d *schema.ResourceData, m interfac
 		id := i["keyfactor_id"].(string)
 		log.Printf("[INFO] Deleting certificate store with ID %s in Keyfactor", id)
 
-		err := keyfactor.DeleteCertificateStore(id, kfClientData)
+		err := kfClientData.DeleteCertificateStore(id)
 		if err != nil {
 			return diag.FromErr(err)
 		}

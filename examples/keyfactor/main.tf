@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     keyfactor = {
-      version = "~> 1.0.1"
+      version = "~> 1.0.0"
       source  = "keyfactor.com/keyfactordev/keyfactor"
     }
   }

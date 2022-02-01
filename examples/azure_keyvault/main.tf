@@ -12,49 +12,48 @@ provider "keyfactor" {
   hostname    = "keyfactor.example.com"
   kf_username = "keyfactorUser"
   kf_password = "P@s5woRd!"
-  dev_mode    = true
 }
 
 resource "keyfactor_store" "AKV1" {
   provider = keyfactor.command
   store {
-    client_machine  = "aks_demo"
+    client_machine  = "akv_demo"
     store_path      = "https://companykeyvault.vault.azure.net/"
+    agent_id = "keyfactorOrchestratorAgentID"
     cert_store_type = 106
     property {
       name  = "TenantID"
-      value = "tenant GUID"
+      value = var.az_tenant_id
     }
     property {
       name  = "ResourceGroupName"
-      value = "production"
+      value = var.az_resource_group_name
     }
     property {
       name  = "ApplicationId"
-      value = "appID"
+      value = var.az_application_id
     }
     property {
       name  = "ClientSecret"
-      value = "SPSecret"
+      value = var.az_client_secret
     }
     property {
       name  = "SubscriptionId"
-      value = "tenantSubID"
+      value = var.az_subscription_id
     }
     property {
       name  = "APIObjectId"
-      value = "SPObject"
+      value = var.az_app_object_id
     }
     property {
       name  = "VaultName"
-      value = "companykeyvault"
+      value = var.az_vault_name
     }
     inventory_schedule {
       interval {
         minutes = 60
       }
     }
-    agent_id = "keyfactorOrchestratorAgentID"
   }
 }
 

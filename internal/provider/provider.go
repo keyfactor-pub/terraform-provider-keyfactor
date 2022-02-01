@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
@@ -14,46 +15,76 @@ func Provider() *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"hostname": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_HOSTNAME", nil),
+				Type:     schema.TypeString,
+				Optional: true,
+				DefaultFunc: func() (interface{}, error) {
+					if v := os.Getenv("KEYFACTOR_HOSTNAME"); v != "" {
+						return v, nil
+					}
+					return "", nil
+				},
 				Description: "Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com",
 			},
 
 			"kf_username": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_USERNAME", nil),
+				Type:     schema.TypeString,
+				Optional: true,
+				DefaultFunc: func() (interface{}, error) {
+					if v := os.Getenv("KEYFACTOR_DEVMODE"); v != "" {
+						return v, nil
+					}
+					return "", nil
+				},
 				Description: "Username of Keyfactor service account",
 			},
 
 			"kf_password": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Sensitive:   true,
-				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_PASSWORD", nil),
+				Type:      schema.TypeString,
+				Optional:  true,
+				Sensitive: true,
+				DefaultFunc: func() (interface{}, error) {
+					if v := os.Getenv("KEYFACTOR_PASSWORD"); v != "" {
+						return v, nil
+					}
+					return "", nil
+				},
 				Description: "Password of Keyfactor service account",
 			},
 
 			"kf_appkey": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Sensitive:   true,
-				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_APPKEY", nil),
+				Type:      schema.TypeString,
+				Optional:  true,
+				Sensitive: true,
+				DefaultFunc: func() (interface{}, error) {
+					if v := os.Getenv("KEYFACTOR_APPKEY"); v != "" {
+						return v, nil
+					}
+					return "", nil
+				},
 				Description: "Application key provisioned by Keyfactor instance",
 			},
 
 			"domain": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_DOMAIN", nil),
+				Type:     schema.TypeString,
+				Optional: true,
+				DefaultFunc: func() (interface{}, error) {
+					if v := os.Getenv("KEYFACTOR_DOMAIN"); v != "" {
+						return v, nil
+					}
+					return "", nil
+				},
 				Description: "Domain that Keyfactor instance is hosted on",
 			},
 
 			"dev_mode": {
-				Type:        schema.TypeBool,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("KEYFACTOR_DEVMODE", nil),
+				Type:     schema.TypeBool,
+				Optional: true,
+				DefaultFunc: func() (interface{}, error) {
+					if v := os.Getenv("KEYFACTOR_DEVMODE"); v != "" {
+						return v, nil
+					}
+					return "", nil
+				},
 				Description: "Development mode",
 			},
 		},

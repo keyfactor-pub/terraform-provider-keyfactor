@@ -22,7 +22,7 @@ func resourceDeploy() *schema.Resource {
 				Description: "PFX certificate deployment options. Specify at least one certificate store to deploy into",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"keyfactor_id": {
+						"keyfactor_certificate_id": {
 							Type:        schema.TypeInt,
 							Required:    true,
 							Description: "Keyfactor certificate ID",

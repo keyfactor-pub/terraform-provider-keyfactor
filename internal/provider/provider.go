@@ -30,7 +30,7 @@ func Provider() *schema.Provider {
 				Type:     schema.TypeString,
 				Optional: true,
 				DefaultFunc: func() (interface{}, error) {
-					if v := os.Getenv("KEYFACTOR_DEVMODE"); v != "" {
+					if v := os.Getenv("KEYFACTOR_USERNAME"); v != "" {
 						return v, nil
 					}
 					return "", nil
@@ -83,7 +83,7 @@ func Provider() *schema.Provider {
 					if v := os.Getenv("KEYFACTOR_DEVMODE"); v != "" {
 						return v, nil
 					}
-					return "", nil
+					return false, nil
 				},
 				Description: "Development mode",
 			},
@@ -120,6 +120,7 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 			Summary:  "Unable to connect to Keyfactor",
 			Detail:   "Unable to authenticate user, check schema or environment variables",
 		})
+		return nil, diags
 	}
 
 	client, err := keyfactor.NewKeyfactorClient(clientAuth)

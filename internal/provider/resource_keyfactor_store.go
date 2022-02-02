@@ -207,6 +207,7 @@ func resourceStoreCreate(ctx context.Context, d *schema.ResourceData, m interfac
 
 		createResp, err := kfClientData.CreateStore(newStoreArgs)
 		if err != nil {
+			resourceStoreRead(ctx, d, m)
 			return diag.FromErr(err)
 		}
 

@@ -238,6 +238,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 			}
 			enrollResponse, err := kfClient.EnrollCSR(CSRArgs)
 			if err != nil {
+				resourceCertificateRead(ctx, d, m)
 				return diag.FromErr(err)
 			}
 
@@ -268,6 +269,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 			// Error checking for invalid fields inside PFX enrollment function
 			enrollResponse, err := kfClient.EnrollPFX(PFXArgs) // If no CSR is present, enroll a PFX certificate
 			if err != nil {
+				resourceCertificateRead(ctx, d, m)
 				return diag.FromErr(err)
 			}
 
@@ -326,6 +328,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 
 					deployResp, err := kfClient.DeployPFXCertificate(deployPFXArgs)
 					if err != nil {
+						resourceCertificateRead(ctx, d, m)
 						return diag.FromErr(err)
 					}
 

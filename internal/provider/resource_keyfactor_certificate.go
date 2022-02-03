@@ -76,8 +76,14 @@ func resourceCertificate() *schema.Resource {
 							},
 						},
 						"certificate_authority": {
-							Type:        schema.TypeString,
-							Required:    true,
+							Type:     schema.TypeString,
+							Required: true,
+							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+								if strings.ToLower(old) == strings.ToLower(new) {
+									return true
+								}
+								return false
+							},
 							Description: "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
 						},
 						"cert_template": {
@@ -197,10 +203,10 @@ func resourceCertificate() *schema.Resource {
 							Computed:    true,
 							Description: "PEM formatted certificate",
 						},
-						"pkcs12": {
+						"p7b": {
 							Type:        schema.TypeString,
 							Computed:    true,
-							Description: "PKCS#12 formatted certificate",
+							Description: "P7B formatted certificate",
 						},
 					},
 				},
@@ -293,7 +299,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 						Summary:  "Not enough information provided to deploy certificate.",
 						Detail:   deployFailureString,
 					})
-					// Just becuase we failed to deploy doesn't mean that the create failed.
+					// Just because we failed to deploy doesn't mean that the create failed.
 				} else {
 					// Build []string of store IDs from interface
 
@@ -345,6 +351,13 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 							Detail:   failedStoresString,
 						})
 					}
+
+					diags = append(diags, diag.Diagnostic{
+						Severity: diag.Warning,
+						Summary:  "Request to deploy PFX was successful, but deployment takes time to propagate.",
+						Detail: "Running Terraform Plan will likely say that deployment infrastructure from .tf is" +
+							"new, and requires Terraform apply to update. Give it a few minutes before running Apply.",
+					})
 				}
 			}
 
@@ -402,18 +415,19 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	// Get the password out of current schema
 	schemaState := d.Get("certificate").([]interface{})
 	password := schemaState[0].(map[string]interface{})["key_password"].(string)
+	metadata := schemaState[0].(map[string]interface{})["metadata"].([]interface{})
 
 	// Download and assign certificates to proper location
-	err, pem := recoverCertificate(certificateData.Id, password, kfClient, "PEM")
+	err, pem := downloadCertificate(certificateData.Id, kfClient, "PEM")
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	err, pkcs12 := recoverCertificate(certificateData.Id, password, kfClient, "PFX")
+	err, p7b := downloadCertificate(certificateData.Id, kfClient, "P7B")
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	certificateItems := flattenCertificateItems(certificateData, kfClient, pem, pkcs12, password) // Set schema
+	certificateItems := flattenCertificateItems(certificateData, kfClient, pem, p7b, password, metadata) // Set schema
 	if err := d.Set("certificate", certificateItems); err != nil {
 		return diag.FromErr(err)
 	}
@@ -421,7 +435,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	return diags
 }
 
-func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, pkcs12 string, password string) []interface{} {
+func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, p7b string, password string, oldMetadata []interface{}) []interface{} {
 	if certificateContext != nil {
 		temp := make([]interface{}, 1, 1)
 		data := make(map[string]interface{})
@@ -443,33 +457,22 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 
 		// Assign schema that require flattening
 		data["sans"] = flattenSANs(certificateContext.SubjectAltNameElements)
-		data["metadata"] = flattenMetadata(certificateContext.Metadata)
+		data["metadata"] = flattenMetadata(certificateContext.Metadata, oldMetadata)
 		data["subject"] = flattenSubject(certificateContext.IssuedDN)
 
 		// Schema set by passed in values
 		data["certificate_pem"] = pem
-		data["pkcs12"] = pkcs12
+		data["p7b"] = p7b
 		data["key_password"] = password
+
+		if len(certificateContext.Locations) > 0 {
+			data["deployment"] = flattenDeploymentItems(certificateContext.Locations)
+		}
 
 		temp[0] = data
 		return temp
 	}
 	return make([]interface{}, 0)
-}
-
-func recoverCertificate(id int, password string, kfClient *keyfactor.Client, format string) (error, string) {
-	recoverArgs := &keyfactor.RecoverCertArgs{
-		CertId:       id,
-		Password:     password,
-		IncludeChain: true,
-		CertFormat:   format,
-	}
-
-	resp, err := kfClient.RecoverCertificate(recoverArgs)
-	if err != nil {
-		return err, ""
-	}
-	return nil, resp.PFX
 }
 
 func flattenSubject(subject string) []interface{} {
@@ -500,19 +503,44 @@ func flattenSubject(subject string) []interface{} {
 	return make([]interface{}, 0)
 }
 
-func flattenMetadata(metadata interface{}) []interface{} {
+func flattenMetadata(metadata interface{}, oldMetadata []interface{}) []interface{} {
 	if metadata != nil {
-		var metadataArray []interface{}
-		for key, value := range metadata.(map[string]interface{}) {
-			temp := make(map[string]interface{})
-
-			temp["name"] = key
-			temp["value"] = value
-
-			metadataArray = append(metadataArray, temp)
+		var newMetadataArray []interface{}
+		for _, old := range oldMetadata {
+			temp := old.(map[string]interface{})
+			for key, value := range metadata.(map[string]interface{}) {
+				if key == temp["name"] {
+					temp["value"] = value
+					break
+				}
+			}
+			newMetadataArray = append(newMetadataArray, temp)
 		}
-		return metadataArray
+		return newMetadataArray
 	}
+	return make([]interface{}, 0)
+}
+
+func flattenDeploymentItems(locations []keyfactor.CertificateLocations) []interface{} {
+	if locations != nil {
+		var storeIdsInterface []interface{}
+		var aliasInterface []interface{}
+		var storeTypeIdsInterface []interface{}
+		for _, location := range locations {
+			storeIdsInterface = append(storeIdsInterface, location.CertStoreId)
+			aliasInterface = append(aliasInterface, location.Alias)
+			storeTypeIdsInterface = append(storeTypeIdsInterface, location.StoreType)
+		}
+		locationsMap := make(map[string]interface{})
+		locationsMap["store_ids"] = storeIdsInterface
+		locationsMap["alias"] = aliasInterface
+		locationsMap["store_type_ids"] = storeTypeIdsInterface
+
+		locationsArray := make([]interface{}, 1, 1)
+		locationsArray[0] = locationsMap
+		return locationsArray
+	}
+
 	return make([]interface{}, 0)
 }
 
@@ -533,9 +561,16 @@ func flattenSANs(sans []keyfactor.SubjectAltNameElements) []interface{} {
 				sanURIArray = append(sanURIArray, san.Value)
 			}
 		}
-		sanInterface["san_dns"] = sanDNSArray
-		sanInterface["san_ip4"] = sanIP4Array
-		sanInterface["san_uri"] = sanURIArray
+		// To avoid provider drift, make sure that these entries are only written if SANs were returned by Keyfactor
+		if sanDNSArray != nil {
+			sanInterface["san_dns"] = sanDNSArray
+		}
+		if sanIP4Array != nil {
+			sanInterface["san_ip4"] = sanIP4Array
+		}
+		if sanURIArray != nil {
+			sanInterface["san_uri"] = sanURIArray
+		}
 
 		ret := make([]interface{}, 1, 1)
 		ret[0] = sanInterface
@@ -576,10 +611,38 @@ func mapSanIDToName(sanID int) string {
 	return ""
 }
 
-func resourceCertificateUpdate(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
+func recoverCertificate(id int, password string, kfClient *keyfactor.Client, format string) (error, string) {
+	recoverArgs := &keyfactor.RecoverCertArgs{
+		CertId:       id,
+		Password:     password,
+		IncludeChain: true,
+		CertFormat:   format,
+	}
 
-	return diags
+	resp, err := kfClient.RecoverCertificate(recoverArgs)
+	if err != nil {
+		return err, ""
+	}
+	return nil, resp.PFX
+}
+
+func downloadCertificate(id int, kfClient *keyfactor.Client, format string) (error, string) {
+	downloadArgs := &keyfactor.DownloadCertArgs{
+		CertID:       id,
+		IncludeChain: true,
+		CertFormat:   format,
+	}
+
+	resp, err := kfClient.DownloadCertificate(downloadArgs)
+	if err != nil {
+		return err, ""
+	}
+	return nil, resp.Content
+}
+
+func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+
+	return resourceCertificateRead(ctx, d, m)
 }
 
 func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

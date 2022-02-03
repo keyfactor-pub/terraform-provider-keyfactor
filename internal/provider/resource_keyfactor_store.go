@@ -2,11 +2,10 @@ package provider
 
 import (
 	"context"
-	"log"
-
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"log"
 )
 
 func resourceStore() *schema.Resource {
@@ -37,19 +36,19 @@ func resourceStore() *schema.Resource {
 							Required:    true,
 							Description: "Path to the new certificate store on a target. Format varies depending on type.",
 						},
-						"cert_store_inventory_job_id": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "GUID identifying the inventory job for the certificate store. Null if inventory is not configured",
-						},
 						"cert_store_type": {
 							Type:        schema.TypeInt,
 							Required:    true,
 							Description: "Integer specifying the store type. Specific types require different parameters.",
 						},
 						"approved": {
-							Type:        schema.TypeBool,
-							Optional:    true,
+							Type:     schema.TypeBool,
+							Optional: true,
+							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+								// For some reason Terraform detects this particular function as having drift; this function
+								// gives us a definitive answer.
+								return !d.HasChange(k)
+							},
 							Description: "Bool that indicates the approval status of store created. Default is true, omit if unsure",
 						},
 						"create_if_missing": {
@@ -82,8 +81,13 @@ func resourceStore() *schema.Resource {
 							Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store",
 						},
 						"agent_assigned": {
-							Type:        schema.TypeBool,
-							Optional:    true,
+							Type:     schema.TypeBool,
+							Optional: true,
+							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+								// For some reason Terraform detects this particular function as having drift; this function
+								// gives us a definitive answer.
+								return !d.HasChange(k)
+							},
 							Description: "Bool indicating if there is an orchestrator assigned to the new certificate store",
 						},
 						"container_name": {
@@ -189,20 +193,19 @@ func resourceStoreCreate(ctx context.Context, d *schema.ResourceData, m interfac
 		i := store.(map[string]interface{})
 		properties := i["property"].([]interface{})
 		newStoreArgs := &keyfactor.CreateStoreFctArgs{
-			ContainerId:             intToPointer(i["container_id"].(int)),
-			ClientMachine:           i["client_machine"].(string),
-			StorePath:               i["store_path"].(string),
-			CertStoreInventoryJobId: stringToPointer(i["cert_store_inventory_job_id"].(string)),
-			CertStoreType:           i["cert_store_type"].(int),
-			Approved:                boolToPointer(i["approved"].(bool)),
-			CreateIfMissing:         boolToPointer(i["create_if_missing"].(bool)),
-			Properties:              interfaceArrayToStringTuple(properties),
-			AgentId:                 i["agent_id"].(string),
-			AgentAssigned:           boolToPointer(i["agent_assigned"].(bool)),
-			ContainerName:           stringToPointer(i["container_name"].(string)),
-			InventorySchedule:       createInventorySchedule(i["inventory_schedule"].([]interface{})),
-			SetNewPasswordAllowed:   boolToPointer(i["set_new_password_allowed"].(bool)),
-			Password:                createPasswordConfig(i["password"].([]interface{})),
+			ContainerId:           intToPointer(i["container_id"].(int)),
+			ClientMachine:         i["client_machine"].(string),
+			StorePath:             i["store_path"].(string),
+			CertStoreType:         i["cert_store_type"].(int),
+			Approved:              boolToPointer(i["approved"].(bool)),
+			CreateIfMissing:       boolToPointer(i["create_if_missing"].(bool)),
+			Properties:            interfaceArrayToStringTuple(properties),
+			AgentId:               i["agent_id"].(string),
+			AgentAssigned:         boolToPointer(i["agent_assigned"].(bool)),
+			ContainerName:         stringToPointer(i["container_name"].(string)),
+			InventorySchedule:     createInventorySchedule(i["inventory_schedule"].([]interface{})),
+			SetNewPasswordAllowed: boolToPointer(i["set_new_password_allowed"].(bool)),
+			Password:              createPasswordConfig(i["password"].([]interface{})),
 		}
 
 		createResp, err := kfClientData.CreateStore(newStoreArgs)
@@ -285,15 +288,16 @@ func resourceStoreRead(_ context.Context, d *schema.ResourceData, m interface{})
 	schemaState := d.Get("store").([]interface{})
 	// Extract the password schema from current stored schema and pass it right back
 	password := schemaState[0].(map[string]interface{})["password"].([]interface{})
+	properties := schemaState[0].(map[string]interface{})["property"].([]interface{})
 
-	storeItems := flattenCertificateStoreItems(storeData, password)
+	storeItems := flattenCertificateStoreItems(storeData, password, properties)
 	if err := d.Set("store", storeItems); err != nil {
 		return diag.FromErr(err)
 	}
 	return diags
 }
 
-func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, password []interface{}) []interface{} {
+func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, password []interface{}, oldProperties []interface{}) []interface{} {
 	if storeContext != nil {
 		data := make(map[string]interface{})
 
@@ -302,7 +306,6 @@ func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, pass
 		data["container_id"] = storeContext.ContainerId
 		data["client_machine"] = storeContext.ClientMachine
 		data["store_path"] = storeContext.StorePath
-		data["cert_store_inventory_job_id"] = storeContext.CertStoreInventoryJobId
 		data["cert_store_type"] = storeContext.CertStoreType
 		data["approved"] = storeContext.Approved
 		data["create_if_missing"] = storeContext.CreateIfMissing
@@ -312,7 +315,7 @@ func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, pass
 		data["set_new_password_allowed"] = storeContext.SetNewPasswordAllowed
 
 		// Assign schema that require flattening
-		data["property"] = flattenCertificateStoreProperty(storeContext.Properties)
+		data["property"] = flattenCertificateStoreProperty(storeContext.Properties, oldProperties)
 		data["inventory_schedule"] = flattenCertificateStoreInventorySched(storeContext.InventorySchedule)
 		data["password"] = password
 
@@ -324,18 +327,24 @@ func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, pass
 	return make([]interface{}, 0)
 }
 
-func flattenCertificateStoreProperty(properties []keyfactor.StringTuple) []interface{} {
+func flattenCertificateStoreProperty(properties []keyfactor.StringTuple, oldProperties []interface{}) []interface{} {
+	// We want to store properties back in the original state that they were found in the .tf file. Otherwise,
+	// Terraform marks any change as infrastructure drift. Basically the goal here is to take in the slice of
+	// oldProperties and update it with the values returned by properties, and if drift does exist, append it to the
+	// end.
 	if len(properties) > 0 {
-		var propertiesArray []interface{}
-		for _, property := range properties {
-			temp := make(map[string]interface{})
-
-			temp["name"] = property.Elem1
-			temp["value"] = property.Elem2
-
-			propertiesArray = append(propertiesArray, temp)
+		var newPropertiesArray []interface{}
+		for _, oldProperty := range oldProperties {
+			temp := oldProperty.(map[string]interface{})
+			for _, newProperty := range properties {
+				if newProperty.Elem1 == temp["name"] {
+					temp["value"] = newProperty.Elem2
+					break
+				}
+			}
+			newPropertiesArray = append(newPropertiesArray, temp)
 		}
-		return propertiesArray
+		return newPropertiesArray
 	}
 
 	return make([]interface{}, 0)
@@ -380,13 +389,49 @@ func flattenCertificateStoreInventorySched(schedule keyfactor.InventorySchedule)
 	return scheduleInterface
 }
 
-func resourceStoreUpdate(_ context.Context, _ *schema.ResourceData, _ interface{}) diag.Diagnostics {
-	return nil
+func resourceStoreUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+	var diags diag.Diagnostics
+	kfClient := m.(*keyfactor.Client)
+
+	stores := d.Get("store").([]interface{})
+	for _, store := range stores {
+		i := store.(map[string]interface{})
+		properties := i["property"].([]interface{})
+		updateStoreArgs := &keyfactor.UpdateStoreFctArgs{
+			Id: i["keyfactor_id"].(string),
+			CreateStoreFctArgs: keyfactor.CreateStoreFctArgs{
+				ContainerId:           intToPointer(i["container_id"].(int)),
+				ClientMachine:         i["client_machine"].(string),
+				StorePath:             i["store_path"].(string),
+				CertStoreType:         i["cert_store_type"].(int),
+				Approved:              boolToPointer(i["approved"].(bool)),
+				CreateIfMissing:       boolToPointer(i["create_if_missing"].(bool)),
+				Properties:            interfaceArrayToStringTuple(properties),
+				AgentId:               i["agent_id"].(string),
+				AgentAssigned:         boolToPointer(i["agent_assigned"].(bool)),
+				ContainerName:         stringToPointer(i["container_name"].(string)),
+				InventorySchedule:     createInventorySchedule(i["inventory_schedule"].([]interface{})),
+				SetNewPasswordAllowed: boolToPointer(i["set_new_password_allowed"].(bool)),
+				Password:              createPasswordConfig(i["password"].([]interface{})),
+			},
+		}
+
+		_, err := kfClient.UpdateStore(updateStoreArgs)
+		if err != nil {
+			resourceStoreRead(ctx, d, m)
+			return diag.FromErr(err)
+		}
+
+		// Call read function to update schema with new state
+		return resourceStoreRead(ctx, d, m)
+	}
+
+	return diags
 }
 
 func resourceStoreDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	kfClientData := m.(*keyfactor.Client)
+	kfClient := m.(*keyfactor.Client)
 
 	log.Println("[INFO] Deleting certificate resource")
 
@@ -397,7 +442,7 @@ func resourceStoreDelete(_ context.Context, d *schema.ResourceData, m interface{
 		id := i["keyfactor_id"].(string)
 		log.Printf("[INFO] Deleting certificate store with ID %s in Keyfactor", id)
 
-		err := kfClientData.DeleteCertificateStore(id)
+		err := kfClient.DeleteCertificateStore(id)
 		if err != nil {
 			return diag.FromErr(err)
 		}

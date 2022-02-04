@@ -103,7 +103,6 @@ Optional:
 
 - **agent_assigned** (Boolean) Bool indicating if there is an orchestrator assigned to the new certificate store
 - **approved** (Boolean) Bool that indicates the approval status of store created. Default is true, omit if unsure
-- **cert_store_inventory_job_id** (String) GUID identifying the inventory job for the certificate store. Null if inventory is not configured
 - **container_id** (Number) Container identifier of the store's associated certificate store container.
 - **container_name** (String) Name of certificate store's associated container, if applicable
 - **create_if_missing** (Boolean) Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure

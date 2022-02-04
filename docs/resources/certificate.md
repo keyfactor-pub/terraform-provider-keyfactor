@@ -86,12 +86,12 @@ this functionality as a separate resource.
 
 Required:
 
+- **cert_template** (String) Short name of certificate template to be deployed
+- **certificate_authority** (String) Name of certificate authority to deploy certificate with Ex: Example Company CA 1
 - **subject** (Block List, Min: 1, Max: 1) Certificate subject (see [below for nested schema](#nestedblock--certificate--subject))
 
 Optional:
 
-- **cert_template** (String) Short name of certificate template to be deployed
-- **certificate_authority** (String) Name of certificate authority to deploy certificate with Ex: Example Company CA 1
 - **collection_id** (Number) Collection identifier used to validate user permissions (if service account has global permissions, this is not needed)
 - **csr** (String) Base-64 encoded certificate signing request (CSR)
 - **deployment** (Block List, Max: 1) PFX certificate deployment options (certificate format must be STORE) (see [below for nested schema](#nestedblock--certificate--deployment))
@@ -105,7 +105,6 @@ Read-Only:
 - **issuer_dn** (String) Issuer distinguished name that signed the certificate
 - **keyfactor_id** (Number) Keyfactor certificate ID
 - **keyfactor_request_id** (Number) Keyfactor request ID necessary for deploying certificate
-- **pkcs12** (String) PKCS#12 formatted certificate
 - **serial_number** (String) Serial number of newly enrolled certificate
 - **thumbprint** (String) Thumbprint of newly enrolled certificate
 

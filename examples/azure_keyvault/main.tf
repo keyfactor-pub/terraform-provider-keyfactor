@@ -19,7 +19,7 @@ resource "keyfactor_store" "AKV1" {
   store {
     client_machine  = "akv_demo"
     store_path      = "https://companykeyvault.vault.azure.net/"
-    agent_id = "keyfactorOrchestratorAgentID"
+    agent_id        = "keyfactorOrchestratorAgentID"
     cert_store_type = 106
     property {
       name  = "TenantID"

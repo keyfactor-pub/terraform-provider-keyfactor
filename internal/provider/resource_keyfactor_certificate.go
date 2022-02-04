@@ -203,11 +203,6 @@ func resourceCertificate() *schema.Resource {
 							Computed:    true,
 							Description: "PEM formatted certificate",
 						},
-						"p7b": {
-							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "P7B formatted certificate",
-						},
 					},
 				},
 			},
@@ -422,12 +417,8 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	err, p7b := downloadCertificate(certificateData.Id, kfClient, "P7B")
-	if err != nil {
-		return diag.FromErr(err)
-	}
 
-	certificateItems := flattenCertificateItems(certificateData, kfClient, pem, p7b, password, metadata) // Set schema
+	certificateItems := flattenCertificateItems(certificateData, kfClient, pem, password, metadata) // Set schema
 	if err := d.Set("certificate", certificateItems); err != nil {
 		return diag.FromErr(err)
 	}
@@ -435,7 +426,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	return diags
 }
 
-func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, p7b string, password string, oldMetadata []interface{}) []interface{} {
+func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, password string, oldMetadata []interface{}) []interface{} {
 	if certificateContext != nil {
 		temp := make([]interface{}, 1, 1)
 		data := make(map[string]interface{})
@@ -462,7 +453,6 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 
 		// Schema set by passed in values
 		data["certificate_pem"] = pem
-		data["p7b"] = p7b
 		data["key_password"] = password
 
 		if len(certificateContext.Locations) > 0 {

@@ -18,6 +18,8 @@ import (
 // can be customized.
 //go:generate go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs
 
+// To run these tools, run 'go generate'
+
 func main() {
 	var debugMode bool
 	flag.BoolVar(&debugMode, "debug", false, "set to true to run the provider with support for debuggers like delve")

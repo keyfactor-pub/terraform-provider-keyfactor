@@ -1,4 +1,4 @@
-package provider
+package keyfactor
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -102,19 +103,34 @@ func resourceCertificate() *schema.Resource {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "List of IPv4 addresses to use as subjects of the certificate",
-										Elem:        &schema.Schema{Type: schema.TypeString},
+										DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+											// For some reason Terraform detects this particular function as having drift; this function
+											// gives us a definitive answer.
+											return !d.HasChange(k)
+										},
+										Elem: &schema.Schema{Type: schema.TypeString},
 									},
 									"san_uri": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "List of IPv6 addresses to use as subjects of the certificate",
-										Elem:        &schema.Schema{Type: schema.TypeString},
+										DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+											// For some reason Terraform detects this particular function as having drift; this function
+											// gives us a definitive answer.
+											return !d.HasChange(k)
+										},
+										Elem: &schema.Schema{Type: schema.TypeString},
 									},
 									"san_dns": {
 										Type:        schema.TypeList,
 										Optional:    true,
 										Description: "List of DNS names to use as subjects of the certificate",
-										Elem:        &schema.Schema{Type: schema.TypeString},
+										DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+											// For some reason Terraform detects this particular function as having drift; this function
+											// gives us a definitive answer.
+											return !d.HasChange(k)
+										},
+										Elem: &schema.Schema{Type: schema.TypeString},
 									},
 								},
 							},
@@ -353,10 +369,11 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 						Detail: "Running Terraform Plan will likely say that deployment infrastructure from .tf is" +
 							"new, and requires Terraform apply to update. Give it a few minutes before running Apply.",
 					})
+					// todo dont go past this step until the certificate is deployed
+					time.Sleep(10 * time.Second)
 				}
 			}
-
-			resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
+			return resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 		}
 	}
 	return diags
@@ -535,7 +552,7 @@ func flattenDeploymentItems(locations []keyfactor.CertificateLocations) []interf
 }
 
 func flattenSANs(sans []keyfactor.SubjectAltNameElements) []interface{} {
-	if sans != nil {
+	if len(sans) > 0 {
 		sanInterface := make(map[string]interface{})
 		var sanIP4Array []interface{}
 		var sanDNSArray []interface{}
@@ -631,8 +648,59 @@ func downloadCertificate(id int, kfClient *keyfactor.Client, format string) (err
 }
 
 func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+	var diags diag.Diagnostics
+	kfClient := m.(*keyfactor.Client)
 
-	return resourceCertificateRead(ctx, d, m)
+	if metadataHasChange(d) == true {
+		certificates := d.Get("certificate").([]interface{})
+
+		for _, certificate := range certificates {
+			i := certificate.(map[string]interface{})
+			metadata := i["metadata"].([]interface{})
+
+			args := &keyfactor.UpdateMetadataArgs{
+				CertID:              i["keyfactor_id"].(int),
+				CertificateMetadata: interfaceArrayToStringTuple(metadata),
+				Metadata:            nil,
+				CollectionId:        0,
+			}
+
+			err := kfClient.UpdateMetadata(args)
+			if err != nil {
+				return diag.FromErr(err)
+			}
+		}
+	} else {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Warning,
+			Summary:  "Failed to update keyfactor_certificate configuration.",
+			Detail: "The only supported update field is Metadata. X.509 certificate attributes cannot be changed " +
+				"after enrollment, please create a new keyfactor_certificate resource block.",
+			AttributePath: nil,
+		})
+	}
+	resourceCertificateRead(ctx, d, m)
+	return diags
+}
+
+func metadataHasChange(d *schema.ResourceData) bool {
+	metadataRootSearchTerm := "certificate.0.metadata"
+	// Most obvious change to detect is the number of metadata schema blocks that exist.
+	if d.HasChange(fmt.Sprintf("%s.#", metadataRootSearchTerm)) == true {
+		return true
+	}
+
+	// Next, for each name - value pair, attempt to detect a change.
+	metadataCount := d.Get(fmt.Sprintf("%s.#", metadataRootSearchTerm))
+	for i := 0; i < metadataCount.(int); i++ {
+		if d.HasChange(fmt.Sprintf("%s.%d.name", metadataRootSearchTerm, i)) {
+			return true
+		} else if d.HasChange(fmt.Sprintf("%s.%d.value", metadataRootSearchTerm, i)) {
+			return true
+		}
+	}
+	// If we got this far, it's safe to assume that we didn't experience a change.
+	return false
 }
 
 func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

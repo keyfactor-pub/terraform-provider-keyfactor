@@ -1,4 +1,4 @@
-package provider
+package keyfactor
 
 import (
 	"context"
@@ -433,7 +433,7 @@ func resourceStoreDelete(_ context.Context, d *schema.ResourceData, m interface{
 	var diags diag.Diagnostics
 	kfClient := m.(*keyfactor.Client)
 
-	log.Println("[INFO] Deleting certificate resource")
+	log.Println("[INFO] Deleting store resource")
 
 	stores := d.Get("store").([]interface{})
 

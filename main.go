@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/Keyfactor/terraform-provider-keyfactor/internal/keyfactor"
 	"log"
 
-	"github.com/Keyfactor/terraform-provider-keyfactor/internal/provider"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/plugin"
 )
@@ -27,7 +27,7 @@ func main() {
 
 	opts := &plugin.ServeOpts{
 		ProviderFunc: func() *schema.Provider {
-			return provider.Provider()
+			return keyfactor.Provider()
 		},
 	}
 

@@ -4,7 +4,7 @@ NAMESPACE=keyfactordev
 NAME=keyfactor
 BINARY=terraform-provider-${NAME}
 VERSION=1.0.1
-OS_ARCH=linux_amd64
+OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 
 default: install
 

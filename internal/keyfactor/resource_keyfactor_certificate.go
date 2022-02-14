@@ -39,7 +39,7 @@ func resourceCertificate() *schema.Resource {
 						"subject": {
 							Type:        schema.TypeList,
 							MaxItems:    1,
-							Required:    true,
+							Optional:    true,
 							Description: "Certificate subject",
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
@@ -234,8 +234,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 
 	for _, certificate := range certificates {
 		i := certificate.(map[string]interface{})
-		subject := i["subject"].([]interface{})[0].(map[string]interface{}) // Extract subject data from schema
-		sans := i["sans"].([]interface{})                                   // Extract SANs from schema
+		sans := i["sans"].([]interface{}) // Extract SANs from schema
 		metadata := i["metadata"].([]interface{})
 
 		var deploy = false
@@ -248,8 +247,8 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 				CSR:                  i["csr"].(string),
 				CertificateAuthority: i["certificate_authority"].(string),
 				Template:             i["cert_template"].(string),
-				IncludeChain:         i["include_chain"].(bool),
-				CertFormat:           "STORE", // Retrieve certificate in READ
+				IncludeChain:         true,
+				CertFormat:           "PEM", // Retrieve certificate in READ
 				CertificateSANs:      getSans(sans),
 				CertificateMetadata:  interfaceArrayToStringTuple(metadata),
 			}
@@ -264,6 +263,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 
 			resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 		} else {
+			subject := i["subject"].([]interface{})[0].(map[string]interface{}) // Extract subject data from schema
 			PFXArgs := &keyfactor.EnrollPFXFctArgs{
 				CustomFriendlyName:          "Terraform",
 				KeyPassword:                 i["key_password"].(string),
@@ -428,6 +428,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	schemaState := d.Get("certificate").([]interface{})
 	password := schemaState[0].(map[string]interface{})["key_password"].(string)
 	metadata := schemaState[0].(map[string]interface{})["metadata"].([]interface{})
+	csr := schemaState[0].(map[string]interface{})["csr"].(string)
 
 	// Download and assign certificates to proper location
 	err, pem := downloadCertificate(certificateData.Id, kfClient, "PEM")
@@ -435,7 +436,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 		return diag.FromErr(err)
 	}
 
-	certificateItems := flattenCertificateItems(certificateData, kfClient, pem, password, metadata) // Set schema
+	certificateItems := flattenCertificateItems(certificateData, kfClient, pem, password, metadata, csr) // Set schema
 	if err := d.Set("certificate", certificateItems); err != nil {
 		return diag.FromErr(err)
 	}
@@ -443,7 +444,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	return diags
 }
 
-func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, password string, oldMetadata []interface{}) []interface{} {
+func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, password string, oldMetadata []interface{}, csr string) []interface{} {
 	if certificateContext != nil {
 		temp := make([]interface{}, 1, 1)
 		data := make(map[string]interface{})
@@ -466,11 +467,19 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 		// Assign schema that require flattening
 		data["sans"] = flattenSANs(certificateContext.SubjectAltNameElements)
 		data["metadata"] = flattenMetadata(certificateContext.Metadata, oldMetadata)
-		data["subject"] = flattenSubject(certificateContext.IssuedDN)
+		// Subject should only be used if enroll PFX was used.
+		if csr == "" {
+			data["subject"] = flattenSubject(certificateContext.IssuedDN)
+		}
 
 		// Schema set by passed in values
 		data["certificate_pem"] = pem
-		data["key_password"] = password
+		if password != "" {
+			data["key_password"] = password
+		}
+		if csr != "" {
+			data["csr"] = csr
+		}
 
 		if len(certificateContext.Locations) > 0 {
 			data["deployment"] = flattenDeploymentItems(certificateContext.Locations)

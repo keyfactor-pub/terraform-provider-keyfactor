@@ -51,11 +51,11 @@ type InventoryOnce struct {
 
 // ReEnrollmnentConfig configures the re-enrollment job for a created certificate.
 type ReEnrollmnentConfig struct {
-	Data               bool          `json:"Data"`
-	AgentId            string        `json:"AgentId"`
-	Message            string        `json:"Message"`
-	JobProperties      []interface{} `json:"JobProperties"`
-	CustomAliasAllowed int           `json:"CustomAliasAllowed"`
+	Data               bool   `json:"Data"`
+	AgentId            string `json:"AgentId"`
+	Message            string `json:"Message"`
+	JobProperties      string `json:"JobProperties"`
+	CustomAliasAllowed int    `json:"CustomAliasAllowed"`
 }
 
 // StorePasswordConfig configures the password field for a new certificate store.

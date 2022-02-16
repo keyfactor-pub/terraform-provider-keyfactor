@@ -1,12 +1,12 @@
 # terraform-provider-keyfactor
-Terraform provider that manages Keyfactor Command API
+Terraform provider based on the Keyfactor Go Utility to instantiate state in Keyfactor Command.
 
 ## Configure Makefile
 As of now, the Makefile only works for Unix based operating systems. If running on Windows, the ```--debug``` flag can
 be passed to the ```go build``` call which will start a debug server. For Unix architectures, you _must_ specify
 your operating system (IE darwin, linux, etc.) and hardware architecture (IE amd64, arm64, etc.).
 
-## Building the Keyfactor Provider
+## Building the Keyfactor Provider from Source
 
 1. Define the ```terraform-provider-keyfactor/``` directory as the root of the module
     ```bash
@@ -31,6 +31,45 @@ included with the repository requires that the ```keyfactor-go-client``` and ```
    * The ```install``` command builds the module, creates a directory inside ```~/.terraform.d/plugins/```, and moves
      the executable to it. Terraform uses the directory structure created by ```make install``` to locate the
      provider during initialization.
+   * If using the ```install``` option, configure the provider configuration source as shown below:
+
+    ```terraform
+    terraform {
+      required_providers {
+        keyfactor = {
+          version = "~> 1.0.0"
+          source  = "keyfactor.com/keyfactordev/keyfactor"
+        }
+      }
+    }
+    ```
+
+## Running Acceptance Tests
+The Terraform Acceptance tests can be run using 
+```bash
+make testacc
+```
+or 
+```go 
+go test github.com/Keyfactor/terraform-provider-keyfactor/internal/keyfactor
+```
+Note that the following environment variables must exist regardless of the test case:
+* ```KEYFACTOR_USERNAME```
+* ```KEYFACTOR_PASSWORD```
+* ```KEYFACTOR_HOSTNAME```
+
+The following environment variables must exist to run acceptance tests for the Certificate resource:
+* ```KEYFACTOR_CERT_TEMPLATE```
+* ```KEYFACTOR_CERTIFICATE_AUTHORITY```
+* ```KEYFACTOR_TEST_METADATA_FIELD```
+
+To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_CERTIFICATE_TESTS=True```.
+
+The following environment variables must exist to run acceptance tests for the Store resource:
+* ```KEYFACTOR_CLIENT_MACHINE```
+* ```KEYFACTOR_ORCHESTRATOR_AGENT_ID```
+
+To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_STORE_TESTS=True```.
 
 ## Referencing private go repos in import() statement
 * The best way to clone private repositories in the import statement is to use SSH. Create an SSH key, import the private 

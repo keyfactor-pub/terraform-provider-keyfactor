@@ -14,10 +14,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 )
 
 func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
+	skipStore := testAccKeyfactorCertificateCheckSkip()
+	if skipStore {
+		t.Skip("Skipping certificate acceptance tests (KEYFACTOR_SKIP_CERTIFICATE_TESTS=true)")
+	}
+
 	template, cA, metaField := testAccKeyfactorCertificateGetConfig(t)
 
 	cN := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
@@ -75,6 +81,11 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 }
 
 func TestAccKeyfactorCertificate_BasicCsr(t *testing.T) {
+	skipStore := testAccKeyfactorCertificateCheckSkip()
+	if skipStore {
+		t.Skip("Skipping certificate acceptance tests (KEYFACTOR_SKIP_CERTIFICATE_TESTS=true)")
+	}
+
 	template, cA, metaField := testAccKeyfactorCertificateGetConfig(t)
 
 	cN := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
@@ -127,6 +138,11 @@ func TestAccKeyfactorCertificate_BasicCsr(t *testing.T) {
 }
 
 func TestAccKeyfactorCertificate_ExtraPFX(t *testing.T) {
+	skipStore := testAccKeyfactorCertificateCheckSkip()
+	if skipStore {
+		t.Skip("Skipping certificate acceptance tests (KEYFACTOR_SKIP_CERTIFICATE_TESTS=true)")
+	}
+
 	template, cA, metaField := testAccKeyfactorCertificateGetConfig(t)
 	cn := fmt.Sprintf("tf-acc-test-%s", acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum))
 	o := "coolcompany"
@@ -208,14 +224,26 @@ func TestAccKeyfactorCertificate_ExtraPFX(t *testing.T) {
 	})
 }
 
+func testAccKeyfactorCertificateCheckSkip() bool {
+	skipStoreTests := false
+	if temp := os.Getenv("KEYFACTOR_SKIP_CERTIFICATE_TESTS"); temp != "" {
+		if strings.ToLower(temp) == "true" {
+			skipStoreTests = true
+		}
+	}
+	return skipStoreTests
+}
+
 func testAccKeyfactorCertificateGetConfig(t *testing.T) (string, string, string) {
 	var template, ca, metaField1 string
 	if template = os.Getenv("KEYFACTOR_CERT_TEMPLATE"); template == "" {
 		t.Log("Note: Terraform Certificate Acceptance tests attempt to enroll certificates based on a certificate " +
 			"template. Ensure that this is supported by Keyfactor Command")
+		t.Log("Set an environment variable for KEYFACTOR_SKIP_CERTIFICATE_TESTS to 'true' to skip Certificate resource acceptance tests")
 		t.Fatal("KEYFACTOR_CERT_TEMPLATE must be set to perform certificate acceptance test. (EX 'WebServer1y')")
 	}
 	if ca = os.Getenv("KEYFACTOR_CERTIFICATE_AUTHORITY"); ca == "" {
+		t.Log("Set an environment variable for KEYFACTOR_SKIP_CERTIFICATE_TESTS to 'true' to skip Certificate resource acceptance tests")
 		t.Fatal("KEYFACTOR_CERTIFICATE_AUTHORITY must be set to perform certificate acceptance test" +
 			" (EX '<host>\\\\<logical>')")
 	}
@@ -223,6 +251,7 @@ func testAccKeyfactorCertificateGetConfig(t *testing.T) (string, string, string)
 		t.Log("Note: Terraform Certificate Acceptance tests create and update certificate metadata. Metadata " +
 			"fields depend on the specific Keyfactor instance, populate this variable with the name of one Metadata " +
 			"field")
+		t.Log("Set an environment variable for KEYFACTOR_SKIP_CERTIFICATE_TESTS to 'true' to skip Certificate resource acceptance tests")
 		t.Fatal("KEYFACTOR_TEST_METADATA_FIELD must be set to perform certificate acceptance test. (EX 'ContainerName')")
 	}
 

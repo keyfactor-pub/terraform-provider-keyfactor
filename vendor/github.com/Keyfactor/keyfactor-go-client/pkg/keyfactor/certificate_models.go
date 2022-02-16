@@ -150,15 +150,6 @@ type downloadCertificateBody struct {
 	IncludeChain bool
 }
 
-// revokeCertBody is the API POST request body for PFX enrollment (RevokeCert).
-type revokeCertBody struct {
-	CertificateIds []int  `json:"CertificateIds"`
-	Reason         int    `json:"Reason"`
-	Comment        string `json:"Comment"`
-	EffectiveDate  string `json:"EffectiveDate"`
-	CollectionId   int    `json:"CollectionId,omitempty"`
-}
-
 // EnrollResponse is the outer certificate enrollment response. When Enroll functions are called, the certificates are
 // placed inside the Certificates element, and certificate information is placed inside CertificateInformation
 type EnrollResponse struct {

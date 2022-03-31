@@ -115,6 +115,7 @@ func testAccCheckKeyfactorStoreDestroy(s *terraform.State) error {
 		_, err := conn.GetCertificateStoreByID(rs.Primary.ID)
 		if err != nil {
 			// Should return an error if the cert doesn't exist, but let's analyze the error first to be sure
+			// todo analyze the error
 			exists = false
 			break
 

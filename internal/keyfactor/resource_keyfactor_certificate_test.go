@@ -37,7 +37,7 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 		CheckDestroy:      testAccCheckKeyfactorCertificateDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccCheckKeyfactorCertificate_BasicPFX(cN, keyPassword, cA, template),
+				Config: testAccCheckKeyfactorCertificateBasicPFX(cN, keyPassword, cA, template),
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
@@ -55,7 +55,7 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 				),
 			},
 			{
-				Config: testAccCheckKeyfactorCertificate_ModifiedPFX(cN, keyPassword, cA, template, metaField, meta1),
+				Config: testAccCheckKeyfactorCertificateModifiedPFX(cN, keyPassword, cA, template, metaField, meta1),
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
@@ -99,7 +99,7 @@ func TestAccKeyfactorCertificate_BasicCsr(t *testing.T) {
 		CheckDestroy:      testAccCheckKeyfactorCertificateDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccCheckKeyfactorCertificate_BasicCSR(csr, cA, template),
+				Config: testAccCheckKeyfactorCertificateBasicCSR(csr, cA, template),
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
@@ -115,7 +115,7 @@ func TestAccKeyfactorCertificate_BasicCsr(t *testing.T) {
 				),
 			},
 			{
-				Config: testAccCheckKeyfactorCertificate_ModifiedCSR(cN, cA, template, metaField, meta1),
+				Config: testAccCheckKeyfactorCertificateModifiedCSR(cN, cA, template, metaField, meta1),
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
@@ -168,8 +168,9 @@ func TestAccKeyfactorCertificate_ExtraPFX(t *testing.T) {
 		CheckDestroy:      testAccCheckKeyfactorCertificateDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccCheckKeyfactorCertificate_ExtraPFX(cn, o, l, c, ou, s, ip4, dns, uri, keyPassword, cA, template, metaField, meta1),
+				Config: testAccCheckKeyfactorCertificateExtraPFX(cn, o, l, c, ou, s, ip4, dns, uri, keyPassword, cA, template, metaField, meta1),
 				Check: resource.ComposeTestCheckFunc(
+					// todo this should check if DNS was entered properly
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_common_name", cn),
@@ -194,9 +195,8 @@ func TestAccKeyfactorCertificate_ExtraPFX(t *testing.T) {
 				),
 			},
 			{
-				Config: testAccCheckKeyfactorCertificate_ExtraPFX(cn, o, l, c, ou, s, ip4, dns, uri, keyPassword, cA, template, metaField, meta2),
+				Config: testAccCheckKeyfactorCertificateExtraPFX(cn, o, l, c, ou, s, ip4, dns, uri, keyPassword, cA, template, metaField, meta2),
 				Check: resource.ComposeTestCheckFunc(
-					// Check inputted values
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_common_name", cn),
@@ -225,13 +225,13 @@ func TestAccKeyfactorCertificate_ExtraPFX(t *testing.T) {
 }
 
 func testAccKeyfactorCertificateCheckSkip() bool {
-	skipStoreTests := false
+	skipCertTests := false
 	if temp := os.Getenv("KEYFACTOR_SKIP_CERTIFICATE_TESTS"); temp != "" {
 		if strings.ToLower(temp) == "true" {
-			skipStoreTests = true
+			skipCertTests = true
 		}
 	}
-	return skipStoreTests
+	return skipCertTests
 }
 
 func testAccKeyfactorCertificateGetConfig(t *testing.T) (string, string, string) {
@@ -328,7 +328,7 @@ func testAccCheckKeyfactorCertificateExists(name string) resource.TestCheckFunc 
 	}
 }
 
-func testAccCheckKeyfactorCertificate_BasicPFX(commonName string, password string, ca string, template string) string {
+func testAccCheckKeyfactorCertificateBasicPFX(commonName string, password string, ca string, template string) string {
 	// Return the minimum (basic) required fields to enroll PRX certificate
 	return fmt.Sprintf(`
 	resource "keyfactor_certificate" "test" {
@@ -344,7 +344,7 @@ func testAccCheckKeyfactorCertificate_BasicPFX(commonName string, password strin
 	`, commonName, password, ca, template)
 }
 
-func testAccCheckKeyfactorCertificate_ModifiedPFX(commonName string, password string, ca string, template string, metaName string, metaValue string) string {
+func testAccCheckKeyfactorCertificateModifiedPFX(commonName string, password string, ca string, template string, metaName string, metaValue string) string {
 	// Return the minimum (basic) required fields to enroll PRX certificate plus a subject field.
 	return fmt.Sprintf(`
 	resource "keyfactor_certificate" "test" {
@@ -364,7 +364,7 @@ func testAccCheckKeyfactorCertificate_ModifiedPFX(commonName string, password st
 	`, commonName, password, ca, template, metaName, metaValue)
 }
 
-func testAccCheckKeyfactorCertificate_BasicCSR(csr string, ca string, template string) string {
+func testAccCheckKeyfactorCertificateBasicCSR(csr string, ca string, template string) string {
 	// Return the minimum (basic) required fields to enroll PRX certificate
 	return fmt.Sprintf(`
 	resource "keyfactor_certificate" "test" {
@@ -379,7 +379,7 @@ func testAccCheckKeyfactorCertificate_BasicCSR(csr string, ca string, template s
 	`, csr, ca, template)
 }
 
-func testAccCheckKeyfactorCertificate_ModifiedCSR(csr string, ca string, template string, metaName string, metaValue string) string {
+func testAccCheckKeyfactorCertificateModifiedCSR(csr string, ca string, template string, metaName string, metaValue string) string {
 	// Return the minimum (basic) required fields to enroll PRX certificate plus a subject field.
 	return fmt.Sprintf(`
 	resource "keyfactor_certificate" "test" {
@@ -398,7 +398,7 @@ func testAccCheckKeyfactorCertificate_ModifiedCSR(csr string, ca string, templat
 	`, csr, ca, template, metaName, metaValue)
 }
 
-func testAccCheckKeyfactorCertificate_ExtraPFX(cn string, o string, l string, c string, ou string, s string, ip4 string,
+func testAccCheckKeyfactorCertificateExtraPFX(cn string, o string, l string, c string, ou string, s string, ip4 string,
 	dns string, uri string, password string, ca string, template string, metaName string, metaValue string) string {
 	// Return all supported fields to enroll PRX certificate
 	return fmt.Sprintf(`resource "keyfactor_certificate" "test" {

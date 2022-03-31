@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -62,7 +63,7 @@ func loginToKeyfactor(auth *AuthConfig) (*Client, error) {
 
 	keyfactorAPIStruct := &request{
 		Method:   "GET",
-		Endpoint: "/Status/Endpoints",
+		Endpoint: "KeyfactorAPI/Status/Endpoints",
 		Headers:  headers,
 	}
 
@@ -72,10 +73,28 @@ func loginToKeyfactor(auth *AuthConfig) (*Client, error) {
 		basicAuthString: buildBasicAuthString(auth),
 	}
 
-	_, err := c.sendRequest(keyfactorAPIStruct)
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return nil, err
 	}
+
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusNotFound {
+			stringMessage := "404 - file or directory not found"
+			log.Printf("[ERROR] Call to %s returned status %d. %s", auth.Hostname, resp.StatusCode, stringMessage)
+			return nil, errors.New(stringMessage)
+		}
+		var errorMessage interface{} // Decode JSON body to handle issue
+		err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("[ERROR] Call to %s returned status %d. %s", auth.Hostname, resp.StatusCode, errorMessage)
+		stringMessage := fmt.Sprintf("%v", errorMessage)
+		return nil, errors.New(stringMessage)
+	}
+
+	log.Printf("[INFO] Successfully logged into Keyfactor at host %s", c.hostname)
 
 	return c, nil
 }
@@ -128,6 +147,12 @@ func (c *Client) sendRequest(request *request) (*http.Response, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		stringMessage := "404 - file or directory not found"
+		log.Printf("[ERROR] Call to %s returned status %d. %s", keyfactorPath, resp.StatusCode, stringMessage)
+		return nil, errors.New(stringMessage)
 	}
 
 	return resp, nil

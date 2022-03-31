@@ -1,5 +1,9 @@
 package keyfactor
 
+/*
+ * IMPORTANT NOTICE - Not yet implemented.
+ */
+
 import (
 	"context"
 	"fmt"

@@ -89,8 +89,10 @@ func Provider() *schema.Provider {
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
-			"keyfactor_certificate": resourceCertificate(),
-			"keyfactor_store":       resourceStore(),
+			"keyfactor_certificate":       resourceCertificate(),
+			"keyfactor_store":             resourceStore(),
+			"keyfactor_security_identity": resourceSecurityIdentity(),
+			"keyfactor_security_role":     resourceSecurityRole(),
 		},
 		DataSourcesMap:       map[string]*schema.Resource{},
 		ConfigureContextFunc: providerConfigure,

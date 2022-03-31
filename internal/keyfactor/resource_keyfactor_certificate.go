@@ -2,6 +2,7 @@ package keyfactor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -258,7 +259,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 				return diag.FromErr(err)
 			}
 
-			// Set resource ID to tell Terraform that operation was successful*
+			// Set resource ID to tell Terraform that operation was successful
 			d.SetId(strconv.Itoa(enrollResponse.CertificateInformation.KeyfactorID))
 
 			resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
@@ -436,7 +437,10 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 		return diag.FromErr(err)
 	}
 
-	certificateItems := flattenCertificateItems(certificateData, kfClient, pem, password, metadata, csr) // Set schema
+	certificateItems, err := flattenCertificateItems(certificateData, kfClient, pem, password, metadata, csr) // Set schema
+	if err != nil {
+		return diag.FromErr(err)
+	}
 	if err := d.Set("certificate", certificateItems); err != nil {
 		return diag.FromErr(err)
 	}
@@ -444,7 +448,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	return diags
 }
 
-func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, password string, oldMetadata []interface{}, csr string) []interface{} {
+func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, password string, oldMetadata []interface{}, csr string) ([]interface{}, error) {
 	if certificateContext != nil {
 		temp := make([]interface{}, 1, 1)
 		data := make(map[string]interface{})
@@ -459,7 +463,7 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 		// Assign non-computed schema
 		templates, err := kfClient.GetTemplate(certificateContext.TemplateId)
 		if err != nil {
-			return make([]interface{}, 0)
+			return make([]interface{}, 0), err
 		}
 		data["cert_template"] = templates.CommonName
 		data["certificate_authority"] = certificateContext.CertificateAuthorityName
@@ -486,9 +490,9 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 		}
 
 		temp[0] = data
-		return temp
+		return temp, nil
 	}
-	return make([]interface{}, 0)
+	return make([]interface{}, 0), errors.New("failed to flatten certificate context schema; context struct nil")
 }
 
 func flattenSubject(subject string) []interface{} {

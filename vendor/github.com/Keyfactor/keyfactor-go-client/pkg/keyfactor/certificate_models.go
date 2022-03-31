@@ -218,21 +218,6 @@ type GetCertificateResponse struct {
 	KeyRecoverable           bool                     `json:"KeyRecoverable"`
 }
 
-// GetTemplateResponse contains the response elements returned from the GetTemplate method.
-type GetTemplateResponse struct {
-	Id               int    `json:"Id,omitempty"`
-	CommonName       string `json:"CommonName,omitempty"`
-	TemplateName     string `json:"TemplateName,omitempty"`
-	Oid              string `json:"Oid,omitempty"`
-	KeySize          string `json:"KeySize,omitempty"`
-	KeyType          string `json:"KeyType,omitempty"`
-	ForestRoot       string `json:"ForestRoot,omitempty"`
-	FriendlyName     string `json:"FriendlyName,omitempty"`
-	KeyRetention     string `json:"KeyRetention,omitempty"`
-	KeyRetentionDays int    `json:"KeyRetentionDays,omitempty"`
-	KeyArchival      bool   `json:"KeyArchival,omitempty"`
-}
-
 // RecoverCertResponse contains the response elements returned from the RecoverCertificate method.
 type RecoverCertResponse struct {
 	PFX      string `json:"PFX"`

@@ -347,14 +347,15 @@ func resourceSecurityIdentityDelete(ctx context.Context, d *schema.ResourceData,
 
 	kfClient := m.(*keyfactor.Client)
 
-	securityIdentities := d.Get("security_identity").([]interface{})
-	for _, identity := range securityIdentities {
-		i := identity.(map[string]interface{})
+	id := d.Id()
+	identityId, err := strconv.Atoi(id)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 
-		err := kfClient.DeleteSecurityIdentity(i["id"].(int))
-		if err != nil {
-			return diag.FromErr(err)
-		}
+	err = kfClient.DeleteSecurityIdentity(identityId)
+	if err != nil {
+		return diag.FromErr(err)
 	}
 
 	return diags

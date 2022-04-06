@@ -17,7 +17,13 @@ func TestAccKeyfactorSecurityIdentityBasic(t *testing.T) {
 		t.Skip("Skipping security identity tests (KEYFACTOR_SKIP_IDENTITY_TESTS=true)")
 	}
 
-	accountName, roleId1, roleId2 := testAccKeyfactorSecurityIdentityGetConfig(t)
+	client, _, role1 := testAccGenerateKeyfactorRole(nil)
+	_, _, role2 := testAccGenerateKeyfactorRole(client)
+
+	roleId1 := strconv.Itoa(role1)
+	roleId2 := strconv.Itoa(role2)
+
+	accountName := testAccKeyfactorSecurityIdentityGetConfig(t)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:          func() { testAccPreCheck(t) },
@@ -81,6 +87,15 @@ func TestAccKeyfactorSecurityIdentityBasic(t *testing.T) {
 			},
 		},
 	})
+
+	err := testAccDeleteKeyfactorRole(client, role1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = testAccDeleteKeyfactorRole(client, role2)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func testAccCheckKeyfactorSecurityIdentityExists(name string) resource.TestCheckFunc {
@@ -122,10 +137,8 @@ func testAccCheckKeyfactorSecurityIdentityExists(name string) resource.TestCheck
 	}
 }
 
-func testAccKeyfactorSecurityIdentityGetConfig(t *testing.T) (string, string, string) {
+func testAccKeyfactorSecurityIdentityGetConfig(t *testing.T) string {
 	var accountName string
-	var roleId1 string
-	var roleId2 string
 	if accountName = os.Getenv("KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME"); accountName == "" {
 		t.Log("Note: Terraform Security Identity tests attempt to create a new identity based on an AD user or " +
 			"group. Please create a new user/group in AD for testing if one isn't already created.")
@@ -134,21 +147,7 @@ func testAccKeyfactorSecurityIdentityGetConfig(t *testing.T) (string, string, st
 		t.Fatal("KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME must be set to perform Security Identity acceptance test. " +
 			"(EX '<DOMAIN>\\\\<user or group name>')")
 	}
-	if roleId1 = os.Getenv("KEYFACTOR_SECURITY_IDENTITY_ROLEID1"); roleId1 == "" {
-		t.Log("Note: Terraform Security Identity tests attempt to add an identity to a Keyfactor security role.")
-		t.Log("Set an environment variable for KEYFACTOR_SKIP_IDENTITY_TESTS to 'true' to skip Security Identity " +
-			"resource acceptance tests")
-		t.Fatal("KEYFACTOR_SECURITY_IDENTITY_ROLEID1 must be set to perform Security Identity acceptance test. " +
-			"(EX '14'")
-	}
-	if roleId2 = os.Getenv("KEYFACTOR_SECURITY_IDENTITY_ROLEID2"); roleId2 == "" {
-		t.Log("Note: Terraform Security Identity tests attempt to add an identity to a Keyfactor security role.")
-		t.Log("Set an environment variable for KEYFACTOR_SKIP_IDENTITY_TESTS to 'true' to skip Security Identity " +
-			"resource acceptance tests")
-		t.Fatal("KEYFACTOR_SECURITY_IDENTITY_ROLEID2 must be set to perform Security Identity acceptance test. " +
-			"(EX '14'")
-	}
-	return accountName, roleId1, roleId2
+	return accountName
 }
 
 func testAccKeyfactorSecurityIdentityCheckSkip() bool {

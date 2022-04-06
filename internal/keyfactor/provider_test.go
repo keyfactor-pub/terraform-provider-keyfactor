@@ -2,6 +2,8 @@ package keyfactor
 
 import (
 	"context"
+	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"os"
 	"testing"
@@ -50,4 +52,43 @@ func testAccPreCheck(t *testing.T) {
 	if diags.HasError() {
 		t.Fatal(diags[0].Summary)
 	}
+}
+
+func testAccGenerateKeyfactorRole(conn *keyfactor.Client) (*keyfactor.Client, string, int) {
+	var client *keyfactor.Client
+	if conn == nil {
+		var err error
+		clientConfig := &keyfactor.AuthConfig{
+			Hostname: os.Getenv("KEYFACTOR_USERNAME"),
+			Username: os.Getenv("KEYFACTOR_PASSWORD"),
+			Password: os.Getenv("KEYFACTOR_HOSTNAME"),
+		}
+		client, err = keyfactor.NewKeyfactorClient(clientConfig)
+		if err != nil {
+			return nil, "", 0
+		}
+	} else {
+		client = conn
+	}
+
+	roleName := "terraform_acctest-" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
+	arg := &keyfactor.CreateSecurityRoleArg{
+		Name:        roleName,
+		Description: "Role generated to perform Terraform acceptance test. If this role exists, it can be deleted.",
+	}
+
+	role, err := client.CreateSecurityRole(arg)
+	if err != nil {
+		return nil, "", 0
+	}
+
+	return client, role.Name, role.Id
+}
+
+func testAccDeleteKeyfactorRole(client *keyfactor.Client, roleId int) error {
+	err := client.DeleteSecurityRole(roleId)
+	if err != nil {
+		return err
+	}
+	return nil
 }

@@ -2,11 +2,12 @@ package keyfactor
 
 import (
 	"context"
-	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
+	"math/rand"
+	"strconv"
 )
 
 /*
@@ -69,14 +70,10 @@ func resourceAttachRoleCreate(ctx context.Context, d *schema.ResourceData, m int
 		roleName := role["role_name"].(string)
 
 		// Add provided role to each of the certificate templates provided in configuration
-		templateIds := role["template_id_list"].([]interface{})
-		if len(templateIds) > 0 {
-			for _, templateId := range templateIds {
-				if err := addAllowedRequestorToTemplate(kfClient, roleName, templateId.(int)); err != nil {
-					resourceAttachRoleRead(ctx, d, m)
-					return diag.FromErr(err)
-				}
-			}
+		templateIds := role["template_id_list"].(*schema.Set)
+		err := setRoleAllowedRequestor(kfClient, roleName, templateIds)
+		if err != nil {
+			return diag.FromErr(err)
 		}
 
 		// Other role attachments happen should below
@@ -86,6 +83,48 @@ func resourceAttachRoleCreate(ctx context.Context, d *schema.ResourceData, m int
 	}
 
 	return diags
+}
+
+func setRoleAllowedRequestor(kfClient *keyfactor.Client, roleName string, templateSet *schema.Set) error {
+	templateList := templateSet.List()
+	// First thing to do is blindly attach the passed role as an allowed requestor to each of the template IDs passed in
+	// the Set.
+	if len(templateList) > 0 {
+		for _, template := range templateList {
+			err := addAllowedRequestorToTemplate(kfClient, roleName, template.(int))
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Then, build a list of all templates that the role is attached to as an allowed requester
+	err, roleAttachments := findTemplateRoleAttachments(kfClient, roleName)
+	if err != nil {
+		return err
+	}
+
+	// Finally, find the difference between templateSet and roleAttachments. Recall that Terraform acts as the primary
+	// manager of the role roleName, and Terraform is calling this function to explicitly set the allowed requesters.
+	list := make(map[string]struct{}, len(templateList))
+	for _, x := range templateList {
+		list[strconv.Itoa(x.(int))] = struct{}{}
+	}
+	var diff []int
+	for _, x := range roleAttachments {
+		if _, found := list[strconv.Itoa(x.(int))]; !found {
+			diff = append(diff, x.(int))
+		}
+	}
+
+	for template := range diff {
+		err = removeRoleFromTemplate(kfClient, roleName, template)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func addAllowedRequestorToTemplate(kfClient *keyfactor.Client, roleName string, templateId int) error {
@@ -129,7 +168,38 @@ func addAllowedRequestorToTemplate(kfClient *keyfactor.Client, roleName string, 
 	return nil
 }
 
-func removeRoleFromTemplate(kfClient *keyfactor.Client, roleId int, templateId int) error {
+func removeRoleFromTemplate(kfClient *keyfactor.Client, roleName string, templateId int) error {
+	log.Printf("[DEBUG] Removing Keyfactor role with ID %s from template with ID %d", roleName, templateId)
+	// First get info about template from Keyfactor
+	template, err := kfClient.GetTemplate(templateId)
+	if err != nil {
+		return err
+	}
+
+	// Rebuild allowed requester list without roleName
+	var newAllowedRequester []string
+	for _, name := range template.AllowedRequesters {
+		if name != roleName {
+			newAllowedRequester = append(newAllowedRequester, name)
+		}
+	}
+
+	// Fill required fields with information retrieved from the get request above
+	updateContext := &keyfactor.UpdateTemplateArg{
+		Id:                   template.Id,
+		CommonName:           template.CommonName,
+		TemplateName:         template.TemplateName,
+		Oid:                  template.Oid,
+		KeySize:              template.KeySize,
+		ForestRoot:           template.ForestRoot,
+		UseAllowedRequesters: boolToPointer(true),
+		AllowedRequesters:    &newAllowedRequester,
+	}
+
+	_, err = kfClient.UpdateTemplate(updateContext)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -159,7 +229,9 @@ func flattenAttachRoleSchema(roleName string, templateIds []interface{}) []inter
 	data := make(map[string]interface{})
 
 	data["role_name"] = roleName
-	data["template_id_list"] = templateIds
+
+	tempSet := schema.NewSet(func(i interface{}) int { return rand.Intn(999999999999) }, templateIds)
+	data["template_id_list"] = tempSet
 
 	temp[0] = data
 	return temp
@@ -202,14 +274,10 @@ func resourceAttachRoleUpdate(ctx context.Context, d *schema.ResourceData, m int
 		roleName := role["role_name"].(string)
 
 		// Add provided role to each of the certificate templates provided in configuration
-		templateIds := role["template_id_list"].([]interface{})
-		if len(templateIds) > 0 {
-			for _, templateId := range templateIds {
-				if err := addAllowedRequestorToTemplate(kfClient, roleName, templateId.(int)); err != nil {
-					resourceAttachRoleRead(ctx, d, m)
-					return diag.FromErr(err)
-				}
-			}
+		templateIds := role["template_id_list"].(*schema.Set)
+		err := setRoleAllowedRequestor(kfClient, roleName, templateIds)
+		if err != nil {
+			return diag.FromErr(err)
 		}
 	}
 
@@ -219,25 +287,19 @@ func resourceAttachRoleUpdate(ctx context.Context, d *schema.ResourceData, m int
 	return diags
 }
 
-func templateIdSchemaHasChange(d *schema.ResourceData) bool {
-	templateIdSearchTerm := "attach_security_role.0.template_id_list"
-
-	// Most obvious change to detect is the number of template ID schema blocks changed.
-	if d.HasChange(fmt.Sprintf("%s.#", templateIdSearchTerm)) == true {
-		return true
-	}
-
-	// Next, for each element, attempt to detect a change.
-	// templateId*
-
-	return false
-}
-
 func resourceAttachRoleDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
 	log.Println("[INFO] Deleting Attach Keyfactor Role resource")
+	kfClient := m.(*keyfactor.Client)
+	roleName := d.Id()
 
-	// kfClient := m.(*keyfactor.Client)
+	tempSet := schema.Set{F: func(i interface{}) int {
+		return rand.Intn(999999999999)
+	}}
+	err := setRoleAllowedRequestor(kfClient, roleName, &tempSet)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 
 	return diags
 }

@@ -16,93 +16,83 @@ func resourceSecurityRole() *schema.Resource {
 		UpdateContext: resourceSecurityRoleUpdate,
 		DeleteContext: resourceSecurityRoleDelete,
 		Schema: map[string]*schema.Schema{
-			"security_role": {
-				Type:     schema.TypeList,
-				MaxItems: 1,
-				Required: true,
+			"role_name": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "An string associated with a Keyfactor security role.",
+			},
+			"description": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "A string containing the description of the role in Keyfactor",
+			},
+			"identities": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: "A string containing the description of the role in Keyfactor",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"role_name": {
+						"account_name": {
 							Type:        schema.TypeString,
 							Required:    true,
-							Description: "An string associated with a Keyfactor security role.",
+							Description: "A string containing the account name for the security identity. For Active Directory user and groups, this will be in the form DOMAIN\\\\user or group name.",
 						},
-						"description": {
+						"id": {
+							Type:        schema.TypeInt,
+							Computed:    true,
+							Description: "A string containing the account name for the security identity. For Active Directory user and groups, this will be in the form DOMAIN\\\\user or group name.",
+						},
+						"identity_type": {
 							Type:        schema.TypeString,
-							Required:    true,
-							Description: "A string containing the description of the role in Keyfactor",
+							Computed:    true,
+							Description: "A string indicating the type of identity—User or Group.",
 						},
-						"identities": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "A string containing the description of the role in Keyfactor",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"account_name": {
-										Type:        schema.TypeString,
-										Required:    true,
-										Description: "A string containing the account name for the security identity. For Active Directory user and groups, this will be in the form DOMAIN\\\\user or group name.",
-									},
-									"id": {
-										Type:        schema.TypeInt,
-										Computed:    true,
-										Description: "A string containing the account name for the security identity. For Active Directory user and groups, this will be in the form DOMAIN\\\\user or group name.",
-									},
-									"identity_type": {
-										Type:        schema.TypeString,
-										Computed:    true,
-										Description: "A string indicating the type of identity—User or Group.",
-									},
-									"sid": {
-										Type:        schema.TypeString,
-										Computed:    true,
-										Description: "A string containing the security identifier from the source identity store (e.g. Active Directory) for the security identity.",
-									},
-								},
-							},
-						},
-						"permissions": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "An array containing the permissions assigned to the role in a list of Name:Value pairs",
-							Elem:        &schema.Schema{Type: schema.TypeString},
+						"sid": {
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: "A string containing the security identifier from the source identity store (e.g. Active Directory) for the security identity.",
 						},
 					},
 				},
+			},
+			"permissions": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: "An array containing the permissions assigned to the role in a list of Name:Value pairs",
+				Elem:        &schema.Schema{Type: schema.TypeString},
 			},
 		},
 	}
 }
 
 func resourceSecurityRoleCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
 	log.Println("[INFO] Creating Keyfactor Security Role resource")
 
 	kfClient := m.(*keyfactor.Client)
 
-	roles := d.Get("security_role").([]interface{})
-
-	for _, i := range roles {
-		role := i.(map[string]interface{})
-
-		createArg := &keyfactor.CreateSecurityRoleArg{
-			Name:        role["role_name"].(string),
-			Description: role["description"].(string),
-			Permissions: unpackPermissionInterface(role["permissions"].([]interface{})),
-			Identities:  unpackIdentityInterface(role["identities"].([]interface{})),
-		}
-
-		createResp, err := kfClient.CreateSecurityRole(createArg)
-		if err != nil {
-			resourceSecurityRoleRead(ctx, d, m)
-			return diag.FromErr(err)
-		}
-
-		// Set resource ID to tell Terraform that operation was successful
-		d.SetId(strconv.Itoa(createResp.Id))
+	createArg := &keyfactor.CreateSecurityRoleArg{
+		Name:        d.Get("role_name").(string),
+		Description: d.Get("description").(string),
 	}
-	resourceSecurityRoleRead(ctx, d, m)
-	return diags
+
+	if permission, ok := d.GetOk("permissions"); ok {
+		createArg.Permissions = unpackPermissionInterface(permission.([]interface{}))
+	}
+
+	if identity, ok := d.GetOk("identities"); ok {
+		createArg.Identities = unpackIdentityInterface(identity.([]interface{}))
+	}
+
+	createResp, err := kfClient.CreateSecurityRole(createArg)
+	if err != nil {
+		resourceSecurityRoleRead(ctx, d, m)
+		return diag.FromErr(err)
+	}
+
+	// Set resource ID to tell Terraform that operation was successful
+	d.SetId(strconv.Itoa(createResp.Id))
+
+	return resourceSecurityRoleRead(ctx, d, m)
 }
 
 func unpackPermissionInterface(permissions []interface{}) *[]string {
@@ -149,18 +139,20 @@ func resourceSecurityRoleRead(ctx context.Context, d *schema.ResourceData, m int
 		return diag.FromErr(err)
 	}
 
-	if err := d.Set("security_role", flattenSecurityRole(role)); err != nil {
-		return diag.FromErr(err)
+	newSchema := flattenSecurityRole(role)
+	for key, value := range newSchema {
+		err = d.Set(key, value)
+		if err != nil {
+			diags = append(diags, diag.FromErr(err)[0])
+		}
 	}
 
 	return diags
 }
 
-func flattenSecurityRole(roleContext *keyfactor.GetSecurityRolesResponse) []interface{} {
+func flattenSecurityRole(roleContext *keyfactor.GetSecurityRolesResponse) map[string]interface{} {
+	data := make(map[string]interface{})
 	if roleContext != nil {
-		temp := make([]interface{}, 1, 1)
-		data := make(map[string]interface{})
-
 		// Assign response data to associated schema
 		data["role_name"] = roleContext.Name
 		data["description"] = roleContext.Description
@@ -168,11 +160,8 @@ func flattenSecurityRole(roleContext *keyfactor.GetSecurityRolesResponse) []inte
 
 		// Assign schema that require flattening
 		data["identities"] = flattenSecurityRoleIdentities(roleContext.Identities)
-
-		temp[0] = data
-		return temp
 	}
-	return make([]interface{}, 0)
+	return data
 }
 
 func flattenSecurityRoleIdentities(identities []keyfactor.SecurityIdentity) []interface{} {
@@ -196,11 +185,9 @@ func flattenSecurityRoleIdentities(identities []keyfactor.SecurityIdentity) []in
 }
 
 func resourceSecurityRoleUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
 	log.Println("[INFO] Updating Keyfactor Security Role resource")
 
 	kfClient := m.(*keyfactor.Client)
-	roles := d.Get("security_role").([]interface{})
 
 	id := d.Id()
 	roleId, err := strconv.Atoi(id)
@@ -208,27 +195,29 @@ func resourceSecurityRoleUpdate(ctx context.Context, d *schema.ResourceData, m i
 		return diag.FromErr(err)
 	}
 
-	for _, i := range roles {
-		role := i.(map[string]interface{})
-
-		updateArg := &keyfactor.UpdatteSecurityRoleArg{
-			Id: roleId,
-			CreateSecurityRoleArg: keyfactor.CreateSecurityRoleArg{
-				Name:        role["role_name"].(string),
-				Description: role["description"].(string),
-				Permissions: unpackPermissionInterface(role["permissions"].([]interface{})),
-				Identities:  unpackIdentityInterface(role["identities"].([]interface{})),
-			},
-		}
-
-		_, err = kfClient.UpdateSecurityRole(updateArg)
-		if err != nil {
-			resourceSecurityRoleRead(ctx, d, m)
-			return diag.FromErr(err)
-		}
+	updateArg := &keyfactor.UpdatteSecurityRoleArg{
+		Id: roleId,
+		CreateSecurityRoleArg: keyfactor.CreateSecurityRoleArg{
+			Name:        d.Get("role_name").(string),
+			Description: d.Get("description").(string),
+		},
 	}
-	resourceSecurityRoleRead(ctx, d, m)
-	return diags
+
+	if permission, ok := d.GetOk("permissions"); ok {
+		updateArg.Permissions = unpackPermissionInterface(permission.([]interface{}))
+	}
+
+	if identity, ok := d.GetOk("identities"); ok {
+		updateArg.Identities = unpackIdentityInterface(identity.([]interface{}))
+	}
+
+	_, err = kfClient.UpdateSecurityRole(updateArg)
+	if err != nil {
+		resourceSecurityRoleRead(ctx, d, m)
+		return diag.FromErr(err)
+	}
+
+	return resourceSecurityRoleRead(ctx, d, m)
 }
 
 func resourceSecurityRoleDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

@@ -37,8 +37,8 @@ func TestAccKeyfactorSecurityRoleBasic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorSecurityRoleExists("keyfactor_security_role.test"),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.description", description),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "role_name", roleName),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "description", description),
 					// Check computed values
 					// jk there aren't any computed values for the basic test
 				),
@@ -49,17 +49,17 @@ func TestAccKeyfactorSecurityRoleBasic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorSecurityRoleExists("keyfactor_security_role.test"),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.description", description),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.identities.#", "1"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "security_role.0.identities.0.account_name"), // todo figure out how to fix escape character problems
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.permissions.#", "2"),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.permissions.0", permission1a),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.permissions.1", permission2a),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "role_name", roleName),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "description", description),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "identities.#", "1"),
+					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.account_name"), // todo figure out how to fix escape character problems
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.#", "2"),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.0", permission1a),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.1", permission2a),
 					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "security_role.0.identities.0.id"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "security_role.0.identities.0.identity_type"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "security_role.0.identities.0.sid"),
+					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.id"),
+					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.identity_type"),
+					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.sid"),
 				),
 			},
 			{
@@ -68,17 +68,17 @@ func TestAccKeyfactorSecurityRoleBasic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorSecurityRoleExists("keyfactor_security_role.test"),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.description", description),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.identities.#", "1"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "security_role.0.identities.0.account_name"), // todo figure out how to fix escape character problems
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.permissions.#", "2"),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.permissions.0", permission1b),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.permissions.1", permission2b),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "role_name", roleName),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "description", description),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "identities.#", "1"),
+					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.account_name"), // todo figure out how to fix escape character problems
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.#", "2"),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.0", permission1b),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.1", permission2b),
 					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "security_role.0.identities.0.id"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "security_role.0.identities.0.identity_type"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "security_role.0.identities.0.sid"),
+					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.id"),
+					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.identity_type"),
+					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.sid"),
 				),
 			},
 			{
@@ -87,8 +87,8 @@ func TestAccKeyfactorSecurityRoleBasic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorSecurityRoleExists("keyfactor_security_role.test"),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "security_role.0.description", description),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "role_name", roleName),
+					resource.TestCheckResourceAttr("keyfactor_security_role.test", "description", description),
 					// Check computed values
 					// jk there aren't any computed values for the basic test
 				),
@@ -191,10 +191,8 @@ func testAccCheckKeyfactorSecurityRoleExists(name string) resource.TestCheckFunc
 func testAccCheckKeyfactorSecurityRoleBasic(roleName string, roleDesc string) string {
 	return fmt.Sprintf(`
 	resource "keyfactor_security_role" "test" {
-		security_role {
-			role_name = "%s"
-			description = "%s"
-		}
+		role_name = "%s"
+		description = "%s"
 	}
 	`, roleName, roleDesc)
 }
@@ -202,14 +200,12 @@ func testAccCheckKeyfactorSecurityRoleBasic(roleName string, roleDesc string) st
 func testAccCheckKeyfactorSecurityRoleModified(roleName string, roleDesc string, accountName string, permission1 string, permission2 string) string {
 	return fmt.Sprintf(`
 	resource "keyfactor_security_role" "test" {
-			security_role {
-				role_name = "%s"
-				description = "%s"
-				identities {
-					account_name = "%s"
-				}
-				permissions = ["%s", "%s"]
-			}
+		role_name = "%s"
+		description = "%s"
+		identities {
+			account_name = "%s"
 		}
+		permissions = ["%s", "%s"]
+	}
 	`, roleName, roleDesc, accountName, permission1, permission2)
 }

@@ -40,23 +40,63 @@ func TestAccKeyfactorAttachRoleBasic(t *testing.T) {
 		ProviderFactories: providerFactories,
 		CheckDestroy:      testAccKeyfactorAttachRoleDestroy,
 		Steps: []resource.TestStep{
+			// See if we can add a single template
 			{
 				Config: testAccKeyfactorAttachRoleBasic(roleName, templateId1),
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId1, 1),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "attach_security_role.0.role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "attach_security_role.0.template_id_list.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "role_name", roleName),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.0", template1),
 				),
 			},
+			// See if we can add a second template
 			{
 				Config: testAccKeyfactorAttachRoleBasicModified(roleName, templateId1, templateId2),
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId1, 2),
 					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId2, 2),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "attach_security_role.0.role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "attach_security_role.0.template_id_list.#", "2"),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "role_name", roleName),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.#", "2"),
+					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_id_list.0"),
+					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_id_list.1"),
+				),
+			},
+			// See what happens if we switch the order of the templates as they're configured
+			{
+				Config: testAccKeyfactorAttachRoleBasicModified(roleName, templateId2, templateId1),
+				Check: resource.ComposeTestCheckFunc(
+					// Check inputted values
+					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId2, 2),
+					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId1, 2),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "role_name", roleName),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.#", "2"),
+					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_id_list.0"),
+					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_id_list.1"),
+				),
+			},
+			// See what happens if we remove one of the templates
+			{
+				Config: testAccKeyfactorAttachRoleBasic(roleName, templateId1),
+				Check: resource.ComposeTestCheckFunc(
+					// Check inputted values
+					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId1, 1),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "role_name", roleName),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.0", template1),
+				),
+			},
+			// See what happens if we change the template
+			{
+				Config: testAccKeyfactorAttachRoleBasic(roleName, templateId2),
+				Check: resource.ComposeTestCheckFunc(
+					// Check inputted values
+					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId2, 1),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "role_name", roleName),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.0", template2),
 				),
 			},
 		},
@@ -158,10 +198,8 @@ func testAccKeyfactorAttachRoleDestroy(s *terraform.State) error {
 func testAccKeyfactorAttachRoleBasic(roleName string, templateId int) string {
 	return fmt.Sprintf(`
 	resource "keyfactor_attach_role" "test" {
-		attach_security_role {
-			role_name = "%s"
-			template_id_list = [%d]
-		}
+		role_name = "%s"
+		template_id_list = [%d]
 	}
 	`, roleName, templateId)
 }
@@ -169,10 +207,8 @@ func testAccKeyfactorAttachRoleBasic(roleName string, templateId int) string {
 func testAccKeyfactorAttachRoleBasicModified(roleName string, templateId1 int, templateId2 int) string {
 	return fmt.Sprintf(`
 	resource "keyfactor_attach_role" "test" {
-		attach_security_role {
-			role_name = "%s"
-			template_id_list = [%d, %d]
-		}
+		role_name = "%s"
+		template_id_list = [%d, %d]
 	}
 	`, roleName, templateId1, templateId2)
 }

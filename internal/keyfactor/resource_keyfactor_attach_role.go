@@ -6,7 +6,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
-	"math/rand"
 	"strconv"
 )
 
@@ -32,26 +31,17 @@ func resourceKeyfactorAttachRole() *schema.Resource {
 		UpdateContext: resourceAttachRoleUpdate,
 		DeleteContext: resourceAttachRoleDelete,
 		Schema: map[string]*schema.Schema{
-			"attach_security_role": {
-				Type:     schema.TypeList,
-				MaxItems: 1,
-				Required: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"role_name": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: "An string associated with a Keyfactor security role being attached. This is just the name field found on Keyfactor.",
-						},
-						// Configure template config as list of integers to simplify flattening functions
-						"template_id_list": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "A list of integers associaed with certificate templates in Keyfactor that the role will be attached to.",
-							Elem:        &schema.Schema{Type: schema.TypeInt},
-						},
-					},
-				},
+			"role_name": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "An string associated with a Keyfactor security role being attached. This is just the name field found on Keyfactor.",
+			},
+			// Configure template config as list of integers to simplify flattening functions
+			"template_id_list": {
+				Type:        schema.TypeSet,
+				Optional:    true,
+				Description: "A list of integers associaed with certificate templates in Keyfactor that the role will be attached to.",
+				Elem:        &schema.Schema{Type: schema.TypeInt},
 			},
 		},
 	}
@@ -63,24 +53,18 @@ func resourceAttachRoleCreate(ctx context.Context, d *schema.ResourceData, m int
 
 	kfClient := m.(*keyfactor.Client)
 
-	roleConfig := d.Get("attach_security_role").([]interface{})
-	for _, i := range roleConfig {
-		role := i.(map[string]interface{})
+	roleName := d.Get("role_name")
+	templateIds := d.Get("template_id_list")
 
-		roleName := role["role_name"].(string)
-
-		// Add provided role to each of the certificate templates provided in configuration
-		templateIds := role["template_id_list"].(*schema.Set)
-		err := setRoleAllowedRequestor(kfClient, roleName, templateIds)
-		if err != nil {
-			return diag.FromErr(err)
-		}
-
-		// Other role attachments happen should below
-
-		d.SetId(roleName)
-		resourceAttachRoleRead(ctx, d, m)
+	// Add provided role to each of the certificate templates provided in configuration
+	err := setRoleAllowedRequestor(kfClient, roleName.(string), templateIds.(*schema.Set))
+	if err != nil {
+		return diag.FromErr(err)
 	}
+
+	// Other role attachments happen should below
+	d.SetId(roleName.(string))
+	resourceAttachRoleRead(ctx, d, m)
 
 	return diags
 }
@@ -117,7 +101,7 @@ func setRoleAllowedRequestor(kfClient *keyfactor.Client, roleName string, templa
 		}
 	}
 
-	for template := range diff {
+	for _, template := range diff {
 		err = removeRoleFromTemplate(kfClient, roleName, template)
 		if err != nil {
 			return err
@@ -217,24 +201,26 @@ func resourceAttachRoleRead(ctx context.Context, d *schema.ResourceData, m inter
 		return diag.FromErr(err)
 	}
 
-	if err := d.Set("attach_security_role", flattenAttachRoleSchema(roleName, templateIds)); err != nil {
-		return diag.FromErr(err)
+	newSchema := flattenAttachRoleSchema(roleName, templateIds)
+	for key, value := range newSchema {
+		err = d.Set(key, value)
+		if err != nil {
+			diags = append(diags, diag.FromErr(err)[0])
+		}
 	}
 
 	return diags
 }
 
-func flattenAttachRoleSchema(roleName string, templateIds []interface{}) []interface{} {
-	temp := make([]interface{}, 1, 1)
+func flattenAttachRoleSchema(roleName string, templateIds []interface{}) map[string]interface{} {
 	data := make(map[string]interface{})
 
 	data["role_name"] = roleName
 
-	tempSet := schema.NewSet(func(i interface{}) int { return rand.Intn(999999999999) }, templateIds)
+	tempSet := schema.NewSet(schema.HashInt, templateIds)
 	data["template_id_list"] = tempSet
 
-	temp[0] = data
-	return temp
+	return data
 }
 
 func findTemplateRoleAttachments(kfClient *keyfactor.Client, roleName string) (error, []interface{}) {
@@ -267,24 +253,18 @@ func resourceAttachRoleUpdate(ctx context.Context, d *schema.ResourceData, m int
 	log.Println("[INFO] Updating Attach Keyfactor Role resource")
 
 	kfClient := m.(*keyfactor.Client)
-	roleConfig := d.Get("attach_security_role").([]interface{})
-	for _, i := range roleConfig {
-		role := i.(map[string]interface{})
 
-		roleName := role["role_name"].(string)
+	roleName := d.Get("role_name")
+	templateIds := d.Get("template_id_list")
 
-		// Add provided role to each of the certificate templates provided in configuration
-		templateIds := role["template_id_list"].(*schema.Set)
-		err := setRoleAllowedRequestor(kfClient, roleName, templateIds)
-		if err != nil {
-			return diag.FromErr(err)
-		}
+	// Add provided role to each of the certificate templates provided in configuration
+	err := setRoleAllowedRequestor(kfClient, roleName.(string), templateIds.(*schema.Set))
+	if err != nil {
+		diags = append(diags, diag.FromErr(err)[0])
 	}
 
 	// Other role attachments happen should below
-	resourceAttachRoleRead(ctx, d, m)
-
-	return diags
+	return resourceAttachRoleRead(ctx, d, m)
 }
 
 func resourceAttachRoleDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -293,9 +273,7 @@ func resourceAttachRoleDelete(ctx context.Context, d *schema.ResourceData, m int
 	kfClient := m.(*keyfactor.Client)
 	roleName := d.Id()
 
-	tempSet := schema.Set{F: func(i interface{}) int {
-		return rand.Intn(999999999999)
-	}}
+	tempSet := schema.Set{F: schema.HashInt}
 	err := setRoleAllowedRequestor(kfClient, roleName, &tempSet)
 	if err != nil {
 		return diag.FromErr(err)

@@ -59,9 +59,9 @@ func testAccGenerateKeyfactorRole(conn *keyfactor.Client) (*keyfactor.Client, st
 	if conn == nil {
 		var err error
 		clientConfig := &keyfactor.AuthConfig{
-			Hostname: os.Getenv("KEYFACTOR_USERNAME"),
-			Username: os.Getenv("KEYFACTOR_PASSWORD"),
-			Password: os.Getenv("KEYFACTOR_HOSTNAME"),
+			Hostname: os.Getenv("KEYFACTOR_HOSTNAME"),
+			Username: os.Getenv("KEYFACTOR_USERNAME"),
+			Password: os.Getenv("KEYFACTOR_PASSWORD"),
 		}
 		client, err = keyfactor.NewKeyfactorClient(clientConfig)
 		if err != nil {

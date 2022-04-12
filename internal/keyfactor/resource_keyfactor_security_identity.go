@@ -18,81 +18,68 @@ func resourceSecurityIdentity() *schema.Resource {
 		UpdateContext: resourceSecurityIdentityUpdate,
 		DeleteContext: resourceSecurityIdentityDelete,
 		Schema: map[string]*schema.Schema{
-			"security_identity": {
-				Type:     schema.TypeList,
-				MaxItems: 1,
-				Required: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"account_name": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: "A string containing the account name for the security identity. For Active Directory user and groups, this will be in the form DOMAIN\\\\user or group name",
-						},
-						"roles": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "An array containing the roles that the identity is attached to.",
-							Elem:        &schema.Schema{Type: schema.TypeInt},
-						},
-						"id": {
-							Type:        schema.TypeInt,
-							Computed:    true,
-							Description: "An integer containing the Keyfactor Command identifier for the security identity.",
-						},
-						"identity_type": {
-							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "A string indicating the type of identity—User or Group.",
-						},
-						"valid": {
-							Type:        schema.TypeBool,
-							Computed:    true,
-							Description: "A Boolean that indicates whether the security identity's audit XML is valid (true) or not (false). A security identity may become invalid if Keyfactor Command determines that it appears to have been tampered with.",
-						},
-					},
-				},
+			"account_name": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "A string containing the account name for the security identity. For Active Directory user and groups, this will be in the form DOMAIN\\\\user or group name",
+			},
+			"roles": {
+				Type:        schema.TypeSet,
+				Computed:    true,
+				Description: "An array containing the role IDs that the identity is attached to.",
+				Elem:        &schema.Schema{Type: schema.TypeInt},
+			},
+			"identity_id": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "An integer containing the Keyfactor Command identifier for the security identity.",
+			},
+			"identity_type": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "A string indicating the type of identity—User or Group.",
+			},
+			"valid": {
+				Type:        schema.TypeBool,
+				Computed:    true,
+				Description: "A Boolean that indicates whether the security identity's audit XML is valid (true) or not (false). A security identity may become invalid if Keyfactor Command determines that it appears to have been tampered with.",
 			},
 		},
 	}
 }
 
 func resourceSecurityIdentityCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
 	kfClient := m.(*keyfactor.Client)
 
 	log.Println("[INFO] Creating Keyfactor security identity resource")
 
-	securityIdentities := d.Get("security_identity").([]interface{})
-	for _, identity := range securityIdentities {
-		i := identity.(map[string]interface{})
+	identityArg := &keyfactor.CreateSecurityIdentityArg{
+		AccountName: d.Get("account_name").(string),
+	}
 
-		identityArg := &keyfactor.CreateSecurityIdentityArg{
-			AccountName: i["account_name"].(string),
-		}
+	createResponse, err := kfClient.CreateSecurityIdentity(identityArg)
+	if err != nil {
+		resourceSecurityIdentityRead(ctx, d, m)
+		return diag.FromErr(err)
+	}
 
-		createResponse, err := kfClient.CreateSecurityIdentity(identityArg)
-		if err != nil {
-			resourceSecurityIdentityRead(ctx, d, m)
-			return diag.FromErr(err)
-		}
+	// Keyfactor security roles are often created once at the beginning of a deployment and then subsequently used
+	// to regulate an identities access to a resource. As per customer request, the Terraform provider modifies
+	// the intended use of the roles element returned by the identities endpoint by making it non-readonly.
+	// Accomplish this by attaching the identity to each role provided by Terraform configuration
 
-		// Keyfactor security roles are often created once at the beginning of a deployment and then subsequently used
-		// to regulate an identities access to a resource. As per customer request, the Terraform provider modifies
-		// the intended use of the roles element returned by the identities endpoint by making it non-readonly.
-		// Accomplish this by attaching the identity to each role provided by Terraform configuration
-		roles := i["roles"].([]interface{})
+	if rolesSet, ok := d.GetOk("roles"); ok {
+		roles := rolesSet.(*schema.Set).List()
 		err = setIdentityRole(kfClient, identityArg.AccountName, roles)
 		if err != nil {
 			return diag.FromErr(err)
 		}
-
-		// Set resource ID to tell Terraform that operation was successful
-		d.SetId(strconv.Itoa(createResponse.Id))
-		resourceSecurityIdentityRead(ctx, d, m)
 	}
 
-	return diags
+	// Set resource ID to tell Terraform that operation was successful
+	d.SetId(strconv.Itoa(createResponse.Id))
+
+	return resourceSecurityIdentityRead(ctx, d, m)
 }
 
 func setIdentityRole(kfClient *keyfactor.Client, identityAccountName string, roleIds []interface{}) error {
@@ -229,7 +216,7 @@ func addIdentityToRole(kfClient *keyfactor.Client, identityAccountName string, r
 	return nil
 }
 
-func resourceSecurityIdentityRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceSecurityIdentityRead(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
 	var identityContext keyfactor.GetSecurityIdentityResponse
 
@@ -237,14 +224,14 @@ func resourceSecurityIdentityRead(ctx context.Context, d *schema.ResourceData, m
 
 	kfClient := m.(*keyfactor.Client)
 
-	// Get all Keyfactor security identities
-	identities, err := kfClient.GetSecurityIdentities()
+	Id := d.Id()
+	identityId, err := strconv.Atoi(Id)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	Id := d.Id()
-	identityId, err := strconv.Atoi(Id)
+	// Get all Keyfactor security identities
+	identities, err := kfClient.GetSecurityIdentities()
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -257,35 +244,36 @@ func resourceSecurityIdentityRead(ctx context.Context, d *schema.ResourceData, m
 	}
 
 	// Set schema values
-	if err := d.Set("security_identity", flattenSecurityIdentity(&identityContext)); err != nil {
-		return diag.FromErr(err)
+	newSchema := flattenSecurityIdentity(&identityContext)
+	for key, value := range newSchema {
+		err = d.Set(key, value)
+		if err != nil {
+			diags = append(diags, diag.FromErr(err)[0])
+		}
 	}
 
 	return diags
 }
 
-func flattenSecurityIdentity(identityContext *keyfactor.GetSecurityIdentityResponse) []interface{} {
+func flattenSecurityIdentity(identityContext *keyfactor.GetSecurityIdentityResponse) map[string]interface{} {
+	data := make(map[string]interface{})
 	if identityContext != nil {
-		temp := make([]interface{}, 1, 1)
-		data := make(map[string]interface{})
-
 		// Create list of identities
-		var rolesList []int
+		var rolesList []interface{}
 		for _, role := range identityContext.Roles {
 			rolesList = append(rolesList, role.Id)
 		}
 
 		// Assign response data to associated schema
 		data["account_name"] = identityContext.AccountName
-		data["roles"] = rolesList
-		data["id"] = identityContext.Id
+		roleSet := schema.NewSet(schema.HashInt, rolesList)
+		data["roles"] = roleSet
+		data["identity_id"] = identityContext.Id
 		data["identity_type"] = identityContext.IdentityType
 		data["valid"] = identityContext.Valid
 
-		temp[0] = data
-		return temp
 	}
-	return make([]interface{}, 0)
+	return data
 }
 
 func resourceSecurityIdentityUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -294,16 +282,14 @@ func resourceSecurityIdentityUpdate(ctx context.Context, d *schema.ResourceData,
 	log.Println("[INFO] Update called on security identity resource")
 
 	if roleSchemaHasChange(d) == true {
-		securityIdentities := d.Get("security_identity").([]interface{})
-		for _, identity := range securityIdentities {
-			i := identity.(map[string]interface{})
 
-			// Keyfactor security roles are often created once at the beginning of a deployment and then subsequently used
-			// to regulate an identities access to a resource. As per customer request, the Terraform provider modifies
-			// the intended use of the roles element returned by the identities endpoint by making it non-readonly.
-			// Accomplish this by attaching the identity to each role provided by Terraform configuration
-			roles := i["roles"].([]interface{})
-			err := setIdentityRole(kfClient, i["account_name"].(string), roles)
+		// Keyfactor security roles are often created once at the beginning of a deployment and then subsequently used
+		// to regulate an identities access to a resource. As per customer request, the Terraform provider modifies
+		// the intended use of the roles element returned by the identities endpoint by making it non-readonly.
+		// Accomplish this by attaching the identity to each role provided by Terraform configuration
+		if rolesSet := d.Get("roles"); rolesSet != nil {
+			roles := rolesSet.(*schema.Set).List()
+			err := setIdentityRole(kfClient, d.Get("account_name").(string), roles)
 			if err != nil {
 				return diag.FromErr(err)
 			}
@@ -314,27 +300,22 @@ func resourceSecurityIdentityUpdate(ctx context.Context, d *schema.ResourceData,
 			Summary:  "Update is not supported for the Keyfactor Security Identity resource unless the policy attribute was changed.",
 			Detail:   "To update this resource, please delete the current resource and create a new one.",
 		})
+		return diags
 	}
 
-	resourceSecurityIdentityRead(ctx, d, m)
-	return diags
+	return resourceSecurityIdentityRead(ctx, d, m)
 }
 
 func roleSchemaHasChange(d *schema.ResourceData) bool {
-	roleRootSearchTerm := "security_identity.0.roles"
+	roleRootSearchTerm := "roles"
 	// Most obvious change to detect is the number of policy schema blocks changed.
 
 	if d.HasChange(fmt.Sprintf("%s.#", roleRootSearchTerm)) == true {
 		return true
 	}
 
-	// Next, for each element, attempt to detect a change.
-	// todo if something is broken, this is probably where it broke
-	roleCount := d.Get(fmt.Sprintf("%s.#", roleRootSearchTerm))
-	for i := 0; i < roleCount.(int); i++ {
-		if d.HasChange(fmt.Sprintf("%s.%d", roleRootSearchTerm, i)) {
-			return true
-		}
+	if d.HasChange(roleRootSearchTerm) == true {
+		return true
 	}
 
 	// If we got this far, it's safe to assume that we didn't experience a change.

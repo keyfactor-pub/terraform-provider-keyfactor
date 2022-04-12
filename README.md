@@ -58,6 +58,7 @@ Note that the following environment variables must exist regardless of the test 
 * ```KEYFACTOR_PASSWORD```
 * ```KEYFACTOR_HOSTNAME```
 
+### Certificate resource acceptance tests
 The following environment variables must exist to run acceptance tests for the Certificate resource:
 * ```KEYFACTOR_CERT_TEMPLATE```
 * ```KEYFACTOR_CERTIFICATE_AUTHORITY```
@@ -65,11 +66,33 @@ The following environment variables must exist to run acceptance tests for the C
 
 To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_CERTIFICATE_TESTS=True```.
 
+### Store resource acceptance tests
 The following environment variables must exist to run acceptance tests for the Store resource:
 * ```KEYFACTOR_CLIENT_MACHINE```
 * ```KEYFACTOR_ORCHESTRATOR_AGENT_ID```
 
 To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_STORE_TESTS=True```.
+
+### Security Role resource acceptance tests
+The following environment variable must exist to run acceptance tests for the Security Role resource:
+* ```KEYFACTOR_SECURITY_ROLE_IDENTITY_ACCOUNTNAME``` - This account _must already exist_ in Keyfactor. Terraform acceptance
+  tests create a Keyfactor security roles and attach them to the security identity configured by this environment variable. 
+
+To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_ROLE_TESTS=True```.
+
+### Security Identity resource acceptance tests
+The following environment variable must exist to run acceptance tests for the Security Identity resource:
+* ```KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME``` - Note that this account must exist in AD, but not in Keyfactor.
+
+To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_IDENTITY_TESTS=True```.
+
+### Attach Security Role resource acceptance tests
+The following environment variables must exist to run acceptance tests for the Attach Security Role resource:
+* ```KEYFACTOR_ATTACH_ROLE_TEMPLATE1``` - It's advised that the templates specified by these environment variables are not
+  often used, as Terraform will add allowed requesters as Keyfactor roles.
+* ```KEYFACTOR_ATTACH_ROLE_TEMPLATE2```
+
+To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_ATTACH_ROLE_TESTS=True```.
 
 ## Referencing private go repos in import() statement
 * The best way to clone private repositories in the import statement is to use SSH. Create an SSH key, import the private 

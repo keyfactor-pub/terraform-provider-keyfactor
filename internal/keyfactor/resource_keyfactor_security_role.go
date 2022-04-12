@@ -27,7 +27,7 @@ func resourceSecurityRole() *schema.Resource {
 				Description: "A string containing the description of the role in Keyfactor",
 			},
 			"identities": {
-				Type:        schema.TypeList,
+				Type:        schema.TypeSet,
 				Optional:    true,
 				Description: "A string containing the description of the role in Keyfactor",
 				Elem: &schema.Resource{
@@ -56,7 +56,7 @@ func resourceSecurityRole() *schema.Resource {
 				},
 			},
 			"permissions": {
-				Type:        schema.TypeList,
+				Type:        schema.TypeSet,
 				Optional:    true,
 				Description: "An array containing the permissions assigned to the role in a list of Name:Value pairs",
 				Elem:        &schema.Schema{Type: schema.TypeString},
@@ -76,11 +76,11 @@ func resourceSecurityRoleCreate(ctx context.Context, d *schema.ResourceData, m i
 	}
 
 	if permission, ok := d.GetOk("permissions"); ok {
-		createArg.Permissions = unpackPermissionInterface(permission.([]interface{}))
+		createArg.Permissions = unpackPermissionSet(permission.(*schema.Set))
 	}
 
 	if identity, ok := d.GetOk("identities"); ok {
-		createArg.Identities = unpackIdentityInterface(identity.([]interface{}))
+		createArg.Identities = unpackIdentitySet(identity.(*schema.Set))
 	}
 
 	createResp, err := kfClient.CreateSecurityRole(createArg)
@@ -95,7 +95,8 @@ func resourceSecurityRoleCreate(ctx context.Context, d *schema.ResourceData, m i
 	return resourceSecurityRoleRead(ctx, d, m)
 }
 
-func unpackPermissionInterface(permissions []interface{}) *[]string {
+func unpackPermissionSet(set *schema.Set) *[]string {
+	permissions := set.List()
 	if len(permissions) > 0 {
 		var tempString []string
 		for _, permission := range permissions {
@@ -106,7 +107,8 @@ func unpackPermissionInterface(permissions []interface{}) *[]string {
 	return nil
 }
 
-func unpackIdentityInterface(identities []interface{}) *[]keyfactor.SecurityRoleIdentityConfig {
+func unpackIdentitySet(set *schema.Set) *[]keyfactor.SecurityRoleIdentityConfig {
+	identities := set.List()
 	if len(identities) > 0 {
 		var identityConfig []keyfactor.SecurityRoleIdentityConfig
 		for _, i := range identities {
@@ -156,7 +158,8 @@ func flattenSecurityRole(roleContext *keyfactor.GetSecurityRolesResponse) map[st
 		// Assign response data to associated schema
 		data["role_name"] = roleContext.Name
 		data["description"] = roleContext.Description
-		data["permissions"] = roleContext.Permissions
+		permissionSet := newStringSet(schema.HashString, roleContext.Permissions)
+		data["permissions"] = permissionSet
 
 		// Assign schema that require flattening
 		data["identities"] = flattenSecurityRoleIdentities(roleContext.Identities)
@@ -164,11 +167,20 @@ func flattenSecurityRole(roleContext *keyfactor.GetSecurityRolesResponse) map[st
 	return data
 }
 
-func flattenSecurityRoleIdentities(identities []keyfactor.SecurityIdentity) []interface{} {
+// This came from the Kubernetes provider... ran out of time
+func newStringSet(f schema.SchemaSetFunc, in []string) *schema.Set {
+	var out = make([]interface{}, len(in), len(in))
+	for i, v := range in {
+		out[i] = v
+	}
+	return schema.NewSet(f, out)
+}
+
+func flattenSecurityRoleIdentities(identities []keyfactor.SecurityIdentity) *schema.Set {
 	// If the list of identities passed to this function has length > 0, iterate through each identity provided
 	// and build a map[string]interface{} for each one, then push back onto a temporary []interface{}
+	var temp []interface{}
 	if len(identities) > 0 {
-		var temp []interface{}
 		for _, identity := range identities {
 			data := make(map[string]interface{})
 
@@ -179,9 +191,36 @@ func flattenSecurityRoleIdentities(identities []keyfactor.SecurityIdentity) []in
 
 			temp = append(temp, data)
 		}
-		return temp
 	}
-	return make([]interface{}, 0)
+
+	return schema.NewSet(schema.HashResource(schemaSecurityRoleIdentities()), temp)
+}
+
+func schemaSecurityRoleIdentities() *schema.Resource {
+	return &schema.Resource{
+		Schema: map[string]*schema.Schema{
+			"account_name": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "A string containing the account name for the security identity. For Active Directory user and groups, this will be in the form DOMAIN\\\\user or group name.",
+			},
+			"id": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "A string containing the account name for the security identity. For Active Directory user and groups, this will be in the form DOMAIN\\\\user or group name.",
+			},
+			"identity_type": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "A string indicating the type of identity—User or Group.",
+			},
+			"sid": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "A string containing the security identifier from the source identity store (e.g. Active Directory) for the security identity.",
+			},
+		},
+	}
 }
 
 func resourceSecurityRoleUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -204,11 +243,11 @@ func resourceSecurityRoleUpdate(ctx context.Context, d *schema.ResourceData, m i
 	}
 
 	if permission, ok := d.GetOk("permissions"); ok {
-		updateArg.Permissions = unpackPermissionInterface(permission.([]interface{}))
+		updateArg.Permissions = unpackPermissionSet(permission.(*schema.Set))
 	}
 
 	if identity, ok := d.GetOk("identities"); ok {
-		updateArg.Identities = unpackIdentityInterface(identity.([]interface{}))
+		updateArg.Identities = unpackIdentitySet(identity.(*schema.Set))
 	}
 
 	_, err = kfClient.UpdateSecurityRole(updateArg)

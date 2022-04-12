@@ -3,7 +3,7 @@
 page_title: "keyfactor_store Resource - terraform-provider-keyfactor"
 subcategory: "Security & Authentication"
 description: |-
-    Terraform resource for interacting with Store endpoint
+Terraform resource for interacting with Store endpoint
   
 ---
 

@@ -75,18 +75,6 @@ func Provider() *schema.Provider {
 				},
 				Description: "Domain that Keyfactor instance is hosted on",
 			},
-
-			"dev_mode": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				DefaultFunc: func() (interface{}, error) {
-					if v := os.Getenv("KEYFACTOR_DEVMODE"); v != "" {
-						return v, nil
-					}
-					return false, nil
-				},
-				Description: "Development mode",
-			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
 			"keyfactor_certificate":       resourceCertificate(),
@@ -102,31 +90,45 @@ func Provider() *schema.Provider {
 
 func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	var clientAuth *keyfactor.AuthConfig
-	hostname := d.Get("hostname").(string)
-	username := d.Get("kf_username").(string)
-	password := d.Get("kf_password").(string)
-	domain := d.Get("domain").(string)
-
-	hostname = strings.TrimRight(hostname, "/") // remove trailing slash, if it exists
-
-	if (hostname != "") && (username != "") && (password != "") {
-		clientAuth = &keyfactor.AuthConfig{
-			Hostname: hostname,
-			Username: username,
-			Password: password,
-			Domain:   domain,
-		}
+	var clientAuth keyfactor.AuthConfig
+	if hostname := d.Get("hostname"); hostname.(string) != "" {
+		clientAuth.Hostname = hostname.(string)
 	} else {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
-			Summary:  "Unable to connect to Keyfactor",
-			Detail:   "Unable to authenticate user, check schema or environment variables",
+			Summary:  "Keyfactor Hostname required",
+			Detail:   "Unable to authenticate user, export environment variable or configure hostname in schema.",
 		})
+	}
+	if username := d.Get("kf_username"); username.(string) != "" {
+		clientAuth.Username = username.(string)
+	} else {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "Keyfactor Username required",
+			Detail:   "Unable to authenticate user, export environment variable or configure username in schema.",
+		})
+	}
+	if password := d.Get("kf_password"); password.(string) != "" {
+		clientAuth.Password = password.(string)
+	} else {
+		diags = append(diags, diag.Diagnostic{
+			Severity: diag.Error,
+			Summary:  "Keyfactor Username required",
+			Detail:   "Unable to authenticate user, export environment variable or configure username in schema.",
+		})
+	}
+	if domain, ok := d.GetOk("domain"); ok {
+		clientAuth.Domain = domain.(string)
+	}
+
+	clientAuth.Hostname = strings.TrimRight(clientAuth.Hostname, "/") // remove trailing slash, if it exists
+
+	if len(diags) > 0 {
 		return nil, diags
 	}
 
-	client, err := keyfactor.NewKeyfactorClient(clientAuth)
+	client, err := keyfactor.NewKeyfactorClient(&clientAuth)
 	if err != nil {
 		return nil, diag.FromErr(err)
 	}

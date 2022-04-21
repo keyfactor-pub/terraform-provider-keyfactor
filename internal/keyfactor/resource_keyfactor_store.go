@@ -15,170 +15,161 @@ func resourceStore() *schema.Resource {
 		UpdateContext: resourceStoreUpdate,
 		DeleteContext: resourceStoreDelete,
 		Schema: map[string]*schema.Schema{
-			"store": {
-				Type:     schema.TypeList,
-				MaxItems: 1,
-				Required: true,
+			"container_id": {
+				Type:        schema.TypeInt,
+				Optional:    true,
+				Description: "Container identifier of the store's associated certificate store container.",
+			},
+			"client_machine": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Client machine name; value depends on certificate store type. See API reference guide",
+			},
+			"store_path": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Path to the new certificate store on a target. Format varies depending on type.",
+			},
+			"cert_store_type": {
+				Type:        schema.TypeInt,
+				Required:    true,
+				Description: "Integer specifying the store type. Specific types require different parameters.",
+			},
+			"approved": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					// For some reason Terraform detects this particular function as having drift; this function
+					// gives us a definitive answer.
+					return !d.HasChange(k)
+				},
+				Description: "Bool that indicates the approval status of store created. Default is true, omit if unsure",
+			},
+			"create_if_missing": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Description: "Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure",
+			},
+			"property": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: "Certificate properties specific to certificate store type",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"container_id": {
-							Type:        schema.TypeInt,
-							Optional:    true,
-							Description: "Container identifier of the store's associated certificate store container.",
-						},
-						"client_machine": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: "Client machine name; value depends on certificate store type. See API reference guide",
-						},
-						"store_path": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: "Path to the new certificate store on a target. Format varies depending on type.",
-						},
-						"cert_store_type": {
-							Type:        schema.TypeInt,
-							Required:    true,
-							Description: "Integer specifying the store type. Specific types require different parameters.",
-						},
-						"approved": {
-							Type:     schema.TypeBool,
-							Optional: true,
-							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-								// For some reason Terraform detects this particular function as having drift; this function
-								// gives us a definitive answer.
-								return !d.HasChange(k)
-							},
-							Description: "Bool that indicates the approval status of store created. Default is true, omit if unsure",
-						},
-						"create_if_missing": {
-							Type:        schema.TypeBool,
-							Optional:    true,
-							Description: "Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure",
-						},
-						"property": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "Certificate properties specific to certificate store type",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"name": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Name of property field required by certificate store",
-									},
-									"value": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Property value",
-									},
-								},
-							},
-						},
-						"agent_id": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store",
-						},
-						"agent_assigned": {
-							Type:     schema.TypeBool,
-							Optional: true,
-							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-								// For some reason Terraform detects this particular function as having drift; this function
-								// gives us a definitive answer.
-								return !d.HasChange(k)
-							},
-							Description: "Bool indicating if there is an orchestrator assigned to the new certificate store",
-						},
-						"container_name": {
+						"name": {
 							Type:        schema.TypeString,
 							Optional:    true,
-							Description: "Name of certificate store's associated container, if applicable",
+							Description: "Name of property field required by certificate store",
 						},
-						"inventory_schedule": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							MaxItems:    1,
-							Description: "Inventory schedule for new certificate store",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"immediate": {
-										Type:        schema.TypeBool,
-										Optional:    true,
-										Description: "Boolean that indicates whether the job should run immediately",
-									},
-									"interval": {
-										Type:        schema.TypeList,
-										Optional:    true,
-										Description: "Indicates that the job should be scheduled to run every x minutes",
-										Elem: &schema.Resource{
-											Schema: map[string]*schema.Schema{
-												"minutes": {
-													Type:        schema.TypeInt,
-													Required:    true,
-													Description: "An integer indicating the number of minutes between each interval",
-												},
-											},
-										},
-									},
-									"daily": {
-										Type:        schema.TypeList,
-										Optional:    true,
-										Description: "Indicates that the job should be scheduled to run every day at the same time",
-										Elem: &schema.Resource{
-											Schema: map[string]*schema.Schema{
-												"time": {
-													Type:        schema.TypeString,
-													Required:    true,
-													Description: "The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format",
-												},
-											},
-										},
-									},
-									"exactly_once": {
-										Type:        schema.TypeList,
-										Optional:    true,
-										Description: "Indicates that the job should be scheduled to run at the time specified",
-										Elem: &schema.Resource{
-											Schema: map[string]*schema.Schema{
-												"time": {
-													Type:        schema.TypeString,
-													Required:    true,
-													Description: "The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format",
-												},
-											},
-										},
-									},
-								},
-							},
-						},
-						"set_new_password_allowed": {
-							Type:        schema.TypeBool,
-							Optional:    true,
-							Description: "Indicates whether the store password can be changed",
-						},
-						"password": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							MaxItems:    1,
-							Description: "Configures credential options for certificate store",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"value": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Configures a password to be stored a Keyfactor secret",
-									},
-								},
-							},
-						},
-						"keyfactor_id": {
+						"value": {
 							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "Keyfactor certificate store GUID",
+							Optional:    true,
+							Description: "Property value",
 						},
 					},
 				},
+			},
+			"agent_id": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store",
+			},
+			"agent_assigned": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					// For some reason Terraform detects this particular function as having drift; this function
+					// gives us a definitive answer.
+					return !d.HasChange(k)
+				},
+				Description: "Bool indicating if there is an orchestrator assigned to the new certificate store",
+			},
+			"container_name": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Name of certificate store's associated container, if applicable",
+			},
+			"inventory_schedule": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				MaxItems:    1,
+				Description: "Inventory schedule for new certificate store",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"immediate": {
+							Type:        schema.TypeBool,
+							Optional:    true,
+							Description: "Boolean that indicates whether the job should run immediately",
+						},
+						"interval": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "Indicates that the job should be scheduled to run every x minutes",
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"minutes": {
+										Type:        schema.TypeInt,
+										Required:    true,
+										Description: "An integer indicating the number of minutes between each interval",
+									},
+								},
+							},
+						},
+						"daily": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "Indicates that the job should be scheduled to run every day at the same time",
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"time": {
+										Type:        schema.TypeString,
+										Required:    true,
+										Description: "The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format",
+									},
+								},
+							},
+						},
+						"exactly_once": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "Indicates that the job should be scheduled to run at the time specified",
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"time": {
+										Type:        schema.TypeString,
+										Required:    true,
+										Description: "The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			"set_new_password_allowed": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Description: "Indicates whether the store password can be changed",
+			},
+			"password": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				MaxItems:    1,
+				Description: "Configures credential options for certificate store",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"value": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: "Configures a password to be stored a Keyfactor secret",
+						},
+					},
+				},
+			},
+			"keyfactor_id": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "Keyfactor certificate store GUID",
 			},
 		},
 	}
@@ -188,44 +179,39 @@ func resourceStoreCreate(ctx context.Context, d *schema.ResourceData, m interfac
 	var diags diag.Diagnostics
 	kfClientData := m.(*keyfactor.Client)
 
-	stores := d.Get("store").([]interface{})
-	for _, store := range stores {
-		i := store.(map[string]interface{})
-		properties := i["property"].([]interface{})
-		newStoreArgs := &keyfactor.CreateStoreFctArgs{
-			ContainerId:           intToPointer(i["container_id"].(int)),
-			ClientMachine:         i["client_machine"].(string),
-			StorePath:             i["store_path"].(string),
-			CertStoreType:         i["cert_store_type"].(int),
-			Approved:              boolToPointer(i["approved"].(bool)),
-			CreateIfMissing:       boolToPointer(i["create_if_missing"].(bool)),
-			Properties:            interfaceArrayToStringTuple(properties),
-			AgentId:               i["agent_id"].(string),
-			AgentAssigned:         boolToPointer(i["agent_assigned"].(bool)),
-			ContainerName:         stringToPointer(i["container_name"].(string)),
-			InventorySchedule:     createInventorySchedule(i["inventory_schedule"].([]interface{})),
-			SetNewPasswordAllowed: boolToPointer(i["set_new_password_allowed"].(bool)),
-			Password:              createPasswordConfig(i["password"].([]interface{})),
-		}
-
-		createResp, err := kfClientData.CreateStore(newStoreArgs)
-		if err != nil {
-			resourceStoreRead(ctx, d, m)
-			return diag.FromErr(err)
-		}
-
-		// Set resource ID to certificate ID
-		d.SetId(createResp.Id)
-
-		// Call read function to update schema with new state
-		resourceStoreRead(ctx, d, m)
+	properties := d.Get("property").([]interface{})
+	newStoreArgs := &keyfactor.CreateStoreFctArgs{
+		ContainerId:           intToPointer(d.Get("container_id").(int)),
+		ClientMachine:         d.Get("client_machine").(string),
+		StorePath:             d.Get("store_path").(string),
+		CertStoreType:         d.Get("cert_store_type").(int),
+		Approved:              boolToPointer(d.Get("approved").(bool)),
+		CreateIfMissing:       boolToPointer(d.Get("create_if_missing").(bool)),
+		Properties:            interfaceArrayToStringTuple(properties),
+		AgentId:               d.Get("agent_id").(string),
+		AgentAssigned:         boolToPointer(d.Get("agent_assigned").(bool)),
+		ContainerName:         stringToPointer(d.Get("container_name").(string)),
+		InventorySchedule:     createInventorySchedule(d.Get("inventory_schedule").([]interface{})),
+		SetNewPasswordAllowed: boolToPointer(d.Get("set_new_password_allowed").(bool)),
+		Password:              createPasswordConfig(d.Get("password").([]interface{})),
 	}
+
+	createResp, err := kfClientData.CreateStore(newStoreArgs)
+	if err != nil {
+		resourceStoreRead(ctx, d, m)
+		return diag.FromErr(err)
+	}
+
+	// Set resource ID to certificate ID
+	d.SetId(createResp.Id)
+
+	// Call read function to update schema with new state
+	resourceStoreRead(ctx, d, m)
 
 	return diags
 }
 
 func createInventorySchedule(m []interface{}) *keyfactor.InventorySchedule {
-	// todo Map []interface{} to keyfactor.InventorySchedule4
 	inventorySchedule := &keyfactor.InventorySchedule{}
 	i := m[0].(map[string]interface{})
 	for key, value := range i {
@@ -284,20 +270,21 @@ func resourceStoreRead(_ context.Context, d *schema.ResourceData, m interface{})
 		return diag.FromErr(err)
 	}
 
-	// Get the password out of current schema
-	schemaState := d.Get("store").([]interface{})
 	// Extract the password schema from current stored schema and pass it right back
-	password := schemaState[0].(map[string]interface{})["password"].([]interface{})
-	properties := schemaState[0].(map[string]interface{})["property"].([]interface{})
+	password := d.Get("password").([]interface{})
+	properties := d.Get("property").([]interface{})
 
-	storeItems := flattenCertificateStoreItems(storeData, password, properties)
-	if err := d.Set("store", storeItems); err != nil {
-		return diag.FromErr(err)
+	newSchema := flattenCertificateStoreItems(storeData, password, properties)
+	for key, value := range newSchema {
+		err = d.Set(key, value)
+		if err != nil {
+			diags = append(diags, diag.FromErr(err)[0])
+		}
 	}
 	return diags
 }
 
-func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, password []interface{}, oldProperties []interface{}) []interface{} {
+func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, password []interface{}, oldProperties []interface{}) map[string]interface{} {
 	if storeContext != nil {
 		data := make(map[string]interface{})
 
@@ -319,12 +306,10 @@ func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, pass
 		data["inventory_schedule"] = flattenCertificateStoreInventorySched(storeContext.InventorySchedule)
 		data["password"] = password
 
-		temp := make([]interface{}, 1, 1)
-		temp[0] = data
-		return temp
+		return data
 	}
 
-	return make([]interface{}, 0)
+	return make(map[string]interface{})
 }
 
 func flattenCertificateStoreProperty(properties []keyfactor.StringTuple, oldProperties []interface{}) []interface{} {
@@ -390,43 +375,36 @@ func flattenCertificateStoreInventorySched(schedule keyfactor.InventorySchedule)
 }
 
 func resourceStoreUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
 	kfClient := m.(*keyfactor.Client)
 
-	stores := d.Get("store").([]interface{})
-	for _, store := range stores {
-		i := store.(map[string]interface{})
-		properties := i["property"].([]interface{})
-		updateStoreArgs := &keyfactor.UpdateStoreFctArgs{
-			Id: i["keyfactor_id"].(string),
-			CreateStoreFctArgs: keyfactor.CreateStoreFctArgs{
-				ContainerId:           intToPointer(i["container_id"].(int)),
-				ClientMachine:         i["client_machine"].(string),
-				StorePath:             i["store_path"].(string),
-				CertStoreType:         i["cert_store_type"].(int),
-				Approved:              boolToPointer(i["approved"].(bool)),
-				CreateIfMissing:       boolToPointer(i["create_if_missing"].(bool)),
-				Properties:            interfaceArrayToStringTuple(properties),
-				AgentId:               i["agent_id"].(string),
-				AgentAssigned:         boolToPointer(i["agent_assigned"].(bool)),
-				ContainerName:         stringToPointer(i["container_name"].(string)),
-				InventorySchedule:     createInventorySchedule(i["inventory_schedule"].([]interface{})),
-				SetNewPasswordAllowed: boolToPointer(i["set_new_password_allowed"].(bool)),
-				Password:              createPasswordConfig(i["password"].([]interface{})),
-			},
-		}
-
-		_, err := kfClient.UpdateStore(updateStoreArgs)
-		if err != nil {
-			resourceStoreRead(ctx, d, m)
-			return diag.FromErr(err)
-		}
-
-		// Call read function to update schema with new state
-		return resourceStoreRead(ctx, d, m)
+	properties := d.Get("property").([]interface{})
+	updateStoreArgs := &keyfactor.UpdateStoreFctArgs{
+		Id: d.Get("keyfactor_id").(string),
+		CreateStoreFctArgs: keyfactor.CreateStoreFctArgs{
+			ContainerId:           intToPointer(d.Get("container_id").(int)),
+			ClientMachine:         d.Get("client_machine").(string),
+			StorePath:             d.Get("store_path").(string),
+			CertStoreType:         d.Get("cert_store_type").(int),
+			Approved:              boolToPointer(d.Get("approved").(bool)),
+			CreateIfMissing:       boolToPointer(d.Get("create_if_missing").(bool)),
+			Properties:            interfaceArrayToStringTuple(properties),
+			AgentId:               d.Get("agent_id").(string),
+			AgentAssigned:         boolToPointer(d.Get("agent_assigned").(bool)),
+			ContainerName:         stringToPointer(d.Get("container_name").(string)),
+			InventorySchedule:     createInventorySchedule(d.Get("inventory_schedule").([]interface{})),
+			SetNewPasswordAllowed: boolToPointer(d.Get("set_new_password_allowed").(bool)),
+			Password:              createPasswordConfig(d.Get("password").([]interface{})),
+		},
 	}
 
-	return diags
+	_, err := kfClient.UpdateStore(updateStoreArgs)
+	if err != nil {
+		resourceStoreRead(ctx, d, m)
+		return diag.FromErr(err)
+	}
+
+	// Call read function to update schema with new state
+	return resourceStoreRead(ctx, d, m)
 }
 
 func resourceStoreDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -435,17 +413,12 @@ func resourceStoreDelete(_ context.Context, d *schema.ResourceData, m interface{
 
 	log.Println("[INFO] Deleting store resource")
 
-	stores := d.Get("store").([]interface{})
+	id := d.Get("keyfactor_id").(string)
+	log.Printf("[INFO] Deleting certificate store with ID %s in Keyfactor", id)
 
-	for _, store := range stores {
-		i := store.(map[string]interface{})
-		id := i["keyfactor_id"].(string)
-		log.Printf("[INFO] Deleting certificate store with ID %s in Keyfactor", id)
-
-		err := kfClient.DeleteCertificateStore(id)
-		if err != nil {
-			return diag.FromErr(err)
-		}
+	err := kfClient.DeleteCertificateStore(id)
+	if err != nil {
+		return diag.FromErr(err)
 	}
 
 	return diags

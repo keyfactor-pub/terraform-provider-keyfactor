@@ -19,36 +19,34 @@ and PEM.
 ```terraform
 resource "keyfactor_certificate" "PFXCertificate" {
   provider = keyfactor.command
-  certificate {
-    subject {
-      subject_common_name         = "terraform"
-      subject_organization        = "example"
-      subject_locality            = "Springfield"
-      subject_country             = "US"
-      subject_organizational_unit = "SE"
-      subject_state               = "NA"
-    }
-    sans {
-      san_ip4 = ["192.168.123.2", "172.51.2.4"]
-      san_uri = ["example.com"]
-    }
-    metadata {
-      name  = "Department"
-      value = "Engineering"
-    }
-    metadata {
-      name  = "Email-Contact"
-      value = "admin@example.com"
-    }
-    key_password          = "P@s5w0Rd2321!"
-    certificate_authority = "keyfactor.example.com\\CA 1"
-    cert_template         = "WebServer1yr"
-      
-    deployment {
-        store_ids      = ["Keyfactor certificate store GUID"]
-        store_type_ids = ["Keyfactor store type ID"]
-        alias          = ["terraform"]
-    }
+  subject {
+    subject_common_name         = "terraform"
+    subject_organization        = "example"
+    subject_locality            = "Springfield"
+    subject_country             = "US"
+    subject_organizational_unit = "SE"
+    subject_state               = "NA"
+  }
+  sans {
+    san_ip4 = ["192.168.123.2", "172.51.2.4"]
+    san_uri = ["example.com"]
+  }
+  metadata {
+    name  = "Department"
+    value = "Engineering"
+  }
+  metadata {
+    name  = "Email-Contact"
+    value = "admin@example.com"
+  }
+  key_password          = "P@s5w0Rd2321!"
+  certificate_authority = "keyfactor.example.com\\CA 1"
+  cert_template         = "WebServer1yr"
+
+  deployment {
+    store_ids      = ["Keyfactor certificate store GUID"]
+    store_type_ids = ["Keyfactor store type ID"]
+    alias          = ["terraform"]
   }
 }
 ```

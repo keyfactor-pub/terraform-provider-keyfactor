@@ -17,12 +17,6 @@ func TestAccKeyfactorSecurityIdentityBasic(t *testing.T) {
 		t.Skip("Skipping security identity tests (KEYFACTOR_SKIP_IDENTITY_TESTS=true)")
 	}
 
-	client, _, role1 := testAccGenerateKeyfactorRole(nil)
-	_, _, role2 := testAccGenerateKeyfactorRole(client)
-
-	roleId1 := strconv.Itoa(role1)
-	roleId2 := strconv.Itoa(role2)
-
 	accountName := testAccKeyfactorSecurityIdentityGetConfig(t)
 
 	resource.Test(t, resource.TestCase{
@@ -44,77 +38,8 @@ func TestAccKeyfactorSecurityIdentityBasic(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "valid"),
 				),
 			},
-			{
-				// Test adding a role to a Keyfactor identity
-				Config: testAccCheckKeyfactorSecurityIdentityBasicModified(accountName, roleId1),
-				Check: resource.ComposeTestCheckFunc(
-					// Check inputted values
-					testAccCheckKeyfactorSecurityIdentityExists("keyfactor_security_identity.test"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "account_name"), // todo figure out how to fix escape character problems
-					resource.TestCheckResourceAttr("keyfactor_security_identity.test", "roles.0", roleId1),
-					resource.TestCheckResourceAttr("keyfactor_security_identity.test", "roles.#", "1"),
-					resource.TestCheckResourceAttr("keyfactor_security_identity.test", "roles.0", roleId1),
-					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "identity_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "identity_type"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "valid"),
-				),
-			},
-			{
-				// Test changing the role attached to an identity
-				Config: testAccCheckKeyfactorSecurityIdentityBasicModified(accountName, roleId2),
-				Check: resource.ComposeTestCheckFunc(
-					// Check inputted values
-					testAccCheckKeyfactorSecurityIdentityExists("keyfactor_security_identity.test"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "account_name"), // todo figure out how to fix escape character problems
-					resource.TestCheckResourceAttr("keyfactor_security_identity.test", "roles.#", "1"),
-					resource.TestCheckResourceAttr("keyfactor_security_identity.test", "roles.0", roleId2),
-					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "identity_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "identity_type"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "valid"),
-				),
-			},
-			{
-				// Test removing the role attached to an identity
-				Config: testAccCheckKeyfactorSecurityIdentityBasic(accountName),
-				Check: resource.ComposeTestCheckFunc(
-					// Check inputted values
-					testAccCheckKeyfactorSecurityIdentityExists("keyfactor_security_identity.test"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "account_name"), // todo figure out how to fix escape character problems
-					resource.TestCheckResourceAttr("keyfactor_security_identity.test", "roles.#", "0"),
-					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "identity_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "identity_type"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "valid"),
-				),
-			},
-			{
-				// Test adding multiple roles
-				Config: testAccCheckKeyfactorSecurityIdentityMultiple(accountName, roleId1, roleId2),
-				Check: resource.ComposeTestCheckFunc(
-					// Check inputted values
-					testAccCheckKeyfactorSecurityIdentityExists("keyfactor_security_identity.test"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "account_name"), // todo figure out how to fix escape character problems
-					resource.TestCheckResourceAttr("keyfactor_security_identity.test", "roles.#", "2"),
-					resource.TestCheckResourceAttr("keyfactor_security_identity.test", "roles.0", roleId1),
-					resource.TestCheckResourceAttr("keyfactor_security_identity.test", "roles.1", roleId2),
-					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "identity_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "identity_type"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "valid"),
-				),
-			},
 		},
 	})
-	err := testAccDeleteKeyfactorRole(client, role1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = testAccDeleteKeyfactorRole(client, role2)
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func testAccCheckKeyfactorSecurityIdentityExists(name string) resource.TestCheckFunc {
@@ -216,22 +141,4 @@ func testAccCheckKeyfactorSecurityIdentityBasic(accountName string) string {
 		account_name = "%s"
 	}
 	`, accountName)
-}
-
-func testAccCheckKeyfactorSecurityIdentityBasicModified(accountName string, role string) string {
-	return fmt.Sprintf(`
-	resource "keyfactor_security_identity" "test" {
-		account_name = "%s"
-			roles    = [%s]
-	}
-	`, accountName, role)
-}
-
-func testAccCheckKeyfactorSecurityIdentityMultiple(accountName string, role1 string, role2 string) string {
-	return fmt.Sprintf(`
-	resource "keyfactor_security_identity" "test" {
-		account_name = "%s"
-			roles    = [%s, %s]
-	}
-	`, accountName, role1, role2)
 }

@@ -25,43 +25,41 @@ the store path is the URL to the vault.
 ```terraform
 resource "keyfactor_store" "AKS1" {
   provider = keyfactor.command
-  store {
-    client_machine  = "aks_demo"
-    agent_id = "keyfactorOrchestratorAgentID"
-    store_path      = "https://companykeyvault.vault.azure.net/"
-    cert_store_type = 106
-    property {
-      name  = "TenantID"
-      value = "tenant GUID"
-    }
-    property {
-      name  = "ResourceGroupName"
-      value = "production"
-    }
-    property {
-      name  = "ApplicationId"
-      value = "appID"
-    }
-    property {
-      name  = "ClientSecret"
-      value = "SPSecret"
-    }
-    property {
-      name  = "SubscriptionId"
-      value = "tenantSubID"
-    }
-    property {
-      name  = "APIObjectId"
-      value = "SPObject"
-    }
-    property {
-      name  = "VaultName"
-      value = "companykeyvault"
-    }
-    inventory_schedule {
-      interval {
-        minutes = 60
-      }
+  client_machine  = "aks_demo"
+  agent_id = "keyfactorOrchestratorAgentID"
+  store_path      = "https://companykeyvault.vault.azure.net/"
+  cert_store_type = 106
+  property {
+    name  = "TenantID"
+    value = "tenant GUID"
+  }
+  property {
+    name  = "ResourceGroupName"
+    value = "production"
+  }
+  property {
+    name  = "ApplicationId"
+    value = "appID"
+  }
+  property {
+    name  = "ClientSecret"
+    value = "SPSecret"
+  }
+  property {
+    name  = "SubscriptionId"
+    value = "tenantSubID"
+  }
+  property {
+    name  = "APIObjectId"
+    value = "SPObject"
+  }
+  property {
+    name  = "VaultName"
+    value = "companykeyvault"
+  }
+  inventory_schedule {
+    interval {
+      minutes = 60
     }
   }
 }

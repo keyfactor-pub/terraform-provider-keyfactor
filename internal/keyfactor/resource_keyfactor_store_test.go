@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"os"
@@ -22,8 +23,10 @@ func TestAccKeyfactorStore_Basic(t *testing.T) {
 	// Testing the store resource should only occur if the proper environment variables are set
 	clientMachine, agentId := testAccKeyfactorStoreGetConfig(t)
 
-	storePathPub := "~/terraform_pub.pem"
-	storePathPriv := "~/terraform_priv.pem"
+	rand := acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
+
+	storePathPub := "~/terraform_pub_" + rand + ".pem"
+	storePathPriv := "~/terraform_priv_" + rand + ".pem"
 
 	certStoreType := "2"
 	password := "TerraformAccTestBasic"
@@ -40,14 +43,14 @@ func TestAccKeyfactorStore_Basic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorStoreExists("keyfactor_store.test"),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.client_machine", clientMachine),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.store_path", storePathPub),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.cert_store_type", certStoreType),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.agent_id", agentId),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.inventory_schedule.0.interval.0.minutes", inventoryMins),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.password.0.value", password),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "client_machine", clientMachine),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "store_path", storePathPub),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "cert_store_type", certStoreType),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "agent_id", agentId),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "inventory_schedule.0.interval.0.minutes", inventoryMins),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "password.0.value", password),
 					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_store.test", "store.0.keyfactor_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_store.test", "keyfactor_id"),
 				),
 			},
 			{
@@ -55,20 +58,20 @@ func TestAccKeyfactorStore_Basic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorStoreExists("keyfactor_store.test"),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.client_machine", clientMachine),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.store_path", storePathPub),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.cert_store_type", certStoreType),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.agent_id", agentId),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.inventory_schedule.0.interval.0.minutes", inventoryMins),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.password.0.value", password),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "client_machine", clientMachine),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "store_path", storePathPub),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "cert_store_type", certStoreType),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "agent_id", agentId),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "inventory_schedule.0.interval.0.minutes", inventoryMins),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "password.0.value", password),
 					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_store.test", "store.0.keyfactor_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_store.test", "keyfactor_id"),
 					// Check that the change propagated to new state
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.property.#", "2"),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.property.0.name", "separatePrivateKey"),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.property.0.value", "true"),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.property.1.name", "privateKeyPath"),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "store.0.property.1.value", storePathPriv),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "property.#", "2"),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "property.0.name", "separatePrivateKey"),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "property.0.value", "true"),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "property.1.name", "privateKeyPath"),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "property.1.value", storePathPriv),
 				),
 			},
 		},
@@ -157,20 +160,18 @@ func testAccCheckKeyfactorStore_Basic(clientMachine string, storePath string, ag
 	// Return the minimum (basic) required fields to enroll PRX certificate
 	return fmt.Sprintf(`
 	resource "keyfactor_store" "test" {
-    store {
-        client_machine  = "%s"
-        store_path      = "%s"
-        cert_store_type = %s
-        inventory_schedule {
-            interval {
-                minutes = %s
-            }
-        }
-        agent_id = "%s"
-        password {
-            value = "%s"
-        }
-    }
+    client_machine  = "%s"
+	store_path      = "%s"
+	cert_store_type = %s
+	inventory_schedule {
+		interval {
+			minutes = %s
+		}
+	}
+	agent_id = "%s"
+	password {
+		value = "%s"
+	}
 }
 	`, clientMachine, storePath, certStoreType, inventoryMins, agentId, password)
 }
@@ -179,28 +180,26 @@ func testAccCheckKeyfactorStore_Modified(clientMachine string, storePathPub stri
 	// Return the minimum (basic) required fields to enroll PRX certificate
 	return fmt.Sprintf(`
 	resource "keyfactor_store" "test" {
-    store {
-        client_machine  = "%s"
-        store_path      = "%s"
-        cert_store_type = %s
-        inventory_schedule {
-            interval {
-                minutes = %s
-            }
-        }
-        agent_id = "%s"
-        password {
-            value = "%s"
-        }
-		property {
-			name  = "separatePrivateKey"
-            value = "true"
+    client_machine  = "%s"
+	store_path      = "%s"
+	cert_store_type = %s
+	inventory_schedule {
+		interval {
+			minutes = %s
 		}
-		property {
-			name  = "privateKeyPath"
-            value = "%s"
-		}
-    }
+	}
+	agent_id = "%s"
+	password {
+		value = "%s"
+	}
+	property {
+		name  = "separatePrivateKey"
+		value = "true"
+	}
+	property {
+		name  = "privateKeyPath"
+		value = "%s"
+	}
 }
 	`, clientMachine, storePathPub, certStoreType, inventoryMins, agentId, password, storePathPriv)
 }

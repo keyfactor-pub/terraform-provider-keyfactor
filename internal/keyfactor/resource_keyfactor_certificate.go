@@ -21,207 +21,198 @@ func resourceCertificate() *schema.Resource {
 		UpdateContext: resourceCertificateUpdate,
 		DeleteContext: resourceCertificateDelete,
 		Schema: map[string]*schema.Schema{
-			"certificate": {
-				Type:     schema.TypeList,
-				MaxItems: 1,
-				Required: true,
+			"csr": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Base-64 encoded certificate signing request (CSR)",
+			},
+			"key_password": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: "Password to protect certificate and private key with",
+			},
+			"subject": {
+				Type:        schema.TypeList,
+				MaxItems:    1,
+				Optional:    true,
+				Description: "Certificate subject",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"csr": {
+						"subject_common_name": {
 							Type:        schema.TypeString,
 							Optional:    true,
-							Description: "Base-64 encoded certificate signing request (CSR)",
+							Description: "Subject common name for new certificate",
 						},
-						"key_password": {
+						"subject_locality": {
 							Type:        schema.TypeString,
 							Optional:    true,
-							Description: "Password to protect certificate and private key with",
+							Description: "Subject locality for new certificate",
 						},
-						"subject": {
-							Type:        schema.TypeList,
-							MaxItems:    1,
-							Optional:    true,
-							Description: "Certificate subject",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"subject_common_name": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Subject common name for new certificate",
-									},
-									"subject_locality": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Subject locality for new certificate",
-									},
-									"subject_organization": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Subject organization for new certificate",
-									},
-									"subject_state": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Subject state for new certificate",
-									},
-									"subject_country": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Subject country for new certificate",
-									},
-									"subject_organizational_unit": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Subject organizational unit for new certificate",
-									},
-								},
-							},
-						},
-						"certificate_authority": {
-							Type:     schema.TypeString,
-							Required: true,
-							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-								if strings.ToLower(old) == strings.ToLower(new) {
-									return true
-								}
-								return false
-							},
-							Description: "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
-						},
-						"cert_template": {
+						"subject_organization": {
 							Type:        schema.TypeString,
-							Required:    true,
-							Description: "Short name of certificate template to be deployed",
-						},
-						"sans": {
-							Type:        schema.TypeList,
-							MaxItems:    1,
 							Optional:    true,
-							Description: "Certificate subject-alternative names",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"san_ip4": {
-										Type:        schema.TypeList,
-										Optional:    true,
-										Description: "List of IPv4 addresses to use as subjects of the certificate",
-										DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-											// For some reason Terraform detects this particular function as having drift; this function
-											// gives us a definitive answer.
-											return !d.HasChange(k)
-										},
-										Elem: &schema.Schema{Type: schema.TypeString},
-									},
-									"san_uri": {
-										Type:        schema.TypeList,
-										Optional:    true,
-										Description: "List of IPv6 addresses to use as subjects of the certificate",
-										DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-											// For some reason Terraform detects this particular function as having drift; this function
-											// gives us a definitive answer.
-											return !d.HasChange(k)
-										},
-										Elem: &schema.Schema{Type: schema.TypeString},
-									},
-									"san_dns": {
-										Type:        schema.TypeList,
-										Optional:    true,
-										Description: "List of DNS names to use as subjects of the certificate",
-										DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-											// For some reason Terraform detects this particular function as having drift; this function
-											// gives us a definitive answer.
-											return !d.HasChange(k)
-										},
-										Elem: &schema.Schema{Type: schema.TypeString},
-									},
-								},
-							},
+							Description: "Subject organization for new certificate",
 						},
-						"metadata": {
-							Type:        schema.TypeList,
+						"subject_state": {
+							Type:        schema.TypeString,
 							Optional:    true,
-							Description: "Metadata key-value pairs to be attached to certificate",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"name": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Name of metadata field as seen in Keyfactor",
-										Elem:        &schema.Schema{Type: schema.TypeString},
-									},
-									"value": {
-										Type:        schema.TypeString,
-										Optional:    true,
-										Description: "Metadata value",
-										Elem:        &schema.Schema{Type: schema.TypeString},
-									},
-								},
-							},
+							Description: "Subject state for new certificate",
 						},
-						"collection_id": {
-							Type:        schema.TypeInt,
+						"subject_country": {
+							Type:        schema.TypeString,
 							Optional:    true,
-							Description: "Collection identifier used to validate user permissions (if service account has global permissions, this is not needed)",
+							Description: "Subject country for new certificate",
 						},
-						"deployment": {
-							Type:        schema.TypeList,
+						"subject_organizational_unit": {
+							Type:        schema.TypeString,
 							Optional:    true,
-							MaxItems:    1,
-							Description: "PFX certificate deployment options (certificate format must be STORE)",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"store_ids": {
-										Type:        schema.TypeList,
-										Optional:    true,
-										Description: "List of store IDs to deploy PFX certificate into",
-										Elem:        &schema.Schema{Type: schema.TypeString},
-									},
-									"store_type_ids": {
-										Type:        schema.TypeList,
-										Optional:    true,
-										Description: "List of store IDs to deploy PFX certificate into",
-										Elem:        &schema.Schema{Type: schema.TypeInt},
-									},
-									"alias": {
-										Type:        schema.TypeList,
-										Optional:    true,
-										Description: "Alias that certificate will be stored under in new certificate",
-										Elem:        &schema.Schema{Type: schema.TypeString},
-									},
-								},
-							},
-						},
-						"serial_number": {
-							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "Serial number of newly enrolled certificate",
-						},
-						"issuer_dn": {
-							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "Issuer distinguished name that signed the certificate",
-						},
-						"thumbprint": {
-							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "Thumbprint of newly enrolled certificate",
-						},
-						"keyfactor_id": {
-							Type:        schema.TypeInt,
-							Computed:    true,
-							Description: "Keyfactor certificate ID",
-						},
-						"keyfactor_request_id": {
-							Type:        schema.TypeInt,
-							Computed:    true,
-							Description: "Keyfactor request ID necessary for deploying certificate",
-						},
-						"certificate_pem": {
-							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "PEM formatted certificate",
+							Description: "Subject organizational unit for new certificate",
 						},
 					},
 				},
+			},
+			"certificate_authority": {
+				Type:     schema.TypeString,
+				Required: true,
+				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+					if strings.ToLower(old) == strings.ToLower(new) {
+						return true
+					}
+					return false
+				},
+				Description: "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
+			},
+			"cert_template": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Short name of certificate template to be deployed",
+			},
+			"sans": {
+				Type:        schema.TypeList,
+				MaxItems:    1,
+				Optional:    true,
+				Description: "Certificate subject-alternative names",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"san_ip4": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "List of IPv4 addresses to use as subjects of the certificate",
+							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+								// For some reason Terraform detects this particular function as having drift; this function
+								// gives us a definitive answer.
+								return !d.HasChange(k)
+							},
+							Elem: &schema.Schema{Type: schema.TypeString},
+						},
+						"san_uri": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "List of IPv6 addresses to use as subjects of the certificate",
+							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+								// For some reason Terraform detects this particular function as having drift; this function
+								// gives us a definitive answer.
+								return !d.HasChange(k)
+							},
+							Elem: &schema.Schema{Type: schema.TypeString},
+						},
+						"san_dns": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "List of DNS names to use as subjects of the certificate",
+							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+								// For some reason Terraform detects this particular function as having drift; this function
+								// gives us a definitive answer.
+								return !d.HasChange(k)
+							},
+							Elem: &schema.Schema{Type: schema.TypeString},
+						},
+					},
+				},
+			},
+			"metadata": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: "Metadata key-value pairs to be attached to certificate",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"name": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: "Name of metadata field as seen in Keyfactor",
+							Elem:        &schema.Schema{Type: schema.TypeString},
+						},
+						"value": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: "Metadata value",
+							Elem:        &schema.Schema{Type: schema.TypeString},
+						},
+					},
+				},
+			},
+			"collection_id": {
+				Type:        schema.TypeInt,
+				Optional:    true,
+				Description: "Collection identifier used to validate user permissions (if service account has global permissions, this is not needed)",
+			},
+			"deployment": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				MaxItems:    1,
+				Description: "PFX certificate deployment options (certificate format must be STORE)",
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"store_ids": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "List of store IDs to deploy PFX certificate into",
+							Elem:        &schema.Schema{Type: schema.TypeString},
+						},
+						"store_type_ids": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "List of store IDs to deploy PFX certificate into",
+							Elem:        &schema.Schema{Type: schema.TypeInt},
+						},
+						"alias": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: "Alias that certificate will be stored under in new certificate",
+							Elem:        &schema.Schema{Type: schema.TypeString},
+						},
+					},
+				},
+			},
+			"serial_number": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "Serial number of newly enrolled certificate",
+			},
+			"issuer_dn": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "Issuer distinguished name that signed the certificate",
+			},
+			"thumbprint": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "Thumbprint of newly enrolled certificate",
+			},
+			"keyfactor_id": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "Keyfactor certificate ID",
+			},
+			"keyfactor_request_id": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "Keyfactor request ID necessary for deploying certificate",
+			},
+			"certificate_pem": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "PEM formatted certificate",
 			},
 		},
 	}
@@ -231,151 +222,145 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 	var diags diag.Diagnostics
 	kfClient := m.(*keyfactor.Client)
 
-	certificates := d.Get("certificate").([]interface{})
-
-	for _, certificate := range certificates {
-		i := certificate.(map[string]interface{})
-		sans := i["sans"].([]interface{}) // Extract SANs from schema
-		metadata := i["metadata"].([]interface{})
-
-		var deploy = false
-		if len(i["deployment"].([]interface{})) > 0 {
-			deploy = true // If deployment options are set to true, deploy the certificate
+	sans := d.Get("sans").([]interface{}) // Extract SANs from schema
+	metadata := d.Get("metadata").([]interface{})
+	var deploy = false
+	if len(d.Get("deployment").([]interface{})) > 0 {
+		deploy = true // If deployment options are set to true, deploy the certificate
+	}
+	csr := d.Get("csr").(string)
+	if csr != "" {
+		CSRArgs := &keyfactor.EnrollCSRFctArgs{
+			CSR:                  csr,
+			CertificateAuthority: d.Get("certificate_authority").(string),
+			Template:             d.Get("cert_template").(string),
+			IncludeChain:         true,
+			CertFormat:           "PEM", // Retrieve certificate in READ
+			CertificateSANs:      getSans(sans),
+			CertificateMetadata:  interfaceArrayToStringTuple(metadata),
+		}
+		enrollResponse, err := kfClient.EnrollCSR(CSRArgs)
+		if err != nil {
+			resourceCertificateRead(ctx, d, m)
+			return diag.FromErr(err)
 		}
 
-		if i["csr"] != "" {
-			CSRArgs := &keyfactor.EnrollCSRFctArgs{
-				CSR:                  i["csr"].(string),
-				CertificateAuthority: i["certificate_authority"].(string),
-				Template:             i["cert_template"].(string),
-				IncludeChain:         true,
-				CertFormat:           "PEM", // Retrieve certificate in READ
-				CertificateSANs:      getSans(sans),
-				CertificateMetadata:  interfaceArrayToStringTuple(metadata),
-			}
-			enrollResponse, err := kfClient.EnrollCSR(CSRArgs)
-			if err != nil {
-				resourceCertificateRead(ctx, d, m)
-				return diag.FromErr(err)
-			}
+		// Set resource ID to tell Terraform that operation was successful
+		d.SetId(strconv.Itoa(enrollResponse.CertificateInformation.KeyfactorID))
 
-			// Set resource ID to tell Terraform that operation was successful
-			d.SetId(strconv.Itoa(enrollResponse.CertificateInformation.KeyfactorID))
+		resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
+	} else {
+		subject := d.Get("subject").([]interface{})[0].(map[string]interface{}) // Extract subject data from schema
+		PFXArgs := &keyfactor.EnrollPFXFctArgs{
+			CustomFriendlyName:          "Terraform",
+			KeyPassword:                 d.Get("key_password").(string),
+			PopulateMissingValuesFromAD: false,
+			CertificateAuthority:        d.Get("certificate_authority").(string),
+			Template:                    d.Get("cert_template").(string),
+			IncludeChain:                true,
+			CertFormat:                  "STORE",       // Get certificate from data source
+			CertificateSANs:             getSans(sans), // if no SANs are specified, this field is nil
+			CertificateMetadata:         interfaceArrayToStringTuple(metadata),
+			CertificateSubject: keyfactor.CertificateSubject{
+				SubjectCommonName:         subject["subject_common_name"].(string),
+				SubjectLocality:           subject["subject_locality"].(string),
+				SubjectOrganization:       subject["subject_organization"].(string),
+				SubjectCountry:            subject["subject_country"].(string),
+				SubjectOrganizationalUnit: subject["subject_organizational_unit"].(string),
+				SubjectState:              subject["subject_state"].(string),
+			},
+		}
+		// Error checking for invalid fields inside PFX enrollment function
+		enrollResponse, err := kfClient.EnrollPFX(PFXArgs) // If no CSR is present, enroll a PFX certificate
+		if err != nil {
+			resourceCertificateRead(ctx, d, m)
+			return diag.FromErr(err)
+		}
 
-			resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
-		} else {
-			subject := i["subject"].([]interface{})[0].(map[string]interface{}) // Extract subject data from schema
-			PFXArgs := &keyfactor.EnrollPFXFctArgs{
-				CustomFriendlyName:          "Terraform",
-				KeyPassword:                 i["key_password"].(string),
-				PopulateMissingValuesFromAD: false,
-				CertificateAuthority:        i["certificate_authority"].(string),
-				Template:                    i["cert_template"].(string),
-				IncludeChain:                true,
-				CertFormat:                  "STORE",       // Get certificate from data source
-				CertificateSANs:             getSans(sans), // if no SANs are specified, this field is nil
-				CertificateMetadata:         interfaceArrayToStringTuple(metadata),
-				CertificateSubject: keyfactor.CertificateSubject{
-					SubjectCommonName:         subject["subject_common_name"].(string),
-					SubjectLocality:           subject["subject_locality"].(string),
-					SubjectOrganization:       subject["subject_organization"].(string),
-					SubjectCountry:            subject["subject_country"].(string),
-					SubjectOrganizationalUnit: subject["subject_organizational_unit"].(string),
-					SubjectState:              subject["subject_state"].(string),
-				},
-			}
-			// Error checking for invalid fields inside PFX enrollment function
-			enrollResponse, err := kfClient.EnrollPFX(PFXArgs) // If no CSR is present, enroll a PFX certificate
-			if err != nil {
-				resourceCertificateRead(ctx, d, m)
-				return diag.FromErr(err)
-			}
+		// Set resource ID to tell Terraform that operation was successful
+		d.SetId(strconv.Itoa(enrollResponse.CertificateInformation.KeyfactorID))
 
-			// Set resource ID to tell Terraform that operation was successful
-			d.SetId(strconv.Itoa(enrollResponse.CertificateInformation.KeyfactorID))
+		// If deployment options were provided by user, deploy the certificate
+		if deploy == true {
+			deploymentOptions := d.Get("deployment").([]interface{})
 
-			// If deployment options were provided by user, deploy the certificate
-			if deploy == true {
-				deploymentOptions := i["deployment"].([]interface{})
+			// Extract store IDs, alias', and store type IDs from Schema. The length of these should be equal
+			storeIdsInterface := deploymentOptions[0].(map[string]interface{})["store_ids"].([]interface{})
+			aliasInterface := deploymentOptions[0].(map[string]interface{})["alias"].([]interface{})
+			storeTypeIdsInterface := deploymentOptions[0].(map[string]interface{})["store_type_ids"].([]interface{})
 
-				// Extract store IDs, alias', and store type IDs from Schema. The length of these should be equal
-				storeIdsInterface := deploymentOptions[0].(map[string]interface{})["store_ids"].([]interface{})
-				aliasInterface := deploymentOptions[0].(map[string]interface{})["alias"].([]interface{})
-				storeTypeIdsInterface := deploymentOptions[0].(map[string]interface{})["store_type_ids"].([]interface{})
+			// Check if the correct number of arguments were specified to deploy the certificate (should all be equal)
+			if len(storeIdsInterface) != len(aliasInterface) || len(aliasInterface) != len(storeTypeIdsInterface) {
+				deployFailureString := fmt.Sprintf("Store IDs provided: %d - Store alias' provided: %d - Store type IDs provided: %d", len(storeIdsInterface), len(aliasInterface), len(storeTypeIdsInterface))
+				diags = append(diags, diag.Diagnostic{
+					Severity: diag.Warning,
+					Summary:  "Not enough information provided to deploy certificate.",
+					Detail:   deployFailureString,
+				})
+				// Just because we failed to deploy doesn't mean that the create failed.
+			} else {
+				// Build []string of store IDs from interface
 
-				// Check if the correct number of arguments were specified to deploy the certificate (should all be equal)
-				if len(storeIdsInterface) != len(aliasInterface) || len(aliasInterface) != len(storeTypeIdsInterface) {
-					deployFailureString := fmt.Sprintf("Store IDs provided: %d - Store alias' provided: %d - Store type IDs provided: %d", len(storeIdsInterface), len(aliasInterface), len(storeTypeIdsInterface))
-					diags = append(diags, diag.Diagnostic{
-						Severity: diag.Warning,
-						Summary:  "Not enough information provided to deploy certificate.",
-						Detail:   deployFailureString,
-					})
-					// Just because we failed to deploy doesn't mean that the create failed.
-				} else {
-					// Build []string of store IDs from interface
-
-					deployStoreIds := make([]string, len(storeIdsInterface), len(storeIdsInterface))
-					for i, id := range storeIdsInterface {
-						deployStoreIds[i] = id.(string)
-					}
-
-					// Build []string of alias' from interface
-					aliasArray := make([]string, len(aliasInterface), len(aliasInterface))
-					for i, alias := range aliasInterface {
-						aliasArray[i] = alias.(string)
-					}
-
-					// Build []StoreTypes of store type from interface
-					storeTypes := make([]keyfactor.StoreTypes, len(storeTypeIdsInterface), len(storeTypeIdsInterface))
-					for i, id := range storeTypeIdsInterface {
-						storeTypes[i] = keyfactor.StoreTypes{
-							StoreTypeId: id.(int),
-							Alias:       stringToPointer(aliasArray[i]),
-						}
-					}
-
-					deployPFXArgs := &keyfactor.DeployPFXArgs{
-						StoreIds:      deployStoreIds,
-						Password:      i["key_password"].(string),
-						StoreTypes:    storeTypes,
-						CertificateId: enrollResponse.CertificateInformation.KeyfactorID,
-						RequestId:     enrollResponse.CertificateInformation.KeyfactorRequestID,
-						JobTime:       nil,
-					}
-
-					deployResp, err := kfClient.DeployPFXCertificate(deployPFXArgs)
-					if err != nil {
-						resourceCertificateRead(ctx, d, m)
-						return diag.FromErr(err)
-					}
-
-					if len(deployResp.FailedStores) != 0 {
-						var failedStoresString string
-
-						for _, failedStore := range deployResp.FailedStores {
-							failedStoresString += failedStore + ", "
-						}
-
-						diags = append(diags, diag.Diagnostic{
-							Severity: diag.Warning,
-							Summary:  "Failed to deploy to one or more certificate stores",
-							Detail:   failedStoresString,
-						})
-					}
-
-					diags = append(diags, diag.Diagnostic{
-						Severity: diag.Warning,
-						Summary:  "Request to deploy PFX was successful, but deployment takes time to propagate.",
-						Detail: "Running Terraform Plan will likely say that deployment infrastructure from .tf is" +
-							"new, and requires Terraform apply to update. Give it a few minutes before running Apply.",
-					})
-					// todo dont go past this step until the certificate is deployed
-					time.Sleep(10 * time.Second)
+				deployStoreIds := make([]string, len(storeIdsInterface), len(storeIdsInterface))
+				for i, id := range storeIdsInterface {
+					deployStoreIds[i] = id.(string)
 				}
+
+				// Build []string of alias' from interface
+				aliasArray := make([]string, len(aliasInterface), len(aliasInterface))
+				for i, alias := range aliasInterface {
+					aliasArray[i] = alias.(string)
+				}
+
+				// Build []StoreTypes of store type from interface
+				storeTypes := make([]keyfactor.StoreTypes, len(storeTypeIdsInterface), len(storeTypeIdsInterface))
+				for i, id := range storeTypeIdsInterface {
+					storeTypes[i] = keyfactor.StoreTypes{
+						StoreTypeId: id.(int),
+						Alias:       stringToPointer(aliasArray[i]),
+					}
+				}
+
+				deployPFXArgs := &keyfactor.DeployPFXArgs{
+					StoreIds:      deployStoreIds,
+					Password:      d.Get("key_password").(string),
+					StoreTypes:    storeTypes,
+					CertificateId: enrollResponse.CertificateInformation.KeyfactorID,
+					RequestId:     enrollResponse.CertificateInformation.KeyfactorRequestID,
+					JobTime:       nil,
+				}
+
+				deployResp, err := kfClient.DeployPFXCertificate(deployPFXArgs)
+				if err != nil {
+					resourceCertificateRead(ctx, d, m)
+					return diag.FromErr(err)
+				}
+
+				if len(deployResp.FailedStores) != 0 {
+					var failedStoresString string
+
+					for _, failedStore := range deployResp.FailedStores {
+						failedStoresString += failedStore + ", "
+					}
+
+					diags = append(diags, diag.Diagnostic{
+						Severity: diag.Warning,
+						Summary:  "Failed to deploy to one or more certificate stores",
+						Detail:   failedStoresString,
+					})
+				}
+
+				diags = append(diags, diag.Diagnostic{
+					Severity: diag.Warning,
+					Summary:  "Request to deploy PFX was successful, but deployment takes time to propagate.",
+					Detail: "Running Terraform Plan will likely say that deployment infrastructure from .tf is" +
+						"new, and requires Terraform apply to update. Give it a few minutes before running Apply.",
+				})
+				// todo dont go past this step until the certificate is deployed
+				time.Sleep(10 * time.Second)
 			}
-			return resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 		}
+		return resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 	}
 	return diags
 }
@@ -426,10 +411,9 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	}
 
 	// Get the password out of current schema
-	schemaState := d.Get("certificate").([]interface{})
-	password := schemaState[0].(map[string]interface{})["key_password"].(string)
-	metadata := schemaState[0].(map[string]interface{})["metadata"].([]interface{})
-	csr := schemaState[0].(map[string]interface{})["csr"].(string)
+	password := d.Get("key_password").(string)
+	metadata := d.Get("metadata").([]interface{})
+	csr := d.Get("csr").(string)
 
 	// Download and assign certificates to proper location
 	err, pem := downloadCertificate(certificateData.Id, kfClient, "PEM")
@@ -437,20 +421,22 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 		return diag.FromErr(err)
 	}
 
-	certificateItems, err := flattenCertificateItems(certificateData, kfClient, pem, password, metadata, csr) // Set schema
+	newSchema, err := flattenCertificateItems(certificateData, kfClient, pem, password, metadata, csr) // Set schema
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("certificate", certificateItems); err != nil {
-		return diag.FromErr(err)
+	for key, value := range newSchema {
+		err = d.Set(key, value)
+		if err != nil {
+			diags = append(diags, diag.FromErr(err)[0])
+		}
 	}
 
 	return diags
 }
 
-func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, password string, oldMetadata []interface{}, csr string) ([]interface{}, error) {
+func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, password string, oldMetadata []interface{}, csr string) (map[string]interface{}, error) {
 	if certificateContext != nil {
-		temp := make([]interface{}, 1, 1)
 		data := make(map[string]interface{})
 
 		// Assign response data to associated schema
@@ -463,7 +449,7 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 		// Assign non-computed schema
 		templates, err := kfClient.GetTemplate(certificateContext.TemplateId)
 		if err != nil {
-			return make([]interface{}, 0), err
+			return make(map[string]interface{}), err
 		}
 		data["cert_template"] = templates.CommonName
 		data["certificate_authority"] = certificateContext.CertificateAuthorityName
@@ -488,11 +474,9 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 		if len(certificateContext.Locations) > 0 {
 			data["deployment"] = flattenDeploymentItems(certificateContext.Locations)
 		}
-
-		temp[0] = data
-		return temp, nil
+		return data, nil
 	}
-	return make([]interface{}, 0), errors.New("failed to flatten certificate context schema; context struct nil")
+	return make(map[string]interface{}), errors.New("failed to flatten certificate context schema; context struct nil")
 }
 
 func flattenSubject(subject string) []interface{} {
@@ -631,21 +615,6 @@ func mapSanIDToName(sanID int) string {
 	return ""
 }
 
-func recoverCertificate(id int, password string, kfClient *keyfactor.Client, format string) (error, string) {
-	recoverArgs := &keyfactor.RecoverCertArgs{
-		CertId:       id,
-		Password:     password,
-		IncludeChain: true,
-		CertFormat:   format,
-	}
-
-	resp, err := kfClient.RecoverCertificate(recoverArgs)
-	if err != nil {
-		return err, ""
-	}
-	return nil, resp.PFX
-}
-
 func downloadCertificate(id int, kfClient *keyfactor.Client, format string) (error, string) {
 	downloadArgs := &keyfactor.DownloadCertArgs{
 		CertID:       id,
@@ -665,23 +634,18 @@ func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m in
 	kfClient := m.(*keyfactor.Client)
 
 	if metadataHasChange(d) == true {
-		certificates := d.Get("certificate").([]interface{})
+		metadata := d.Get("metadata").([]interface{})
 
-		for _, certificate := range certificates {
-			i := certificate.(map[string]interface{})
-			metadata := i["metadata"].([]interface{})
+		args := &keyfactor.UpdateMetadataArgs{
+			CertID:              d.Get("keyfactor_id").(int),
+			CertificateMetadata: interfaceArrayToStringTuple(metadata),
+			Metadata:            nil,
+			CollectionId:        0,
+		}
 
-			args := &keyfactor.UpdateMetadataArgs{
-				CertID:              i["keyfactor_id"].(int),
-				CertificateMetadata: interfaceArrayToStringTuple(metadata),
-				Metadata:            nil,
-				CollectionId:        0,
-			}
-
-			err := kfClient.UpdateMetadata(args)
-			if err != nil {
-				return diag.FromErr(err)
-			}
+		err := kfClient.UpdateMetadata(args)
+		if err != nil {
+			return diag.FromErr(err)
 		}
 	} else {
 		diags = append(diags, diag.Diagnostic{
@@ -697,7 +661,7 @@ func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m in
 }
 
 func metadataHasChange(d *schema.ResourceData) bool {
-	metadataRootSearchTerm := "certificate.0.metadata"
+	metadataRootSearchTerm := "metadata"
 	// Most obvious change to detect is the number of metadata schema blocks that exist.
 	if d.HasChange(fmt.Sprintf("%s.#", metadataRootSearchTerm)) == true {
 		return true
@@ -724,23 +688,22 @@ func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m inte
 	// When Terraform Destroy is called, we want Keyfactor to revoke the certificate.
 	kfClient := m.(*keyfactor.Client)
 
-	certificates := d.Get("certificate").([]interface{})
-
-	for _, certificate := range certificates {
-		i := certificate.(map[string]interface{})
-		// Only revoke if revoke_on_destroy is true
-		log.Println("[INFO] Revoking certificate in Keyfactor")
-		revokeArgs := &keyfactor.RevokeCertArgs{
-			CertificateIds: []int{i["keyfactor_id"].(int)}, // Certificate ID expects array of integers
-			Reason:         5,                              // reason = 5 means Cessation of Operation
-			Comment:        "Terraform destroy called on provider with associated cert ID",
-			CollectionId:   i["collection_id"].(int),
-		}
-
-		err := kfClient.RevokeCert(revokeArgs)
-		if err != nil {
-			return diag.FromErr(err)
-		}
+	log.Println("[INFO] Revoking certificate in Keyfactor")
+	revokeArgs := &keyfactor.RevokeCertArgs{
+		CertificateIds: []int{d.Get("keyfactor_id").(int)}, // Certificate ID expects array of integers
+		Reason:         5,                                  // reason = 5 means Cessation of Operation
+		Comment:        "Terraform destroy called on provider with associated cert ID",
+		CollectionId:   d.Get("collection_id").(int),
 	}
+
+	if collectionId := d.Get("collection_id"); collectionId.(int) != 0 {
+		revokeArgs.CollectionId = collectionId.(int)
+	}
+
+	err := kfClient.RevokeCert(revokeArgs)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+
 	return diags
 }

@@ -41,17 +41,17 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_common_name", cN),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.key_password", keyPassword),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_authority"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.cert_template", template),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_common_name", cN),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "key_password", keyPassword),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "cert_template", template),
 					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.serial_number"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.issuer_dn"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.thumbprint"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_request_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 				),
 			},
 			{
@@ -59,21 +59,21 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_common_name", cN),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.key_password", keyPassword),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_authority"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.cert_template", template),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_common_name", cN),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "key_password", keyPassword),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "cert_template", template),
 					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.serial_number"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.issuer_dn"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.thumbprint"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_request_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					// Check that the change propagated to new state
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.#", "1"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.0.name", metaField),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.0.value", meta1),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.0.name", metaField),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.0.value", meta1),
 				),
 			},
 		},
@@ -103,15 +103,15 @@ func TestAccKeyfactorCertificate_BasicCsr(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_authority"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.cert_template", template),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "cert_template", template),
 					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.serial_number"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.issuer_dn"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.thumbprint"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_request_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 				),
 			},
 			{
@@ -119,18 +119,18 @@ func TestAccKeyfactorCertificate_BasicCsr(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.cert_template", template),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "cert_template", template),
 					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.serial_number"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.issuer_dn"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.thumbprint"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_request_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					// Check that the change propagated to new state
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.#", "1"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.0.name", metaField),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.0.value", meta1),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.0.name", metaField),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.0.value", meta1),
 				),
 			},
 		},
@@ -173,25 +173,25 @@ func TestAccKeyfactorCertificate_ExtraPFX(t *testing.T) {
 					// todo this should check if DNS was entered properly
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_common_name", cn),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_organization", o),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_locality", l),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_country", c),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_organizational_unit", ou),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_state", s),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.key_password", keyPassword),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_authority"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.cert_template", template),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.#", "1"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.0.name", metaField),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.0.value", meta1),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_common_name", cn),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_organization", o),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_locality", l),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_country", c),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_organizational_unit", ou),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_state", s),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "key_password", keyPassword),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "cert_template", template),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.0.name", metaField),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.0.value", meta1),
 					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.serial_number"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.issuer_dn"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.thumbprint"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_request_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 				),
 			},
 			{
@@ -199,25 +199,25 @@ func TestAccKeyfactorCertificate_ExtraPFX(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorCertificateExists("keyfactor_certificate.test"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_common_name", cn),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_organization", o),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_locality", l),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_country", c),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_organizational_unit", ou),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.subject.0.subject_state", s),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.key_password", keyPassword),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_authority"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.cert_template", template),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.#", "1"),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.0.name", metaField),
-					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate.0.metadata.0.value", meta2),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_common_name", cn),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_organization", o),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_locality", l),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_country", c),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_organizational_unit", ou),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "subject.0.subject_state", s),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "key_password", keyPassword),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "cert_template", template),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.0.name", metaField),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.0.value", meta2),
 					// Check computed values
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.serial_number"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.issuer_dn"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.thumbprint"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.keyfactor_request_id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate.0.certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 				),
 			},
 		},
@@ -332,14 +332,12 @@ func testAccCheckKeyfactorCertificateBasicPFX(commonName string, password string
 	// Return the minimum (basic) required fields to enroll PRX certificate
 	return fmt.Sprintf(`
 	resource "keyfactor_certificate" "test" {
-		certificate {
-			subject {
-				subject_common_name = "%s"
-			}
-			key_password = "%s"
-			certificate_authority = "%s"
-			cert_template = "%s"
+		subject {
+			subject_common_name = "%s"
 		}
+		key_password = "%s"
+		certificate_authority = "%s"
+		cert_template = "%s"
 	}
 	`, commonName, password, ca, template)
 }
@@ -348,17 +346,15 @@ func testAccCheckKeyfactorCertificateModifiedPFX(commonName string, password str
 	// Return the minimum (basic) required fields to enroll PRX certificate plus a subject field.
 	return fmt.Sprintf(`
 	resource "keyfactor_certificate" "test" {
-		certificate {
-			subject {
-				subject_common_name = "%s"
-			}
-			key_password = "%s"
-			certificate_authority = "%s"
-			cert_template = "%s"
-			metadata {
-				name  = "%s"
-				value = "%s"
-        	}
+		subject {
+			subject_common_name = "%s"
+		}
+		key_password = "%s"
+		certificate_authority = "%s"
+		cert_template = "%s"
+		metadata {
+			name  = "%s"
+			value = "%s"
 		}
 	}
 	`, commonName, password, ca, template, metaName, metaValue)
@@ -368,13 +364,11 @@ func testAccCheckKeyfactorCertificateBasicCSR(csr string, ca string, template st
 	// Return the minimum (basic) required fields to enroll PRX certificate
 	return fmt.Sprintf(`
 	resource "keyfactor_certificate" "test" {
-		certificate {
-			csr = <<EOT
-                  %s
-			      EOT
-			certificate_authority = "%s"
-			cert_template = "%s"
-		}
+		csr = <<EOT
+			  %s
+			  EOT
+		certificate_authority = "%s"
+		cert_template = "%s"
 	}
 	`, csr, ca, template)
 }
@@ -383,16 +377,14 @@ func testAccCheckKeyfactorCertificateModifiedCSR(csr string, ca string, template
 	// Return the minimum (basic) required fields to enroll PRX certificate plus a subject field.
 	return fmt.Sprintf(`
 	resource "keyfactor_certificate" "test" {
-		certificate {
-			csr = <<EOT
-                  %s
-			      EOT
-			certificate_authority = "%s"
-			cert_template = "%s"
-			metadata {
-				name  = "%s"
-				value = "%s"
-        	}
+		csr = <<EOT
+			  %s
+			  EOT
+		certificate_authority = "%s"
+		cert_template = "%s"
+		metadata {
+			name  = "%s"
+			value = "%s"
 		}
 	}
 	`, csr, ca, template, metaName, metaValue)
@@ -402,27 +394,25 @@ func testAccCheckKeyfactorCertificateExtraPFX(cn string, o string, l string, c s
 	dns string, uri string, password string, ca string, template string, metaName string, metaValue string) string {
 	// Return all supported fields to enroll PRX certificate
 	return fmt.Sprintf(`resource "keyfactor_certificate" "test" {
-		certificate {
-			subject {
-				subject_common_name         = "%s"
-				subject_organization        = "%s"
-            	subject_locality            = "%s"
-            	subject_country             = "%s"
-				subject_organizational_unit = "%s"
- 			    subject_state               = "%s"
-			}
-			sans {
-				san_ip4 = ["%s"]
-				san_dns = ["%s"]
-				san_uri = ["%s"]
-			}
-			key_password = "%s"
-			certificate_authority = "%s"
-			cert_template = "%s"
-			metadata {
-				name  = "%s"
-				value = "%s"
-        	}
+		subject {
+			subject_common_name         = "%s"
+			subject_organization        = "%s"
+			subject_locality            = "%s"
+			subject_country             = "%s"
+			subject_organizational_unit = "%s"
+			subject_state               = "%s"
+		}
+		sans {
+			san_ip4 = ["%s"]
+			san_dns = ["%s"]
+			san_uri = ["%s"]
+		}
+		key_password = "%s"
+		certificate_authority = "%s"
+		cert_template = "%s"
+		metadata {
+			name  = "%s"
+			value = "%s"
 		}
 	}
 	`, cn, o, l, c, ou, s, ip4, dns, uri, password, ca, template, metaName, metaValue)

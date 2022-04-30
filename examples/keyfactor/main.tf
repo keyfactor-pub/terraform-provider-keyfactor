@@ -23,6 +23,7 @@ resource "keyfactor_security_identity" "identity1" {
 
 // Create a new security role in Keyfactor and attach the identity represented by the resource identity1
 resource "keyfactor_security_role" "kf_terraform_role1" {
+  provider    = keyfactor.command
   role_name   = "Terraform"
   description = "Role used to demonstrate Keyfactor's ability to integrate with Terraform."
   identities {
@@ -33,6 +34,7 @@ resource "keyfactor_security_role" "kf_terraform_role1" {
 
 // Attach the role represented by the kf_terraform_role1 resource to template IDs 46 and 47
 resource "keyfactor_attach_role" "role_attachment1" {
+  provider         = keyfactor.command
   role_name        = keyfactor_security_role.kf_terraform_role1.role_name
   template_id_list = [46, 47]
 }

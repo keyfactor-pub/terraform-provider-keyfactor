@@ -92,3 +92,84 @@ func testAccDeleteKeyfactorRole(client *keyfactor.Client, roleId int) error {
 	}
 	return nil
 }
+
+// Enroll a PFX certificate based on a random template supported by Keyfactor
+func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *keyfactor.CertificateInformation, string) {
+	var client *keyfactor.Client
+	if conn == nil {
+		var err error
+		clientConfig := &keyfactor.AuthConfig{
+			Hostname: os.Getenv("KEYFACTOR_HOSTNAME"),
+			Username: os.Getenv("KEYFACTOR_USERNAME"),
+			Password: os.Getenv("KEYFACTOR_PASSWORD"),
+		}
+		client, err = keyfactor.NewKeyfactorClient(clientConfig)
+		if err != nil {
+			return err, nil, nil, ""
+		}
+	} else {
+		client = conn
+	}
+
+	// First grab a list of templates from Keyfactor
+	templates, err := client.GetTemplates()
+	if err != nil {
+		return err, nil, nil, ""
+	}
+	var enrollmentTemplate string
+	for _, template := range templates {
+		t := template.AllowedEnrollmentTypes
+		// Find the first template that supports PFX enrollment
+		if t == 1 || t == 3 || t == 5 || t == 7 {
+			enrollmentTemplate = template.CommonName
+			break
+		}
+	}
+
+	// Then, find the first CA from Keyfactor
+	list, err := client.GetCAList()
+	if err != nil {
+		return err, nil, nil, ""
+	}
+	var caName string
+	for _, ca := range list {
+		caName = ca.HostName + "\\" + ca.LogicalName
+	}
+
+	// Generate random CN
+	cn := "terraform_acctest-" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
+	password := acctest.RandStringFromCharSet(12, acctest.CharSetAlphaNum)
+	// Fill out the minimum required fields to enroll a PFX
+	arg := &keyfactor.EnrollPFXFctArgs{
+		CustomFriendlyName:   cn,
+		KeyPassword:          password,
+		CertificateAuthority: caName,
+		Template:             enrollmentTemplate,
+		IncludeChain:         true,
+		CertFormat:           "STORE",
+		CertificateSubject:   keyfactor.CertificateSubject{SubjectCommonName: cn},
+		CertificateSANs:      &keyfactor.SANs{DNS: []string{cn}},
+	}
+
+	pfx, err := client.EnrollPFX(arg)
+	if err != nil {
+		return err, nil, nil, ""
+	}
+
+	return nil, client, &pfx.CertificateInformation, password
+}
+
+func revokePFXCertificate(conn *keyfactor.Client, certId int) error {
+	revokeArgs := &keyfactor.RevokeCertArgs{
+		CertificateIds: []int{certId}, // Certificate ID expects array of integers
+		Reason:         5,             // reason = 5 means Cessation of Operation
+		Comment:        "Terraform acceptance test cleanup",
+	}
+
+	err := conn.RevokeCert(revokeArgs)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

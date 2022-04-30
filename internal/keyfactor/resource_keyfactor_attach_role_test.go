@@ -11,10 +11,6 @@ import (
 	"testing"
 )
 
-/*
- * IMPORTANT NOTICE - Not yet implemented.
- */
-
 func TestAccKeyfactorAttachRoleBasic(t *testing.T) {
 	skipRole := testAccKeyfactorAttachRoleCheckSkip()
 	if skipRole {

@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"strconv"
-	"strings"
-	"time"
-
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"log"
+	"strconv"
+	"strings"
 )
 
 func resourceCertificate() *schema.Resource {
@@ -156,34 +154,6 @@ func resourceCertificate() *schema.Resource {
 				Optional:    true,
 				Description: "Collection identifier used to validate user permissions (if service account has global permissions, this is not needed)",
 			},
-			"deployment": {
-				Type:        schema.TypeList,
-				Optional:    true,
-				MaxItems:    1,
-				Description: "PFX certificate deployment options (certificate format must be STORE)",
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"store_ids": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "List of store IDs to deploy PFX certificate into",
-							Elem:        &schema.Schema{Type: schema.TypeString},
-						},
-						"store_type_ids": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "List of store IDs to deploy PFX certificate into",
-							Elem:        &schema.Schema{Type: schema.TypeInt},
-						},
-						"alias": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "Alias that certificate will be stored under in new certificate",
-							Elem:        &schema.Schema{Type: schema.TypeString},
-						},
-					},
-				},
-			},
 			"serial_number": {
 				Type:        schema.TypeString,
 				Computed:    true,
@@ -224,10 +194,6 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 
 	sans := d.Get("sans").([]interface{}) // Extract SANs from schema
 	metadata := d.Get("metadata").([]interface{})
-	var deploy = false
-	if len(d.Get("deployment").([]interface{})) > 0 {
-		deploy = true // If deployment options are set to true, deploy the certificate
-	}
 	csr := d.Get("csr").(string)
 	if csr != "" {
 		CSRArgs := &keyfactor.EnrollCSRFctArgs{
@@ -280,86 +246,6 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 		// Set resource ID to tell Terraform that operation was successful
 		d.SetId(strconv.Itoa(enrollResponse.CertificateInformation.KeyfactorID))
 
-		// If deployment options were provided by user, deploy the certificate
-		if deploy == true {
-			deploymentOptions := d.Get("deployment").([]interface{})
-
-			// Extract store IDs, alias', and store type IDs from Schema. The length of these should be equal
-			storeIdsInterface := deploymentOptions[0].(map[string]interface{})["store_ids"].([]interface{})
-			aliasInterface := deploymentOptions[0].(map[string]interface{})["alias"].([]interface{})
-			storeTypeIdsInterface := deploymentOptions[0].(map[string]interface{})["store_type_ids"].([]interface{})
-
-			// Check if the correct number of arguments were specified to deploy the certificate (should all be equal)
-			if len(storeIdsInterface) != len(aliasInterface) || len(aliasInterface) != len(storeTypeIdsInterface) {
-				deployFailureString := fmt.Sprintf("Store IDs provided: %d - Store alias' provided: %d - Store type IDs provided: %d", len(storeIdsInterface), len(aliasInterface), len(storeTypeIdsInterface))
-				diags = append(diags, diag.Diagnostic{
-					Severity: diag.Warning,
-					Summary:  "Not enough information provided to deploy certificate.",
-					Detail:   deployFailureString,
-				})
-				// Just because we failed to deploy doesn't mean that the create failed.
-			} else {
-				// Build []string of store IDs from interface
-
-				deployStoreIds := make([]string, len(storeIdsInterface), len(storeIdsInterface))
-				for i, id := range storeIdsInterface {
-					deployStoreIds[i] = id.(string)
-				}
-
-				// Build []string of alias' from interface
-				aliasArray := make([]string, len(aliasInterface), len(aliasInterface))
-				for i, alias := range aliasInterface {
-					aliasArray[i] = alias.(string)
-				}
-
-				// Build []StoreTypes of store type from interface
-				storeTypes := make([]keyfactor.StoreTypes, len(storeTypeIdsInterface), len(storeTypeIdsInterface))
-				for i, id := range storeTypeIdsInterface {
-					storeTypes[i] = keyfactor.StoreTypes{
-						StoreTypeId: id.(int),
-						Alias:       stringToPointer(aliasArray[i]),
-					}
-				}
-
-				deployPFXArgs := &keyfactor.DeployPFXArgs{
-					StoreIds:      deployStoreIds,
-					Password:      d.Get("key_password").(string),
-					StoreTypes:    storeTypes,
-					CertificateId: enrollResponse.CertificateInformation.KeyfactorID,
-					RequestId:     enrollResponse.CertificateInformation.KeyfactorRequestID,
-					JobTime:       nil,
-				}
-
-				deployResp, err := kfClient.DeployPFXCertificate(deployPFXArgs)
-				if err != nil {
-					resourceCertificateRead(ctx, d, m)
-					return diag.FromErr(err)
-				}
-
-				if len(deployResp.FailedStores) != 0 {
-					var failedStoresString string
-
-					for _, failedStore := range deployResp.FailedStores {
-						failedStoresString += failedStore + ", "
-					}
-
-					diags = append(diags, diag.Diagnostic{
-						Severity: diag.Warning,
-						Summary:  "Failed to deploy to one or more certificate stores",
-						Detail:   failedStoresString,
-					})
-				}
-
-				diags = append(diags, diag.Diagnostic{
-					Severity: diag.Warning,
-					Summary:  "Request to deploy PFX was successful, but deployment takes time to propagate.",
-					Detail: "Running Terraform Plan will likely say that deployment infrastructure from .tf is" +
-						"new, and requires Terraform apply to update. Give it a few minutes before running Apply.",
-				})
-				// todo dont go past this step until the certificate is deployed
-				time.Sleep(10 * time.Second)
-			}
-		}
 		return resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 	}
 	return diags
@@ -471,9 +357,6 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 			data["csr"] = csr
 		}
 
-		if len(certificateContext.Locations) > 0 {
-			data["deployment"] = flattenDeploymentItems(certificateContext.Locations)
-		}
 		return data, nil
 	}
 	return make(map[string]interface{}), errors.New("failed to flatten certificate context schema; context struct nil")
@@ -522,29 +405,6 @@ func flattenMetadata(metadata interface{}, oldMetadata []interface{}) []interfac
 		}
 		return newMetadataArray
 	}
-	return make([]interface{}, 0)
-}
-
-func flattenDeploymentItems(locations []keyfactor.CertificateLocations) []interface{} {
-	if locations != nil {
-		var storeIdsInterface []interface{}
-		var aliasInterface []interface{}
-		var storeTypeIdsInterface []interface{}
-		for _, location := range locations {
-			storeIdsInterface = append(storeIdsInterface, location.CertStoreId)
-			aliasInterface = append(aliasInterface, location.Alias)
-			storeTypeIdsInterface = append(storeTypeIdsInterface, location.StoreType)
-		}
-		locationsMap := make(map[string]interface{})
-		locationsMap["store_ids"] = storeIdsInterface
-		locationsMap["alias"] = aliasInterface
-		locationsMap["store_type_ids"] = storeTypeIdsInterface
-
-		locationsArray := make([]interface{}, 1, 1)
-		locationsArray[0] = locationsMap
-		return locationsArray
-	}
-
 	return make([]interface{}, 0)
 }
 
@@ -693,7 +553,6 @@ func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m inte
 		CertificateIds: []int{d.Get("keyfactor_id").(int)}, // Certificate ID expects array of integers
 		Reason:         5,                                  // reason = 5 means Cessation of Operation
 		Comment:        "Terraform destroy called on provider with associated cert ID",
-		CollectionId:   d.Get("collection_id").(int),
 	}
 
 	if collectionId := d.Get("collection_id"); collectionId.(int) != 0 {

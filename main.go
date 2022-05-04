@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"flag"
-	"github.com/Keyfactor/terraform-provider-keyfactor/internal/keyfactor"
+	"github.com/Keyfactor/terraform-provider-keyfactor/keyfactor"
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"

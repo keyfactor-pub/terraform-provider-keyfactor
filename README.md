@@ -10,7 +10,7 @@ is a work in progress, and feature requests can be submitted by opening an issue
 * Usage
   * [Documentation](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/docs/index.md)
   * [Examples](https://github.com/Keyfactor/terraform-provider-keyfactor/tree/main/examples)
-* Installing From Source
+* [Installing From Source](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/INSTALL.md)
 
 ## Requirements
 * [Go](https://golang.org/doc/install) 1.19.x (to build the provider plugin)

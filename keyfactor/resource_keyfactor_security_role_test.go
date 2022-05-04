@@ -122,20 +122,10 @@ func testAccCheckKeyfactorSecurityRoleDestroy(s *terraform.State) error {
 		// Pull the provider metadata interface out of the testAccProvider provider
 		conn := testAccProvider.Meta().(*keyfactor.Client)
 
-		exists := true
-
 		// conn is a configured Keyfactor Go Client object, pull down the role id
 		_, err = conn.GetSecurityRole(id)
-		if err != nil {
-			if err.Error() == "404 - file or directory not found" {
-				// If the error says 404, the role doesn't exist. Good
-				exists = false
-				break
-			}
-			return err
-		}
-
-		if exists {
+		// If GetSecurityRole doesn't fail, resource still exists
+		if err == nil {
 			return fmt.Errorf("resource still exists, ID: %s", rs.Primary.ID)
 		}
 

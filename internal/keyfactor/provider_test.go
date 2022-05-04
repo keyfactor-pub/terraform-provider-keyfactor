@@ -121,8 +121,10 @@ func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *ke
 		t := template.AllowedEnrollmentTypes
 		// Find the first template that supports PFX enrollment
 		if t == 1 || t == 3 || t == 5 || t == 7 {
-			enrollmentTemplate = template.CommonName
-			break
+			if !template.RFCEnforcement {
+				enrollmentTemplate = template.CommonName
+				break
+			}
 		}
 	}
 
@@ -133,7 +135,10 @@ func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *ke
 	}
 	var caName string
 	for _, ca := range list {
-		caName = ca.HostName + "\\" + ca.LogicalName
+		if ca.LogicalName != "" && ca.HostName != "" {
+			caName = ca.HostName + "\\" + ca.LogicalName
+			break
+		}
 	}
 
 	// Generate random CN

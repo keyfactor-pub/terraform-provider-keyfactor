@@ -46,7 +46,7 @@ func (c *Client) CreateStore(ca *CreateStoreFctArgs) (*CreateStoreResponse, erro
 
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
-		Endpoint: "/KeyfactorAPI/CertificateStores",
+		Endpoint: "CertificateStores",
 		Headers:  headers,
 		Payload:  &ca,
 	}
@@ -56,25 +56,12 @@ func (c *Client) CreateStore(ca *CreateStoreFctArgs) (*CreateStoreResponse, erro
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] POST succeeded with response code %d", resp.StatusCode)
-		jsonResp := &CreateStoreResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &CreateStoreResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }
 
 // UpdateStore takes arguments for UpdateStoreFctArgs to facilitate the adjustment of a certificate store
@@ -115,7 +102,7 @@ func (c *Client) UpdateStore(ua *UpdateStoreFctArgs) (*UpdateStoreResponse, erro
 
 	keyfactorAPIStruct := &request{
 		Method:   "Put",
-		Endpoint: "/KeyfactorAPI/CertificateStores",
+		Endpoint: "CertificateStores",
 		Headers:  headers,
 		Payload:  &ua,
 	}
@@ -125,25 +112,12 @@ func (c *Client) UpdateStore(ua *UpdateStoreFctArgs) (*UpdateStoreResponse, erro
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] POST succeeded with response code %d", resp.StatusCode)
-		jsonResp := &UpdateStoreResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &UpdateStoreResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }
 
 // GetCertStoreType takes arguments for a certificate store type ID to facilitate a call to Keyfactor
@@ -157,7 +131,7 @@ func (c *Client) GetCertStoreType(id int) (*CertStoreTypeResponse, error) {
 		},
 	}
 
-	endpoint := fmt.Sprintf("/KeyfactorAPI/CertificateStoreTypes/%d", id)
+	endpoint := fmt.Sprintf("CertificateStoreTypes/%d", id)
 	keyfactorAPIStruct := &request{
 		Method:   "GET",
 		Endpoint: endpoint,
@@ -170,25 +144,12 @@ func (c *Client) GetCertStoreType(id int) (*CertStoreTypeResponse, error) {
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] GET succeeded with response code %d", resp.StatusCode)
-		jsonResp := &CertStoreTypeResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &CertStoreTypeResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }
 
 // DeleteCertificateStore takes arguments for a certificate store ID to facilitate a call to Keyfactor
@@ -202,7 +163,7 @@ func (c *Client) DeleteCertificateStore(storeId string) error {
 		},
 	}
 
-	endpoint := "KeyfactorAPI/CertificateStores/" + fmt.Sprintf("%s", storeId) // Append GUID to complete endpoint
+	endpoint := "CertificateStores/" + fmt.Sprintf("%s", storeId) // Append GUID to complete endpoint
 	keyfactorAPIStruct := &request{
 		Method:   "DELETE",
 		Endpoint: endpoint,
@@ -215,20 +176,11 @@ func (c *Client) DeleteCertificateStore(storeId string) error {
 		return err
 	}
 
-	if resp.StatusCode == http.StatusNoContent {
-		log.Printf("[DEBUG] DELETE succeeded with response code %d", resp.StatusCode)
-		return nil
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("[ERROR] Something unexpected happened, %s call to %s returned status %d", keyfactorAPIStruct.Method, keyfactorAPIStruct.Endpoint, resp.StatusCode)
 	}
 
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return errors.New(stringMessage)
+	return nil
 }
 
 // GetCertificateStoreByID takes arguments for a certificate store ID to facilitate a call to Keyfactor
@@ -243,7 +195,7 @@ func (c *Client) GetCertificateStoreByID(storeId string) (*GetStoreByIDResp, err
 		},
 	}
 
-	endpoint := "KeyfactorAPI/CertificateStores/" + fmt.Sprintf("%s", storeId) // Append GUID to complete endpoint
+	endpoint := "CertificateStores/" + fmt.Sprintf("%s", storeId) // Append GUID to complete endpoint
 	keyfactorAPIStruct := &request{
 		Method:   "GET",
 		Endpoint: endpoint,
@@ -256,26 +208,79 @@ func (c *Client) GetCertificateStoreByID(storeId string) (*GetStoreByIDResp, err
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] GET succeeded with response code %d", resp.StatusCode)
-		jsonResp := &GetStoreByIDResp{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		jsonResp.Properties = unmarshalPropertiesString(jsonResp.PropertiesString)
-		return jsonResp, nil
+	jsonResp := &GetStoreByIDResp{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
+	if err != nil {
+		return nil, err
+	}
+	jsonResp.Properties = unmarshalPropertiesString(jsonResp.PropertiesString)
+	return jsonResp, nil
+}
+
+// AddCertificateToStores takes argument for a AddCertificateToStore structure and is used to remove a configured certificate
+// from one or more certificate stores.
+func (c *Client) AddCertificateToStores(config *AddCertificateToStore) ([]string, error) {
+	log.Printf("[INFO] Adding certificate with ID %d to one or more certificate stores", config.CertificateId)
+
+	// Set Keyfactor-specific headers
+	headers := &apiHeaders{
+		Headers: []StringTuple{
+			{"x-keyfactor-api-version", "1"},
+			{"x-keyfactor-requested-with", "APIClient"},
+		},
 	}
 
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	keyfactorAPIStruct := &request{
+		Method:   "POST",
+		Endpoint: "CertificateStores/Certificates/Add",
+		Headers:  headers,
+		Payload:  &config,
+	}
+
+	resp, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return nil, err
 	}
 
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return nil, errors.New(stringMessage)
+	var jsonResp []string
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp, nil
+}
+
+// RemoveCertificateFromStores takes argument for a RemoveCertificateFromStore structure, and is used to remove a certificate
+// from one or more certificate stores.
+func (c *Client) RemoveCertificateFromStores(config *RemoveCertificateFromStore) ([]string, error) {
+	log.Println("[INFO] Removing certificate from one or more certificate stores")
+
+	// Set Keyfactor-specific headers
+	headers := &apiHeaders{
+		Headers: []StringTuple{
+			{"x-keyfactor-api-version", "1"},
+			{"x-keyfactor-requested-with", "APIClient"},
+		},
+	}
+
+	keyfactorAPIStruct := &request{
+		Method:   "POST",
+		Endpoint: "CertificateStores/Certificates/Remove",
+		Headers:  headers,
+		Payload:  &config,
+	}
+
+	resp, err := c.sendRequest(keyfactorAPIStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	var jsonResp []string
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp, nil
 }
 
 // unmarshalPropertiesString unmarshalls a JSON string and serializes it into an array of StringTuple.

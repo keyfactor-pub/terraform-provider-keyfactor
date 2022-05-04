@@ -179,3 +179,67 @@ type CreateStoreResponse struct {
 
 // UpdateStoreResponse contains the response elements returned from the UpdateStore method.
 type UpdateStoreResponse struct{ CreateStoreResponse }
+
+// AddCertificateToStore contains configuration content required to add a certificate to one or multiple certificate
+// stores located inside Keyfactor Command.
+type AddCertificateToStore struct {
+	// An integer containing the Keyfactor Command reference ID of the certificate to be added to the certificate store(s).
+	CertificateId int `json:"CertificateId"`
+
+	// An array of certificate store GUIDs to identify the certificate stores to which the certificate should be added
+	// and provide appropriate reference information for the certificate in the store.
+	CertificateStores *[]CertificateStore `json:"CertificateStores,omitempty"`
+
+	// The inventory schedule for the add job
+	InventorySchedule *InventorySchedule `json:"Schedule,omitempty"`
+
+	// An integer containing the Keyfactor Command reference ID of the certificate to be added to the certificate store(s).
+	CollectionId int `json:"CollectionId,omitempty"`
+}
+
+// RemoveCertificateFromStore contains configuration data required to remove a certificate associated with a specific
+// alias from one or more certificate stores.
+type RemoveCertificateFromStore struct {
+	// An array of certificate store GUIDs to identify the certificate stores to which the certificate should be added
+	// and provide appropriate reference information for the certificate in the store.
+	CertificateStores *[]CertificateStore `json:"CertificateStores"`
+
+	// The inventory schedule for the add job
+	InventorySchedule *InventorySchedule `json:"Schedule,omitempty"`
+
+	// An integer containing the Keyfactor Command reference ID of the certificate to be added to the certificate store(s).
+	CollectionId int `json:"CollectionId,omitempty"`
+}
+
+// CertificateStore contains configuration used by AddCertificateToStore and RemoveCertificateFromStore to configure
+// the certificate stores that a certificate should be added to.
+type CertificateStore struct {
+	// A string containing the GUID for the certificate store to which the certificate should be added.
+	CertificateStoreId string `json:"CertificateStoreId,omitempty"`
+
+	// A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type.
+	Alias string `json:"Alias,omitempty"`
+
+	// A Boolean that sets whether a certificate in the store with the Alias provided should be overwritten with the certificate being added (true) or not (false). The default is false
+	Overwrite bool `json:"Overwrite,omitempty"`
+
+	// The password to set on the entry within the certificate store, if applicable. Only select certificate stores support entry passwords (e.g. Java keystores).
+	EntryPassword *EntryPassword `json:"EntryPassword"`
+
+	// Password used to secure certificate store, if it exists as a PKCS#12
+	PfxPassword string `json:"PfxPassword,omitempty"`
+
+	// A Boolean that sets whether to include the private key of the certificate in the certificate store if private keys are optional for the given certificate store (true) or not (false). The default is false.
+	IncludePrivateKey bool `json:"IncludePrivateKey,omitempty"`
+}
+
+type EntryPassword struct {
+	// A string containing the password. This value only needs to be supplied if you're storing your password in the Keyfactor Command database.
+	SecretValue string `json:"SecretValue,omitempty"`
+
+	// The parameters required by your PAM provider, containing the information that identifies the location of the password in the PAM solution.
+	Parameters struct{} `json:"Parameters,omitempty"`
+
+	// An integer that identifies the PAM provider used to store the password.
+	Provider int `json:"Provider,omitempty"`
+}

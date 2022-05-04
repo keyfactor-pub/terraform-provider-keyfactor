@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"strconv"
+	"time"
 )
 
 func resourceCertificateDeploy() *schema.Resource {
@@ -38,7 +39,7 @@ func resourceCertificateDeploy() *schema.Resource {
 						"alias": {
 							Type:        schema.TypeString,
 							Required:    true,
-							Description: "A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type.",
+							Description: "A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type. Please ensure that the alias is lowercase, or problems can arise in Terraform Plan.",
 						},
 					},
 				},
@@ -98,13 +99,14 @@ func addCertificateToStores(conn *keyfactor.Client, certId int, stores []interfa
 	}
 	config := &keyfactor.AddCertificateToStore{
 		CertificateId:     certId,
-		CertificateStores: nil,
+		CertificateStores: &storesStruct,
 		InventorySchedule: schedule,
 	}
 	_, err := conn.AddCertificateToStores(config)
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -124,6 +126,46 @@ func removeCertificateAliasFromStore(conn *keyfactor.Client, certificateStores *
 	_, err := conn.RemoveCertificateFromStores(config)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// Return elements in 'a' that aren't in 'b'
+func findStringDifference(a, b []string) []string {
+	mb := make(map[string]struct{}, len(b))
+	for _, x := range b {
+		mb[x] = struct{}{}
+	}
+	var diff []string
+	for _, x := range a {
+		if _, found := mb[x]; !found {
+			diff = append(diff, x)
+		}
+	}
+	return diff
+}
+
+func validateCertificatesInStore(conn *keyfactor.Client, certificateStores []string, certificateId int) error {
+	for i := 0; i < 1200; i++ {
+		args := &keyfactor.GetCertificateContextArgs{
+			IncludeLocations: boolToPointer(true),
+			Id:               certificateId,
+		}
+		certificateData, err := conn.GetCertificateContext(args)
+		if err != nil {
+			return err
+		}
+		storeList := make([]string, len(certificateData.Locations))
+		for j, store := range certificateData.Locations {
+			storeList[j] = store.CertStoreId
+		}
+
+		if len(findStringDifference(certificateStores, storeList)) == 0 && len(findStringDifference(storeList, certificateStores)) == 0 {
+			break
+		}
+
+		time.Sleep(2 * time.Second)
 	}
 	return nil
 }
@@ -151,32 +193,46 @@ func setCertificatesInStore(conn *keyfactor.Client, d *schema.ResourceData) erro
 		return err
 	}
 	locations := certificateData.Locations
+	expectedStores := make([]string, len(stores))
+
+	// Want to find the elements in locations that are not in stores
+	// We also want to retain the alias
 	list := make(map[string]struct{}, len(stores))
-	for _, x := range stores {
-		i := x.(map[string]interface{})
-		list[i["certificate_store_id"].(string)] = struct{}{}
-	}
-	for i, x := range locations {
-		if _, found := list[x.CertStoreId]; found {
-			locations = append(locations[:i], locations[i+1:]...)
-		}
+	for i, x := range stores {
+		j := x.(map[string]interface{})
+
+		storeId := j["certificate_store_id"].(string)
+		list[storeId] = struct{}{}
+
+		// Since we're already looping through the store IDs, place them in a more readable data structre for later use
+		expectedStores[i] = storeId
 	}
 
-	// Now, locations contains a list of stores that the certificate should be REMOVED from.
-	if len(locations) > 0 {
-		var remove []keyfactor.CertificateStore
-		for _, location := range locations {
+	// The elements of diff should be removed
+	// Also, removing a certificate from a certificate store implies that the certificate is currently in the store.
+	var diff []keyfactor.CertificateStore
+	for _, x := range locations {
+		if _, found := list[x.CertStoreId]; !found {
 			temp := keyfactor.CertificateStore{
-				CertificateStoreId: location.CertStoreId,
-				Alias:              location.Alias,
+				CertificateStoreId: x.CertStoreId,
+				Alias:              x.Alias,
 			}
-			remove = append(remove, temp)
+			diff = append(diff, temp)
 		}
+	}
 
-		err = removeCertificateAliasFromStore(conn, &remove)
+	if len(diff) > 0 {
+		err = removeCertificateAliasFromStore(conn, &diff)
 		if err != nil {
 			return err
 		}
+	}
+
+	// Finally, Keyfactor tends to take a hot second to enact these changes despite being told to make them immediately.
+	// Block for a long time until the changes are validated.
+	err = validateCertificatesInStore(conn, expectedStores, certId)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -257,7 +313,7 @@ func flattenStoresData(locations []keyfactor.CertificateLocations) *schema.Set {
 func resourceDeploymentUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	conn := m.(*keyfactor.Client)
 
-	if d.HasChange("stores") {
+	if d.HasChange("store") {
 		err := setCertificatesInStore(conn, d)
 		if err != nil {
 			return diag.FromErr(err)
@@ -282,7 +338,8 @@ func resourceDeploymentDelete(ctx context.Context, d *schema.ResourceData, m int
 	conn := m.(*keyfactor.Client)
 
 	// Set 'stores' schema with blank set.
-	err := d.Set("stores", schema.Set{F: schema.HashInt})
+	empty := schema.NewSet(schema.HashResource(schemaCertificateDeployStores()), nil)
+	err := d.Set("store", empty)
 	if err != nil {
 		return diag.FromErr(err)
 	}

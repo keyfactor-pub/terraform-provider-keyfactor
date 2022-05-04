@@ -63,7 +63,7 @@ func loginToKeyfactor(auth *AuthConfig) (*Client, error) {
 
 	keyfactorAPIStruct := &request{
 		Method:   "GET",
-		Endpoint: "KeyfactorAPI/Status/Endpoints",
+		Endpoint: "Status/Endpoints",
 		Headers:  headers,
 	}
 
@@ -73,25 +73,9 @@ func loginToKeyfactor(auth *AuthConfig) (*Client, error) {
 		basicAuthString: buildBasicAuthString(auth),
 	}
 
-	resp, err := c.sendRequest(keyfactorAPIStruct)
+	_, err := c.sendRequest(keyfactorAPIStruct)
 	if err != nil {
 		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusNotFound {
-			stringMessage := "404 - file or directory not found"
-			log.Printf("[ERROR] Call to %s returned status %d. %s", auth.Hostname, resp.StatusCode, stringMessage)
-			return nil, errors.New(stringMessage)
-		}
-		var errorMessage interface{} // Decode JSON body to handle issue
-		err = json.NewDecoder(resp.Body).Decode(&errorMessage)
-		if err != nil {
-			return nil, err
-		}
-		log.Printf("[ERROR] Call to %s returned status %d. %s", auth.Hostname, resp.StatusCode, errorMessage)
-		stringMessage := fmt.Sprintf("%v", errorMessage)
-		return nil, errors.New(stringMessage)
 	}
 
 	log.Printf("[INFO] Successfully logged into Keyfactor at host %s", c.hostname)
@@ -110,7 +94,8 @@ func (c *Client) sendRequest(request *request) (*http.Response, error) {
 	if u.Scheme != "https" {
 		u.Scheme = "https"
 	}
-	u.Path = path.Join(u.Path, request.Endpoint) // Attach enroll endpoint
+	endpoint := "KeyfactorAPI/" + request.Endpoint
+	u.Path = path.Join(u.Path, endpoint) // Attach enroll endpoint
 
 	// Set request query
 	if request.Query != nil {
@@ -148,14 +133,37 @@ func (c *Client) sendRequest(request *request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	var stringMessage string
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNoContent {
+		log.Printf("[DEBUG] %s succeeded with response code %d", request.Method, resp.StatusCode)
+		return resp, nil
+	} else if resp.StatusCode == http.StatusNotFound {
 
-	if resp.StatusCode == http.StatusNotFound {
-		stringMessage := "404 - file or directory not found"
+		var errorMessage interface{} // Decode JSON body to handle issue
+		// First, try to serialize the response into an interface, but catch the exception.
+		defer func() {
+			if err := recover(); err != nil {
+				stringMessage = "404 - file or directory not found"
+			}
+		}()
+		err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+		if err != nil {
+			return nil, err
+		}
+		stringMessage = fmt.Sprintf("%v", errorMessage)
 		log.Printf("[ERROR] Call to %s returned status %d. %s", keyfactorPath, resp.StatusCode, stringMessage)
 		return nil, errors.New(stringMessage)
-	}
+	} else {
+		var errorMessage interface{} // Decode JSON body to handle issue
+		err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+		if err != nil {
+			return nil, err
+		}
 
-	return resp, nil
+		log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
+		stringMessage = fmt.Sprintf("%v", errorMessage)
+		return nil, errors.New(stringMessage)
+	}
 }
 
 // buildBasicAuthString constructs a basic authorization string necessary for basic authorization to Keyfactor. It

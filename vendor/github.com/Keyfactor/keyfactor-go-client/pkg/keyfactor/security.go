@@ -23,7 +23,7 @@ func (c *Client) GetSecurityIdentities() ([]GetSecurityIdentityResponse, error) 
 
 	keyfactorAPIStruct := &request{
 		Method:   "GET",
-		Endpoint: "/KeyfactorAPI/Security/Identities",
+		Endpoint: "Security/Identities",
 		Headers:  headers,
 		Payload:  nil,
 	}
@@ -33,25 +33,12 @@ func (c *Client) GetSecurityIdentities() ([]GetSecurityIdentityResponse, error) 
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] GET succeeded with response code %d", resp.StatusCode)
-		var jsonResp []GetSecurityIdentityResponse
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	var jsonResp []GetSecurityIdentityResponse
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }
 
 // CreateSecurityIdentity hits the /Security/Identities endpoint with a POST request to create a new Keyfactor security
@@ -74,7 +61,7 @@ func (c *Client) CreateSecurityIdentity(csia *CreateSecurityIdentityArg) (*Creat
 
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
-		Endpoint: "/KeyfactorAPI/Security/Identities",
+		Endpoint: "Security/Identities",
 		Headers:  headers,
 		Payload:  csia,
 	}
@@ -84,25 +71,12 @@ func (c *Client) CreateSecurityIdentity(csia *CreateSecurityIdentityArg) (*Creat
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] POST succeeded with response code %d", resp.StatusCode)
-		jsonResp := &CreateSecurityIdentityResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &CreateSecurityIdentityResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }
 
 // DeleteSecurityIdentity takes arguments for a security identity ID, and makes an associated call to Keyfactor to
@@ -118,7 +92,7 @@ func (c *Client) DeleteSecurityIdentity(id int) error {
 		},
 	}
 
-	endpoint := "KeyfactorAPI/Security/Identities/" + fmt.Sprintf("%d", id) // Append ID to complete endpoint
+	endpoint := "Security/Identities/" + fmt.Sprintf("%d", id) // Append ID to complete endpoint
 	keyfactorAPIStruct := &request{
 		Method:   "DELETE",
 		Endpoint: endpoint,
@@ -131,20 +105,10 @@ func (c *Client) DeleteSecurityIdentity(id int) error {
 		return err
 	}
 
-	if resp.StatusCode == http.StatusNoContent {
-		log.Printf("[DEBUG] DELETE succeeded with response code %d", resp.StatusCode)
-		return nil
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("[ERROR] Something unexpected happened, %s call to %s returned status %d", keyfactorAPIStruct.Method, keyfactorAPIStruct.Endpoint, resp.StatusCode)
 	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return errors.New(stringMessage)
+	return nil
 }
 
 func (c *Client) GetSecurityRole(id int) (*GetSecurityRolesResponse, error) {
@@ -158,7 +122,7 @@ func (c *Client) GetSecurityRole(id int) (*GetSecurityRolesResponse, error) {
 		},
 	}
 
-	endpoint := "KeyfactorAPI/Security/Roles/" + fmt.Sprintf("%d", id) // Append ID to complete endpoint
+	endpoint := "Security/Roles/" + fmt.Sprintf("%d", id) // Append ID to complete endpoint
 	keyfactorAPIStruct := &request{
 		Method:   "GET",
 		Endpoint: endpoint,
@@ -171,25 +135,12 @@ func (c *Client) GetSecurityRole(id int) (*GetSecurityRolesResponse, error) {
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] %s succeeded with response code %d", keyfactorAPIStruct.Method, resp.StatusCode)
-		jsonResp := &GetSecurityRolesResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &GetSecurityRolesResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }
 
 // DeleteSecurityRole takes arguments for a security role ID, and makes an associated call to Keyfactor to
@@ -205,7 +156,7 @@ func (c *Client) DeleteSecurityRole(id int) error {
 		},
 	}
 
-	endpoint := "KeyfactorAPI/Security/Roles/" + fmt.Sprintf("%d", id) // Append ID to complete endpoint
+	endpoint := "Security/Roles/" + fmt.Sprintf("%d", id) // Append ID to complete endpoint
 	keyfactorAPIStruct := &request{
 		Method:   "DELETE",
 		Endpoint: endpoint,
@@ -218,20 +169,10 @@ func (c *Client) DeleteSecurityRole(id int) error {
 		return err
 	}
 
-	if resp.StatusCode == http.StatusNoContent {
-		log.Printf("[DEBUG] %s succeeded with response code %d", keyfactorAPIStruct.Method, resp.StatusCode)
-		return nil
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("[ERROR] Something unexpected happened, %s call to %s returned status %d", keyfactorAPIStruct.Method, keyfactorAPIStruct.Endpoint, resp.StatusCode)
 	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return errors.New(stringMessage)
+	return nil
 }
 
 // CreateSecurityRole creates a new Keyfacor security role. This function takes argument for a CreateSecurityRoleArg
@@ -254,7 +195,7 @@ func (c *Client) CreateSecurityRole(input *CreateSecurityRoleArg) (*CreateSecuri
 
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
-		Endpoint: "/KeyfactorAPI/Security/Roles",
+		Endpoint: "Security/Roles",
 		Headers:  headers,
 		Payload:  input,
 	}
@@ -264,25 +205,12 @@ func (c *Client) CreateSecurityRole(input *CreateSecurityRoleArg) (*CreateSecuri
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] %s succeeded with response code %d", keyfactorAPIStruct.Method, resp.StatusCode)
-		jsonResp := &CreateSecurityRoleResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &CreateSecurityRoleResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }
 
 // UpdateSecurityRole updates the Keyfacor security role. This function takes argument for a CreateSecurityRoleArg
@@ -311,7 +239,7 @@ func (c *Client) UpdateSecurityRole(input *UpdatteSecurityRoleArg) (*UpdateSecur
 
 	keyfactorAPIStruct := &request{
 		Method:   "PUT",
-		Endpoint: "/KeyfactorAPI/Security/Roles",
+		Endpoint: "Security/Roles",
 		Headers:  headers,
 		Payload:  input,
 	}
@@ -321,23 +249,10 @@ func (c *Client) UpdateSecurityRole(input *UpdatteSecurityRoleArg) (*UpdateSecur
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] %s succeeded with response code %d", keyfactorAPIStruct.Method, resp.StatusCode)
-		jsonResp := &UpdateSecurityRoleResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &UpdateSecurityRoleResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }

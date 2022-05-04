@@ -53,7 +53,7 @@ func (c *Client) EnrollPFX(ea *EnrollPFXFctArgs) (*EnrollResponse, error) {
 
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
-		Endpoint: "/KeyfactorAPI/Enrollment/PFX",
+		Endpoint: "Enrollment/PFX",
 		Headers:  headers,
 		Payload:  &payload,
 	}
@@ -63,29 +63,16 @@ func (c *Client) EnrollPFX(ea *EnrollPFXFctArgs) (*EnrollResponse, error) {
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] POST succeeded with response code %d", resp.StatusCode)
-		jsonResp := &EnrollResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		err = decodePKCS12Blob(jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &EnrollResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return nil, errors.New(stringMessage)
+	err = decodePKCS12Blob(jsonResp)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp, nil
 }
 
 // DownloadCertificate takes arguments for DownloadCertArgs to facilitate a call to Keyfactor
@@ -135,7 +122,7 @@ func (c *Client) DownloadCertificate(da *DownloadCertArgs) (*DownloadCertificate
 
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
-		Endpoint: "/KeyfactorAPI/Certificates/Download",
+		Endpoint: "Certificates/Download",
 		Headers:  headers,
 		Payload:  &payload,
 	}
@@ -145,31 +132,18 @@ func (c *Client) DownloadCertificate(da *DownloadCertArgs) (*DownloadCertificate
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] POST succeeded with response code %d", resp.StatusCode)
-		jsonResp := &DownloadCertificateResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		content, err := base64.StdEncoding.DecodeString(jsonResp.Content)
-		if err != nil {
-			return nil, err
-		}
-		jsonResp.Content = string(content)
-
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &DownloadCertificateResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
+	content, err := base64.StdEncoding.DecodeString(jsonResp.Content)
+	if err != nil {
+		return nil, err
+	}
+	jsonResp.Content = string(content)
 
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }
 
 // EnrollCSR takes arguments for EnrollCSRFctArgs to enroll a passed Certificate Signing
@@ -208,7 +182,7 @@ func (c *Client) EnrollCSR(ea *EnrollCSRFctArgs) (*EnrollResponse, error) {
 
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
-		Endpoint: "/KeyfactorAPI/Enrollment/CSR",
+		Endpoint: "Enrollment/CSR",
 		Headers:  headers,
 		Payload:  &payload,
 	}
@@ -218,26 +192,13 @@ func (c *Client) EnrollCSR(ea *EnrollCSRFctArgs) (*EnrollResponse, error) {
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] POST succeeded with response code %d", resp.StatusCode)
-		jsonResp := &EnrollResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		jsonResp.Certificates = jsonResp.CertificateInformation.Certificates
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &EnrollResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-
-	return nil, errors.New(stringMessage)
+	jsonResp.Certificates = jsonResp.CertificateInformation.Certificates
+	return jsonResp, nil
 }
 
 // UpdateMetadata takes arguments for UpdateMetadataArgs to facilitate the
@@ -261,7 +222,7 @@ func (c *Client) UpdateMetadata(um *UpdateMetadataArgs) error {
 
 	keyfactorAPIStruct := &request{
 		Method:   "PUT",
-		Endpoint: "/KeyfactorAPI/Certificates/Metadata",
+		Endpoint: "Certificates/Metadata",
 		Headers:  headers,
 		Payload:  um,
 	}
@@ -271,20 +232,10 @@ func (c *Client) UpdateMetadata(um *UpdateMetadataArgs) error {
 		return err
 	}
 
-	if resp.StatusCode == http.StatusNoContent {
-		log.Printf("[DEBUG] PUT succeeded with response code %d", resp.StatusCode)
-		return nil
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("[ERROR] Something unexpected happened, %s call to %s returned status %d", keyfactorAPIStruct.Method, keyfactorAPIStruct.Endpoint, resp.StatusCode)
 	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return errors.New(stringMessage)
+	return nil
 }
 
 // RevokeCert takes arguments for RevokeCertArgs to facilitate the revocation of
@@ -318,7 +269,7 @@ func (c *Client) RevokeCert(ra *RevokeCertArgs) error {
 
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
-		Endpoint: "/KeyfactorAPI/Certificates/Revoke",
+		Endpoint: "Certificates/Revoke",
 		Headers:  headers,
 		Payload:  &ra,
 	}
@@ -328,20 +279,10 @@ func (c *Client) RevokeCert(ra *RevokeCertArgs) error {
 		return err
 	}
 
-	if resp.StatusCode == http.StatusNoContent {
-		log.Printf("[DEBUG] POST succeeded with response code %d", resp.StatusCode)
-		return nil
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("[ERROR] Something unexpected happened, %s call to %s returned status %d", keyfactorAPIStruct.Method, keyfactorAPIStruct.Endpoint, resp.StatusCode)
 	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-	return errors.New(stringMessage)
+	return nil
 }
 
 // DeployPFXCertificate takes pointers to DeployPFXArgs structs holding
@@ -368,7 +309,7 @@ func (c *Client) DeployPFXCertificate(args *DeployPFXArgs) (*DeployPFXResp, erro
 
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
-		Endpoint: "/KeyfactorAPI/Enrollment/PFX/Deploy",
+		Endpoint: "Enrollment/PFX/Deploy",
 		Headers:  headers,
 		Payload:  &args,
 	}
@@ -378,25 +319,12 @@ func (c *Client) DeployPFXCertificate(args *DeployPFXArgs) (*DeployPFXResp, erro
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] POST succeeded with response code %d", resp.StatusCode)
-		jsonResp := &DeployPFXResp{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, err
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &DeployPFXResp{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }
 
 // GetCertificateContext takes arguments for GetCertificateContextArgs used to facilitate the retrieval
@@ -439,7 +367,7 @@ func (c *Client) GetCertificateContext(gca *GetCertificateContextArgs) (*GetCert
 		}
 	}
 
-	endpoint := "/KeyfactorAPI/Certificates/" + fmt.Sprintf("%d", gca.Id) // Append ID to complete endpoint
+	endpoint := "Certificates/" + fmt.Sprintf("%d", gca.Id) // Append ID to complete endpoint
 
 	keyfactorAPIStruct := &request{
 		Method:   "GET",
@@ -454,26 +382,12 @@ func (c *Client) GetCertificateContext(gca *GetCertificateContextArgs) (*GetCert
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] GET succeeded with response code %d", resp.StatusCode)
-
-		jsonResp := &GetCertificateResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		return jsonResp, err
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &GetCertificateResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
-
-	return nil, errors.New(stringMessage)
+	return jsonResp, err
 }
 
 // RecoverCertificate takes arguments for RecoverCertArgs to facilitate a call to Keyfactor
@@ -518,7 +432,7 @@ func (c *Client) RecoverCertificate(rca *RecoverCertArgs) (*RecoverCertResponse,
 
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
-		Endpoint: "/KeyfactorAPI/Certificates/Recover",
+		Endpoint: "Certificates/Recover",
 		Headers:  headers,
 		Payload:  &rca,
 	}
@@ -528,31 +442,18 @@ func (c *Client) RecoverCertificate(rca *RecoverCertArgs) (*RecoverCertResponse,
 		return nil, err
 	}
 
-	if resp.StatusCode == http.StatusOK {
-		log.Printf("[DEBUG] POST succeeded with response code %d", resp.StatusCode)
-		jsonResp := &RecoverCertResponse{}
-		err = json.NewDecoder(resp.Body).Decode(&jsonResp)
-		if err != nil {
-			return nil, err
-		}
-		content, err := base64.StdEncoding.DecodeString(jsonResp.PFX)
-		if err != nil {
-			return nil, err
-		}
-		jsonResp.PFX = string(content)
-
-		return jsonResp, nil
-	}
-
-	var errorMessage interface{} // Decode JSON body to handle issue
-	err = json.NewDecoder(resp.Body).Decode(&errorMessage)
+	jsonResp := &RecoverCertResponse{}
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[DEBUG] Request failed with code %d and message %v", resp.StatusCode, errorMessage)
-	stringMessage := fmt.Sprintf("%v", errorMessage)
+	content, err := base64.StdEncoding.DecodeString(jsonResp.PFX)
+	if err != nil {
+		return nil, err
+	}
+	jsonResp.PFX = string(content)
 
-	return nil, errors.New(stringMessage)
+	return jsonResp, nil
 }
 
 // createSubject builds the certificate subject string from a passed CertificateSubject argument.

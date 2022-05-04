@@ -38,3 +38,33 @@ resource "keyfactor_attach_role" "role_attachment1" {
   role_name        = keyfactor_security_role.kf_terraform_role1.role_name
   template_id_list = [46, 47]
 }
+
+resource "keyfactor_certificate" "DDWebServer1yr" {
+  provider = keyfactor.command
+  subject {
+    subject_common_name         = "terraformdeploytest1"
+  }
+  sans {
+    san_dns = ["terraformdeploytest"]
+  }
+  key_password          = "Ferrari10111"
+  certificate_authority = "keyfactor.thedemodrive.com\\Keyfactor Demo Drive CA 1"
+  cert_template         = "DDWebServer1yr"
+}
+
+resource "keyfactor_deploy_certificate" "deploy" {
+  provider = keyfactor.command
+  certificate_id = keyfactor_certificate.DDWebServer1yr.keyfactor_id
+  password       = keyfactor_certificate.DDWebServer1yr.key_password
+
+  store {
+    certificate_store_id = "store_id1"
+    alias                = "terraform_certificate1"
+  }
+
+  store {
+    certificate_store_id = "store_id2"
+    alias                = "terraform_certificate2"
+  }
+
+}

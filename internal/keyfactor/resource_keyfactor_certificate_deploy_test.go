@@ -5,22 +5,27 @@ import (
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"log"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 )
 
+var pfxIdInt int
+
 func TestAccKeyfactorDeployCertificateBasic(t *testing.T) {
 	testAccKeyfactorCertificateDeployCheckSkip(t)
 
-	storeId := testAccCheckKeyfactorDeployCertGetConfig(t)
+	storeId1, storeId2 := testAccCheckKeyfactorDeployCertGetConfig(t)
 
 	err, _, pfx, password := enrollPFXCertificate(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	pfxIdInt = pfx.KeyfactorID
 	pfxId := strconv.Itoa(pfx.KeyfactorID)
+	alias := strings.ToLower(pfx.Thumbprint)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:          func() { testAccPreCheck(t) },
@@ -36,20 +41,63 @@ func TestAccKeyfactorDeployCertificateBasic(t *testing.T) {
 					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "password", password),
 				),
 			},
+			// Add a certificate to the store
 			{
-				Config: testAccKeyfactorDeployCertificateModified(pfxId, password, storeId, pfx.Thumbprint),
+				Config: testAccKeyfactorDeployCertificateModified(pfxId, password, storeId1, alias),
 				Check: resource.ComposeTestCheckFunc(
+					testAccCheckKeyfactorCertificateDeployed("keyfactor_deploy_certificate.test", storeId1, alias),
 					// Check inputted values
 					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "certificate_id", pfxId),
 					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "password", password),
 					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.#", "1"),
-					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.0.certificate_store_id", storeId),
-					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.0.alias", pfx.Thumbprint),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.0.certificate_store_id", storeId1),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.0.alias", alias),
+				),
+			},
+			// Add a second certificate to the store
+			{
+				Config: testAccKeyfactorDeployCertificateTwice(pfxId, password, storeId1, alias, storeId2, alias),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckKeyfactorCertificateDeployed("keyfactor_deploy_certificate.test", storeId1, alias),
+					testAccCheckKeyfactorCertificateDeployed("keyfactor_deploy_certificate.test", storeId2, alias),
+					// Check inputted values
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "certificate_id", pfxId),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "password", password),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.#", "2"),
+					resource.TestCheckResourceAttrSet("keyfactor_deploy_certificate.test", "store.0.certificate_store_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_deploy_certificate.test", "store.0.alias"),
+					resource.TestCheckResourceAttrSet("keyfactor_deploy_certificate.test", "store.1.certificate_store_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_deploy_certificate.test", "store.1.alias"),
+				),
+			},
+			// Remove one of the stores
+			{
+				Config: testAccKeyfactorDeployCertificateModified(pfxId, password, storeId2, alias),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckKeyfactorCertificateDeployed("keyfactor_deploy_certificate.test", storeId2, alias),
+					// Check inputted values
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "certificate_id", pfxId),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "password", password),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.0.certificate_store_id", storeId2),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.0.alias", alias),
+				),
+			},
+			// Switch from one store to another
+			{
+				Config: testAccKeyfactorDeployCertificateModified(pfxId, password, storeId1, alias),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckKeyfactorCertificateDeployed("keyfactor_deploy_certificate.test", storeId1, alias),
+					// Check inputted values
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "certificate_id", pfxId),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "password", password),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.0.certificate_store_id", storeId1),
+					resource.TestCheckResourceAttr("keyfactor_deploy_certificate.test", "store.0.alias", alias),
 				),
 			},
 		},
 	})
-
 }
 
 func testAccCheckKeyfactorCertificateDeployed(name string, storeId string, alias string) resource.TestCheckFunc {
@@ -79,8 +127,12 @@ func testAccCheckKeyfactorCertificateDeployed(name string, storeId string, alias
 		locations := certificateData.Locations
 
 		for _, location := range locations {
-			if location.CertStoreId == storeId && location.Alias == alias {
+			log.Printf("Comparing %s to %s", storeId, location.CertStoreId)
+			log.Printf("Comparing %s to %s", alias, location.Alias)
+			if strings.ToLower(location.CertStoreId) == strings.ToLower(storeId) && strings.ToLower(location.Alias) == strings.ToLower(alias) {
 				return nil
+			} else {
+				log.Println("Determined not equal")
 			}
 		}
 
@@ -88,16 +140,21 @@ func testAccCheckKeyfactorCertificateDeployed(name string, storeId string, alias
 	}
 }
 
-func testAccCheckKeyfactorDeployCertGetConfig(t *testing.T) string {
-	var store1 string
+func testAccCheckKeyfactorDeployCertGetConfig(t *testing.T) (string, string) {
+	var store1, store2 string
 	if store1 = os.Getenv("KEYFACTOR_DEPLOY_CERT_STOREID1"); store1 == "" {
 		t.Log("Note: Terraform Deploy Certificate attempts to deploy a new PFX certificate to a certificate store that already exists in Keyfactor")
 		t.Log("Set an environment variable for KEYFACTOR_SKIP_DEPLOY_CERT_TESTS to 'true' to skip Deploy Certificate " +
 			"resource acceptance tests")
 		t.Fatal("KEYFACTOR_DEPLOY_CERT_STOREID1 must be set to perform Deploy Certificate acceptance tests")
 	}
-
-	return store1
+	if store2 = os.Getenv("KEYFACTOR_DEPLOY_CERT_STOREID2"); store2 == "" {
+		t.Log("Note: Terraform Deploy Certificate attempts to deploy a new PFX certificate to a certificate store that already exists in Keyfactor")
+		t.Log("Set an environment variable for KEYFACTOR_SKIP_DEPLOY_CERT_TESTS to 'true' to skip Deploy Certificate " +
+			"resource acceptance tests")
+		t.Fatal("KEYFACTOR_DEPLOY_CERT_STOREID2 must be set to perform Deploy Certificate acceptance tests")
+	}
+	return store1, store2
 }
 
 func testAccKeyfactorCertificateDeployCheckSkip(t *testing.T) {
@@ -134,6 +191,10 @@ func testAccKeyfactorDeployCertDestroy(s *terraform.State) error {
 			return fmt.Errorf("failed to remove certificate %d from all stores, still found in %d stores", certId, len(certificateData.Locations))
 		}
 		// If we get here, the relationship doesn't exist in Keyfactor
+		err = revokePFXCertificate(conn, pfxIdInt)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

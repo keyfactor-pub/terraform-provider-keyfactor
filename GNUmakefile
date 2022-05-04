@@ -1,15 +1,18 @@
+PROVIDER_DIR := $(PWD)
 TEST?=$$(go list ./... | grep -v 'vendor')
 HOSTNAME=keyfactor.com
+GOFMT_FILES  := $$(find $(PROVIDER_DIR) -name '*.go' |grep -v vendor)
 NAMESPACE=keyfactordev
+WEBSITE_REPO=https://github.com/Keyfactor/terraform-provider-keyfactor
 NAME=keyfactor
 BINARY=terraform-provider-${NAME}
 VERSION=1.0.1
 OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 
-default: install
+default: build
 
-build:
-	go build -o ${BINARY}
+build: fmtcheck
+	go install
 
 release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64
@@ -25,12 +28,19 @@ release:
 	GOOS=windows GOARCH=386 go build -o ./bin/${BINARY}_${VERSION}_windows_386
 	GOOS=windows GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_windows_amd64
 
-install: build
+install: install
 	mkdir -p ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
 	mv ${BINARY} ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
+
 test:
 	go test -i $(TEST) || exit 1
 	echo $(TEST) | xargs -t -n4 go test $(TESTARGS) -timeout=30s -parallel=4
 
 testacc:
 	TF_ACC=1 go test $(TEST) -v $(TESTARGS) -timeout 120m
+
+fmtcheck:
+	@./scripts/gofmtcheck.sh
+
+fmt:
+	gofmt -w $(GOFMT_FILES)

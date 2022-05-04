@@ -7,6 +7,7 @@ description: |-
 ---
 
 # keyfactor Provider
+
 [Keyfactor](https://www.keyfactor.com/) is an industry PKI as a
 Service (PKIaaS) leader. The Keyfactor provider is used to interact
 with resources supported by Keyfactor, including the automatic
@@ -23,7 +24,6 @@ terraform {
         }
     }
 }
-
 provider "keyfactor" {
     alias       = "command"
     hostname    = "keyfactor.example.com"
@@ -41,7 +41,6 @@ The Keyfactor Go utilities library constructs an authentication string
 from a Keyfactor Username/Password. These can be provided with the
 provider configuration by specifying ```kf_username``` and
 ```kf_password```. This method is not preferred.
-
 #### Environment variables
 The preferred authentication method is via environment variables.
 The following environment variables are supported:
@@ -50,7 +49,6 @@ The following environment variables are supported:
 * ```KEYFACTOR_PASSWORD```
 * ```KEYFACTOR_DOMAIN```
 * ```KEYFACTOR_APPKEY``` - _not supported in v1.0.0_
-
 ##### Usage
 ```shell
 $ export KEYFACTOR_HOSTNAME="keyfactor.example.com"

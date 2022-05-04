@@ -13,7 +13,7 @@ provider "keyfactor" {
 }
 
 resource "keyfactor_store" "IIS" {
-  provider = keyfactor.command
+  provider        = keyfactor.command
   client_machine  = "keyfactor_demo1"
   store_path      = "IIS Personal"
   cert_store_type = 6

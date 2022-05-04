@@ -16,7 +16,7 @@ security _roles_ to an identity represented by an instance of this resource. Sai
 supported by this resource if there is no plan to use Terraform to create roles in Keyfactor. If you wish to use Terraform
 to create and matintain security roles associated with identities please use the ```keyfactor_security_role``` resource.
 
-##Example Usage
+## Example Usage
 The below configuration is used to create a new security identity based on a user or group called ```COOLDOMAIN\\TestUser1```
 Note that the below configuration configures no roles for the identity to be attached to. If desired, roles can be attached
 at a later date by adding a ```roles``` block, and configuring role IDs.
@@ -50,12 +50,12 @@ resource "keyfactor_security_identity" "identity2" {
 ### Optional
 
 - **id** (String) The ID of this resource.
-- **roles** (Set of Number) An array containing the role IDs that the identity is attached to.
 
 ### Read-Only
 
 - **identity_id** (Number) An integer containing the Keyfactor Command identifier for the security identity.
 - **identity_type** (String) A string indicating the type of identity—User or Group.
+- **roles** (Set of Number) An array containing the role IDs that the identity is attached to.
 - **valid** (Boolean) A Boolean that indicates whether the security identity's audit XML is valid (true) or not (false). A security identity may become invalid if Keyfactor Command determines that it appears to have been tampered with.
 
 

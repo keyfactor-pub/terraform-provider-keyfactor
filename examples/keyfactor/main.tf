@@ -42,7 +42,7 @@ resource "keyfactor_attach_role" "role_attachment1" {
 resource "keyfactor_certificate" "DDWebServer1yr" {
   provider = keyfactor.command
   subject {
-    subject_common_name         = "terraformdeploytest1"
+    subject_common_name = "terraformdeploytest1"
   }
   sans {
     san_dns = ["terraformdeploytest"]
@@ -53,7 +53,7 @@ resource "keyfactor_certificate" "DDWebServer1yr" {
 }
 
 resource "keyfactor_deploy_certificate" "deploy" {
-  provider = keyfactor.command
+  provider       = keyfactor.command
   certificate_id = keyfactor_certificate.DDWebServer1yr.keyfactor_id
   password       = keyfactor_certificate.DDWebServer1yr.key_password
 

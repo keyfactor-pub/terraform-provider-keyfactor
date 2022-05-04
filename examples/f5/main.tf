@@ -16,7 +16,7 @@ provider "keyfactor" {
 }
 
 resource "keyfactor_store" "f5_bigip" {
-  provider = keyfactor.command
+  provider        = keyfactor.command
   client_machine  = "f5_demo"
   store_path      = "https://companykeyvault.vault.azure.net/"
   agent_id        = "keyfactorOrchestratorAgentID"

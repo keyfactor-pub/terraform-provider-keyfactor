@@ -15,7 +15,7 @@ provider "keyfactor" {
 }
 
 resource "keyfactor_store" "AKV1" {
-  provider = keyfactor.command
+  provider        = keyfactor.command
   client_machine  = "akv_demo"
   store_path      = "https://companykeyvault.vault.azure.net/"
   agent_id        = "keyfactorOrchestratorAgentID"

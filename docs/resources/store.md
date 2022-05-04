@@ -81,66 +81,56 @@ and ```immediate```. Only one inventory schedule may be specified in this config
 
 ### Required
 
-- **store** (Block List, Min: 1, Max: 1) (see [below for nested schema](#nestedblock--store))
-
-### Optional
-
-- **id** (String) The ID of this resource.
-
-<a id="nestedblock--store"></a>
-### Nested Schema for `store`
-
-Required:
-
 - **agent_id** (String) String indicating the Keyfactor Command GUID of the orchestrator for the created store
 - **cert_store_type** (Number) Integer specifying the store type. Specific types require different parameters.
 - **client_machine** (String) Client machine name; value depends on certificate store type. See API reference guide
 - **store_path** (String) Path to the new certificate store on a target. Format varies depending on type.
 
-Optional:
+### Optional
 
 - **agent_assigned** (Boolean) Bool indicating if there is an orchestrator assigned to the new certificate store
 - **approved** (Boolean) Bool that indicates the approval status of store created. Default is true, omit if unsure
 - **container_id** (Number) Container identifier of the store's associated certificate store container.
 - **container_name** (String) Name of certificate store's associated container, if applicable
 - **create_if_missing** (Boolean) Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure
-- **inventory_schedule** (Block List, Max: 1) Inventory schedule for new certificate store (see [below for nested schema](#nestedblock--store--inventory_schedule))
-- **password** (Block List, Max: 1) Configures credential options for certificate store (see [below for nested schema](#nestedblock--store--password))
-- **property** (Block List) Certificate properties specific to certificate store type (see [below for nested schema](#nestedblock--store--property))
+- **id** (String) The ID of this resource.
+- **inventory_schedule** (Block List, Max: 1) Inventory schedule for new certificate store (see [below for nested schema](#nestedblock--inventory_schedule))
+- **password** (Block List, Max: 1) Configures credential options for certificate store (see [below for nested schema](#nestedblock--password))
+- **property** (Block List) Certificate properties specific to certificate store type (see [below for nested schema](#nestedblock--property))
 - **set_new_password_allowed** (Boolean) Indicates whether the store password can be changed
 
-Read-Only:
+### Read-Only
 
 - **keyfactor_id** (String) Keyfactor certificate store GUID
 
-<a id="nestedblock--store--inventory_schedule"></a>
-### Nested Schema for `store.inventory_schedule`
+<a id="nestedblock--inventory_schedule"></a>
+### Nested Schema for `inventory_schedule`
 
 Optional:
 
-- **daily** (Block List) Indicates that the job should be scheduled to run every day at the same time (see [below for nested schema](#nestedblock--store--inventory_schedule--daily))
-- **exactly_once** (Block List) Indicates that the job should be scheduled to run at the time specified (see [below for nested schema](#nestedblock--store--inventory_schedule--exactly_once))
+- **daily** (Block List) Indicates that the job should be scheduled to run every day at the same time (see [below for nested schema](#nestedblock--inventory_schedule--daily))
+- **exactly_once** (Block List) Indicates that the job should be scheduled to run at the time specified (see [below for nested schema](#nestedblock--inventory_schedule--exactly_once))
 - **immediate** (Boolean) Boolean that indicates whether the job should run immediately
-- **interval** (Block List) Indicates that the job should be scheduled to run every x minutes (see [below for nested schema](#nestedblock--store--inventory_schedule--interval))
+- **interval** (Block List) Indicates that the job should be scheduled to run every x minutes (see [below for nested schema](#nestedblock--inventory_schedule--interval))
 
-<a id="nestedblock--store--inventory_schedule--daily"></a>
-### Nested Schema for `store.inventory_schedule.daily`
-
-Required:
-
-- **time** (String) The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format
-
-
-<a id="nestedblock--store--inventory_schedule--exactly_once"></a>
-### Nested Schema for `store.inventory_schedule.exactly_once`
+<a id="nestedblock--inventory_schedule--daily"></a>
+### Nested Schema for `inventory_schedule.daily`
 
 Required:
 
 - **time** (String) The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format
 
 
-<a id="nestedblock--store--inventory_schedule--interval"></a>
-### Nested Schema for `store.inventory_schedule.interval`
+<a id="nestedblock--inventory_schedule--exactly_once"></a>
+### Nested Schema for `inventory_schedule.exactly_once`
+
+Required:
+
+- **time** (String) The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format
+
+
+<a id="nestedblock--inventory_schedule--interval"></a>
+### Nested Schema for `inventory_schedule.interval`
 
 Required:
 
@@ -148,16 +138,16 @@ Required:
 
 
 
-<a id="nestedblock--store--password"></a>
-### Nested Schema for `store.password`
+<a id="nestedblock--password"></a>
+### Nested Schema for `password`
 
 Optional:
 
 - **value** (String) Configures a password to be stored a Keyfactor secret
 
 
-<a id="nestedblock--store--property"></a>
-### Nested Schema for `store.property`
+<a id="nestedblock--property"></a>
+### Nested Schema for `property`
 
 Optional:
 

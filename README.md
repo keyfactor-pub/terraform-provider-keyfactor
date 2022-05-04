@@ -10,7 +10,7 @@ is a work in progress, and feature requests can be submitted by opening an issue
 * Usage
   * [Documentation](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/docs/index.md)
   * [Examples](https://github.com/Keyfactor/terraform-provider-keyfactor/tree/main/examples)
-* [Installing From Source](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/INSTALL.md)
+* [Contributing](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/CONTRIBUTING.md)
 
 ## Requirements
 * [Go](https://golang.org/doc/install) 1.19.x (to build the provider plugin)
@@ -19,3 +19,5 @@ is a work in progress, and feature requests can be submitted by opening an issue
     * Keyfactor Command account with permissions to required Keyfactor features (IE certificate)
 
 ## Contributing
+The Keyfactor Terraform Provider is an open source project. To contribute, see the [contribution guidelines](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/CONTRIBUTING.md).
+[Issues](https://github.com/Keyfactor/terraform-provider-keyfactor/issues/new/choose) may also be reported.

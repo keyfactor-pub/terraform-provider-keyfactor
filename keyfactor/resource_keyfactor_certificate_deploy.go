@@ -6,6 +6,7 @@ package keyfactor
 
 import (
 	"context"
+	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -19,6 +20,9 @@ func resourceCertificateDeploy() *schema.Resource {
 		ReadContext:   resourceDeploymentRead,
 		UpdateContext: resourceDeploymentUpdate,
 		DeleteContext: resourceDeploymentDelete,
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
 		Schema: map[string]*schema.Schema{
 			"certificate_id": {
 				Type:        schema.TypeInt,
@@ -147,6 +151,7 @@ func findStringDifference(a, b []string) []string {
 }
 
 func validateCertificatesInStore(conn *keyfactor.Client, certificateStores []string, certificateId int) error {
+	valid := false
 	for i := 0; i < 1200; i++ {
 		args := &keyfactor.GetCertificateContextArgs{
 			IncludeLocations: boolToPointer(true),
@@ -162,10 +167,14 @@ func validateCertificatesInStore(conn *keyfactor.Client, certificateStores []str
 		}
 
 		if len(findStringDifference(certificateStores, storeList)) == 0 && len(findStringDifference(storeList, certificateStores)) == 0 {
+			valid = true
 			break
 		}
 
 		time.Sleep(2 * time.Second)
+	}
+	if !valid {
+		return fmt.Errorf("validateCertificatesInStore timed out. certificate could deploy eventually, but terraform change operation will fail. run terraform plan later to verify that the certificate was deployed successfully")
 	}
 	return nil
 }

@@ -15,6 +15,9 @@ func resourceSecurityRole() *schema.Resource {
 		ReadContext:   resourceSecurityRoleRead,
 		UpdateContext: resourceSecurityRoleUpdate,
 		DeleteContext: resourceSecurityRoleDelete,
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
 		Schema: map[string]*schema.Schema{
 			"role_name": {
 				Type:        schema.TypeString,

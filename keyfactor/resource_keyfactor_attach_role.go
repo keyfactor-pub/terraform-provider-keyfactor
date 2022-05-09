@@ -30,6 +30,9 @@ func resourceKeyfactorAttachRole() *schema.Resource {
 		ReadContext:   resourceAttachRoleRead,
 		UpdateContext: resourceAttachRoleUpdate,
 		DeleteContext: resourceAttachRoleDelete,
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
 		Schema: map[string]*schema.Schema{
 			"role_name": {
 				Type:        schema.TypeString,

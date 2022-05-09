@@ -18,6 +18,9 @@ func resourceCertificate() *schema.Resource {
 		ReadContext:   resourceCertificateRead,
 		UpdateContext: resourceCertificateUpdate,
 		DeleteContext: resourceCertificateDelete,
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
 		Schema: map[string]*schema.Schema{
 			"csr": {
 				Type:        schema.TypeString,
@@ -495,15 +498,19 @@ func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m in
 
 	if metadataHasChange(d) == true {
 		metadata := d.Get("metadata").([]interface{})
-
+		strId := d.Id()
+		id, err := strconv.Atoi(strId)
+		if err != nil {
+			return diag.FromErr(err)
+		}
 		args := &keyfactor.UpdateMetadataArgs{
-			CertID:              d.Get("keyfactor_id").(int),
+			CertID:              id,
 			CertificateMetadata: interfaceArrayToStringTuple(metadata),
 			Metadata:            nil,
 			CollectionId:        0,
 		}
 
-		err := kfClient.UpdateMetadata(args)
+		err = kfClient.UpdateMetadata(args)
 		if err != nil {
 			return diag.FromErr(err)
 		}
@@ -549,9 +556,14 @@ func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m inte
 	kfClient := m.(*keyfactor.Client)
 
 	log.Println("[INFO] Revoking certificate in Keyfactor")
+	strId := d.Id()
+	id, err := strconv.Atoi(strId)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 	revokeArgs := &keyfactor.RevokeCertArgs{
-		CertificateIds: []int{d.Get("keyfactor_id").(int)}, // Certificate ID expects array of integers
-		Reason:         5,                                  // reason = 5 means Cessation of Operation
+		CertificateIds: []int{id}, // Certificate ID expects array of integers
+		Reason:         5,         // reason = 5 means Cessation of Operation
 		Comment:        "Terraform destroy called on provider with associated cert ID",
 	}
 
@@ -559,7 +571,7 @@ func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m inte
 		revokeArgs.CollectionId = collectionId.(int)
 	}
 
-	err := kfClient.RevokeCert(revokeArgs)
+	err = kfClient.RevokeCert(revokeArgs)
 	if err != nil {
 		return diag.FromErr(err)
 	}

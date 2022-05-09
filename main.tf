@@ -12,6 +12,19 @@ provider "keyfactor" {
     hostname    = "sedemo.thedemodrive.com"
 }
 
+resource "keyfactor_security_role" "import_test" {
+    description = "Role generated to perform Terraform acceptance test. If this role exists, it can be deleted."
+    permissions = [
+        "CertificateEnrollment:CsrGeneration",
+        "CertificateEnrollment:EnrollCSR",
+        "CertificateEnrollment:EnrollPFX",
+        "API:Read",
+        "CertificateCollections:Modify"
+    ]
+    role_name   = "terraform_acctest-c2plk6vbeh"
+}
+
+/*
 resource "keyfactor_certificate" "DDWebServer1yr" {
     provider = keyfactor.command
     subject {
@@ -24,9 +37,11 @@ resource "keyfactor_certificate" "DDWebServer1yr" {
     certificate_authority = "keyfactor.thedemodrive.com\\Keyfactor Demo Drive CA 1"
     cert_template         = "DDWebServer1yr"
 }
+*/
 
 // AKV: 6175d9f2-b7e4-40a2-a3c3-9acb91cdeae5
 // EJBCA JKS: e9f9d8ef-1204-4ae3-a41f-aa761275aa85
+/*
 resource "keyfactor_deploy_certificate" "test" {
     provider = keyfactor.command
     certificate_id = keyfactor_certificate.DDWebServer1yr.keyfactor_id
@@ -34,15 +49,16 @@ resource "keyfactor_deploy_certificate" "test" {
 
     store {
         certificate_store_id = "6175d9f2-b7e4-40a2-a3c3-9acb91cdeae5"
-        alias                = "COOLTEST1"
+        alias                = "cooltest1"
     }
 
     store {
         certificate_store_id = "e9f9d8ef-1204-4ae3-a41f-aa761275aa85"
-        alias                = "COOLTEST2"
+        alias                = "cooltest2"
     }
 
 }
+*/
 
 
 

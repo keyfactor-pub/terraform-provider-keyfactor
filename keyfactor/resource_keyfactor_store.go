@@ -14,6 +14,9 @@ func resourceStore() *schema.Resource {
 		ReadContext:   resourceStoreRead,
 		UpdateContext: resourceStoreUpdate,
 		DeleteContext: resourceStoreDelete,
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
 		Schema: map[string]*schema.Schema{
 			"container_id": {
 				Type:        schema.TypeInt,

@@ -8,6 +8,8 @@ NAME=keyfactor
 BINARY=terraform-provider-${NAME}
 VERSION=1.0.1
 OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
+BASEDIR := ~/.terraform.d/plugins
+INSTALLDIR := ${BASEDIR}/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
 
 default: build
 
@@ -28,9 +30,12 @@ release:
 	GOOS=windows GOARCH=386 go build -o ./bin/${BINARY}_${VERSION}_windows_386
 	GOOS=windows GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_windows_amd64
 
-install: install
-	mkdir -p ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
-	mv ${BINARY} ~/.terraform.d/plugins/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
+install:
+	go build -o ${BINARY}
+	rm -rf ${BASEDIR}
+	mkdir -p ${INSTALLDIR}
+	mv ${BINARY} ${INSTALLDIR}
+	terraform init -upgrade
 
 test:
 	go test -i $(TEST) || exit 1
@@ -44,3 +49,5 @@ fmtcheck:
 
 fmt:
 	gofmt -w $(GOFMT_FILES)
+
+.PHONY: build release install test testacc fmtcheck fmt

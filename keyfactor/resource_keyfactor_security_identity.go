@@ -17,6 +17,9 @@ func resourceSecurityIdentity() *schema.Resource {
 		ReadContext:   resourceSecurityIdentityRead,
 		UpdateContext: resourceSecurityIdentityUpdate,
 		DeleteContext: resourceSecurityIdentityDelete,
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
 		Schema: map[string]*schema.Schema{
 			"account_name": {
 				Type:        schema.TypeString,

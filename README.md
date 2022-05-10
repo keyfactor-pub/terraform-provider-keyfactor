@@ -11,6 +11,7 @@ is a work in progress, and feature requests can be submitted by opening an issue
   * [Documentation](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/docs/index.md)
   * [Examples](https://github.com/Keyfactor/terraform-provider-keyfactor/tree/main/examples)
 * [Contributing](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/CONTRIBUTING.md)
+* [License](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/LICENSE)
 
 ## Requirements
 * [Go](https://golang.org/doc/install) 1.19.x (to build the provider plugin)

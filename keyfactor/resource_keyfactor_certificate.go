@@ -3,13 +3,13 @@ package keyfactor
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func resourceCertificate() *schema.Resource {
@@ -132,24 +132,11 @@ func resourceCertificate() *schema.Resource {
 				},
 			},
 			"metadata": {
-				Type:        schema.TypeList,
+				Type:        schema.TypeMap,
 				Optional:    true,
 				Description: "Metadata key-value pairs to be attached to certificate",
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"name": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Name of metadata field as seen in Keyfactor",
-							Elem:        &schema.Schema{Type: schema.TypeString},
-						},
-						"value": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Metadata value",
-							Elem:        &schema.Schema{Type: schema.TypeString},
-						},
-					},
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
 				},
 			},
 			"collection_id": {
@@ -192,12 +179,12 @@ func resourceCertificate() *schema.Resource {
 }
 
 func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
 	kfClient := m.(*keyfactor.Client)
 
 	sans := d.Get("sans").([]interface{}) // Extract SANs from schema
-	metadata := d.Get("metadata").([]interface{})
+	metadata := d.Get("metadata").(map[string]interface{})
 	csr := d.Get("csr").(string)
+	var id int
 	if csr != "" {
 		CSRArgs := &keyfactor.EnrollCSRFctArgs{
 			CSR:                  csr,
@@ -205,32 +192,30 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 			Template:             d.Get("cert_template").(string),
 			IncludeChain:         true,
 			CertFormat:           "PEM", // Retrieve certificate in READ
-			CertificateSANs:      getSans(sans),
-			CertificateMetadata:  interfaceArrayToStringTuple(metadata),
+			SANs:                 getSans(sans),
+			Metadata:             metadata,
 		}
 		enrollResponse, err := kfClient.EnrollCSR(CSRArgs)
 		if err != nil {
 			resourceCertificateRead(ctx, d, m)
 			return diag.FromErr(err)
 		}
-
-		// Set resource ID to tell Terraform that operation was successful
-		d.SetId(strconv.Itoa(enrollResponse.CertificateInformation.KeyfactorID))
+		id = enrollResponse.CertificateInformation.KeyfactorID
 
 		resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 	} else {
 		subject := d.Get("subject").([]interface{})[0].(map[string]interface{}) // Extract subject data from schema
 		PFXArgs := &keyfactor.EnrollPFXFctArgs{
 			CustomFriendlyName:          "Terraform",
-			KeyPassword:                 d.Get("key_password").(string),
+			Password:                    d.Get("key_password").(string),
 			PopulateMissingValuesFromAD: false,
 			CertificateAuthority:        d.Get("certificate_authority").(string),
 			Template:                    d.Get("cert_template").(string),
 			IncludeChain:                true,
 			CertFormat:                  "STORE",       // Get certificate from data source
-			CertificateSANs:             getSans(sans), // if no SANs are specified, this field is nil
-			CertificateMetadata:         interfaceArrayToStringTuple(metadata),
-			CertificateSubject: keyfactor.CertificateSubject{
+			SANs:                        getSans(sans), // if no SANs are specified, this field is nil
+			Metadata:                    metadata,
+			Subject: &keyfactor.CertificateSubject{
 				SubjectCommonName:         subject["subject_common_name"].(string),
 				SubjectLocality:           subject["subject_locality"].(string),
 				SubjectOrganization:       subject["subject_organization"].(string),
@@ -239,6 +224,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 				SubjectState:              subject["subject_state"].(string),
 			},
 		}
+
 		// Error checking for invalid fields inside PFX enrollment function
 		enrollResponse, err := kfClient.EnrollPFX(PFXArgs) // If no CSR is present, enroll a PFX certificate
 		if err != nil {
@@ -246,12 +232,22 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 			return diag.FromErr(err)
 		}
 
-		// Set resource ID to tell Terraform that operation was successful
-		d.SetId(strconv.Itoa(enrollResponse.CertificateInformation.KeyfactorID))
-
-		return resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
+		id = enrollResponse.CertificateInformation.KeyfactorID
 	}
-	return diags
+	time.Sleep(20 * time.Second)
+	arg := &keyfactor.UpdateMetadataArgs{
+		CertID:   id,
+		Metadata: metadata,
+	}
+	err := kfClient.UpdateMetadata(arg)
+	if err != nil {
+		resourceCertificateRead(ctx, d, m)
+		return diag.FromErr(err)
+	}
+
+	// Set resource ID to tell Terraform that operation was successful
+	d.SetId(strconv.Itoa(id))
+	return resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 }
 
 func getSans(s []interface{}) *keyfactor.SANs {
@@ -301,7 +297,6 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 
 	// Get the password out of current schema
 	password := d.Get("key_password").(string)
-	metadata := d.Get("metadata").([]interface{})
 	csr := d.Get("csr").(string)
 
 	// Download and assign certificates to proper location
@@ -310,7 +305,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 		return diag.FromErr(err)
 	}
 
-	newSchema, err := flattenCertificateItems(certificateData, kfClient, pem, password, metadata, csr) // Set schema
+	newSchema, err := flattenCertificateItems(certificateData, kfClient, pem, password, csr) // Set schema
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -324,7 +319,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	return diags
 }
 
-func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, password string, oldMetadata []interface{}, csr string) (map[string]interface{}, error) {
+func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, password string, csr string) (map[string]interface{}, error) {
 	if certificateContext != nil {
 		data := make(map[string]interface{})
 
@@ -345,7 +340,7 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 
 		// Assign schema that require flattening
 		data["sans"] = flattenSANs(certificateContext.SubjectAltNameElements)
-		data["metadata"] = flattenMetadata(certificateContext.Metadata, oldMetadata)
+		data["metadata"] = certificateContext.Metadata.(map[string]interface{})
 		// Subject should only be used if enroll PFX was used.
 		if csr == "" {
 			data["subject"] = flattenSubject(certificateContext.IssuedDN)
@@ -390,24 +385,6 @@ func flattenSubject(subject string) []interface{} {
 		return temp
 	}
 
-	return make([]interface{}, 0)
-}
-
-func flattenMetadata(metadata interface{}, oldMetadata []interface{}) []interface{} {
-	if metadata != nil {
-		var newMetadataArray []interface{}
-		for _, old := range oldMetadata {
-			temp := old.(map[string]interface{})
-			for key, value := range metadata.(map[string]interface{}) {
-				if key == temp["name"] {
-					temp["value"] = value
-					break
-				}
-			}
-			newMetadataArray = append(newMetadataArray, temp)
-		}
-		return newMetadataArray
-	}
 	return make([]interface{}, 0)
 }
 
@@ -496,18 +473,17 @@ func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m in
 	var diags diag.Diagnostics
 	kfClient := m.(*keyfactor.Client)
 
-	if metadataHasChange(d) == true {
-		metadata := d.Get("metadata").([]interface{})
+	if d.HasChange("metadata") == true {
+		metadata := d.Get("metadata").(map[string]interface{})
 		strId := d.Id()
 		id, err := strconv.Atoi(strId)
 		if err != nil {
 			return diag.FromErr(err)
 		}
 		args := &keyfactor.UpdateMetadataArgs{
-			CertID:              id,
-			CertificateMetadata: interfaceArrayToStringTuple(metadata),
-			Metadata:            nil,
-			CollectionId:        0,
+			CertID:       id,
+			Metadata:     metadata,
+			CollectionId: 0,
 		}
 
 		err = kfClient.UpdateMetadata(args)
@@ -525,26 +501,6 @@ func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m in
 	}
 	resourceCertificateRead(ctx, d, m)
 	return diags
-}
-
-func metadataHasChange(d *schema.ResourceData) bool {
-	metadataRootSearchTerm := "metadata"
-	// Most obvious change to detect is the number of metadata schema blocks that exist.
-	if d.HasChange(fmt.Sprintf("%s.#", metadataRootSearchTerm)) == true {
-		return true
-	}
-
-	// Next, for each name - value pair, attempt to detect a change.
-	metadataCount := d.Get(fmt.Sprintf("%s.#", metadataRootSearchTerm))
-	for i := 0; i < metadataCount.(int); i++ {
-		if d.HasChange(fmt.Sprintf("%s.%d.name", metadataRootSearchTerm, i)) {
-			return true
-		} else if d.HasChange(fmt.Sprintf("%s.%d.value", metadataRootSearchTerm, i)) {
-			return true
-		}
-	}
-	// If we got this far, it's safe to assume that we didn't experience a change.
-	return false
 }
 
 func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

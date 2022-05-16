@@ -39,11 +39,6 @@ Note that the following environment variables must exist regardless of the test 
 * ```KEYFACTOR_HOSTNAME```
 
 #### Certificate resource acceptance tests
-The following environment variables must exist to run acceptance tests for the Certificate resource:
-* ```KEYFACTOR_CERT_TEMPLATE```
-* ```KEYFACTOR_CERTIFICATE_AUTHORITY```
-* ```KEYFACTOR_TEST_METADATA_FIELD```
-
 To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_CERTIFICATE_TESTS=True```.
 
 #### Deploy Certificate acceptance tests

@@ -5,6 +5,8 @@ import (
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"log"
+	"math/rand"
 	"os"
 	"testing"
 
@@ -93,19 +95,27 @@ func testAccDeleteKeyfactorRole(client *keyfactor.Client, roleId int) error {
 	return nil
 }
 
-// Enroll a PFX certificate based on a random template supported by Keyfactor
-func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *keyfactor.CertificateInformation, string) {
+func getTemporaryConnection() (*keyfactor.Client, error) {
+	var err error
+	clientConfig := &keyfactor.AuthConfig{
+		Hostname: os.Getenv("KEYFACTOR_HOSTNAME"),
+		Username: os.Getenv("KEYFACTOR_USERNAME"),
+		Password: os.Getenv("KEYFACTOR_PASSWORD"),
+	}
+	client, err := keyfactor.NewKeyfactorClient(clientConfig)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+func getCertificateTemplate(conn *keyfactor.Client) (string, *keyfactor.Client, error) {
 	var client *keyfactor.Client
 	if conn == nil {
 		var err error
-		clientConfig := &keyfactor.AuthConfig{
-			Hostname: os.Getenv("KEYFACTOR_HOSTNAME"),
-			Username: os.Getenv("KEYFACTOR_USERNAME"),
-			Password: os.Getenv("KEYFACTOR_PASSWORD"),
-		}
-		client, err = keyfactor.NewKeyfactorClient(clientConfig)
+		client, err = getTemporaryConnection()
 		if err != nil {
-			return err, nil, nil, ""
+			return "", nil, err
 		}
 	} else {
 		client = conn
@@ -114,7 +124,7 @@ func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *ke
 	// First grab a list of templates from Keyfactor
 	templates, err := client.GetTemplates()
 	if err != nil {
-		return err, nil, nil, ""
+		return "", nil, err
 	}
 	var enrollmentTemplate string
 	for _, template := range templates {
@@ -127,18 +137,89 @@ func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *ke
 			}
 		}
 	}
+	return enrollmentTemplate, client, nil
+}
+
+func findRandomMetadataField(conn *keyfactor.Client) (string, *keyfactor.Client, error) {
+	var client *keyfactor.Client
+	if conn == nil {
+		var err error
+		client, err = getTemporaryConnection()
+		if err != nil {
+			return "", nil, err
+		}
+	} else {
+		client = conn
+	}
+
+	fields, err := client.GetAllMetadataFields()
+	if err != nil {
+		return "", nil, err
+	}
+
+	for {
+		temp := fields[rand.Intn(len(fields))]
+		// Search temp randomly until a metadata field with type string is found.
+		if temp.DataType == 1 {
+			log.Printf("Chose %s as random metadata field.", temp.Name)
+			return temp.Name, client, nil
+		}
+	}
+}
+
+func findCompatableCA(conn *keyfactor.Client, escapeDepth int) (string, *keyfactor.Client, error) {
+	var client *keyfactor.Client
+	if conn == nil {
+		var err error
+		client, err = getTemporaryConnection()
+		if err != nil {
+			return "", nil, err
+		}
+	} else {
+		client = conn
+	}
 
 	// Then, find the first CA from Keyfactor
 	list, err := client.GetCAList()
 	if err != nil {
-		return err, nil, nil, ""
+		return "", nil, err
 	}
 	var caName string
 	for _, ca := range list {
 		if ca.LogicalName != "" && ca.HostName != "" {
-			caName = ca.HostName + "\\" + ca.LogicalName
+			var escape string
+			for i := 0; i < escapeDepth; i++ {
+				escape += "\\"
+			}
+			caName = ca.HostName + escape + ca.LogicalName
+
 			break
 		}
+	}
+	return caName, client, nil
+}
+
+// Enroll a PFX certificate based on a random template supported by Keyfactor
+func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *keyfactor.CertificateInformation, string) {
+	var client *keyfactor.Client
+	if conn == nil {
+		var err error
+		client, err = getTemporaryConnection()
+		if err != nil {
+			return err, nil, nil, ""
+		}
+	} else {
+		client = conn
+	}
+
+	enrollmentTemplate, _, err := getCertificateTemplate(conn)
+	if err != nil {
+		return err, nil, nil, ""
+	}
+
+	caName, _, err := findCompatableCA(conn, 1)
+	if err != nil {
+		return err, nil, nil, ""
 	}
 
 	// Generate random CN
@@ -147,13 +228,13 @@ func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *ke
 	// Fill out the minimum required fields to enroll a PFX
 	arg := &keyfactor.EnrollPFXFctArgs{
 		CustomFriendlyName:   cn,
-		KeyPassword:          password,
+		Password:             password,
 		CertificateAuthority: caName,
 		Template:             enrollmentTemplate,
 		IncludeChain:         true,
 		CertFormat:           "STORE",
-		CertificateSubject:   keyfactor.CertificateSubject{SubjectCommonName: cn},
-		CertificateSANs:      &keyfactor.SANs{DNS: []string{cn}},
+		Subject:              &keyfactor.CertificateSubject{SubjectCommonName: cn},
+		SANs:                 &keyfactor.SANs{DNS: []string{cn}},
 	}
 
 	pfx, err := client.EnrollPFX(arg)
@@ -165,13 +246,24 @@ func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *ke
 }
 
 func revokePFXCertificate(conn *keyfactor.Client, certId int) error {
+	var client *keyfactor.Client
+	if conn == nil {
+		var err error
+		client, err = getTemporaryConnection()
+		if err != nil {
+			return err
+		}
+	} else {
+		client = conn
+	}
+
 	revokeArgs := &keyfactor.RevokeCertArgs{
 		CertificateIds: []int{certId}, // Certificate ID expects array of integers
 		Reason:         5,             // reason = 5 means Cessation of Operation
 		Comment:        "Terraform acceptance test cleanup",
 	}
 
-	err := conn.RevokeCert(revokeArgs)
+	err := client.RevokeCert(revokeArgs)
 	if err != nil {
 		return err
 	}

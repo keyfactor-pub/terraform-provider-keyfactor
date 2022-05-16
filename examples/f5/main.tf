@@ -12,7 +12,6 @@ provider "keyfactor" {
   hostname    = "keyfactor.example.com"
   kf_username = "keyfactorUser"
   kf_password = "P@s5woRd!"
-  dev_mode    = true
 }
 
 resource "keyfactor_store" "f5_bigip" {
@@ -22,30 +21,16 @@ resource "keyfactor_store" "f5_bigip" {
   agent_id        = "keyfactorOrchestratorAgentID"
   cert_store_type = 10
   property {
-    name  = "PrimaryNode"
-    value = var.f5_primary_node
-  }
-  property {
-    name  = "PrimaryNodeCheckRetryWaitSecs"
-    value = var.f5_primary_node_retry_wait_sec
-  }
-  property {
-    name  = "PrimaryNodeCheckRetryMax"
-    value = var.f5_primary_node_retry_max
-  }
-  property {
-    name  = "F5Version"
-    value = var.f5_version
+    PrimaryNode  = var.f5_primary_node
+    PrimaryNodeCheckRetryWaitSecs = var.f5_primary_node_retry_wait_sec
+    PrimaryNodeCheckRetryMax = var.f5_primary_node_retry_max
+    F5Version = var.f5_version
   }
   inventory_schedule {
     interval {
       minutes = 60
     }
   }
-}
-
-output "store" {
-  value = keyfactor_store.f5_bigip
 }
 
 
@@ -65,14 +50,13 @@ resource "keyfactor_certificate" "PFXCertificate" {
   key_password          = "P@s5w0Rd2321!"
   certificate_authority = "keyfactor.example.com\\CA 1"
   cert_template         = "WebServer1yr"
-
-  deployment {
-    store_ids      = [keyfactor_store.f5_bigip.keyfactor_id]
-    store_type_ids = [keyfactor_store.f5_bigip.cert_store_type]
-    alias          = ["terraform"]
-  }
 }
 
-output "pfxCertificate" {
-  value = keyfactor_certificate.PFXCertificate
+resource "keyfactor_deploy_certificate" "test" {
+  certificate_id = keyfactor_certificate.PFXCertificate.keyfactor_id
+  password       = keyfactor_certificate.PFXCertificate.key_password
+  store {
+    certificate_store_id = keyfactor_store.f5_bigip.keyfactor_id
+    alias                = "deploy1"
+  }
 }

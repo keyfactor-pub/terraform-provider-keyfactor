@@ -10,28 +10,36 @@ type SANs struct {
 
 // EnrollPFXFctArgs holds the function arguments used for calling the EnrollPFX method.
 type EnrollPFXFctArgs struct {
-	CustomFriendlyName          string
-	KeyPassword                 string
-	PopulateMissingValuesFromAD bool
-	CertificateAuthority        string
-	Template                    string
-	IncludeChain                bool
-	RenewalCertificateId        int
-	CertFormat                  string
-	CertificateSubject          CertificateSubject
-	CertificateMetadata         []StringTuple
-	CertificateSANs             *SANs
+	CustomFriendlyName          string `json:"CustomFriendlyName,omitempty"`
+	Password                    string `json:"Password"`
+	PopulateMissingValuesFromAD bool   `json:"PopulateMissingValuesFromAD"`
+	// Configure the SubjectString field as the full string subject for the certificate. For example, if you don't have
+	// subject fields individually separated, and the subject is already in the format required by RFC5280, use the SubjectString field.
+	SubjectString string `json:"Subject"`
+
+	// If the certificate subject is not already in the format required by RFC5280, configure the subject fields using a CertificateSubject
+	// struct, and EnrollPFX will automatically compile this information into a proper subject.
+	Subject              *CertificateSubject    `json:"-"`
+	IncludeChain         bool                   `json:"IncludeChain"`
+	RenewalCertificateId int                    `json:"RenewalCertificateId,omitempty"`
+	CertificateAuthority string                 `json:"CertificateAuthority"`
+	Timestamp            string                 `json:"Timestamp"`
+	Template             string                 `json:"Template"`
+	SANs                 *SANs                  `json:"SANs,omitempty"`
+	Metadata             map[string]interface{} `json:"Metadata,omitempty"`
+	CertFormat           string                 `json:"-"`
 }
 
 // EnrollCSRFctArgs holds the function arguments used for calling the EnrollCSR method.
 type EnrollCSRFctArgs struct {
 	CSR                  string
-	CertificateAuthority string
-	Template             string
-	IncludeChain         bool
-	CertFormat           string
-	CertificateMetadata  []StringTuple
-	CertificateSANs      *SANs
+	Timestamp            string                 `json:"Timestamp"`
+	Template             string                 `json:"Template"`
+	CertFormat           string                 `json:"-"`
+	CertificateAuthority string                 `json:"CertificateAuthority"`
+	IncludeChain         bool                   `json:"IncludeChain"`
+	SANs                 *SANs                  `json:"SANs"`
+	Metadata             map[string]interface{} `json:"Metadata"`
 }
 
 // RevokeCertArgs holds the function arguments used for calling the RevokeCert method.
@@ -52,14 +60,6 @@ type DownloadCertArgs struct {
 	IncludeChain bool
 	CollectionId int
 	CertFormat   string
-}
-
-// UpdateMetadataArgs holds the function arguments used for calling the UpdateMetadata method.
-type UpdateMetadataArgs struct {
-	CertID              int                    `json:"Id"`
-	CertificateMetadata []StringTuple          `json:"-"`
-	Metadata            map[string]interface{} `json:"Metadata"`
-	CollectionId        int                    `json:"CollectionId"`
 }
 
 // GetCertificateContextArgs holds the function arguments used for calling the GetCertificateContext method.
@@ -113,32 +113,6 @@ type CertificateSubject struct {
 	SubjectCountry            string
 	SubjectOrganizationalUnit string
 	SubjectState              string
-}
-
-// enrollPFXBody is the API POST request body for PFX enrollment (EnrollPFX).
-type enrollPFXBody struct {
-	CustomFriendlyName          string                 `json:"CustomFriendlyName,omitempty"`
-	Password                    string                 `json:"Password"`
-	PopulateMissingValuesFromAD bool                   `json:"PopulateMissingValuesFromAD"`
-	Subject                     string                 `json:"Subject"`
-	IncludeChain                bool                   `json:"IncludeChain"`
-	RenewalCertificateId        int                    `json:"RenewalCertificateId,omitempty"`
-	CertificateAuthority        string                 `json:"CertificateAuthority"`
-	Timestamp                   string                 `json:"Timestamp"`
-	Template                    string                 `json:"Template"`
-	SANs                        *SANs                  `json:"SANs,omitempty"`
-	Metadata                    map[string]interface{} `json:"Metadata,omitempty"`
-}
-
-// enrollCSRBody is the API POST request body for PFX enrollment (EnrollCSR).
-type enrollCSRBody struct {
-	CSR                  string
-	Timestamp            string                 `json:"Timestamp"`
-	Template             string                 `json:"Template"`
-	CertificateAuthority string                 `json:"CertificateAuthority"`
-	IncludeChain         bool                   `json:"IncludeChain"`
-	SANs                 *SANs                  `json:"SANs"`
-	Metadata             map[string]interface{} `json:"Metadata"`
 }
 
 // downloadCertificateBody is the API POST request body for PFX enrollment (DownloadCertificate).

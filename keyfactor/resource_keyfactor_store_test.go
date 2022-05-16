@@ -39,7 +39,7 @@ func TestAccKeyfactorStore_Basic(t *testing.T) {
 		CheckDestroy:      testAccCheckKeyfactorStoreDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccCheckKeyfactorStore_Basic(clientMachine, storePathPub, agentId, certStoreType, password, inventoryMins),
+				Config: testAccCheckKeyfactorStoreBasic(clientMachine, storePathPub, agentId, certStoreType, password, inventoryMins),
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorStoreExists("keyfactor_store.test"),
@@ -54,7 +54,7 @@ func TestAccKeyfactorStore_Basic(t *testing.T) {
 				),
 			},
 			{
-				Config: testAccCheckKeyfactorStore_Modified(clientMachine, storePathPub, agentId, certStoreType, password, inventoryMins, storePathPriv),
+				Config: testAccCheckKeyfactorStoreModified(clientMachine, storePathPub, agentId, certStoreType, password, inventoryMins, storePathPriv),
 				Check: resource.ComposeTestCheckFunc(
 					// Check inputted values
 					testAccCheckKeyfactorStoreExists("keyfactor_store.test"),
@@ -67,11 +67,9 @@ func TestAccKeyfactorStore_Basic(t *testing.T) {
 					// Check computed values
 					resource.TestCheckResourceAttrSet("keyfactor_store.test", "keyfactor_id"),
 					// Check that the change propagated to new state
-					resource.TestCheckResourceAttr("keyfactor_store.test", "property.#", "2"),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "property.0.name", "separatePrivateKey"),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "property.0.value", "true"),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "property.1.name", "privateKeyPath"),
-					resource.TestCheckResourceAttr("keyfactor_store.test", "property.1.value", storePathPriv),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "properties.%", "2"),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "properties.separatePrivateKey", "true"),
+					resource.TestCheckResourceAttr("keyfactor_store.test", "properties.privateKeyPath", storePathPriv),
 				),
 			},
 		},
@@ -156,7 +154,7 @@ func testAccCheckKeyfactorStoreExists(name string) resource.TestCheckFunc {
 	}
 }
 
-func testAccCheckKeyfactorStore_Basic(clientMachine string, storePath string, agentId string, certStoreType string, password string, inventoryMins string) string {
+func testAccCheckKeyfactorStoreBasic(clientMachine string, storePath string, agentId string, certStoreType string, password string, inventoryMins string) string {
 	// Return the minimum (basic) required fields to enroll PRX certificate
 	return fmt.Sprintf(`
 	resource "keyfactor_store" "test" {
@@ -176,7 +174,7 @@ func testAccCheckKeyfactorStore_Basic(clientMachine string, storePath string, ag
 	`, clientMachine, storePath, certStoreType, inventoryMins, agentId, password)
 }
 
-func testAccCheckKeyfactorStore_Modified(clientMachine string, storePathPub string, agentId string, certStoreType string, password string, inventoryMins string, storePathPriv string) string {
+func testAccCheckKeyfactorStoreModified(clientMachine string, storePathPub string, agentId string, certStoreType string, password string, inventoryMins string, storePathPriv string) string {
 	// Return the minimum (basic) required fields to enroll PRX certificate
 	return fmt.Sprintf(`
 	resource "keyfactor_store" "test" {
@@ -192,13 +190,9 @@ func testAccCheckKeyfactorStore_Modified(clientMachine string, storePathPub stri
 	password {
 		value = "%s"
 	}
-	property {
-		name  = "separatePrivateKey"
-		value = "true"
-	}
-	property {
-		name  = "privateKeyPath"
-		value = "%s"
+	properties = {
+		separatePrivateKey  = "true"
+		privateKeyPath = "%s"
 	}
 }
 	`, clientMachine, storePathPub, certStoreType, inventoryMins, agentId, password, storePathPriv)

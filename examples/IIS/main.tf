@@ -28,11 +28,6 @@ resource "keyfactor_store" "IIS" {
   }
 }
 
-output "store" {
-  value = keyfactor_store.IIS
-}
-
-
 resource "keyfactor_certificate" "PFXCertificate" {
   provider = keyfactor.command
   subject {
@@ -57,6 +52,11 @@ resource "keyfactor_certificate" "PFXCertificate" {
   }
 }
 
-output "pfxCertificate" {
-  value = keyfactor_certificate.PFXCertificate
+resource "keyfactor_deploy_certificate" "test" {
+  certificate_id = keyfactor_certificate.PFXCertificate.keyfactor_id
+  password       = keyfactor_certificate.PFXCertificate.key_password
+  store {
+    certificate_store_id = keyfactor_store.IIS.keyfactor_id
+    alias                = "deploy1"
+  }
 }

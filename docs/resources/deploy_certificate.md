@@ -3,7 +3,7 @@
 page_title: "keyfactor_deploy_certificate Resource - terraform-provider-keyfactor"
 subcategory: "Security & Authentication"
 description: |-
-  Resource used for deploying/removing certificates into certificate stores regisered in Keyfactor.
+Resource used for deploying/removing certificates into certificate stores regisered in Keyfactor.
 ---
 
 # keyfactor_deploy_certificate (Resource)

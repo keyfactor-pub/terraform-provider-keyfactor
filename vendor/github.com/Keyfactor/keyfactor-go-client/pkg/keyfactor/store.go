@@ -284,26 +284,22 @@ func (c *Client) RemoveCertificateFromStores(config *RemoveCertificateFromStore)
 }
 
 // unmarshalPropertiesString unmarshalls a JSON string and serializes it into an array of StringTuple.
-func unmarshalPropertiesString(properties string) []StringTuple {
+func unmarshalPropertiesString(properties string) map[string]string {
 	if properties != "" {
 		// First, unmarshal JSON properties string to []interface{}
 		var tempInterface interface{}
 		if err := json.Unmarshal([]byte(properties), &tempInterface); err != nil {
-			return make([]StringTuple, 0, 0)
+			return make(map[string]string)
 		}
-		// Then, iterate through each key:value pair and serialize into array of StringTuple
-		var propertiesStringTuple []StringTuple
+		// Then, iterate through each key:value pair and serialize into map[string]string
+		newMap := make(map[string]string)
 		for key, value := range tempInterface.(map[string]interface{}) {
-			temp := StringTuple{
-				Elem1: key,
-				Elem2: value.(string),
-			}
-			propertiesStringTuple = append(propertiesStringTuple, temp)
+			newMap[key] = value.(string)
 		}
-		return propertiesStringTuple
+		return newMap
 	}
 
-	return make([]StringTuple, 0, 0)
+	return make(map[string]string)
 }
 
 func validateCreateStoreArgs(ca *CreateStoreFctArgs) error {
@@ -336,14 +332,16 @@ func validateUpdateStoreArgs(ca *UpdateStoreFctArgs) error {
 
 // buildPropertiesInterface takes argument for an array of StringTuple and returns an interface of the associated values
 // in map[string]interface{} elements.
-func buildPropertiesInterface(properties []StringTuple) interface{} {
+func buildPropertiesInterface(properties map[string]string) interface{} {
 	// Create temporary array of interfaces
 	// When updating a property in Keyfactor, API expects {"key": {"value": "key-value"}} - Build this interface
 	propertiesInterface := make(map[string]interface{})
-	for _, property := range properties {
-		inside := make(map[string]interface{})
-		inside["value"] = property.Elem2             // Create {"value": "key-value"} interface
-		propertiesInterface[property.Elem1] = inside // Create {"key": {"value": "key-value"}} interface
+
+	for key, value := range properties {
+		inside := make(map[string]interface{}) // Create {"value": "<key-value>"} interface
+		inside["value"] = value
+		propertiesInterface[key] = inside // Create {"<key>": {"value": "key-value"}} interface
 	}
+
 	return propertiesInterface
 }

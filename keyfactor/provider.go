@@ -84,7 +84,10 @@ func Provider() *schema.Provider {
 			"keyfactor_security_role":      resourceSecurityRole(),
 			"keyfactor_attach_role":        resourceKeyfactorAttachRole(),
 		},
-		DataSourcesMap:       map[string]*schema.Resource{},
+		DataSourcesMap: map[string]*schema.Resource{
+			"keyfactor_template":      dataSourceKeyfactorTemplate(),
+			"keyfactor_security_role": dataSourceKeyfactorSecurityRole(),
+		},
 		ConfigureContextFunc: providerConfigure,
 	}
 }

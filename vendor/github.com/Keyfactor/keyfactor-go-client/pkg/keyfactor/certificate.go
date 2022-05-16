@@ -17,29 +17,8 @@ func (c *Client) EnrollPFX(ea *EnrollPFXFctArgs) (*EnrollResponse, error) {
 	log.Println("[INFO] Enrolling PFX certificate with Keyfactor")
 
 	/* Ensure required inputs exist */
-	if (ea.Template == "") || (ea.KeyPassword == "") || (ea.CertificateAuthority == "") || (ea.CertFormat == "") {
+	if (ea.Template == "") || (ea.Password == "") || (ea.CertificateAuthority == "") || (ea.CertFormat == "") {
 		return nil, errors.New("invalid or nonexistent values required for pfx enrollment")
-	}
-
-	/* Build subject */
-	subject, err := createSubject(ea.CertificateSubject)
-	if err != nil {
-		return nil, err
-	}
-
-	// Once required fields are found, create request body
-	log.Println("[TRACE] Creating request body")
-	payload := &enrollPFXBody{
-		CustomFriendlyName:          ea.CustomFriendlyName,
-		Password:                    ea.KeyPassword,
-		PopulateMissingValuesFromAD: ea.PopulateMissingValuesFromAD, // this field has default value
-		Subject:                     subject,
-		IncludeChain:                ea.IncludeChain, // IncludeChain has default value
-		CertificateAuthority:        ea.CertificateAuthority,
-		Timestamp:                   getTimestamp(),
-		Template:                    ea.Template,
-		SANs:                        ea.CertificateSANs,
-		Metadata:                    mapTupleArrayToInterface(ea.CertificateMetadata),
 	}
 
 	// Set Keyfactor-specific headers
@@ -51,11 +30,27 @@ func (c *Client) EnrollPFX(ea *EnrollPFXFctArgs) (*EnrollResponse, error) {
 		},
 	}
 
+	if ea.Timestamp == "" {
+		ea.Timestamp = getTimestamp()
+	}
+
+	if ea.SubjectString == "" {
+		if ea.Subject != nil {
+			subject, err := createSubject(*ea.Subject)
+			if err != nil {
+				return nil, err
+			}
+			ea.SubjectString = subject
+		} else {
+			return nil, fmt.Errorf("subject is required to use enrollpfx(). Please configure either SubjectString or Subject")
+		}
+	}
+
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
 		Endpoint: "Enrollment/PFX",
 		Headers:  headers,
-		Payload:  &payload,
+		Payload:  &ea,
 	}
 
 	resp, err := c.sendRequest(keyfactorAPIStruct)
@@ -160,17 +155,6 @@ func (c *Client) EnrollCSR(ea *EnrollCSRFctArgs) (*EnrollResponse, error) {
 		return nil, errors.New("invalid or nonexistent values required for csr enrollment")
 	}
 
-	log.Println("[TRACE] Creating request body")
-	payload := &enrollCSRBody{
-		CSR:                  ea.CSR,
-		Timestamp:            getTimestamp(),
-		Template:             ea.Template,
-		CertificateAuthority: ea.CertificateAuthority,
-		IncludeChain:         ea.IncludeChain,
-		SANs:                 ea.CertificateSANs,
-		Metadata:             mapTupleArrayToInterface(ea.CertificateMetadata),
-	}
-
 	// Set Keyfactor-specific headers
 	headers := &apiHeaders{
 		Headers: []StringTuple{
@@ -180,11 +164,15 @@ func (c *Client) EnrollCSR(ea *EnrollCSRFctArgs) (*EnrollResponse, error) {
 		},
 	}
 
+	if ea.Timestamp == "" {
+		ea.Timestamp = getTimestamp()
+	}
+
 	keyfactorAPIStruct := &request{
 		Method:   "POST",
 		Endpoint: "Enrollment/CSR",
 		Headers:  headers,
-		Payload:  &payload,
+		Payload:  &ea,
 	}
 
 	resp, err := c.sendRequest(keyfactorAPIStruct)
@@ -199,43 +187,6 @@ func (c *Client) EnrollCSR(ea *EnrollCSRFctArgs) (*EnrollResponse, error) {
 	}
 	jsonResp.Certificates = jsonResp.CertificateInformation.Certificates
 	return jsonResp, nil
-}
-
-// UpdateMetadata takes arguments for UpdateMetadataArgs to facilitate the
-// updating of metadata fields in Keyfactor. It returns nil upon successful revocation,
-// and an error if not. Required fields to update certificate metadata are:
-//  - CertID              : int
-//  - CertificateMetadata : []CertificateMetadata
-func (c *Client) UpdateMetadata(um *UpdateMetadataArgs) error {
-	// Metadata in Keyfactor varies between deployments
-	// Instead of hard coding possibilities, take array of string tuple types and create
-	// string-indexed array of interfaces for JSON compilation
-	um.Metadata = mapTupleArrayToInterface(um.CertificateMetadata)
-
-	// Set Keyfactor-specific headers
-	headers := &apiHeaders{
-		Headers: []StringTuple{
-			{"x-keyfactor-api-version", "1"},
-			{"x-keyfactor-requested-with", "APIClient"},
-		},
-	}
-
-	keyfactorAPIStruct := &request{
-		Method:   "PUT",
-		Endpoint: "Certificates/Metadata",
-		Headers:  headers,
-		Payload:  um,
-	}
-
-	resp, err := c.sendRequest(keyfactorAPIStruct)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("[ERROR] Something unexpected happened, %s call to %s returned status %d", keyfactorAPIStruct.Method, keyfactorAPIStruct.Endpoint, resp.StatusCode)
-	}
-	return nil
 }
 
 // RevokeCert takes arguments for RevokeCertArgs to facilitate the revocation of

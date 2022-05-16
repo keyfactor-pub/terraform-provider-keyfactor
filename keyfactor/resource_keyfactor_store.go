@@ -53,23 +53,12 @@ func resourceStore() *schema.Resource {
 				Optional:    true,
 				Description: "Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure",
 			},
-			"property": {
-				Type:        schema.TypeList,
+			"properties": {
+				Type:        schema.TypeMap,
 				Optional:    true,
-				Description: "Certificate properties specific to certificate store type",
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"name": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Name of property field required by certificate store",
-						},
-						"value": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Property value",
-						},
-					},
+				Description: "Certificate properties specific to certificate store type configured as key-value pairs",
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
 				},
 			},
 			"agent_id": {
@@ -182,7 +171,6 @@ func resourceStoreCreate(ctx context.Context, d *schema.ResourceData, m interfac
 	var diags diag.Diagnostics
 	kfClientData := m.(*keyfactor.Client)
 
-	properties := d.Get("property").([]interface{})
 	newStoreArgs := &keyfactor.CreateStoreFctArgs{
 		ContainerId:           intToPointer(d.Get("container_id").(int)),
 		ClientMachine:         d.Get("client_machine").(string),
@@ -190,7 +178,7 @@ func resourceStoreCreate(ctx context.Context, d *schema.ResourceData, m interfac
 		CertStoreType:         d.Get("cert_store_type").(int),
 		Approved:              boolToPointer(d.Get("approved").(bool)),
 		CreateIfMissing:       boolToPointer(d.Get("create_if_missing").(bool)),
-		Properties:            interfaceArrayToStringTuple(properties),
+		Properties:            interfaceToMappedString(d.Get("properties").(map[string]interface{})),
 		AgentId:               d.Get("agent_id").(string),
 		AgentAssigned:         boolToPointer(d.Get("agent_assigned").(bool)),
 		ContainerName:         stringToPointer(d.Get("container_name").(string)),
@@ -275,9 +263,8 @@ func resourceStoreRead(_ context.Context, d *schema.ResourceData, m interface{})
 
 	// Extract the password schema from current stored schema and pass it right back
 	password := d.Get("password").([]interface{})
-	properties := d.Get("property").([]interface{})
 
-	newSchema := flattenCertificateStoreItems(storeData, password, properties)
+	newSchema := flattenCertificateStoreItems(storeData, password)
 	for key, value := range newSchema {
 		err = d.Set(key, value)
 		if err != nil {
@@ -287,7 +274,7 @@ func resourceStoreRead(_ context.Context, d *schema.ResourceData, m interface{})
 	return diags
 }
 
-func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, password []interface{}, oldProperties []interface{}) map[string]interface{} {
+func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, password []interface{}) map[string]interface{} {
 	if storeContext != nil {
 		data := make(map[string]interface{})
 
@@ -305,7 +292,7 @@ func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, pass
 		data["set_new_password_allowed"] = storeContext.SetNewPasswordAllowed
 
 		// Assign schema that require flattening
-		data["property"] = flattenCertificateStoreProperty(storeContext.Properties, oldProperties)
+		data["properties"] = storeContext.Properties
 		data["inventory_schedule"] = flattenCertificateStoreInventorySched(storeContext.InventorySchedule)
 		data["password"] = password
 
@@ -313,29 +300,6 @@ func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, pass
 	}
 
 	return make(map[string]interface{})
-}
-
-func flattenCertificateStoreProperty(properties []keyfactor.StringTuple, oldProperties []interface{}) []interface{} {
-	// We want to store properties back in the original state that they were found in the .tf file. Otherwise,
-	// Terraform marks any change as infrastructure drift. Basically the goal here is to take in the slice of
-	// oldProperties and update it with the values returned by properties, and if drift does exist, append it to the
-	// end.
-	if len(properties) > 0 {
-		var newPropertiesArray []interface{}
-		for _, oldProperty := range oldProperties {
-			temp := oldProperty.(map[string]interface{})
-			for _, newProperty := range properties {
-				if newProperty.Elem1 == temp["name"] {
-					temp["value"] = newProperty.Elem2
-					break
-				}
-			}
-			newPropertiesArray = append(newPropertiesArray, temp)
-		}
-		return newPropertiesArray
-	}
-
-	return make([]interface{}, 0)
 }
 
 func flattenCertificateStoreInventorySched(schedule keyfactor.InventorySchedule) []interface{} {
@@ -380,7 +344,6 @@ func flattenCertificateStoreInventorySched(schedule keyfactor.InventorySchedule)
 func resourceStoreUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	kfClient := m.(*keyfactor.Client)
 
-	properties := d.Get("property").([]interface{})
 	updateStoreArgs := &keyfactor.UpdateStoreFctArgs{
 		Id: d.Get("keyfactor_id").(string),
 		CreateStoreFctArgs: keyfactor.CreateStoreFctArgs{
@@ -390,7 +353,7 @@ func resourceStoreUpdate(ctx context.Context, d *schema.ResourceData, m interfac
 			CertStoreType:         d.Get("cert_store_type").(int),
 			Approved:              boolToPointer(d.Get("approved").(bool)),
 			CreateIfMissing:       boolToPointer(d.Get("create_if_missing").(bool)),
-			Properties:            interfaceArrayToStringTuple(properties),
+			Properties:            interfaceToMappedString(d.Get("properties").(map[string]interface{})),
 			AgentId:               d.Get("agent_id").(string),
 			AgentAssigned:         boolToPointer(d.Get("agent_assigned").(bool)),
 			ContainerName:         stringToPointer(d.Get("container_name").(string)),
@@ -408,6 +371,14 @@ func resourceStoreUpdate(ctx context.Context, d *schema.ResourceData, m interfac
 
 	// Call read function to update schema with new state
 	return resourceStoreRead(ctx, d, m)
+}
+
+func interfaceToMappedString(in map[string]interface{}) map[string]string {
+	newMap := make(map[string]string)
+	for key, value := range in {
+		newMap[key] = value.(string)
+	}
+	return newMap
 }
 
 func resourceStoreDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

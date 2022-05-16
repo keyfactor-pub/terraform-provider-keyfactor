@@ -2,22 +2,25 @@ package keyfactor
 
 // CreateStoreFctArgs holds the function arguments used for calling the CreateStore method.
 type CreateStoreFctArgs struct {
-	ContainerId             *int                 `json:"ContainerId,omitempty"`
-	ClientMachine           string               `json:"ClientMachine"`
-	StorePath               string               `json:"StorePath"`
-	CertStoreInventoryJobId *string              `json:"CertStoreInventoryJobId,omitempty"`
-	CertStoreType           int                  `json:"CertStoreType"`
-	Approved                *bool                `json:"Approved,omitempty"`
-	CreateIfMissing         *bool                `json:"CreateIfMissing,omitempty"`
-	PropertiesString        string               `json:"Properties,omitempty"` // This is sent to Keyfactor
-	Properties              []StringTuple        `json:"-"`                    // Function args uses this
-	AgentId                 string               `json:"AgentId"`
-	AgentAssigned           *bool                `json:"AgentAssigned,omitempty"`
-	ContainerName           *string              `json:"ContainerName,omitempty"`
-	InventorySchedule       *InventorySchedule   `json:"InventorySchedule,omitempty"`
-	ReEnrollmentStatus      *ReEnrollmnentConfig `json:"ReEnrollmentStatus,omitempty"`
-	SetNewPasswordAllowed   *bool                `json:"SetNewPasswordAllowed,omitempty"`
-	Password                *StorePasswordConfig `json:"Password,omitempty"`
+	ContainerId             *int    `json:"ContainerId,omitempty"`
+	ClientMachine           string  `json:"ClientMachine"`
+	StorePath               string  `json:"StorePath"`
+	CertStoreInventoryJobId *string `json:"CertStoreInventoryJobId,omitempty"`
+	CertStoreType           int     `json:"CertStoreType"`
+	Approved                *bool   `json:"Approved,omitempty"`
+	CreateIfMissing         *bool   `json:"CreateIfMissing,omitempty"`
+	// String JSON name-value pairs; this field is not recommended. Instead, please use Properties. This field is
+	// automatically populated by the CreateStore method. However, if configured, this field will be used.
+	PropertiesString string `json:"Properties,omitempty"`
+	// Mapped name-value pair field used to configure properties.
+	Properties            map[string]string    `json:"-"`
+	AgentId               string               `json:"AgentId"`
+	AgentAssigned         *bool                `json:"AgentAssigned,omitempty"`
+	ContainerName         *string              `json:"ContainerName,omitempty"`
+	InventorySchedule     *InventorySchedule   `json:"InventorySchedule,omitempty"`
+	ReEnrollmentStatus    *ReEnrollmnentConfig `json:"ReEnrollmentStatus,omitempty"`
+	SetNewPasswordAllowed *bool                `json:"SetNewPasswordAllowed,omitempty"`
+	Password              *StorePasswordConfig `json:"Password,omitempty"`
 }
 
 // UpdateStoreFctArgs holds the function arguments used for calling the UpdateStore method.
@@ -135,7 +138,7 @@ type GetStoreByIDResp struct {
 	Approved                bool                `json:"Approved,omitempty"`
 	CreateIfMissing         bool                `json:"CreateIfMissing,omitempty"`
 	PropertiesString        string              `json:"Properties,omitempty"`
-	Properties              []StringTuple       `json:"-"` // Usable form for other processes
+	Properties              map[string]string   `json:"-"`
 	AgentId                 string              `json:"AgentId,omitempty"`
 	AgentAssigned           bool                `json:"AgentAssigned,omitempty"`
 	ContainerName           string              `json:"ContainerName,omitempty"`
@@ -168,7 +171,7 @@ type CreateStoreResponse struct {
 	Approved                bool                `json:"Approved"`
 	CreateIfMissing         bool                `json:"CreateIfMissing"`
 	PropertiesString        string              `json:"Properties"`
-	Properties              []StringTuple       `json:"-"`
+	Properties              map[string]string   `json:"-"`
 	AgentId                 string              `json:"AgentId"`
 	AgentAssigned           bool                `json:"AgentAssigned"`
 	ContainerName           string              `json:"ContainerName"`

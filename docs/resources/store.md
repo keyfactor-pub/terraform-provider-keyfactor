@@ -3,8 +3,7 @@
 page_title: "keyfactor_store Resource - terraform-provider-keyfactor"
 subcategory: "Security & Authentication"
 description: |-
-Terraform resource for interacting with Store endpoint
-  
+  Terraform resource for interacting with Store endpoint
 ---
 
 # keyfactor_store (Resource)
@@ -24,38 +23,20 @@ inventory in Keyfactor. Configuration of required fields such as
 the store path is the URL to the vault.
 ```terraform
 resource "keyfactor_store" "AKS1" {
-  provider = keyfactor.command
+  provider        = keyfactor.command
   client_machine  = "aks_demo"
-  agent_id = "keyfactorOrchestratorAgentID"
+  agent_id        = "keyfactorOrchestratorAgentID"
   store_path      = "https://companykeyvault.vault.azure.net/"
   cert_store_type = 106
-  property {
-    name  = "TenantID"
-    value = "tenant GUID"
-  }
-  property {
-    name  = "ResourceGroupName"
-    value = "production"
-  }
-  property {
-    name  = "ApplicationId"
-    value = "appID"
-  }
-  property {
-    name  = "ClientSecret"
-    value = "SPSecret"
-  }
-  property {
-    name  = "SubscriptionId"
-    value = "tenantSubID"
-  }
-  property {
-    name  = "APIObjectId"
-    value = "SPObject"
-  }
-  property {
-    name  = "VaultName"
-    value = "companykeyvault"
+  properties {
+    TenantID          = "tenant GUID"
+    ResourceGroupName = "production"
+    ApplicationId     = "appID"
+  	ClientSecret      = "SPSecret"
+    SubscriptionId    = "tenantSubID"
+    APIObjectId       = "SPObject"
+    VaultName         = "companykeyvault"
+  
   }
   inventory_schedule {
     interval {
@@ -66,10 +47,8 @@ resource "keyfactor_store" "AKS1" {
 ```
 
 #### Property schema
-Notice that the above configuration configures more than one ```property``` fields.
-Store property fields vary between store types, so static configuration is
-unnecessary. For this reason, all properties should be specified individually, as
-shown above, in their own property schema blocks.
+Store properties vary between certificate store types. Configure each property using name-value
+pairs as shown above. All values are configured as a string.
 
 #### Inventory Schedule schema
 The above example configures the certificate store to run an inventory at an interval
@@ -96,7 +75,7 @@ and ```immediate```. Only one inventory schedule may be specified in this config
 - **id** (String) The ID of this resource.
 - **inventory_schedule** (Block List, Max: 1) Inventory schedule for new certificate store (see [below for nested schema](#nestedblock--inventory_schedule))
 - **password** (Block List, Max: 1) Configures credential options for certificate store (see [below for nested schema](#nestedblock--password))
-- **property** (Block List) Certificate properties specific to certificate store type (see [below for nested schema](#nestedblock--property))
+- **properties** (Map of String) Certificate properties specific to certificate store type configured as key-value pairs
 - **set_new_password_allowed** (Boolean) Indicates whether the store password can be changed
 
 ### Read-Only
@@ -144,14 +123,5 @@ Required:
 Optional:
 
 - **value** (String) Configures a password to be stored a Keyfactor secret
-
-
-<a id="nestedblock--property"></a>
-### Nested Schema for `property`
-
-Optional:
-
-- **name** (String) Name of property field required by certificate store
-- **value** (String) Property value
 
 

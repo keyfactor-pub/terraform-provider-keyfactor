@@ -111,6 +111,37 @@ func (c *Client) DeleteSecurityIdentity(id int) error {
 	return nil
 }
 
+func (c *Client) GetSecurityRoles() ([]GetSecurityRolesResponse, error) {
+	log.Println("[INFO] Getting list of Keyfactor security roles")
+
+	// Set Keyfactor-specific headers
+	headers := &apiHeaders{
+		Headers: []StringTuple{
+			{"x-keyfactor-api-version", "1"},
+			{"x-keyfactor-requested-with", "APIClient"},
+		},
+	}
+
+	keyfactorAPIStruct := &request{
+		Method:   "GET",
+		Endpoint: "Security/Roles",
+		Headers:  headers,
+		Payload:  nil,
+	}
+
+	resp, err := c.sendRequest(keyfactorAPIStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	var jsonResp []GetSecurityRolesResponse
+	err = json.NewDecoder(resp.Body).Decode(&jsonResp)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResp, nil
+}
+
 func (c *Client) GetSecurityRole(id int) (*GetSecurityRolesResponse, error) {
 	log.Printf("[INFO] Getting Keyfactor security role with ID %d", id)
 

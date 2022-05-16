@@ -14,39 +14,21 @@ provider "keyfactor" {
   kf_password = "P@s5woRd!"
 }
 
+// Create Azure Key Vault certificate store
 resource "keyfactor_store" "AKV1" {
   provider        = keyfactor.command
   client_machine  = "akv_demo"
   store_path      = "https://companykeyvault.vault.azure.net/"
   agent_id        = "keyfactorOrchestratorAgentID"
   cert_store_type = 106
-  property {
-    name  = "TenantID"
-    value = var.az_tenant_id
-  }
-  property {
-    name  = "ResourceGroupName"
-    value = var.az_resource_group_name
-  }
-  property {
-    name  = "ApplicationId"
-    value = var.az_application_id
-  }
-  property {
-    name  = "ClientSecret"
-    value = var.az_client_secret
-  }
-  property {
-    name  = "SubscriptionId"
-    value = var.az_subscription_id
-  }
-  property {
-    name  = "APIObjectId"
-    value = var.az_app_object_id
-  }
-  property {
-    name  = "VaultName"
-    value = var.az_vault_name
+  properties {
+    TenantID  = var.az_tenant_id
+    ResourceGroupName = var.az_resource_group_name
+    ApplicationId = var.az_application_id
+    ClientSecret = var.az_client_secret
+    SubscriptionId = var.az_subscription_id
+    APIObjectId = var.az_app_object_id
+    VaultName = var.az_vault_name
   }
   inventory_schedule {
     interval {
@@ -55,11 +37,7 @@ resource "keyfactor_store" "AKV1" {
   }
 }
 
-output "store" {
-  value = keyfactor_store.AKV1
-}
-
-
+// Enroll a PFX certificate with Keyfactor
 resource "keyfactor_certificate" "PFXCertificate" {
   provider = keyfactor.command
   subject {
@@ -75,24 +53,20 @@ resource "keyfactor_certificate" "PFXCertificate" {
     san_uri = ["example.com"]
   }
   metadata {
-    name  = "Department"
-    value = "Engineering"
-  }
-  metadata {
-    name  = "Email-Contact"
-    value = "admin@example.com"
+    Department  = "Engineering"
+    Email-Contact = "admin@example.com"
   }
   key_password          = "P@s5w0Rd2321!"
   certificate_authority = "keyfactor.example.com\\CA 1"
   cert_template         = "WebServer1yr"
-
-  deployment {
-    store_ids      = [keyfactor_store.AKV1.keyfactor_id]
-    store_type_ids = [keyfactor_store.AKV1.cert_store_type]
-    alias          = ["terraform"]
-  }
 }
 
-output "pfxCertificate" {
-  value = keyfactor_certificate.PFXCertificate
+// Deploy new PFX certificate into Azure Key Vault
+resource "keyfactor_deploy_certificate" "test" {
+  certificate_id = keyfactor_certificate.PFXCertificate.keyfactor_id
+  password       = keyfactor_certificate.PFXCertificate.key_password
+  store {
+    certificate_store_id = keyfactor_store.AKV1.keyfactor_id
+    alias                = "deploy1"
+  }
 }

@@ -3,7 +3,7 @@
 page_title: "keyfactor_security_role Resource - terraform-provider-keyfactor"
 subcategory: "Security & Authentication"
 description: |-
-  
+  Resource used to create and manage security roles in Keyfactor
 ---
 
 # keyfactor_security_role (Resource)

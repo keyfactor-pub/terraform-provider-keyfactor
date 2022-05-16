@@ -3,7 +3,7 @@
 page_title: "keyfactor_security_identity Resource - terraform-provider-keyfactor"
 subcategory: "Security & Authentication"
 description: |-
-  
+  Resource used to create and manage security identities in Keyfactor
 ---
 
 # keyfactor_security_identity (Resource)

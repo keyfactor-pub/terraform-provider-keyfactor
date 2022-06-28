@@ -24,12 +24,16 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 		t.Skip("Skipping certificate acceptance tests (KEYFACTOR_SKIP_CERTIFICATE_TESTS=true)")
 	}
 
-	template, conn, err := getCertificateTemplate(nil)
-	if err != nil {
-		return
-	}
+	/*
+		template, conn, err := getCertificateTemplate(nil)
+		if err != nil {
+			return
+		}
+	*/
 
-	cA, _, err := findCompatableCA(conn, 2)
+	template := os.Getenv("KEYFACTOR_CERT_TEMPLATE")
+
+	cA, conn, err := findCompatableCA(nil, 2)
 	if err != nil {
 		return
 	}

@@ -2,6 +2,7 @@ package keyfactor
 
 import (
 	"context"
+	"encoding/pem"
 	"errors"
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -174,6 +175,12 @@ func resourceCertificate() *schema.Resource {
 				Computed:    true,
 				Description: "PEM formatted certificate",
 			},
+			"private_key": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Sensitive:   true,
+				Description: "PEM formatted PKCS#8 private key imported if cert_template has KeyRetention set to a value other than None",
+			},
 		},
 	}
 }
@@ -234,6 +241,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 
 		id = enrollResponse.CertificateInformation.KeyfactorID
 	}
+	// todo maybe find a more elegant solution to this
 	time.Sleep(20 * time.Second)
 	arg := &keyfactor.UpdateMetadataArgs{
 		CertID:   id,
@@ -300,12 +308,12 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	csr := d.Get("csr").(string)
 
 	// Download and assign certificates to proper location
-	err, pem := downloadCertificate(certificateData.Id, kfClient, "PEM")
+	err, cert, key := downloadCertificate(certificateData.Id, kfClient, password)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	newSchema, err := flattenCertificateItems(certificateData, kfClient, pem, password, csr) // Set schema
+	newSchema, err := flattenCertificateItems(certificateData, kfClient, cert, key, password, csr) // Set schema
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -319,7 +327,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	return diags
 }
 
-func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, pem string, password string, csr string) (map[string]interface{}, error) {
+func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, cert string, key string, password string, csr string) (map[string]interface{}, error) {
 	if certificateContext != nil {
 		data := make(map[string]interface{})
 
@@ -347,13 +355,14 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 		}
 
 		// Schema set by passed in values
-		data["certificate_pem"] = pem
+		data["certificate_pem"] = cert
 		if password != "" {
 			data["key_password"] = password
 		}
 		if csr != "" {
 			data["csr"] = csr
 		}
+		data["private_key"] = key
 
 		return data, nil
 	}
@@ -455,18 +464,79 @@ func mapSanIDToName(sanID int) string {
 	return ""
 }
 
-func downloadCertificate(id int, kfClient *keyfactor.Client, format string) (error, string) {
-	downloadArgs := &keyfactor.DownloadCertArgs{
-		CertID:       id,
-		IncludeChain: true,
-		CertFormat:   format,
+func decodePEMBytes(buf []byte) (string, string, error) {
+	var privKey []byte
+	var certificates []byte
+	var block *pem.Block
+	for {
+		block, buf = pem.Decode(buf)
+		if block == nil {
+			break
+		} else if strings.Contains(block.Type, "PRIVATE KEY") {
+			privKey = pem.EncodeToMemory(block)
+		} else {
+			certificates = append(certificates, pem.EncodeToMemory(block)...)
+
+		}
+		log.Printf("[TRACE] Found %s", block.Type)
 	}
 
-	resp, err := kfClient.DownloadCertificate(downloadArgs)
+	return string(certificates), string(privKey), nil
+}
+
+func downloadCertificate(id int, kfClient *keyfactor.Client, password string) (error, string, string) {
+
+	certificateContext, err := kfClient.GetCertificateContext(&keyfactor.GetCertificateContextArgs{Id: id})
 	if err != nil {
-		return err, ""
+		return err, "", ""
 	}
-	return nil, resp.Content
+
+	template, err := kfClient.GetTemplate(certificateContext.TemplateId)
+	if err != nil {
+		return err, "", ""
+	}
+
+	recoverable := false
+
+	if template.KeyRetention != "None" {
+		recoverable = true
+	}
+
+	rawPEM := ""
+
+	if recoverable {
+		recoverArg := &keyfactor.RecoverCertArgs{
+			CertId:       id,
+			CertFormat:   "PEM",
+			Password:     password,
+			IncludeChain: true,
+		}
+
+		resp, err := kfClient.RecoverCertificate(recoverArg)
+		if err != nil {
+			return err, "", ""
+		}
+
+		rawPEM = resp.PFX
+	} else {
+		downloadArgs := &keyfactor.DownloadCertArgs{
+			CertID:       id,
+			IncludeChain: true,
+			CertFormat:   "PEM",
+		}
+
+		resp, err := kfClient.DownloadCertificate(downloadArgs)
+		if err != nil {
+			return err, "", ""
+		}
+		rawPEM = resp.Content
+	}
+
+	certs, key, err := decodePEMBytes([]byte(rawPEM))
+	if err != nil {
+		return err, "", ""
+	}
+	return nil, certs, key
 }
 
 func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

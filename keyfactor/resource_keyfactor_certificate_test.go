@@ -82,7 +82,7 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
 				),
 			},
 			{
@@ -102,7 +102,7 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
 					// Check that the change propagated to new state
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "1"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField1), meta1),
@@ -126,7 +126,7 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
 					// Check that the change propagated to new state
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "2"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField1), meta1),
@@ -151,7 +151,7 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
 					// Check that the change propagated to new state
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "3"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField1), meta1),
@@ -177,7 +177,7 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
 					// Check that the change propagated to new state
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "2"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField1), meta1),
@@ -202,7 +202,7 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
 					// Check that the change propagated to new state
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "1"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField3), meta3),
@@ -226,7 +226,7 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
 					// Check that the change propagated to new state
 					//resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "1"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField1), meta1),

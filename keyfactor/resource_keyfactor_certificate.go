@@ -184,7 +184,7 @@ func resourceCertificate() *schema.Resource {
 				Computed:    true,
 				Description: "PEM formatted certificate chain",
 			},
-			"key": {
+			"private_key": {
 				Type:        schema.TypeString,
 				Computed:    true,
 				Sensitive:   true,
@@ -372,7 +372,7 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 			data["csr"] = csr
 		}
 		if key != "" {
-			data["key"] = key
+			data["private_key"] = key
 		}
 
 		data["certificate_chain"] = chain

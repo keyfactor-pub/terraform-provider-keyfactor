@@ -81,6 +81,8 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
 				),
 			},
 			{
@@ -99,6 +101,8 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
 					// Check that the change propagated to new state
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "1"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField1), meta1),
@@ -121,6 +125,8 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
 					// Check that the change propagated to new state
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "2"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField1), meta1),
@@ -144,6 +150,8 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
 					// Check that the change propagated to new state
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "3"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField1), meta1),
@@ -168,6 +176,8 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
 					// Check that the change propagated to new state
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "2"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField1), meta1),
@@ -191,6 +201,8 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
 					// Check that the change propagated to new state
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "1"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField3), meta3),
@@ -213,6 +225,8 @@ func TestAccKeyfactorCertificate_BasicPFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "key"),
 					// Check that the change propagated to new state
 					//resource.TestCheckResourceAttr("keyfactor_certificate.test", "metadata.%", "1"),
 					resource.TestCheckResourceAttr("keyfactor_certificate.test", fmt.Sprintf("metadata.%s", metaField1), meta1),
@@ -228,12 +242,16 @@ func TestAccKeyfactorCertificate_BasicCsr(t *testing.T) {
 		t.Skip("Skipping certificate acceptance tests (KEYFACTOR_SKIP_CERTIFICATE_TESTS=true)")
 	}
 
-	template, conn, err := getCertificateTemplate(nil)
-	if err != nil {
-		return
-	}
+	/*
+		template, conn, err := getCertificateTemplate(nil)
+		if err != nil {
+			return
+		}
+	*/
 
-	cA, _, err := findCompatableCA(conn, 2)
+	template := os.Getenv("KEYFACTOR_CERT_TEMPLATE")
+
+	cA, conn, err := findCompatableCA(nil, 2)
 	if err != nil {
 		return
 	}
@@ -296,13 +314,16 @@ func TestAccKeyfactorCertificate_ExtraPFX(t *testing.T) {
 	if skipStore {
 		t.Skip("Skipping certificate acceptance tests (KEYFACTOR_SKIP_CERTIFICATE_TESTS=true)")
 	}
+	template := os.Getenv("KEYFACTOR_CERT_TEMPLATE")
 
-	template, conn, err := getCertificateTemplate(nil)
-	if err != nil {
-		return
-	}
+	/*
+		template, conn, err := getCertificateTemplate(nil)
+		if err != nil {
+			return
+		}
+	*/
 
-	cA, _, err := findCompatableCA(conn, 2)
+	cA, conn, err := findCompatableCA(nil, 2)
 	if err != nil {
 		return
 	}

@@ -7,6 +7,7 @@ import (
 )
 
 func TestAccKeyfactorDataSourceSecurityRole(t *testing.T) {
+	t.Skip()
 	roleName := "Administrator"
 	resource.Test(t, resource.TestCase{
 		PreCheck:          func() { testAccPreCheck(t) },

@@ -1,9 +1,13 @@
 package keyfactor
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha1"
+	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -175,11 +179,16 @@ func resourceCertificate() *schema.Resource {
 				Computed:    true,
 				Description: "PEM formatted certificate",
 			},
-			"private_key": {
+			"certificate_chain": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "PEM formatted certificate chain",
+			},
+			"key": {
 				Type:        schema.TypeString,
 				Computed:    true,
 				Sensitive:   true,
-				Description: "PEM formatted PKCS#8 private key imported if cert_template has KeyRetention set to a value other than None",
+				Description: "PEM formatted PKCS#8 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
 			},
 		},
 	}
@@ -308,12 +317,12 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	csr := d.Get("csr").(string)
 
 	// Download and assign certificates to proper location
-	err, cert, key := downloadCertificate(certificateData.Id, kfClient, password)
+	err, cert, chain, key := downloadCertificate(certificateData.Id, kfClient, password, csr != "")
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	newSchema, err := flattenCertificateItems(certificateData, kfClient, cert, key, password, csr) // Set schema
+	newSchema, err := flattenCertificateItems(certificateData, kfClient, cert, chain, key, password, csr) // Set schema
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -327,7 +336,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	return diags
 }
 
-func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, cert string, key string, password string, csr string) (map[string]interface{}, error) {
+func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, cert string, chain string, key string, password string, csr string) (map[string]interface{}, error) {
 	if certificateContext != nil {
 		data := make(map[string]interface{})
 
@@ -362,7 +371,11 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 		if csr != "" {
 			data["csr"] = csr
 		}
-		data["private_key"] = key
+		if key != "" {
+			data["key"] = key
+		}
+
+		data["certificate_chain"] = chain
 
 		return data, nil
 	}
@@ -464,9 +477,25 @@ func mapSanIDToName(sanID int) string {
 	return ""
 }
 
-func decodePEMBytes(buf []byte) (string, string, error) {
+func computeASN1Thumbprint(cert *x509.Certificate) (error, string) {
+	// generate fingerprint with sha1
+	// you can also use md5, sha256, etc.
+	fingerprint := sha1.Sum(cert.Raw)
+
+	var buf bytes.Buffer
+	for _, f := range fingerprint {
+		_, err := fmt.Fprintf(&buf, "%02X", f)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	return nil, buf.String()
+}
+
+func decodePEMBytes(buf []byte, leafThumbprint string) (error, string, string, string) {
 	var privKey []byte
-	var certificates []byte
+	var chain []byte
+	var cert []byte
 	var block *pem.Block
 	for {
 		block, buf = pem.Decode(buf)
@@ -475,25 +504,35 @@ func decodePEMBytes(buf []byte) (string, string, error) {
 		} else if strings.Contains(block.Type, "PRIVATE KEY") {
 			privKey = pem.EncodeToMemory(block)
 		} else {
-			certificates = append(certificates, pem.EncodeToMemory(block)...)
-
+			certificate, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				return err, "", "", ""
+			}
+			err, thumb := computeASN1Thumbprint(certificate)
+			if err != nil {
+				return err, "", "", ""
+			}
+			if thumb == leafThumbprint {
+				cert = pem.EncodeToMemory(block)
+			} else {
+				chain = append(chain, pem.EncodeToMemory(block)...)
+			}
 		}
-		log.Printf("[TRACE] Found %s", block.Type)
 	}
 
-	return string(certificates), string(privKey), nil
+	return nil, string(cert), string(chain), string(privKey)
 }
 
-func downloadCertificate(id int, kfClient *keyfactor.Client, password string) (error, string, string) {
+func downloadCertificate(id int, kfClient *keyfactor.Client, password string, csrEnrollment bool) (error, string, string, string) {
 
 	certificateContext, err := kfClient.GetCertificateContext(&keyfactor.GetCertificateContextArgs{Id: id})
 	if err != nil {
-		return err, "", ""
+		return err, "", "", ""
 	}
 
 	template, err := kfClient.GetTemplate(certificateContext.TemplateId)
 	if err != nil {
-		return err, "", ""
+		return err, "", "", ""
 	}
 
 	recoverable := false
@@ -504,7 +543,19 @@ func downloadCertificate(id int, kfClient *keyfactor.Client, password string) (e
 
 	rawPEM := ""
 
-	if recoverable {
+	if !recoverable || csrEnrollment {
+		downloadArgs := &keyfactor.DownloadCertArgs{
+			CertID:       id,
+			IncludeChain: true,
+			CertFormat:   "PEM",
+		}
+
+		resp, err := kfClient.DownloadCertificate(downloadArgs)
+		if err != nil {
+			return err, "", "", ""
+		}
+		rawPEM = resp.Content
+	} else {
 		recoverArg := &keyfactor.RecoverCertArgs{
 			CertId:       id,
 			CertFormat:   "PEM",
@@ -514,29 +565,17 @@ func downloadCertificate(id int, kfClient *keyfactor.Client, password string) (e
 
 		resp, err := kfClient.RecoverCertificate(recoverArg)
 		if err != nil {
-			return err, "", ""
+			return err, "", "", ""
 		}
 
 		rawPEM = resp.PFX
-	} else {
-		downloadArgs := &keyfactor.DownloadCertArgs{
-			CertID:       id,
-			IncludeChain: true,
-			CertFormat:   "PEM",
-		}
-
-		resp, err := kfClient.DownloadCertificate(downloadArgs)
-		if err != nil {
-			return err, "", ""
-		}
-		rawPEM = resp.Content
 	}
 
-	certs, key, err := decodePEMBytes([]byte(rawPEM))
+	err, cert, chain, key := decodePEMBytes([]byte(rawPEM), certificateContext.Thumbprint)
 	if err != nil {
-		return err, "", ""
+		return err, "", "", ""
 	}
-	return nil, certs, key
+	return nil, cert, chain, key
 }
 
 func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

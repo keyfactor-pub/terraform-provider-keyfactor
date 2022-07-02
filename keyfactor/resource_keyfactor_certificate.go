@@ -3,6 +3,8 @@ package keyfactor
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	rsa2 "crypto/rsa"
 	"crypto/sha1"
 	"crypto/x509"
 	"encoding/pem"
@@ -492,39 +494,7 @@ func computeASN1Thumbprint(cert *x509.Certificate) (error, string) {
 	return nil, buf.String()
 }
 
-func decodePEMBytes(buf []byte, leafThumbprint string) (error, string, string, string) {
-	var privKey []byte
-	var chain []byte
-	var cert []byte
-	var block *pem.Block
-	for {
-		block, buf = pem.Decode(buf)
-		if block == nil {
-			break
-		} else if strings.Contains(block.Type, "PRIVATE KEY") {
-			privKey = pem.EncodeToMemory(block)
-		} else {
-			certificate, err := x509.ParseCertificate(block.Bytes)
-			if err != nil {
-				return err, "", "", ""
-			}
-			err, thumb := computeASN1Thumbprint(certificate)
-			if err != nil {
-				return err, "", "", ""
-			}
-			if thumb == leafThumbprint {
-				cert = pem.EncodeToMemory(block)
-			} else {
-				chain = append(chain, pem.EncodeToMemory(block)...)
-			}
-		}
-	}
-
-	return nil, string(cert), string(chain), string(privKey)
-}
-
 func downloadCertificate(id int, kfClient *keyfactor.Client, password string, csrEnrollment bool) (error, string, string, string) {
-
 	certificateContext, err := kfClient.GetCertificateContext(&keyfactor.GetCertificateContextArgs{Id: id})
 	if err != nil {
 		return err, "", "", ""
@@ -541,41 +511,60 @@ func downloadCertificate(id int, kfClient *keyfactor.Client, password string, cs
 		recoverable = true
 	}
 
-	rawPEM := ""
+	var privPem []byte
+	var leafPem []byte
+	var chainPem []byte
 
 	if !recoverable || csrEnrollment {
-		downloadArgs := &keyfactor.DownloadCertArgs{
-			CertID:       id,
-			IncludeChain: true,
-			CertFormat:   "PEM",
-		}
 
-		resp, err := kfClient.DownloadCertificate(downloadArgs)
+		leaf, chain, err := kfClient.DownloadCertificate(id, "", "", "")
 		if err != nil {
 			return err, "", "", ""
 		}
-		rawPEM = resp.Content
+
+		// Encode DER to PEM
+		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+		for _, i := range chain {
+			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
+		}
+
 	} else {
-		recoverArg := &keyfactor.RecoverCertArgs{
-			CertId:       id,
-			CertFormat:   "PEM",
-			Password:     password,
-			IncludeChain: true,
-		}
 
-		resp, err := kfClient.RecoverCertificate(recoverArg)
+		priv, leaf, chain, err := kfClient.RecoverCertificate(id, "", "", "", password)
+		if err != nil {
+			return err, "", "", ""
+		}
 		if err != nil {
 			return err, "", "", ""
 		}
 
-		rawPEM = resp.PFX
+		// Encode DER to PEM
+		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+		for _, i := range chain {
+			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
+		}
+
+		// Figure out the format of the private key, then encode it to PEM
+		rsa, ok := priv.(*rsa2.PrivateKey)
+		if ok {
+			buf := x509.MarshalPKCS1PrivateKey(rsa)
+			if len(buf) > 0 {
+				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "RSA PRIVATE KEY"})
+			}
+		}
+
+		ecc, ok := priv.(*ecdsa.PrivateKey)
+		if ok {
+			// We don't really care about the error here. An error just means that the key will be blank which isn't a
+			// reason to fail
+			buf, _ := x509.MarshalECPrivateKey(ecc)
+			if len(buf) > 0 {
+				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "EC PRIVATE KEY"})
+			}
+		}
 	}
 
-	err, cert, chain, key := decodePEMBytes([]byte(rawPEM), certificateContext.Thumbprint)
-	if err != nil {
-		return err, "", "", ""
-	}
-	return nil, cert, chain, key
+	return nil, string(leafPem), string(chainPem), string(privPem)
 }
 
 func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {

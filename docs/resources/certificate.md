@@ -4,7 +4,6 @@ page_title: "keyfactor_certificate Resource - terraform-provider-keyfactor"
 subcategory: "Security & Authentication"
 description: |-
 Terraform resource for interacting with Certificate endpoint
-  
 ---
 
 # keyfactor_certificate (Resource)
@@ -71,6 +70,8 @@ supported by Terraform.
 ### Read-Only
 
 - **certificate_pem** (String) PEM formatted certificate
+- **certificate_chain** (String) PEM formatted certificate chain
+- **private_key** (String) PEM PKCS#1 if RSA, or PEM formatted according to RFC5915 if ECC. Field is populated if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
 - **issuer_dn** (String) Issuer distinguished name that signed the certificate
 - **keyfactor_id** (Number) Keyfactor certificate ID
 - **keyfactor_request_id** (Number) Keyfactor request ID necessary for deploying certificate
@@ -98,5 +99,3 @@ Optional:
 - **subject_organization** (String) Subject organization for new certificate
 - **subject_organizational_unit** (String) Subject organizational unit for new certificate
 - **subject_state** (String) Subject state for new certificate
-
-

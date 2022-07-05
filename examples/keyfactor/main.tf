@@ -47,9 +47,9 @@ resource "keyfactor_certificate" "DDWebServer1yr" {
   sans {
     san_dns = ["terraformdeploytest"]
   }
-  key_password          = "Ferrari10111"
-  certificate_authority = "keyfactor.thedemodrive.com\\Keyfactor Demo Drive CA 1"
-  cert_template         = "DDWebServer1yr"
+  key_password          = "P@s5w0Rd2321!"
+  certificate_authority = "keyfactor.example.com\\CA 1"
+  cert_template         = "WebServer1yr"
 }
 
 resource "keyfactor_deploy_certificate" "deploy" {

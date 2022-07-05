@@ -190,7 +190,7 @@ func resourceCertificate() *schema.Resource {
 				Type:        schema.TypeString,
 				Computed:    true,
 				Sensitive:   true,
-				Description: "PEM formatted PKCS#8 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+				Description: "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
 			},
 		},
 	}

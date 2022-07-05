@@ -10,14 +10,12 @@ terraform {
 provider "keyfactor" {
   alias       = "command"
   hostname    = "keyfactor.example.com"
-  kf_username = "keyfactorUser"
-  kf_password = "P@s5woRd!"
 }
 
 resource "keyfactor_store" "f5_bigip" {
   provider        = keyfactor.command
   client_machine  = "f5_demo"
-  store_path      = "https://companykeyvault.vault.azure.net/"
+  store_path      = "f5"
   agent_id        = "keyfactorOrchestratorAgentID"
   cert_store_type = 10
   property {

@@ -2,7 +2,7 @@ package keyfactor
 
 import (
 	"context"
-	"github.com/Keyfactor/keyfactor-go-client"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -147,7 +147,7 @@ func schemaDataSourceTemplate() *schema.Resource {
 }
 
 func dataSourceKeyfactorTemplateRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	conn := m.(*keyfactor.Client)
+	conn := m.(*api.Client)
 
 	templates, err := conn.GetTemplates()
 	if err != nil {
@@ -164,7 +164,7 @@ func dataSourceKeyfactorTemplateRead(ctx context.Context, d *schema.ResourceData
 	return nil
 }
 
-func flattenTemplates(templates []keyfactor.GetTemplateResponse) *schema.Set {
+func flattenTemplates(templates []api.GetTemplateResponse) *schema.Set {
 	temp := make([]interface{}, len(templates), len(templates))
 	for i, template := range templates {
 		data := make(map[string]interface{})
@@ -191,7 +191,7 @@ func flattenTemplates(templates []keyfactor.GetTemplateResponse) *schema.Set {
 	return schema.NewSet(schema.HashResource(schemaDataSourceTemplate()), temp)
 }
 
-func flattenEnrollmentFields(ef []keyfactor.TemplateEnrollmentFields) []interface{} {
+func flattenEnrollmentFields(ef []api.TemplateEnrollmentFields) []interface{} {
 	data := make([]interface{}, len(ef), len(ef))
 	for i, field := range ef {
 		temp := make(map[string]interface{})

@@ -2,7 +2,7 @@ package keyfactor
 
 import (
 	"context"
-	"github.com/Keyfactor/keyfactor-go-client"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
@@ -54,7 +54,7 @@ func resourceAttachRoleCreate(ctx context.Context, d *schema.ResourceData, m int
 	var diags diag.Diagnostics
 	log.Println("[INFO] Creating Attach Keyfactor Role resource")
 
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	roleName := d.Get("role_name")
 	templateIds := d.Get("template_id_list")
@@ -72,7 +72,7 @@ func resourceAttachRoleCreate(ctx context.Context, d *schema.ResourceData, m int
 	return diags
 }
 
-func setRoleAllowedRequestor(kfClient *keyfactor.Client, roleName string, templateSet *schema.Set) error {
+func setRoleAllowedRequestor(kfClient *api.Client, roleName string, templateSet *schema.Set) error {
 	templateList := templateSet.List()
 	// First thing to do is blindly attach the passed role as an allowed requestor to each of the template IDs passed in
 	// the Set.
@@ -114,7 +114,7 @@ func setRoleAllowedRequestor(kfClient *keyfactor.Client, roleName string, templa
 	return nil
 }
 
-func addAllowedRequestorToTemplate(kfClient *keyfactor.Client, roleName string, templateId int) error {
+func addAllowedRequestorToTemplate(kfClient *api.Client, roleName string, templateId int) error {
 	log.Printf("[DEBUG] Adding Keyfactor role with ID %s to template with ID %d", roleName, templateId)
 
 	// First get info about template from Keyfactor
@@ -136,7 +136,7 @@ func addAllowedRequestorToTemplate(kfClient *keyfactor.Client, roleName string, 
 	// If it's not already added, create update context to add role to template.
 	newAllowedRequester = append(newAllowedRequester, roleName)
 	// Fill required fields with information retrieved from the get request above
-	updateContext := &keyfactor.UpdateTemplateArg{
+	updateContext := &api.UpdateTemplateArg{
 		Id:                   template.Id,
 		CommonName:           template.CommonName,
 		TemplateName:         template.TemplateName,
@@ -155,7 +155,7 @@ func addAllowedRequestorToTemplate(kfClient *keyfactor.Client, roleName string, 
 	return nil
 }
 
-func removeRoleFromTemplate(kfClient *keyfactor.Client, roleName string, templateId int) error {
+func removeRoleFromTemplate(kfClient *api.Client, roleName string, templateId int) error {
 	log.Printf("[DEBUG] Removing Keyfactor role with ID %s from template with ID %d", roleName, templateId)
 	// First get info about template from Keyfactor
 	template, err := kfClient.GetTemplate(templateId)
@@ -172,7 +172,7 @@ func removeRoleFromTemplate(kfClient *keyfactor.Client, roleName string, templat
 	}
 
 	// Fill required fields with information retrieved from the get request above
-	updateContext := &keyfactor.UpdateTemplateArg{
+	updateContext := &api.UpdateTemplateArg{
 		Id:                   template.Id,
 		CommonName:           template.CommonName,
 		TemplateName:         template.TemplateName,
@@ -194,7 +194,7 @@ func resourceAttachRoleRead(ctx context.Context, d *schema.ResourceData, m inter
 	var diags diag.Diagnostics
 	log.Println("[INFO] Read called on Attach Keyfactor Role resource")
 
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	roleName := d.Id()
 
@@ -226,7 +226,7 @@ func flattenAttachRoleSchema(roleName string, templateIds []interface{}) map[str
 	return data
 }
 
-func findTemplateRoleAttachments(kfClient *keyfactor.Client, roleName string) (error, []interface{}) {
+func findTemplateRoleAttachments(kfClient *api.Client, roleName string) (error, []interface{}) {
 	// Goal here is to find every template that the role is listed as an allowed requester. First thing that needs
 	// to happen is retrieve a complete list of all certificate templates.
 
@@ -255,7 +255,7 @@ func resourceAttachRoleUpdate(ctx context.Context, d *schema.ResourceData, m int
 	var diags diag.Diagnostics
 	log.Println("[INFO] Updating Attach Keyfactor Role resource")
 
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	roleName := d.Get("role_name")
 	templateIds := d.Get("template_id_list")
@@ -273,7 +273,7 @@ func resourceAttachRoleUpdate(ctx context.Context, d *schema.ResourceData, m int
 func resourceAttachRoleDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
 	log.Println("[INFO] Deleting Attach Keyfactor Role resource")
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 	roleName := d.Id()
 
 	tempSet := schema.Set{F: schema.HashInt}

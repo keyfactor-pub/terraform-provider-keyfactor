@@ -2,7 +2,7 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client"
+	keyfactor "github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"

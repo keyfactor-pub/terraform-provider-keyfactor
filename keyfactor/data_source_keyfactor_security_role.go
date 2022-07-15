@@ -3,7 +3,7 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"strconv"
@@ -69,7 +69,7 @@ func dataSourceKeyfactorSecurityRole() *schema.Resource {
 }
 
 func dataSourceKeyfactorSecurityRoleRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	conn := m.(*keyfactor.Client)
+	conn := m.(*api.Client)
 	roleName := d.Get("role_name").(string)
 	roles, err := conn.GetSecurityRoles()
 	if err != nil {

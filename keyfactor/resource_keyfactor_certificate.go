@@ -10,7 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
@@ -194,7 +194,7 @@ func resourceCertificate() *schema.Resource {
 }
 
 func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	sans := d.Get("sans").([]interface{}) // Extract SANs from schema
 	metadata := d.Get("metadata").(map[string]interface{})
@@ -202,7 +202,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 	var id int
 	if csr != "" {
 		log.Println("[DEBUG] Creating certificate from CSR")
-		CSRArgs := &keyfactor.EnrollCSRFctArgs{
+		CSRArgs := &api.EnrollCSRFctArgs{
 			CSR:                  csr,
 			CertificateAuthority: d.Get("certificate_authority").(string),
 			Template:             d.Get("cert_template").(string),
@@ -223,7 +223,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 	} else {
 		log.Println("[DEBUG] No CSR provided, creating certificate from template.")
 		subject := d.Get("subject").([]interface{})[0].(map[string]interface{}) // Extract subject data from schema
-		PFXArgs := &keyfactor.EnrollPFXFctArgs{
+		PFXArgs := &api.EnrollPFXFctArgs{
 			CustomFriendlyName:          "Terraform",
 			Password:                    d.Get("key_password").(string),
 			PopulateMissingValuesFromAD: false,
@@ -233,7 +233,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 			CertFormat:                  "STORE",       // Get certificate from data source
 			SANs:                        getSans(sans), // if no SANs are specified, this field is nil
 			Metadata:                    metadata,
-			Subject: &keyfactor.CertificateSubject{
+			Subject: &api.CertificateSubject{
 				SubjectCommonName:         subject["subject_common_name"].(string),
 				SubjectLocality:           subject["subject_locality"].(string),
 				SubjectOrganization:       subject["subject_organization"].(string),
@@ -256,7 +256,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 	// todo maybe find a more elegant solution to this
 	log.Println("[DEBUG] Sleeping for 20 seconds to allow Keyfactor to finish processing.")
 	time.Sleep(20 * time.Second)
-	arg := &keyfactor.UpdateMetadataArgs{
+	arg := &api.UpdateMetadataArgs{
 		CertID:   id,
 		Metadata: metadata,
 	}
@@ -271,8 +271,8 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 	return resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 }
 
-func getSans(s []interface{}) *keyfactor.SANs {
-	sans := &keyfactor.SANs{}
+func getSans(s []interface{}) *api.SANs {
+	sans := &api.SANs{}
 
 	if len(s) > 0 {
 		inputSANs := s[0].(map[string]interface{})
@@ -294,7 +294,7 @@ func getSans(s []interface{}) *keyfactor.SANs {
 }
 
 func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	var diags diag.Diagnostics
 
@@ -306,7 +306,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	}
 
 	// Get certificate context
-	args := &keyfactor.GetCertificateContextArgs{
+	args := &api.GetCertificateContextArgs{
 		IncludeMetadata:  boolToPointer(true),
 		IncludeLocations: boolToPointer(true),
 		CollectionId:     nil,
@@ -341,7 +341,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	return diags
 }
 
-func flattenCertificateItems(certificateContext *keyfactor.GetCertificateResponse, kfClient *keyfactor.Client, cert string, chain string, key string, password string, csr string) (map[string]interface{}, error) {
+func flattenCertificateItems(certificateContext *api.GetCertificateResponse, kfClient *api.Client, cert string, chain string, key string, password string, csr string) (map[string]interface{}, error) {
 	if certificateContext != nil {
 		data := make(map[string]interface{})
 
@@ -415,7 +415,7 @@ func flattenSubject(subject string) []interface{} {
 	return make([]interface{}, 0)
 }
 
-func flattenSANs(sans []keyfactor.SubjectAltNameElements) []interface{} {
+func flattenSANs(sans []api.SubjectAltNameElements) []interface{} {
 	if len(sans) > 0 {
 		sanInterface := make(map[string]interface{})
 		var sanIP4Array []interface{}
@@ -497,8 +497,8 @@ func computeASN1Thumbprint(cert *x509.Certificate) (error, string) {
 	return nil, buf.String()
 }
 
-func downloadCertificate(id int, kfClient *keyfactor.Client, password string, csrEnrollment bool) (error, string, string, string) {
-	certificateContext, err := kfClient.GetCertificateContext(&keyfactor.GetCertificateContextArgs{Id: id})
+func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrollment bool) (error, string, string, string) {
+	certificateContext, err := kfClient.GetCertificateContext(&api.GetCertificateContextArgs{Id: id})
 	if err != nil {
 		return err, "", "", ""
 	}
@@ -573,7 +573,7 @@ func downloadCertificate(id int, kfClient *keyfactor.Client, password string, cs
 
 func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	if d.HasChange("metadata") {
 		metadata := d.Get("metadata").(map[string]interface{})
@@ -582,7 +582,7 @@ func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m in
 		if err != nil {
 			return diag.FromErr(err)
 		}
-		args := &keyfactor.UpdateMetadataArgs{
+		args := &api.UpdateMetadataArgs{
 			CertID:       id,
 			Metadata:     metadata,
 			CollectionId: 0,
@@ -611,7 +611,7 @@ func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m inte
 	log.Println("[INFO] Deleting certificate resource")
 
 	// When Terraform Destroy is called, we want Keyfactor to revoke the certificate.
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	log.Println("[INFO] Revoking certificate in Keyfactor")
 	strId := d.Id()
@@ -619,7 +619,7 @@ func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m inte
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	revokeArgs := &keyfactor.RevokeCertArgs{
+	revokeArgs := &api.RevokeCertArgs{
 		CertificateIds: []int{id}, // Certificate ID expects array of integers
 		Reason:         5,         // reason = 5 means Cessation of Operation
 		Comment:        "Terraform destroy called on provider with associated cert ID",

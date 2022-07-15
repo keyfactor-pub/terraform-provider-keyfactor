@@ -83,7 +83,7 @@ func resourceCertificate() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					return strings.ToLower(old) == strings.ToLower(new)
+					return strings.EqualFold(old, new)
 				},
 				Description: "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
 			},

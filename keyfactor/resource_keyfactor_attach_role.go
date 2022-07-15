@@ -232,14 +232,14 @@ func findTemplateRoleAttachments(kfClient *api.Client, roleName string) (error, 
 
 	templates, err := kfClient.GetTemplates()
 	if err != nil {
-		return err, make([]interface{}, 0, 0)
+		return err, make([]interface{}, 0)
 	}
 
 	var templateRoleAttachmentList []interface{}
 
 	for _, template := range templates {
 		// We only want to check the allowed requester list if UseAllowedRequesters is true
-		if template.UseAllowedRequesters == true {
+		if template.UseAllowedRequesters {
 			for _, role := range template.AllowedRequesters {
 				if role == roleName {
 					templateRoleAttachmentList = append(templateRoleAttachmentList, template.Id)
@@ -263,7 +263,7 @@ func resourceAttachRoleUpdate(ctx context.Context, d *schema.ResourceData, m int
 	// Add provided role to each of the certificate templates provided in configuration
 	err := setRoleAllowedRequestor(kfClient, roleName.(string), templateIds.(*schema.Set))
 	if err != nil {
-		diags = append(diags, diag.FromErr(err)[0])
+		_ = append(diags, diag.FromErr(err)[0])
 	}
 
 	// Other role attachments happen should below

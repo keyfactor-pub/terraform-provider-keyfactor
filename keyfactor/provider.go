@@ -145,7 +145,7 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 func interfaceArrayToStringTuple(m []interface{}) []api.StringTuple {
 	// Unpack metadata expects []interface{} containing a list of lists of key-value pairs
 	if len(m) > 0 {
-		temp := make([]api.StringTuple, len(m), len(m)) // size of m is the number of metadata fields provided by .tf file
+		temp := make([]api.StringTuple, len(m)) // size of m is the number of metadata fields provided by .tf file
 		for i, field := range m {
 			temp[i].Elem1 = field.(map[string]interface{})["name"].(string)  // Unless changed in the future, this interface
 			temp[i].Elem2 = field.(map[string]interface{})["value"].(string) // will always have 'name' and 'value'

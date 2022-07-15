@@ -2,7 +2,7 @@ package keyfactor
 
 import (
 	"fmt"
-	keyfactor "github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"os"
@@ -113,7 +113,7 @@ func testAccCheckKeyfactorAttachRoleRelationshipExists(name string, templateId i
 			return fmt.Errorf("no Identity ID set")
 		}
 
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 		roleName := rs.Primary.ID
 		// conn is a configured Keyfactor Go Client object, get all template attachments
 		err, attachments := findTemplateRoleAttachments(conn, roleName)
@@ -174,7 +174,7 @@ func testAccKeyfactorAttachRoleDestroy(s *terraform.State) error {
 		roleName := rs.Primary.ID
 
 		// Pull the provider metadata interface out of the testAccProvider provider
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 
 		// conn is a configured Keyfactor Go Client object, get all template attachments
 		err, attachments := findTemplateRoleAttachments(conn, roleName)

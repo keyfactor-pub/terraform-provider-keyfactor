@@ -109,7 +109,7 @@ func setIdentityRole(kfClient *api.Client, identityAccountName string, roleIds [
 	}
 	var identity api.GetSecurityIdentityResponse
 	for _, identity = range identities {
-		if strings.ToLower(identity.AccountName) == strings.ToLower(identityAccountName) {
+		if strings.EqualFold(identity.AccountName, identityAccountName) {
 			break
 		}
 	}
@@ -147,7 +147,8 @@ func removeIdentityFromRole(kfClient *api.Client, identityAccountName string, ro
 	}
 	var identityList []api.SecurityRoleIdentityConfig
 	for _, identity := range role.Identities {
-		if strings.ToLower(identityAccountName) != strings.ToLower(identity.AccountName) {
+		if strings.EqualFold(identity.AccountName, identityAccountName) {
+
 			temp := api.SecurityRoleIdentityConfig{
 				AccountName: identity.AccountName,
 			}
@@ -182,7 +183,7 @@ func addIdentityToRole(kfClient *api.Client, identityAccountName string, roleId 
 		return err
 	}
 
-	identityList := make([]api.SecurityRoleIdentityConfig, len(role.Identities), len(role.Identities))
+	identityList := make([]api.SecurityRoleIdentityConfig, len(role.Identities))
 	for i, identity := range role.Identities {
 		if identity.AccountName == identityAccountName {
 			log.Printf("[DEBUG] Account %s is already associated with Keyfactor role %d", identityAccountName, roleId)
@@ -284,7 +285,7 @@ func resourceSecurityIdentityUpdate(ctx context.Context, d *schema.ResourceData,
 	kfClient := m.(*api.Client)
 	log.Println("[INFO] Update called on security identity resource")
 
-	if roleSchemaHasChange(d) == true {
+	if roleSchemaHasChange(d) {
 
 		// Keyfactor security roles are often created once at the beginning of a deployment and then subsequently used
 		// to regulate an identities access to a resource. As per customer request, the Terraform provider modifies

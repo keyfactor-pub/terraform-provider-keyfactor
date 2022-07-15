@@ -2,7 +2,7 @@ package keyfactor
 
 import (
 	"context"
-	keyfactor "github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"log"
@@ -56,16 +56,16 @@ func testAccPreCheck(t *testing.T) {
 	}
 }
 
-func testAccGenerateKeyfactorRole(conn *keyfactor.Client) (*keyfactor.Client, string, int) {
-	var client *keyfactor.Client
+func testAccGenerateKeyfactorRole(conn *api.Client) (*api.Client, string, int) {
+	var client *api.Client
 	if conn == nil {
 		var err error
-		clientConfig := &keyfactor.AuthConfig{
+		clientConfig := &api.AuthConfig{
 			Hostname: os.Getenv("KEYFACTOR_HOSTNAME"),
 			Username: os.Getenv("KEYFACTOR_USERNAME"),
 			Password: os.Getenv("KEYFACTOR_PASSWORD"),
 		}
-		client, err = keyfactor.NewKeyfactorClient(clientConfig)
+		client, err = api.NewKeyfactorClient(clientConfig)
 		if err != nil {
 			return nil, "", 0
 		}
@@ -74,7 +74,7 @@ func testAccGenerateKeyfactorRole(conn *keyfactor.Client) (*keyfactor.Client, st
 	}
 
 	roleName := "terraform_acctest-" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
-	arg := &keyfactor.CreateSecurityRoleArg{
+	arg := &api.CreateSecurityRoleArg{
 		Name:        roleName,
 		Description: "Role generated to perform Terraform acceptance test. If this role exists, it can be deleted.",
 	}
@@ -87,7 +87,7 @@ func testAccGenerateKeyfactorRole(conn *keyfactor.Client) (*keyfactor.Client, st
 	return client, role.Name, role.Id
 }
 
-func testAccDeleteKeyfactorRole(client *keyfactor.Client, roleId int) error {
+func testAccDeleteKeyfactorRole(client *api.Client, roleId int) error {
 	err := client.DeleteSecurityRole(roleId)
 	if err != nil {
 		return err
@@ -95,22 +95,22 @@ func testAccDeleteKeyfactorRole(client *keyfactor.Client, roleId int) error {
 	return nil
 }
 
-func getTemporaryConnection() (*keyfactor.Client, error) {
+func getTemporaryConnection() (*api.Client, error) {
 	var err error
-	clientConfig := &keyfactor.AuthConfig{
+	clientConfig := &api.AuthConfig{
 		Hostname: os.Getenv("KEYFACTOR_HOSTNAME"),
 		Username: os.Getenv("KEYFACTOR_USERNAME"),
 		Password: os.Getenv("KEYFACTOR_PASSWORD"),
 	}
-	client, err := keyfactor.NewKeyfactorClient(clientConfig)
+	client, err := api.NewKeyfactorClient(clientConfig)
 	if err != nil {
 		return nil, err
 	}
 	return client, nil
 }
 
-func getCertificateTemplate(conn *keyfactor.Client) (string, *keyfactor.Client, error) {
-	var client *keyfactor.Client
+func getCertificateTemplate(conn *api.Client) (string, *api.Client, error) {
+	var client *api.Client
 	if conn == nil {
 		var err error
 		client, err = getTemporaryConnection()
@@ -140,8 +140,8 @@ func getCertificateTemplate(conn *keyfactor.Client) (string, *keyfactor.Client, 
 	return enrollmentTemplate, client, nil
 }
 
-func findRandomMetadataField(conn *keyfactor.Client) (string, *keyfactor.Client, error) {
-	var client *keyfactor.Client
+func findRandomMetadataField(conn *api.Client) (string, *api.Client, error) {
+	var client *api.Client
 	if conn == nil {
 		var err error
 		client, err = getTemporaryConnection()
@@ -167,8 +167,8 @@ func findRandomMetadataField(conn *keyfactor.Client) (string, *keyfactor.Client,
 	}
 }
 
-func findCompatableCA(conn *keyfactor.Client, escapeDepth int) (string, *keyfactor.Client, error) {
-	var client *keyfactor.Client
+func findCompatableCA(conn *api.Client, escapeDepth int) (string, *api.Client, error) {
+	var client *api.Client
 	if conn == nil {
 		var err error
 		client, err = getTemporaryConnection()
@@ -200,8 +200,8 @@ func findCompatableCA(conn *keyfactor.Client, escapeDepth int) (string, *keyfact
 }
 
 // Enroll a PFX certificate based on a random template supported by Keyfactor
-func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *keyfactor.CertificateInformation, string) {
-	var client *keyfactor.Client
+func enrollPFXCertificate(conn *api.Client) (error, *api.Client, *api.CertificateInformation, string) {
+	var client *api.Client
 	if conn == nil {
 		var err error
 		client, err = getTemporaryConnection()
@@ -226,15 +226,15 @@ func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *ke
 	cn := "terraform_acctest-" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
 	password := acctest.RandStringFromCharSet(12, acctest.CharSetAlphaNum)
 	// Fill out the minimum required fields to enroll a PFX
-	arg := &keyfactor.EnrollPFXFctArgs{
+	arg := &api.EnrollPFXFctArgs{
 		CustomFriendlyName:   cn,
 		Password:             password,
 		CertificateAuthority: caName,
 		Template:             enrollmentTemplate,
 		IncludeChain:         true,
 		CertFormat:           "STORE",
-		Subject:              &keyfactor.CertificateSubject{SubjectCommonName: cn},
-		SANs:                 &keyfactor.SANs{DNS: []string{cn}},
+		Subject:              &api.CertificateSubject{SubjectCommonName: cn},
+		SANs:                 &api.SANs{DNS: []string{cn}},
 	}
 
 	pfx, err := client.EnrollPFX(arg)
@@ -245,8 +245,8 @@ func enrollPFXCertificate(conn *keyfactor.Client) (error, *keyfactor.Client, *ke
 	return nil, client, &pfx.CertificateInformation, password
 }
 
-func revokePFXCertificate(conn *keyfactor.Client, certId int) error {
-	var client *keyfactor.Client
+func revokePFXCertificate(conn *api.Client, certId int) error {
+	var client *api.Client
 	if conn == nil {
 		var err error
 		client, err = getTemporaryConnection()
@@ -257,7 +257,7 @@ func revokePFXCertificate(conn *keyfactor.Client, certId int) error {
 		client = conn
 	}
 
-	revokeArgs := &keyfactor.RevokeCertArgs{
+	revokeArgs := &api.RevokeCertArgs{
 		CertificateIds: []int{certId}, // Certificate ID expects array of integers
 		Reason:         5,             // reason = 5 means Cessation of Operation
 		Comment:        "Terraform acceptance test cleanup",

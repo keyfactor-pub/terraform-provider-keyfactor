@@ -165,7 +165,7 @@ func dataSourceKeyfactorTemplateRead(ctx context.Context, d *schema.ResourceData
 }
 
 func flattenTemplates(templates []api.GetTemplateResponse) *schema.Set {
-	temp := make([]interface{}, len(templates), len(templates))
+	temp := make([]interface{}, len(templates))
 	for i, template := range templates {
 		data := make(map[string]interface{})
 		data["id"] = template.Id
@@ -192,7 +192,7 @@ func flattenTemplates(templates []api.GetTemplateResponse) *schema.Set {
 }
 
 func flattenEnrollmentFields(ef []api.TemplateEnrollmentFields) []interface{} {
-	data := make([]interface{}, len(ef), len(ef))
+	data := make([]interface{}, len(ef))
 	for i, field := range ef {
 		temp := make(map[string]interface{})
 		temp["id"] = field.Id

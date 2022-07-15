@@ -172,7 +172,7 @@ func flattenSecurityRole(roleContext *api.GetSecurityRolesResponse) map[string]i
 
 // This came from the Kubernetes provider... ran out of time
 func newStringSet(f schema.SchemaSetFunc, in []string) *schema.Set {
-	var out = make([]interface{}, len(in), len(in))
+	var out = make([]interface{}, len(in))
 	for i, v := range in {
 		out[i] = v
 	}

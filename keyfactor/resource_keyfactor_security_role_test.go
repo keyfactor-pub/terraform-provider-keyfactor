@@ -2,7 +2,7 @@ package keyfactor
 
 import (
 	"fmt"
-	keyfactor "github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
@@ -120,7 +120,7 @@ func testAccCheckKeyfactorSecurityRoleDestroy(s *terraform.State) error {
 		}
 
 		// Pull the provider metadata interface out of the testAccProvider provider
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 
 		// conn is a configured Keyfactor Go Client object, pull down the role id
 		_, err = conn.GetSecurityRole(id)
@@ -157,7 +157,7 @@ func testAccCheckKeyfactorSecurityRoleExists(name string) resource.TestCheckFunc
 			return fmt.Errorf("no Identity ID set")
 		}
 
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 
 		id, err := strconv.Atoi(rs.Primary.ID)
 		if err != nil {

@@ -9,10 +9,6 @@ import (
 	"strconv"
 )
 
-/*
- * NOT IMPLEMENTED
- */
-
 func dataSourceKeyfactorSecurityRole() *schema.Resource {
 	return &schema.Resource{
 		ReadContext: dataSourceKeyfactorSecurityRoleRead,

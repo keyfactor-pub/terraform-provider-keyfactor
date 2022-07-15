@@ -314,7 +314,7 @@ func flattenCertificateStoreInventorySched(schedule api.InventorySchedule) []int
 	if schedule.Immediate != nil {
 		medium["immediate"] = schedule.Immediate
 	} else {
-		tempArray := make([]interface{}, 1, 1)
+		tempArray := make([]interface{}, 1)
 		tempMap := make(map[string]interface{})
 		// Build inner layers
 		if schedule.Daily != nil {
@@ -331,12 +331,12 @@ func flattenCertificateStoreInventorySched(schedule api.InventorySchedule) []int
 			medium["interval"] = tempArray
 		} else {
 			// If the API returned nothing, return a blank slice
-			return make([]interface{}, 0, 0) // Return blank array if none
+			return make([]interface{}, 0) // Return blank array if none
 		}
 
 	}
 	// Append medium layer to outer
-	scheduleInterface := make([]interface{}, 1, 1)
+	scheduleInterface := make([]interface{}, 1)
 	scheduleInterface[0] = medium
 	return scheduleInterface
 }

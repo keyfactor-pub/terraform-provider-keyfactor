@@ -10,7 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/Keyfactor/keyfactor-go-client"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
@@ -83,10 +83,7 @@ func resourceCertificate() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					if strings.ToLower(old) == strings.ToLower(new) {
-						return true
-					}
-					return false
+					return strings.ToLower(old) == strings.ToLower(new)
 				},
 				Description: "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
 			},
@@ -204,6 +201,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 	csr := d.Get("csr").(string)
 	var id int
 	if csr != "" {
+		log.Println("[DEBUG] Creating certificate from CSR")
 		CSRArgs := &keyfactor.EnrollCSRFctArgs{
 			CSR:                  csr,
 			CertificateAuthority: d.Get("certificate_authority").(string),
@@ -213,6 +211,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 			SANs:                 getSans(sans),
 			Metadata:             metadata,
 		}
+		log.Println("[TRACE] Passing ", CSRArgs, " to Keyfactor API. ")
 		enrollResponse, err := kfClient.EnrollCSR(CSRArgs)
 		if err != nil {
 			resourceCertificateRead(ctx, d, m)
@@ -222,6 +221,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 
 		resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 	} else {
+		log.Println("[DEBUG] No CSR provided, creating certificate from template.")
 		subject := d.Get("subject").([]interface{})[0].(map[string]interface{}) // Extract subject data from schema
 		PFXArgs := &keyfactor.EnrollPFXFctArgs{
 			CustomFriendlyName:          "Terraform",
@@ -244,6 +244,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 		}
 
 		// Error checking for invalid fields inside PFX enrollment function
+		log.Printf("[TRACE] Passing %v to Keyfactor\n", PFXArgs)
 		enrollResponse, err := kfClient.EnrollPFX(PFXArgs) // If no CSR is present, enroll a PFX certificate
 		if err != nil {
 			resourceCertificateRead(ctx, d, m)
@@ -253,6 +254,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 		id = enrollResponse.CertificateInformation.KeyfactorID
 	}
 	// todo maybe find a more elegant solution to this
+	log.Println("[DEBUG] Sleeping for 20 seconds to allow Keyfactor to finish processing.")
 	time.Sleep(20 * time.Second)
 	arg := &keyfactor.UpdateMetadataArgs{
 		CertID:   id,
@@ -273,16 +275,16 @@ func getSans(s []interface{}) *keyfactor.SANs {
 	sans := &keyfactor.SANs{}
 
 	if len(s) > 0 {
-		temp := s[0].(map[string]interface{})
+		inputSANs := s[0].(map[string]interface{})
 		// Retrieve individual SANs for each category and append to new SANs data structure
 		// Maybe separate these for loops to their own function?
-		for _, san := range temp["san_ip4"].([]interface{}) {
+		for _, san := range inputSANs["san_ip4"].([]interface{}) {
 			sans.IP4 = append(sans.IP4, san.(string))
 		}
-		for _, san := range temp["san_uri"].([]interface{}) {
+		for _, san := range inputSANs["san_uri"].([]interface{}) {
 			sans.URI = append(sans.URI, san.(string))
 		}
-		for _, san := range temp["san_dns"].([]interface{}) {
+		for _, san := range inputSANs["san_dns"].([]interface{}) {
 			sans.DNS = append(sans.DNS, san.(string))
 		}
 		return sans
@@ -296,6 +298,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 
 	var diags diag.Diagnostics
 
+	log.Printf("[TRACE] Resource RAW: %v\n", d)
 	Id := d.Id()
 	CertificateId, err := strconv.Atoi(Id)
 	if err != nil {
@@ -386,7 +389,7 @@ func flattenCertificateItems(certificateContext *keyfactor.GetCertificateRespons
 
 func flattenSubject(subject string) []interface{} {
 	if subject != "" {
-		temp := make([]interface{}, 1, 1)            // Outer subject interface is a 1 wide array
+		temp := make([]interface{}, 1)               // Outer subject interface is a 1 wide array
 		data := make(map[string]interface{})         // Inner subject interface is a string mapped interface
 		subjectFields := strings.Split(subject, ",") // Separate subject fields into slices
 		for _, field := range subjectFields {        // Iterate and assign slices to associated map
@@ -440,7 +443,7 @@ func flattenSANs(sans []keyfactor.SubjectAltNameElements) []interface{} {
 			sanInterface["san_uri"] = sanURIArray
 		}
 
-		ret := make([]interface{}, 1, 1)
+		ret := make([]interface{}, 1)
 		ret[0] = sanInterface
 
 		return ret
@@ -530,6 +533,7 @@ func downloadCertificate(id int, kfClient *keyfactor.Client, password string, cs
 
 	} else {
 
+		log.Println("[INFO] Attempting to recover certificate:", id)
 		priv, leaf, chain, err := kfClient.RecoverCertificate(id, "", "", "", password)
 		if err != nil {
 			return err, "", "", ""
@@ -571,7 +575,7 @@ func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m in
 	var diags diag.Diagnostics
 	kfClient := m.(*keyfactor.Client)
 
-	if d.HasChange("metadata") == true {
+	if d.HasChange("metadata") {
 		metadata := d.Get("metadata").(map[string]interface{})
 		strId := d.Id()
 		id, err := strconv.Atoi(strId)

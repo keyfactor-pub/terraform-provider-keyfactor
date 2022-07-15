@@ -88,3 +88,6 @@ require (
 	google.golang.org/protobuf v1.25.0 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.2.0 // indirect
 )
+
+// todo: Remove this before merge
+replace github.com/Keyfactor/keyfactor-go-client => /Users/sbailey/go/pkg/mod/github.com/Keyfactor/keyfactor-go-client

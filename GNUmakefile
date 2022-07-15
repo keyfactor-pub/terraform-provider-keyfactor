@@ -35,6 +35,7 @@ install:
 	rm -rf ${BASEDIR}
 	mkdir -p ${INSTALLDIR}
 	mv ${BINARY} ${INSTALLDIR}
+	rm .terraform.lock.hcl || true
 	terraform init -upgrade
 
 test:

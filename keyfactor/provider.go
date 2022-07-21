@@ -87,6 +87,7 @@ func Provider() *schema.Provider {
 		DataSourcesMap: map[string]*schema.Resource{
 			"keyfactor_template":      dataSourceKeyfactorTemplate(),
 			"keyfactor_security_role": dataSourceKeyfactorSecurityRole(),
+			"keyfactor_certificate":   dataSourceKeyfactorCertificate(),
 		},
 		ConfigureContextFunc: providerConfigure,
 	}

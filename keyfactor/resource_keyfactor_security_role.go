@@ -58,6 +58,12 @@ func resourceSecurityRole() *schema.Resource {
 					},
 				},
 			},
+			"users": {
+				Type:        schema.TypeSet,
+				Optional:    true,
+				Description: "List of users to grant access to the role.",
+				Elem:        &schema.Schema{Type: schema.TypeString},
+			},
 			"permissions": {
 				Type:        schema.TypeSet,
 				Optional:    true,

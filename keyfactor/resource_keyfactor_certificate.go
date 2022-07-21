@@ -32,48 +32,57 @@ func resourceCertificate() *schema.Resource {
 			"csr": {
 				Type:        schema.TypeString,
 				Optional:    true,
+				ForceNew:    true,
 				Description: "Base-64 encoded certificate signing request (CSR)",
 			},
 			"key_password": {
 				Type:        schema.TypeString,
 				Optional:    true,
+				ForceNew:    true,
 				Description: "Password to protect certificate and private key with",
 			},
 			"subject": {
 				Type:        schema.TypeList,
 				MaxItems:    1,
 				Optional:    true,
+				ForceNew:    true,
 				Description: "Certificate subject",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"subject_common_name": {
 							Type:        schema.TypeString,
 							Optional:    true,
+							ForceNew:    true,
 							Description: "Subject common name for new certificate",
 						},
 						"subject_locality": {
 							Type:        schema.TypeString,
 							Optional:    true,
+							ForceNew:    true,
 							Description: "Subject locality for new certificate",
 						},
 						"subject_organization": {
 							Type:        schema.TypeString,
 							Optional:    true,
+							ForceNew:    true,
 							Description: "Subject organization for new certificate",
 						},
 						"subject_state": {
 							Type:        schema.TypeString,
 							Optional:    true,
+							ForceNew:    true,
 							Description: "Subject state for new certificate",
 						},
 						"subject_country": {
 							Type:        schema.TypeString,
 							Optional:    true,
+							ForceNew:    true,
 							Description: "Subject country for new certificate",
 						},
 						"subject_organizational_unit": {
 							Type:        schema.TypeString,
 							Optional:    true,
+							ForceNew:    true,
 							Description: "Subject organizational unit for new certificate",
 						},
 					},
@@ -82,6 +91,7 @@ func resourceCertificate() *schema.Resource {
 			"certificate_authority": {
 				Type:     schema.TypeString,
 				Required: true,
+				ForceNew: true,
 				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 					return strings.EqualFold(old, new)
 				},
@@ -90,18 +100,21 @@ func resourceCertificate() *schema.Resource {
 			"cert_template": {
 				Type:        schema.TypeString,
 				Required:    true,
+				ForceNew:    true,
 				Description: "Short name of certificate template to be deployed",
 			},
 			"sans": {
 				Type:        schema.TypeList,
 				MaxItems:    1,
 				Optional:    true,
+				ForceNew:    true,
 				Description: "Certificate subject-alternative names",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"san_ip4": {
 							Type:        schema.TypeList,
 							Optional:    true,
+							ForceNew:    true,
 							Description: "List of IPv4 addresses to use as subjects of the certificate",
 							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 								// For some reason Terraform detects this particular function as having drift; this function
@@ -113,6 +126,7 @@ func resourceCertificate() *schema.Resource {
 						"san_uri": {
 							Type:        schema.TypeList,
 							Optional:    true,
+							ForceNew:    true,
 							Description: "List of IPv6 addresses to use as subjects of the certificate",
 							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 								// For some reason Terraform detects this particular function as having drift; this function
@@ -124,6 +138,7 @@ func resourceCertificate() *schema.Resource {
 						"san_dns": {
 							Type:        schema.TypeList,
 							Optional:    true,
+							ForceNew:    true,
 							Description: "List of DNS names to use as subjects of the certificate",
 							DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 								// For some reason Terraform detects this particular function as having drift; this function
@@ -146,6 +161,7 @@ func resourceCertificate() *schema.Resource {
 			"collection_id": {
 				Type:        schema.TypeInt,
 				Optional:    true,
+				ForceNew:    true,
 				Description: "Collection identifier used to validate user permissions (if service account has global permissions, this is not needed)",
 			},
 			"serial_number": {

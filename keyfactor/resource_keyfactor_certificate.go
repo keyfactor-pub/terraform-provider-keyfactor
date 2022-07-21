@@ -316,6 +316,9 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 
 	log.Printf("[TRACE] Resource RAW: %v\n", d)
 	Id := d.Id()
+	if Id == "" { //Assume 'data_source_keyfactor_certificate'
+		Id = fmt.Sprintf("%v", d.Get("keyfactor_id").(int))
+	}
 	CertificateId, err := strconv.Atoi(Id)
 	if err != nil {
 		return diag.FromErr(err)

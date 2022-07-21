@@ -2,6 +2,7 @@ package keyfactor
 
 import (
 	"context"
+	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -139,6 +140,7 @@ func resourceSecurityRoleRead(ctx context.Context, d *schema.ResourceData, m int
 
 	kfClient := m.(*api.Client)
 
+	fmt.Printf("[DEBUG] %v", d)
 	id := d.Id()
 	roleId, err := strconv.Atoi(id)
 	if err != nil {
@@ -152,6 +154,7 @@ func resourceSecurityRoleRead(ctx context.Context, d *schema.ResourceData, m int
 
 	newSchema := flattenSecurityRole(role)
 	for key, value := range newSchema {
+		fmt.Printf("[DEBUG] Key: %s, Value: %s\n", key, value)
 		err = d.Set(key, value)
 		if err != nil {
 			diags = append(diags, diag.FromErr(err)[0])

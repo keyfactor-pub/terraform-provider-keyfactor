@@ -3,10 +3,8 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"log"
 )
 
 func dataSourceKeyfactorCertificate() *schema.Resource {
@@ -161,48 +159,19 @@ func dataSourceKeyfactorCertificate() *schema.Resource {
 }
 
 func dataSourceKeyfactorCertificateRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	kfClient := m.(*api.Client)
-	log.Printf("[TRACE] Resource RAW: %v\n", d)
-	CertificateId := d.Get("keyfactor_id").(int)
+	//certificateCN := d.Get("subject").(string)
+	//fmt.Printf("[DEBUG] Subject: %s\n", certificateCN)
 
-	// Get certificate context
-	args := &api.GetCertificateContextArgs{
-		IncludeMetadata:  boolToPointer(true),
-		IncludeLocations: boolToPointer(true),
-		CollectionId:     nil,
-		Id:               CertificateId,
-	}
-	certificateData, err := kfClient.GetCertificateContext(args)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-	fmt.Println("[TRACE] Certificate context: ", certificateData)
+	certificateData := resourceCertificateRead(ctx, d, m)
+	d.SetId(fmt.Sprintf("%v", d.Get("keyfactor_id").(int)))
+	return certificateData
 
-	err, cert, chain, key := downloadCertificate(certificateData.Id, kfClient, "", false)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
-	newSchema, err := flattenCertificateItems(certificateData, kfClient, cert, chain, key, "", "") // Set schema
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
-	var diags diag.Diagnostics
-
-	for key, value := range newSchema {
-		err = d.Set(key, value)
-		if err != nil {
-			diags = append(diags, diag.FromErr(err)[0])
-		}
-	}
-
-	// If we get here, the cert doesn't exist in Keyfactor.
-	return diag.Diagnostics{
-		{
-			Severity: diag.Error,
-			Summary:  fmt.Sprintf("Keyfactor certificate %v was not found.", cert),
-			Detail:   "Please ensure that the Keyfactor certificate ID, or certificate serial_number or certificate thumbprint exist in Keyfactor.",
-		},
-	}
+	// If we get here, the certificate name doesn't exist in Keyfactor.
+	//return diag.Diagnostics{
+	//	{
+	//		Severity: diag.Error,
+	//		Summary:  fmt.Sprintf("Keyfactor certificate %s was not found.", certificateCN),
+	//		Detail:   "Please ensure that role_name contains a certificate that exists in Keyfactor.",
+	//	},
+	//}
 }

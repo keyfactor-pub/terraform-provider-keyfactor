@@ -2,32 +2,34 @@ package keyfactor
 
 import (
 	"context"
+	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"strconv"
+	"strings"
 )
 
-/*
- * NOT IMPLEMENTED
- */
+//func dataSourceKeyfactorTemplate() *schema.Resource {
+//	return &schema.Resource{
+//		ReadContext: dataSourceKeyfactorTemplateRead,
+//		Schema: map[string]*schema.Schema{
+//			"templates": {
+//				Type:        schema.TypeSet,
+//				Computed:    true,
+//				Description: "List of templates that exist in Keyfactor.",
+//				Elem:        schemaDataSourceTemplate(),
+//			},
+//		},
+//	}
+//}
 
 func dataSourceKeyfactorTemplate() *schema.Resource {
 	return &schema.Resource{
 		ReadContext: dataSourceKeyfactorTemplateRead,
-		Schema: map[string]*schema.Schema{
-			"templates": {
-				Type:        schema.TypeSet,
-				Computed:    true,
-				Description: "List of templates that exist in Keyfactor.",
-				Elem:        schemaDataSourceTemplate(),
-			},
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
 		},
-	}
-}
-
-func schemaDataSourceTemplate() *schema.Resource {
-	return &schema.Resource{
 		Schema: map[string]*schema.Schema{
 			"id": {
 				Type:        schema.TypeInt,
@@ -36,7 +38,7 @@ func schemaDataSourceTemplate() *schema.Resource {
 			},
 			"common_name": {
 				Type:        schema.TypeString,
-				Computed:    true,
+				Required:    true,
 				Description: "A string containing the common name (short name) of the template. This name typically does not contain spaces. For a template created using a Microsoft management tool, this will be the Microsoft template name. This field is populated from Active Directory and is not configurable.",
 			},
 			"template_name": {
@@ -150,46 +152,73 @@ func dataSourceKeyfactorTemplateRead(ctx context.Context, d *schema.ResourceData
 	conn := m.(*api.Client)
 
 	templates, err := conn.GetTemplates()
-	if err != nil {
-		return nil
+	fmt.Printf("[DEBUG] templates: %v\n", templates)
+	templateName := d.Get("common_name").(string)
+	fmt.Printf("[DEBUG] templateName: %v\n", templateName)
+	for _, template := range templates {
+
+		fmt.Printf("[DEBUG] template_common_name: %v\n", template.CommonName)
+		if strings.EqualFold(template.CommonName, templateName) {
+			d.SetId(strconv.Itoa(template.Id))
+			d.Set("common_name", template.CommonName)
+			//d.Set("description", template.Description)
+			d.Set("key_type", template.KeyType)
+			d.Set("forest_root", template.ForestRoot)
+			d.Set("key_retention", template.KeyRetention)
+			d.Set("key_retention_days", template.KeyRetentionDays)
+			d.Set("key_archival", template.KeyArchival)
+			d.Set("enrollment_fields", template.EnrollmentFields)
+			d.Set("allowed_enrollment_types", template.AllowedEnrollmentTypes)
+			d.Set("use_allowed_requesters", template.UseAllowedRequesters)
+			d.Set("rfc_enforcement", template.RFCEnforcement)
+			d.Set("key_usage", template.KeyUsage)
+			return nil
+		}
 	}
 
-	err = d.Set("templates", flattenTemplates(templates))
+	//err = d.Set("templates", flattenTemplates(templates))
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	d.SetId("keyfactor_template-" + acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum))
-
-	return nil
-}
-
-func flattenTemplates(templates []api.GetTemplateResponse) *schema.Set {
-	temp := make([]interface{}, len(templates))
-	for i, template := range templates {
-		data := make(map[string]interface{})
-		data["id"] = template.Id
-		data["common_name"] = template.CommonName
-		data["template_name"] = template.TemplateName
-		data["oid"] = template.Oid
-		data["key_size"] = template.KeySize
-		data["key_type"] = template.KeyType
-		data["forest_root"] = template.ForestRoot
-		data["key_retention"] = template.KeyRetention
-		data["key_retention_days"] = template.KeyRetentionDays
-		data["key_archival"] = template.KeyArchival
-		if len(template.EnrollmentFields) > 0 {
-			data["enrollment_fields"] = flattenEnrollmentFields(template.EnrollmentFields)
-		}
-		data["allowed_enrollment_types"] = template.AllowedEnrollmentTypes
-		data["use_allowed_requesters"] = template.UseAllowedRequesters
-		//data["allowed_requesters"] = template.AllowedRequesters
-		data["rfc_enforcement"] = template.RFCEnforcement
-		data["key_usage"] = template.KeyUsage
-		temp[i] = data
+	//d.SetId("keyfactor_template-" + acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum))
+	//
+	//return nil
+	return diag.Diagnostics{
+		{
+			Severity: diag.Error,
+			Summary:  fmt.Sprintf("Keyfactor certificate %s was not found.", templateName),
+			Detail:   "Please ensure that role_name contains a certificate that exists in Keyfactor.",
+		},
 	}
-	return schema.NewSet(schema.HashResource(schemaDataSourceTemplate()), temp)
 }
+
+//func flattenTemplates(templates []api.GetTemplateResponse) *schema.Set {
+//	temp := make([]interface{}, len(templates))
+//	for i, template := range templates {
+//		data := make(map[string]interface{})
+//		data["id"] = template.Id
+//		data["common_name"] = template.CommonName
+//		data["template_name"] = template.TemplateName
+//		data["oid"] = template.Oid
+//		data["key_size"] = template.KeySize
+//		data["key_type"] = template.KeyType
+//		data["forest_root"] = template.ForestRoot
+//		data["key_retention"] = template.KeyRetention
+//		data["key_retention_days"] = template.KeyRetentionDays
+//		data["key_archival"] = template.KeyArchival
+//		if len(template.EnrollmentFields) > 0 {
+//			data["enrollment_fields"] = flattenEnrollmentFields(template.EnrollmentFields)
+//		}
+//		data["allowed_enrollment_types"] = template.AllowedEnrollmentTypes
+//		data["use_allowed_requesters"] = template.UseAllowedRequesters
+//		//data["allowed_requesters"] = template.AllowedRequesters
+//		data["rfc_enforcement"] = template.RFCEnforcement
+//		data["key_usage"] = template.KeyUsage
+//		temp[i] = data
+//	}
+//	return schema.NewSet(schema.HashResource(dataSourceKeyfactorTemplate()), temp)
+//}
 
 func flattenEnrollmentFields(ef []api.TemplateEnrollmentFields) []interface{} {
 	data := make([]interface{}, len(ef))

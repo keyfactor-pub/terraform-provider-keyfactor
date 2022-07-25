@@ -22,6 +22,7 @@ func dataSourceKeyfactorCertificate() *schema.Resource {
 			"key_password": {
 				Type:        schema.TypeString,
 				Optional:    true,
+				Sensitive:   true,
 				Description: "Password to protect certificate and private key with",
 			},
 			"subject": {

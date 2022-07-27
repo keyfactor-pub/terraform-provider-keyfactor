@@ -15,7 +15,7 @@ func resourceSecurityIdentity() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourceSecurityIdentityCreate,
 		ReadContext:   resourceSecurityIdentityRead,
-		UpdateContext: resourceSecurityIdentityUpdate,
+		UpdateContext: nil, //Since changing account_name forces a new identity to be created, we don't support updates
 		DeleteContext: resourceSecurityIdentityDelete,
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
@@ -24,6 +24,7 @@ func resourceSecurityIdentity() *schema.Resource {
 			"account_name": {
 				Type:        schema.TypeString,
 				Required:    true,
+				ForceNew:    true,
 				Description: "A string containing the account name for the security identity. For Active Directory user and groups, this will be in the form DOMAIN\\\\user or group name",
 			},
 			"roles": {

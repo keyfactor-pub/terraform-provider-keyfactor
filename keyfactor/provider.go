@@ -77,12 +77,12 @@ func Provider() *schema.Provider {
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
-			"keyfactor_certificate":        resourceCertificate(),
-			"keyfactor_store":              resourceStore(),
-			"keyfactor_deploy_certificate": resourceCertificateDeploy(),
-			"keyfactor_security_identity":  resourceSecurityIdentity(),
-			"keyfactor_security_role":      resourceSecurityRole(),
-			"keyfactor_attach_role":        resourceKeyfactorAttachRole(),
+			"keyfactor_certificate":           resourceCertificate(),
+			"keyfactor_store":                 resourceStore(),
+			"keyfactor_deploy_certificate":    resourceCertificateDeploy(),
+			"keyfactor_security_identity":     resourceSecurityIdentity(),
+			"keyfactor_security_role":         resourceSecurityRole(),
+			"keyfactor_template_role_binding": resourceTemplateRoleBinding(),
 		},
 		DataSourcesMap: map[string]*schema.Resource{
 			"keyfactor_template":      dataSourceKeyfactorTemplate(),

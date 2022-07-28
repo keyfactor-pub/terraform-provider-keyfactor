@@ -46,6 +46,7 @@ func resourceTemplateRoleBinding() *schema.Resource {
 				Elem: &schema.Schema{
 					Type: schema.TypeInt,
 				},
+				//ValidateFunc: validation.ListOfUniqueStrings, // * resource keyfactor_template_role_binding: template_ids: ValidateFunc and ValidateDiagFunc are not yet supported on lists or sets.
 			},
 			"template_short_names": {
 				Type:        schema.TypeSet,

@@ -51,4 +51,7 @@ fmtcheck:
 fmt:
 	gofmt -w $(GOFMT_FILES)
 
+debug: install
+	@./debug.sh
+
 .PHONY: build release install test testacc fmtcheck fmt

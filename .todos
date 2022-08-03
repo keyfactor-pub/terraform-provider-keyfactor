@@ -1,0 +1,30 @@
+# TODO: Convert logs to `tflog` format.
+# TODO: Test cert generation using CSR
+    - Check that CN of cert is the same as the CN of the CSR
+    - Check chain cert is from correct issuer
+# TODO: Test cert store CRUD
+    - Debug TF timeout issue waiting on orchestration.
+    - Test binding certs to stores
+    - Add X certs
+    - Remove Y certs where Y < X
+# TODO: Test template role binding
+    - Validate invalid templates are not bound and reported as bound successfully and prevent them from getting into `tfstate`
+    - Notify end-user when a template might have been deleted outside of terraform with a warning.
+# TODO: Refactor role indentity binding to maybe just take in a list of identity names rather than multiple identity {} blocks
+# TODO: Allow lookup of templates by template short name rather than by keyfactor ID
+# TODO: Allow lookup of roles by role name rather than by keyfactor ID
+# TODO: Allow lookup of cert by CN or serial number in addition to keyfactor ID?
+# TODO: test importing an existing certificate
+    - by CN
+    - by serial number
+    - by keyfactor ID
+# TODO: test importing an existing role by name
+# TODO: test importing an existing identity by name
+# TODO: test importing a template role binding
+# TODO: test importing an existing cert store by store path?
+# TODO: Develop internal demo
+# TODO: Develop customer demo
+# TODO: Review docs
+# TODO: Review logs for exposed credentials/sensitive data
+# TODO: Review steps needed to publish to community terraform registry and develop plan/CICD for it.
+# TODO: Don't store private keys in TF state in plain text (Look at how the TLS provider stores the private key)

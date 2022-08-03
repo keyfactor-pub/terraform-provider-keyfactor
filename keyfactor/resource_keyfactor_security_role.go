@@ -2,11 +2,10 @@ package keyfactor
 
 import (
 	"context"
-	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"log"
 	"strconv"
 )
 
@@ -76,7 +75,7 @@ func resourceSecurityRole() *schema.Resource {
 }
 
 func resourceSecurityRoleCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	log.Println("[INFO] Creating Keyfactor Security Role resource")
+	tflog.Info(ctx, "Creating Keyfactor Security Role resource")
 
 	kfClient := m.(*api.Client)
 
@@ -84,23 +83,33 @@ func resourceSecurityRoleCreate(ctx context.Context, d *schema.ResourceData, m i
 		Name:        d.Get("role_name").(string),
 		Description: d.Get("description").(string),
 	}
+	tflog.Trace(ctx, "Creating Keyfactor Security Role resource with arguments: ", map[string]interface{}{
+		"create_arg": createArg,
+	})
 
 	if permission, ok := d.GetOk("permissions"); ok {
+		tflog.Debug(ctx, "Unpacking permissions")
 		createArg.Permissions = unpackPermissionSet(permission.(*schema.Set))
 	}
 
 	if identity, ok := d.GetOk("identities"); ok {
+		tflog.Debug(ctx, "Unpacking identities")
 		createArg.Identities = unpackIdentitySet(identity.(*schema.Set))
 	}
 
+	tflog.Debug(ctx, "Creating Keyfactor Security Role resource")
 	createResp, err := kfClient.CreateSecurityRole(createArg)
 	if err != nil {
+		tflog.Error(ctx, "Error creating Keyfactor Security Role resource: ", map[string]interface{}{
+			"error": err,
+		})
 		resourceSecurityRoleRead(ctx, d, m)
 		return diag.FromErr(err)
 	}
 
 	// Set resource ID to tell Terraform that operation was successful
 	d.SetId(strconv.Itoa(createResp.Id))
+	tflog.Info(ctx, "Created Keyfactor Security Role resource")
 
 	return resourceSecurityRoleRead(ctx, d, m)
 }
@@ -136,27 +145,44 @@ func unpackIdentitySet(set *schema.Set) *[]api.SecurityRoleIdentityConfig {
 
 func resourceSecurityRoleRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	log.Println("[INFO] Reading Keyfactor Security Role resource")
+	tflog.Info(ctx, "Reading Keyfactor Security Role resource")
 
 	kfClient := m.(*api.Client)
 
-	fmt.Printf("[DEBUG] %v", d)
 	id := d.Id()
+	tflog.Trace(ctx, "Reading Keyfactor Security Role resource with id: ", map[string]interface{}{
+		"id": id,
+	})
 	roleId, err := strconv.Atoi(id)
+	ctx = tflog.SetField(ctx, "role_id", roleId)
 	if err != nil {
+		tflog.Error(ctx, "Error reading Keyfactor Security Role resource: ", map[string]interface{}{
+			"error": err,
+		})
 		return diag.FromErr(err)
 	}
 
+	tflog.Debug(ctx, "Reading Keyfactor Security Role resource")
 	role, err := kfClient.GetSecurityRole(roleId)
 	if err != nil {
+		tflog.Error(ctx, "Error reading Keyfactor Security Role resource: ", map[string]interface{}{
+			"error": err,
+		})
 		return diag.FromErr(err)
 	}
 
+	tflog.Debug(ctx, "Populating Keyfactor Security Role resource")
 	newSchema := flattenSecurityRole(role)
 	for key, value := range newSchema {
-		fmt.Printf("[DEBUG] Key: %s, Value: %s\n", key, value)
+		tflog.Trace(ctx, "Populating Keyfactor Security Role resource with key: ", map[string]interface{}{
+			"key":   key,
+			"value": value,
+		})
 		err = d.Set(key, value)
 		if err != nil {
+			tflog.Error(ctx, "Error populating Keyfactor Security Role resource: ", map[string]interface{}{
+				"error": err,
+			})
 			diags = append(diags, diag.FromErr(err)[0])
 		}
 	}
@@ -236,13 +262,17 @@ func schemaSecurityRoleIdentities() *schema.Resource {
 }
 
 func resourceSecurityRoleUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	log.Println("[INFO] Updating Keyfactor Security Role resource")
+	tflog.Info(ctx, "Updating Keyfactor Security Role resource")
 
 	kfClient := m.(*api.Client)
 
 	id := d.Id()
 	roleId, err := strconv.Atoi(id)
+	ctx = tflog.SetField(ctx, "role_id", roleId)
 	if err != nil {
+		tflog.Error(ctx, "Error updating Keyfactor Security Role resource: ", map[string]interface{}{
+			"error": err,
+		})
 		return diag.FromErr(err)
 	}
 
@@ -255,15 +285,23 @@ func resourceSecurityRoleUpdate(ctx context.Context, d *schema.ResourceData, m i
 	}
 
 	if permission, ok := d.GetOk("permissions"); ok {
+		tflog.Debug(ctx, "Unpacking permissions")
 		updateArg.Permissions = unpackPermissionSet(permission.(*schema.Set))
 	}
 
 	if identity, ok := d.GetOk("identities"); ok {
+		tflog.Debug(ctx, "Unpacking identities")
 		updateArg.Identities = unpackIdentitySet(identity.(*schema.Set))
 	}
 
+	tflog.Debug(ctx, "Updating Keyfactor Security Role resource", map[string]interface{}{
+		"update_arg": updateArg,
+	})
 	_, err = kfClient.UpdateSecurityRole(updateArg)
 	if err != nil {
+		tflog.Error(ctx, "Error updating Keyfactor Security Role resource: ", map[string]interface{}{
+			"error": err,
+		})
 		resourceSecurityRoleRead(ctx, d, m)
 		return diag.FromErr(err)
 	}
@@ -273,18 +311,25 @@ func resourceSecurityRoleUpdate(ctx context.Context, d *schema.ResourceData, m i
 
 func resourceSecurityRoleDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	log.Println("[INFO] Deleting Keyfactor Security Role resource")
+	tflog.Info(ctx, "Deleting Keyfactor Security Role resource")
 
 	kfClient := m.(*api.Client)
 
 	id := d.Id()
 	roleId, err := strconv.Atoi(id)
+	ctx = tflog.SetField(ctx, "role_id", roleId)
 	if err != nil {
+		tflog.Error(ctx, "Error deleting Keyfactor Security Role resource: ", map[string]interface{}{
+			"error": err,
+		})
 		return diag.FromErr(err)
 	}
 
 	err = kfClient.DeleteSecurityRole(roleId)
 	if err != nil {
+		tflog.Error(ctx, "Error deleting Keyfactor Security Role resource: ", map[string]interface{}{
+			"error": err,
+		})
 		return diag.FromErr(err)
 	}
 

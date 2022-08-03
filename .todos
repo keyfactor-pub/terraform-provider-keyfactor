@@ -11,6 +11,7 @@
     - Test binding certs to stores
     - Add X certs
     - Remove Y certs where Y < X
+# TODO: Test cert_deploy resource and see if/how that can be consolidated to a single resource type?
 # TODO: Test template role binding
     - Validate invalid templates are not bound and reported as bound successfully and prevent them from getting into `tfstate`
     - Notify end-user when a template might have been deleted outside of terraform with a warning.

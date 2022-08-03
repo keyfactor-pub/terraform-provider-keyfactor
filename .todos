@@ -1,5 +1,7 @@
-# TODO: Convert logs to `tflog` format.
-# TODO: Test cert generation using CSR
+# TODO: Convert logs to `tflog` format. (WIP: sbailey)
+   - Confirm logging isn't leaking secrets
+   - Determine how to silence 3rd part bin loggers like from `keyfactor-go-client`
+# TODO: Test cert generation using CSR (WIP: sbailey)
     - Check that CN of cert is the same as the CN of the CSR
     - Check chain cert is from correct issuer
     - Document how SANs and CSR input are used to generate cert

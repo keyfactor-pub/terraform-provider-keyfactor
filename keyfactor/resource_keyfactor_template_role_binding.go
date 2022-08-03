@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"log"
 	"strconv"
 	"strings"
 )
@@ -77,19 +77,24 @@ func verifyTemplateIds(kfClient *api.Client, templateIds []interface{}) ([]inter
  */
 func resourceTemplateRoleBindingCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	//var diags diag.Diagnostics
-	log.Println("[DEBUG] Creating Attach Keyfactor Role resource")
+	tflog.Debug(ctx, "Creating Attach Keyfactor Role resource")
 
 	kfClient := m.(*api.Client)
 
 	roleName := d.Get("role_name")
+	ctx = tflog.SetField(ctx, "role_name", roleName)
+
 	templateIds := d.Get("template_ids").(*schema.Set).List()
 	templateNames := d.Get("template_short_names")
 
-	log.Printf("[DEBUG] templateNames: %v\n", templateNames)
+	tflog.Debug(ctx, "templateNames: ", map[string]interface{}{
+		"template_ids":         templateIds,
+		"template_short_names": templateNames,
+	})
 
 	validTemplateIds, diags := verifyTemplateIds(kfClient, templateIds)
 	// Add provided role to each of the certificate templates provided in configuration
-	err := setRoleAllowedRequester(kfClient, roleName.(string), validTemplateIds, templateNames.(*schema.Set))
+	err := setRoleAllowedRequester(ctx, kfClient, roleName.(string), validTemplateIds, templateNames.(*schema.Set))
 	if err != nil {
 		return err
 	}
@@ -100,6 +105,7 @@ func resourceTemplateRoleBindingCreate(ctx context.Context, d *schema.ResourceDa
 
 	// Other role attachments happen should below
 	d.SetId(roleName.(string))
+	tflog.Info(ctx, "Created Attach Keyfactor Role resource")
 	resourceTemplateAttachRoleRead(ctx, d, m)
 
 	return diags
@@ -109,23 +115,34 @@ func resourceTemplateRoleBindingCreate(ctx context.Context, d *schema.ResourceDa
  * The resourceTemplateAttachRoleUpdate function is responsible for updating a Keyfactor security role.
  * TODO: Can this be used with Identitys?
  */
-func setRoleAllowedRequester(kfClient *api.Client, roleName string, templateSet []interface{}, namedTemplateSet *schema.Set) diag.Diagnostics {
+func setRoleAllowedRequester(ctx context.Context, kfClient *api.Client, roleName string, templateSet []interface{}, namedTemplateSet *schema.Set) diag.Diagnostics {
 	var diags diag.Diagnostics
-	log.Println("[DEBUG] Setting Keyfactor role with name " + roleName + " to be allowed requester for the following templates:")
+
+	ctx = tflog.SetField(ctx, "role_name", roleName)
+	tflog.Debug(ctx, "Setting Keyfactor role with name to be allowed requester for the following templates:")
+
 	templateList := templateSet
-	log.Println("[DEBUG] Template IDs: " + strconv.Itoa(len(templateList)))
+	tflog.Debug(ctx, "Template IDs: ", map[string]interface{}{
+		"template_ids": templateList,
+	})
 	var namedTemplateList []interface{}
 	if namedTemplateSet != nil {
 		namedTemplateList = namedTemplateSet.List()
+		tflog.Debug(ctx, "Template short names: ", map[string]interface{}{
+			"template_short_names": namedTemplateList,
+		})
 	}
 
 	// First thing to do is blindly attach the passed role as an allowed requester to each of the template IDs passed in
 	// the Set.
 	if len(templateList) > 0 {
 		for _, template := range templateList {
-			log.Println("[DEBUG] Attaching role " + roleName + " to template ID " + strconv.Itoa(template.(int)))
-			err := addAllowedRequesterToTemplate(kfClient, roleName, strconv.Itoa(template.(int)))
+			tempCtx := tflog.SetField(ctx, "template_id", template)
+			tempCtx = tflog.SetField(tempCtx, "role_name", roleName)
+			tflog.Info(tempCtx, "Attaching role to template ID ")
+			err := addAllowedRequesterToTemplate(ctx, kfClient, roleName, strconv.Itoa(template.(int)))
 			if err != nil {
+				tflog.Error(tempCtx, "Error attaching role to template")
 				diags = append(diags, err...)
 			}
 		}
@@ -133,9 +150,12 @@ func setRoleAllowedRequester(kfClient *api.Client, roleName string, templateSet 
 
 	if len(namedTemplateList) > 0 {
 		for _, template := range namedTemplateList {
-			log.Println("[DEBUG] Attaching role " + roleName + " to template " + template.(string))
-			err := addAllowedRequesterToTemplate(kfClient, roleName, template.(string))
+			tempCtx := tflog.SetField(ctx, "template_name", template)
+			tempCtx = tflog.SetField(tempCtx, "role_name", roleName)
+			tflog.Info(tempCtx, "Attaching role to template")
+			err := addAllowedRequesterToTemplate(ctx, kfClient, roleName, template.(string))
 			if err != nil {
+				tflog.Error(tempCtx, "Error attaching role to template")
 				diags = append(diags, err...)
 			}
 		}
@@ -146,13 +166,16 @@ func setRoleAllowedRequester(kfClient *api.Client, roleName string, templateSet 
 	}
 
 	// Then, build a list of all templates that the role is attached to as an allowed requester
-	err, roleAttachments := findTemplateRoleAttachments(kfClient, roleName)
+	tflog.Debug(ctx, "Building list of templates that the role is attached to as an allowed requester")
+	err, roleAttachments := findTemplateRoleAttachments(ctx, kfClient, roleName)
 	if err != nil {
 		return err
 	}
 
 	// Finally, find the difference between templateSet and roleAttachments. Recall that Terraform acts as the primary
 	// manager of the role roleName, and Terraform is calling this function to explicitly set the allowed requesters.
+
+	tflog.Debug(ctx, "Finding difference between templateSet and roleAttachments")
 	list := make(map[string]struct{}, len(templateList))
 	for _, x := range templateList {
 		list[strconv.Itoa(x.(int))] = struct{}{}
@@ -160,17 +183,25 @@ func setRoleAllowedRequester(kfClient *api.Client, roleName string, templateSet 
 	var diff []int
 	for _, x := range roleAttachments {
 		if _, found := list[strconv.Itoa(x.(int))]; !found {
+			tflog.Debug(ctx, "Found difference between templateSet and roleAttachments", map[string]interface{}{
+				"template_id": x,
+			})
 			diff = append(diff, x.(int))
 		}
 	}
 
+	tflog.Debug(ctx, "Removing difference between templateSet and roleAttachments")
 	for _, template := range diff {
-		err = removeRoleFromTemplate(kfClient, roleName, template)
+		tempCtx := tflog.SetField(ctx, "template_id", template)
+		tflog.Debug(tempCtx, "Removing role from template")
+		err = removeRoleFromTemplate(ctx, kfClient, roleName, template)
 		if err != nil {
+			tflog.Error(tempCtx, "Error removing role from template")
 			diags = append(diags, err...)
 		}
 	}
 
+	tflog.Info(ctx, "Finished binding roles to templates")
 	return diags
 }
 
@@ -178,41 +209,58 @@ func setRoleAllowedRequester(kfClient *api.Client, roleName string, templateSet 
  * The resourceTemplateAttachRoleRead function is responsible for reading a Keyfactor security role.
  * TODO: Can this be used with Identitys?
  */
-func addAllowedRequesterToTemplate(kfClient *api.Client, roleName string, templateId string) diag.Diagnostics {
+func addAllowedRequesterToTemplate(ctx context.Context, kfClient *api.Client, roleName string, templateId string) diag.Diagnostics {
 	var diags diag.Diagnostics
-	log.Printf("[DEBUG] Adding Keyfactor role with ID %s to template with ID %v\n", roleName, templateId)
+	ctx = tflog.SetField(ctx, "template_id", templateId)
+	ctx = tflog.SetField(ctx, "role_name", roleName)
+	tflog.Debug(ctx, "Adding Keyfactor role with ID to template with ID")
 
 	// First get info about template from Keyfactor
 	if _, err := strconv.Atoi(templateId); err == nil {
 		fmt.Printf("[DEBUG] %q looks like a number.\n", templateId)
 	}
 	templateIdNumber, err := strconv.Atoi(templateId)
+	ctx = tflog.SetField(ctx, "template_id", templateIdNumber)
 	if err != nil {
-		log.Printf("[ERROR] %s\n", err)
-		log.Println("Assuming templateId is a short name")
+		tflog.Info(ctx, "Assuming templateId is a short name")
+		tflog.Debug(ctx, "Fetching templates from Keyfactor")
 		templates, err2 := kfClient.GetTemplates()
 		if err2 != nil {
-			log.Printf("[ERROR] %s\n", err2)
+			tflog.Error(ctx, "Error fetching templates from Keyfactor", map[string]interface{}{
+				"error": err2,
+			})
 			diags = append(diags, diag.FromErr(err2)...)
 		}
+		tflog.Debug(ctx, "Finding template in returned templates")
 		for template := range templates {
-			log.Printf("[DEBUG] Template ID: %v\n", template)
+			tflog.Debug(ctx, "Looking up template", map[string]interface{}{
+				"template": template,
+			})
 			kfTemplate, err3 := kfClient.GetTemplate(template)
-			log.Printf("[DEBUG] Keyfactor Template: %v\n", kfTemplate)
 			if err3 != nil {
-				log.Printf("[ERROR] %s\n", err3)
+				tflog.Error(ctx, "Error fetching template from Keyfactor", map[string]interface{}{
+					"error": err3,
+				})
 				diags = append(diags, diag.FromErr(err3)...)
 				continue
 			}
+			tflog.Debug(ctx, "Found template", map[string]interface{}{
+				"template": kfTemplate,
+			})
 			if kfTemplate.CommonName == templateId {
+				tflog.Debug(ctx, "Found matching template.")
 				templateIdNumber = kfTemplate.Id
 				break
 			}
 		}
 	}
 
+	tflog.Debug(ctx, "Fetching template from Keyfactor")
 	template, err := kfClient.GetTemplate(templateIdNumber)
 	if err != nil {
+		tflog.Error(ctx, "Error fetching template from Keyfactor", map[string]interface{}{
+			"error": err,
+		})
 		diags = append(diags, diag.FromErr(err)...)
 		return diags
 	}
@@ -221,15 +269,25 @@ func addAllowedRequesterToTemplate(kfClient *api.Client, roleName string, templa
 	var newAllowedRequester []string
 	for _, name := range template.AllowedRequesters {
 		if name == roleName {
-			log.Printf("[WARNING] Keyfactor security role %v is already listed as an allowed requester for template %v (ID %v)\n", roleName, template.TemplateName, templateId)
+			tflog.Warn(ctx, "Keyfactor security role is already listed as an allowed requester for template.", map[string]interface{}{
+				"role":     roleName,
+				"template": template.CommonName,
+				"name":     name,
+			})
 			return diags
 		}
+		tflog.Debug(ctx, "Adding role to allowed requesters", map[string]interface{}{
+			"role":     roleName,
+			"template": template.CommonName,
+		})
 		newAllowedRequester = append(newAllowedRequester, name)
 	}
 
 	// If it's not already added, create update context to add role to template.
+
 	newAllowedRequester = append(newAllowedRequester, roleName)
 	// Fill required fields with information retrieved from the get request above
+	tflog.Debug(ctx, "Creating update context to add role to template")
 	updateContext := &api.UpdateTemplateArg{
 		Id:                   template.Id,
 		CommonName:           template.CommonName,
@@ -241,8 +299,14 @@ func addAllowedRequesterToTemplate(kfClient *api.Client, roleName string, templa
 		AllowedRequesters:    &newAllowedRequester,
 	}
 
+	tflog.Trace(ctx, "Updating template in Keyfactor with context:", map[string]interface{}{
+		"context": updateContext,
+	})
 	_, err = kfClient.UpdateTemplate(updateContext)
 	if err != nil {
+		tflog.Error(ctx, "Error updating template in Keyfactor", map[string]interface{}{
+			"error": err,
+		})
 		diags = append(diags, diag.FromErr(err)...)
 		return diags
 	}
@@ -253,19 +317,29 @@ func addAllowedRequesterToTemplate(kfClient *api.Client, roleName string, templa
 /*
  * The resourceTemplateAttachRoleRead function is responsible for reading a Keyfactor security role.
  */
-func removeRoleFromTemplate(kfClient *api.Client, roleName string, templateId int) diag.Diagnostics {
+func removeRoleFromTemplate(ctx context.Context, kfClient *api.Client, roleName string, templateId int) diag.Diagnostics {
 	var diags diag.Diagnostics
-	log.Printf("[DEBUG] Removing Keyfactor role with ID %s from template with ID %d", roleName, templateId)
+	ctx = tflog.SetField(ctx, "template_id", templateId)
+	ctx = tflog.SetField(ctx, "role_name", roleName)
+	tflog.Debug(ctx, "Removing Keyfactor role with ID from template")
 	// First get info about template from Keyfactor
 	template, err := kfClient.GetTemplate(templateId)
 	if err != nil {
+		tflog.Error(ctx, "Error fetching template from Keyfactor", map[string]interface{}{
+			"error": err,
+		})
 		return diag.FromErr(err)
 	}
 
 	// Rebuild allowed requester list without roleName
 	var newAllowedRequester []string
+	tflog.Debug(ctx, "Rebuild allowed requester list without roleName")
 	for _, name := range template.AllowedRequesters {
 		if name != roleName {
+			tflog.Trace(ctx, "Adding role to allowed requesters", map[string]interface{}{
+				"allowed_requester": newAllowedRequester,
+				"name":              name,
+			})
 			newAllowedRequester = append(newAllowedRequester, name)
 		}
 	}
@@ -282,8 +356,14 @@ func removeRoleFromTemplate(kfClient *api.Client, roleName string, templateId in
 		AllowedRequesters:    &newAllowedRequester,
 	}
 
+	tflog.Trace(ctx, "Updating template in Keyfactor with context:", map[string]interface{}{
+		"context": updateContext,
+	})
 	_, err = kfClient.UpdateTemplate(updateContext)
 	if err != nil {
+		tflog.Error(ctx, "Error updating template in Keyfactor", map[string]interface{}{
+			"error": err,
+		})
 		return diag.FromErr(err)
 	}
 	return diags
@@ -294,16 +374,17 @@ func removeRoleFromTemplate(kfClient *api.Client, roleName string, templateId in
  */
 func resourceTemplateAttachRoleRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	log.Println("[DEBUG] Read called on Attach Keyfactor Role resource")
+	tflog.Info(ctx, "[DEBUG] Read called on Attach Keyfactor Role resource")
 	kfClient := m.(*api.Client)
 
 	templateIds := d.Get("template_ids").(*schema.Set).List()
 
 	roleName := d.Id()
-	log.Printf("[DEBUG] Reading Keyfactor role with ID %s", roleName)
+	ctx = tflog.SetField(ctx, "role_name", roleName)
+	tflog.Debug(ctx, "Reading Keyfactor role with ID")
 
 	// Check that templates exist
-	newSchema := flattenAttachRoleSchema(roleName, templateIds)
+	newSchema := flattenAttachRoleSchema(ctx, roleName, templateIds)
 	_, err := verifyTemplateIds(kfClient, templateIds)
 
 	// Convert to a warning on read so manual state editing isn't required.
@@ -329,7 +410,7 @@ func resourceTemplateAttachRoleRead(ctx context.Context, d *schema.ResourceData,
 
 	//d.Set("template_ids", validTemplateIds)
 
-	log.Printf("[DEBUG] Data: %v", d)
+	tflog.Info(ctx, "Read attached roles complete.")
 	return diags
 }
 
@@ -337,8 +418,8 @@ func resourceTemplateAttachRoleRead(ctx context.Context, d *schema.ResourceData,
  * The resourceTemplateAttachRoleDelete function is responsible for deleting a Keyfactor security role.
  * TODO: Is this specific to templates or can this be abstracted to a general helper for roles?
  */
-func flattenAttachRoleSchema(roleName string, templateIds []interface{}) map[string]interface{} {
-	log.Println("[DEBUG] Flattening Keyfactor role resource schema.")
+func flattenAttachRoleSchema(ctx context.Context, roleName string, templateIds []interface{}) map[string]interface{} {
+	tflog.Debug(ctx, "Flattening Keyfactor role resource schema.")
 	data := make(map[string]interface{})
 
 	data["role_name"] = roleName
@@ -352,12 +433,12 @@ func flattenAttachRoleSchema(roleName string, templateIds []interface{}) map[str
 /*
  * The resourceTemplateAttachRoleDelete function is responsible for deleting a Keyfactor security role.
  */
-func findTemplateRoleAttachments(kfClient *api.Client, roleName string) (diag.Diagnostics, []interface{}) {
+func findTemplateRoleAttachments(ctx context.Context, kfClient *api.Client, roleName string) (diag.Diagnostics, []interface{}) {
 	// Goal here is to find every template that the role is listed as an allowed requester. First thing that needs
 	// to happen is retrieve a complete list of all certificate templates.
 
 	var diags diag.Diagnostics
-	log.Println("[DEBUG]: Fetching all templates from Keyfactor")
+	tflog.Debug(ctx, "Fetching all templates from Keyfactor")
 	templates, err := kfClient.GetTemplates()
 	if err != nil {
 		return diag.FromErr(err), make([]interface{}, 0)
@@ -384,25 +465,31 @@ func findTemplateRoleAttachments(kfClient *api.Client, roleName string) (diag.Di
  */
 func resourceTemplateAttachRoleUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	//var diags diag.Diagnostics
-	log.Println("[INFO] Updating Attach Keyfactor Role resource")
+	tflog.Info(ctx, "Updating Attach Keyfactor Role resource")
 
 	kfClient := m.(*api.Client)
 
 	roleName := d.Get("role_name")
 	templateIds := d.Get("template_ids").(*schema.Set).List()
 	templateNames := d.Get("template_short_names")
-	log.Printf("[DEBUG] roleName: %s\n", roleName)
-	log.Printf("[DEBUG] Template IDs: %s\n", templateIds)
-	log.Printf("[DEBUG] Template names: %s\n", templateNames)
+	ctx = tflog.SetField(ctx, "role_name", roleName)
+	ctx = tflog.SetField(ctx, "template_ids", templateIds)
+	ctx = tflog.SetField(ctx, "template_short_names", templateNames)
 
+	tflog.Debug(ctx, "Verifying template IDs exist in Keyfactor")
 	validTemplateIds, _ := verifyTemplateIds(kfClient, templateIds)
 	//if err != nil {
 	//	return err
 	//}
 	//d.Set("template_ids", validTemplateIds)
 	// Add provided role to each of the certificate templates provided in configuration
-	err := setRoleAllowedRequester(kfClient, roleName.(string), validTemplateIds, templateNames.(*schema.Set))
+
+	tflog.Debug(ctx, "Setting allowed requester for templates")
+	err := setRoleAllowedRequester(ctx, kfClient, roleName.(string), validTemplateIds, templateNames.(*schema.Set))
 	if err != nil {
+		tflog.Error(ctx, "Error setting allowed requester for templates", map[string]interface{}{
+			"error": err,
+		})
 		return err
 	}
 
@@ -415,13 +502,13 @@ func resourceTemplateAttachRoleUpdate(ctx context.Context, d *schema.ResourceDat
  */
 func resourceTemplateAttachRoleDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	log.Println("[INFO] Deleting Attach Keyfactor Role resource")
+	tflog.Info(ctx, "[INFO] Deleting Attach Keyfactor Role resource")
 	kfClient := m.(*api.Client)
 	roleName := d.Id()
 
 	tempSet := schema.Set{F: schema.HashInt} //TODO: What is this doing?
 	validTemplateIds, _ := verifyTemplateIds(kfClient, tempSet.List())
-	err := setRoleAllowedRequester(kfClient, roleName, validTemplateIds, nil)
+	err := setRoleAllowedRequester(ctx, kfClient, roleName, validTemplateIds, nil)
 	if err != nil {
 		return err
 	}

@@ -3,9 +3,9 @@ package keyfactor
 import (
 	"context"
 	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"log"
 )
 
 func resourceStore() *schema.Resource {
@@ -381,17 +381,19 @@ func interfaceToMappedString(in map[string]interface{}) map[string]string {
 	return newMap
 }
 
-func resourceStoreDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceStoreDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
 	kfClient := m.(*api.Client)
 
-	log.Println("[INFO] Deleting store resource")
-
 	id := d.Get("keyfactor_id").(string)
-	log.Printf("[INFO] Deleting certificate store with ID %s in Keyfactor", id)
+	ctx = tflog.SetField(ctx, "keyfactor_id", id)
+	tflog.Info(ctx, "Deleting certificate store resource")
 
 	err := kfClient.DeleteCertificateStore(id)
 	if err != nil {
+		tflog.Error(ctx, "Error deleting certificate store resource: ", map[string]interface{}{
+			"error": err,
+		})
 		return diag.FromErr(err)
 	}
 

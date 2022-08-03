@@ -6,6 +6,7 @@
      - If SANs are provided by the CSR then KF signs using those SANs verbatim and will ignore any SANs specified on the resource
      - If SANs are not provided by the CSR then KF will use the SANs specified on the resource
     - Ensure idempotency of cert generation (apply should not continue to regenerate certs unless something has actually changed)
+    - What happens w/ approvals? Does tf wait for an approval?
 # TODO: Test cert store CRUD
     - Debug TF timeout issue waiting on orchestration.
     - Test binding certs to stores

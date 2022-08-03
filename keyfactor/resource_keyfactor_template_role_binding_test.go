@@ -2,7 +2,7 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"os"
@@ -43,8 +43,8 @@ func TestAccKeyfactorAttachRoleBasic(t *testing.T) {
 					// Check inputted values
 					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId1, 1),
 					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.#", "1"),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.0", template1),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_ids.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_ids.0", template1),
 				),
 			},
 			// See if we can add a second template
@@ -55,9 +55,9 @@ func TestAccKeyfactorAttachRoleBasic(t *testing.T) {
 					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId1, 2),
 					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId2, 2),
 					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.#", "2"),
-					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_id_list.0"),
-					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_id_list.1"),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_ids.#", "2"),
+					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_ids.0"),
+					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_ids.1"),
 				),
 			},
 			// See what happens if we switch the order of the templates as they're configured
@@ -68,9 +68,9 @@ func TestAccKeyfactorAttachRoleBasic(t *testing.T) {
 					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId2, 2),
 					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId1, 2),
 					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.#", "2"),
-					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_id_list.0"),
-					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_id_list.1"),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_ids.#", "2"),
+					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_ids.0"),
+					resource.TestCheckResourceAttrSet("keyfactor_attach_role.test", "template_ids.1"),
 				),
 			},
 			// See what happens if we remove one of the templates
@@ -80,8 +80,8 @@ func TestAccKeyfactorAttachRoleBasic(t *testing.T) {
 					// Check inputted values
 					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId1, 1),
 					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.#", "1"),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.0", template1),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_ids.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_ids.0", template1),
 				),
 			},
 			// See what happens if we change the template
@@ -91,8 +91,8 @@ func TestAccKeyfactorAttachRoleBasic(t *testing.T) {
 					// Check inputted values
 					testAccCheckKeyfactorAttachRoleRelationshipExists("keyfactor_attach_role.test", templateId2, 1),
 					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "role_name", roleName),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.#", "1"),
-					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_id_list.0", template2),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_ids.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_attach_role.test", "template_ids.0", template2),
 				),
 			},
 		},
@@ -113,7 +113,7 @@ func testAccCheckKeyfactorAttachRoleRelationshipExists(name string, templateId i
 			return fmt.Errorf("no Identity ID set")
 		}
 
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 		roleName := rs.Primary.ID
 		// conn is a configured Keyfactor Go Client object, get all template attachments
 		err, attachments := findTemplateRoleAttachments(conn, roleName)
@@ -174,7 +174,7 @@ func testAccKeyfactorAttachRoleDestroy(s *terraform.State) error {
 		roleName := rs.Primary.ID
 
 		// Pull the provider metadata interface out of the testAccProvider provider
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 
 		// conn is a configured Keyfactor Go Client object, get all template attachments
 		err, attachments := findTemplateRoleAttachments(conn, roleName)
@@ -195,7 +195,7 @@ func testAccKeyfactorAttachRoleBasic(roleName string, templateId int) string {
 	return fmt.Sprintf(`
 	resource "keyfactor_attach_role" "test" {
 		role_name = "%s"
-		template_id_list = [%d]
+		template_ids = [%d]
 	}
 	`, roleName, templateId)
 }
@@ -204,7 +204,7 @@ func testAccKeyfactorAttachRoleBasicModified(roleName string, templateId1 int, t
 	return fmt.Sprintf(`
 	resource "keyfactor_attach_role" "test" {
 		role_name = "%s"
-		template_id_list = [%d, %d]
+		template_ids = [%d, %d]
 	}
 	`, roleName, templateId1, templateId2)
 }

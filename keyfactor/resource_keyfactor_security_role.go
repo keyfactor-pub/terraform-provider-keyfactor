@@ -2,7 +2,8 @@ package keyfactor
 
 import (
 	"context"
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"fmt"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
@@ -58,6 +59,12 @@ func resourceSecurityRole() *schema.Resource {
 					},
 				},
 			},
+			"users": {
+				Type:        schema.TypeSet,
+				Optional:    true,
+				Description: "List of users to grant access to the role.",
+				Elem:        &schema.Schema{Type: schema.TypeString},
+			},
 			"permissions": {
 				Type:        schema.TypeSet,
 				Optional:    true,
@@ -71,9 +78,9 @@ func resourceSecurityRole() *schema.Resource {
 func resourceSecurityRoleCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	log.Println("[INFO] Creating Keyfactor Security Role resource")
 
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
-	createArg := &keyfactor.CreateSecurityRoleArg{
+	createArg := &api.CreateSecurityRoleArg{
 		Name:        d.Get("role_name").(string),
 		Description: d.Get("description").(string),
 	}
@@ -110,13 +117,13 @@ func unpackPermissionSet(set *schema.Set) *[]string {
 	return nil
 }
 
-func unpackIdentitySet(set *schema.Set) *[]keyfactor.SecurityRoleIdentityConfig {
+func unpackIdentitySet(set *schema.Set) *[]api.SecurityRoleIdentityConfig {
 	identities := set.List()
 	if len(identities) > 0 {
-		var identityConfig []keyfactor.SecurityRoleIdentityConfig
+		var identityConfig []api.SecurityRoleIdentityConfig
 		for _, i := range identities {
 			identity := i.(map[string]interface{})
-			temp := keyfactor.SecurityRoleIdentityConfig{
+			temp := api.SecurityRoleIdentityConfig{
 				AccountName: identity["account_name"].(string),
 				SID:         stringToPointer(identity["sid"].(string)),
 			}
@@ -131,8 +138,9 @@ func resourceSecurityRoleRead(ctx context.Context, d *schema.ResourceData, m int
 	var diags diag.Diagnostics
 	log.Println("[INFO] Reading Keyfactor Security Role resource")
 
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
+	fmt.Printf("[DEBUG] %v", d)
 	id := d.Id()
 	roleId, err := strconv.Atoi(id)
 	if err != nil {
@@ -146,6 +154,7 @@ func resourceSecurityRoleRead(ctx context.Context, d *schema.ResourceData, m int
 
 	newSchema := flattenSecurityRole(role)
 	for key, value := range newSchema {
+		fmt.Printf("[DEBUG] Key: %s, Value: %s\n", key, value)
 		err = d.Set(key, value)
 		if err != nil {
 			diags = append(diags, diag.FromErr(err)[0])
@@ -155,7 +164,7 @@ func resourceSecurityRoleRead(ctx context.Context, d *schema.ResourceData, m int
 	return diags
 }
 
-func flattenSecurityRole(roleContext *keyfactor.GetSecurityRolesResponse) map[string]interface{} {
+func flattenSecurityRole(roleContext *api.GetSecurityRolesResponse) map[string]interface{} {
 	data := make(map[string]interface{})
 	if roleContext != nil {
 		// Assign response data to associated schema
@@ -172,14 +181,14 @@ func flattenSecurityRole(roleContext *keyfactor.GetSecurityRolesResponse) map[st
 
 // This came from the Kubernetes provider... ran out of time
 func newStringSet(f schema.SchemaSetFunc, in []string) *schema.Set {
-	var out = make([]interface{}, len(in), len(in))
+	var out = make([]interface{}, len(in))
 	for i, v := range in {
 		out[i] = v
 	}
 	return schema.NewSet(f, out)
 }
 
-func flattenSecurityRoleIdentities(identities []keyfactor.SecurityIdentity) *schema.Set {
+func flattenSecurityRoleIdentities(identities []api.SecurityIdentity) *schema.Set {
 	// If the list of identities passed to this function has length > 0, iterate through each identity provided
 	// and build a map[string]interface{} for each one, then push back onto a temporary []interface{}
 	var temp []interface{}
@@ -229,7 +238,7 @@ func schemaSecurityRoleIdentities() *schema.Resource {
 func resourceSecurityRoleUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	log.Println("[INFO] Updating Keyfactor Security Role resource")
 
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	id := d.Id()
 	roleId, err := strconv.Atoi(id)
@@ -237,9 +246,9 @@ func resourceSecurityRoleUpdate(ctx context.Context, d *schema.ResourceData, m i
 		return diag.FromErr(err)
 	}
 
-	updateArg := &keyfactor.UpdatteSecurityRoleArg{
+	updateArg := &api.UpdatteSecurityRoleArg{
 		Id: roleId,
-		CreateSecurityRoleArg: keyfactor.CreateSecurityRoleArg{
+		CreateSecurityRoleArg: api.CreateSecurityRoleArg{
 			Name:        d.Get("role_name").(string),
 			Description: d.Get("description").(string),
 		},
@@ -266,7 +275,7 @@ func resourceSecurityRoleDelete(ctx context.Context, d *schema.ResourceData, m i
 	var diags diag.Diagnostics
 	log.Println("[INFO] Deleting Keyfactor Security Role resource")
 
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	id := d.Id()
 	roleId, err := strconv.Atoi(id)

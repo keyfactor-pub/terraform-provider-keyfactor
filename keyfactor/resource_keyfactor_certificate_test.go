@@ -8,7 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
@@ -446,9 +446,9 @@ func testAccCheckKeyfactorCertificateDestroy(s *terraform.State) error {
 
 func confirmCertificateIsRevoked(id int) (bool, error) {
 	// retrieve the connection established in Provider configuration
-	conn := testAccProvider.Meta().(*keyfactor.Client)
+	conn := testAccProvider.Meta().(*api.Client)
 
-	request := &keyfactor.GetCertificateContextArgs{Id: id}
+	request := &api.GetCertificateContextArgs{Id: id}
 	resp, err := conn.GetCertificateContext(request)
 	if err != nil {
 		return false, err
@@ -471,14 +471,14 @@ func testAccCheckKeyfactorCertificateExists(name string) resource.TestCheckFunc 
 			return fmt.Errorf("no Certificate ID set")
 		}
 
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 
 		id, err := strconv.Atoi(rs.Primary.ID)
 		if err != nil {
 			return err
 		}
 
-		request := &keyfactor.GetCertificateContextArgs{Id: id, IncludeMetadata: boolToPointer(true)}
+		request := &api.GetCertificateContextArgs{Id: id, IncludeMetadata: boolToPointer(true)}
 		resp, err := conn.GetCertificateContext(request)
 		if err != nil {
 			return err

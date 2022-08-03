@@ -35,6 +35,7 @@ install:
 	rm -rf ${BASEDIR}
 	mkdir -p ${INSTALLDIR}
 	mv ${BINARY} ${INSTALLDIR}
+	rm .terraform.lock.hcl || true
 	terraform init -upgrade
 
 test:
@@ -49,5 +50,8 @@ fmtcheck:
 
 fmt:
 	gofmt -w $(GOFMT_FILES)
+
+debug: install
+	@./debug.sh
 
 .PHONY: build release install test testacc fmtcheck fmt

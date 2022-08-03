@@ -2,7 +2,7 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"os"
@@ -52,7 +52,7 @@ func testAccCheckKeyfactorSecurityIdentityExists(name string) resource.TestCheck
 			return fmt.Errorf("no Identity ID set")
 		}
 
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 
 		id, err := strconv.Atoi(rs.Primary.ID)
 		if err != nil {
@@ -64,7 +64,7 @@ func testAccCheckKeyfactorSecurityIdentityExists(name string) resource.TestCheck
 			return err
 		}
 
-		var identityContext keyfactor.GetSecurityIdentityResponse
+		var identityContext api.GetSecurityIdentityResponse
 
 		// Search the returned list of identies for the ID of the resource
 		for _, identity := range identities {
@@ -116,7 +116,7 @@ func testAccCheckKeyfactorSecurityIdentityDestroy(s *terraform.State) error {
 		}
 
 		// Pull the provider metadata interface out of the testAccProvider provider
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 
 		// conn is a configured Keyfactor Go Client object, get all Keyfactor security identities
 		identities, err := conn.GetSecurityIdentities()

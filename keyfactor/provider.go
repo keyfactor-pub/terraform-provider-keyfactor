@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
@@ -77,16 +77,17 @@ func Provider() *schema.Provider {
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
-			"keyfactor_certificate":        resourceCertificate(),
-			"keyfactor_store":              resourceStore(),
-			"keyfactor_deploy_certificate": resourceCertificateDeploy(),
-			"keyfactor_security_identity":  resourceSecurityIdentity(),
-			"keyfactor_security_role":      resourceSecurityRole(),
-			"keyfactor_attach_role":        resourceKeyfactorAttachRole(),
+			"keyfactor_certificate":           resourceCertificate(),
+			"keyfactor_store":                 resourceStore(),
+			"keyfactor_deploy_certificate":    resourceCertificateDeploy(),
+			"keyfactor_security_identity":     resourceSecurityIdentity(),
+			"keyfactor_security_role":         resourceSecurityRole(),
+			"keyfactor_template_role_binding": resourceTemplateRoleBinding(),
 		},
 		DataSourcesMap: map[string]*schema.Resource{
 			"keyfactor_template":      dataSourceKeyfactorTemplate(),
 			"keyfactor_security_role": dataSourceKeyfactorSecurityRole(),
+			"keyfactor_certificate":   dataSourceKeyfactorCertificate(),
 		},
 		ConfigureContextFunc: providerConfigure,
 	}
@@ -94,7 +95,7 @@ func Provider() *schema.Provider {
 
 func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	var clientAuth keyfactor.AuthConfig
+	var clientAuth api.AuthConfig
 	if hostname := d.Get("hostname"); hostname.(string) != "" {
 		clientAuth.Hostname = hostname.(string)
 	} else {
@@ -132,7 +133,7 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 		return nil, diags
 	}
 
-	client, err := keyfactor.NewKeyfactorClient(&clientAuth)
+	client, err := api.NewKeyfactorClient(&clientAuth)
 	if err != nil {
 		return nil, diag.FromErr(err)
 	}
@@ -142,10 +143,10 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 
 // Nice-to-have functions
 
-func interfaceArrayToStringTuple(m []interface{}) []keyfactor.StringTuple {
+func interfaceArrayToStringTuple(m []interface{}) []api.StringTuple {
 	// Unpack metadata expects []interface{} containing a list of lists of key-value pairs
 	if len(m) > 0 {
-		temp := make([]keyfactor.StringTuple, len(m), len(m)) // size of m is the number of metadata fields provided by .tf file
+		temp := make([]api.StringTuple, len(m)) // size of m is the number of metadata fields provided by .tf file
 		for i, field := range m {
 			temp[i].Elem1 = field.(map[string]interface{})["name"].(string)  // Unless changed in the future, this interface
 			temp[i].Elem2 = field.(map[string]interface{})["value"].(string) // will always have 'name' and 'value'

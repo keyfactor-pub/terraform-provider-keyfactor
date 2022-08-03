@@ -7,7 +7,7 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"strconv"
@@ -51,6 +51,7 @@ func resourceCertificateDeploy() *schema.Resource {
 			"password": {
 				Type:        schema.TypeString,
 				Optional:    true,
+				Sensitive:   true,
 				Description: "Password that protects PFX certificate, if the certificate was enrolled using PFX enrollment, or is password protected in general. This value cannot change, and Terraform will throw an error if a change is attempted.",
 			},
 		},
@@ -58,7 +59,7 @@ func resourceCertificateDeploy() *schema.Resource {
 }
 
 func resourceDeploymentCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	conn := m.(*keyfactor.Client)
+	conn := m.(*api.Client)
 
 	certId := d.Get("certificate_id").(int)
 
@@ -73,16 +74,16 @@ func resourceDeploymentCreate(ctx context.Context, d *schema.ResourceData, m int
 }
 
 // addCertificateToStore adds certificate certId to each of the stores configured by stores. Note that stores is a list of
-// map[string]interface{} and contains the required configuration for keyfactor.AddCertificateToStores().
-func addCertificateToStores(conn *keyfactor.Client, certId int, stores []interface{}, password string) error {
-	var storesStruct []keyfactor.CertificateStore
+// map[string]interface{} and contains the required configuration for api.AddCertificateToStores().
+func addCertificateToStores(conn *api.Client, certId int, stores []interface{}, password string) error {
+	var storesStruct []api.CertificateStore
 	if len(stores) <= 0 {
 		return nil
 	}
 
 	for _, store := range stores {
 		i := store.(map[string]interface{})
-		temp := new(keyfactor.CertificateStore)
+		temp := new(api.CertificateStore)
 
 		id, ok := i["certificate_store_id"]
 		if ok {
@@ -98,10 +99,10 @@ func addCertificateToStores(conn *keyfactor.Client, certId int, stores []interfa
 		storesStruct = append(storesStruct, *temp)
 	}
 	// We want Keyfactor to immediately apply these changes.
-	schedule := &keyfactor.InventorySchedule{
+	schedule := &api.InventorySchedule{
 		Immediate: boolToPointer(true),
 	}
-	config := &keyfactor.AddCertificateToStore{
+	config := &api.AddCertificateToStore{
 		CertificateId:     certId,
 		CertificateStores: &storesStruct,
 		InventorySchedule: schedule,
@@ -117,12 +118,12 @@ func addCertificateToStores(conn *keyfactor.Client, certId int, stores []interfa
 // The Keyfactor RemoveCertificateFromStores function works by removing a certificate stored under a specific alias in a store.
 // The certificateStores argument must contain a list of Keyfactor CertificateStore structs configured with a store ID and
 // the alias name that the certificate is stored under.
-func removeCertificateAliasFromStore(conn *keyfactor.Client, certificateStores *[]keyfactor.CertificateStore) error {
+func removeCertificateAliasFromStore(conn *api.Client, certificateStores *[]api.CertificateStore) error {
 	// We want Keyfactor to immediately apply these changes.
-	schedule := &keyfactor.InventorySchedule{
+	schedule := &api.InventorySchedule{
 		Immediate: boolToPointer(true),
 	}
-	config := &keyfactor.RemoveCertificateFromStore{
+	config := &api.RemoveCertificateFromStore{
 		CertificateStores: certificateStores,
 		InventorySchedule: schedule,
 	}
@@ -150,10 +151,10 @@ func findStringDifference(a, b []string) []string {
 	return diff
 }
 
-func validateCertificatesInStore(conn *keyfactor.Client, certificateStores []string, certificateId int) error {
+func validateCertificatesInStore(conn *api.Client, certificateStores []string, certificateId int) error {
 	valid := false
 	for i := 0; i < 1200; i++ {
-		args := &keyfactor.GetCertificateContextArgs{
+		args := &api.GetCertificateContextArgs{
 			IncludeLocations: boolToPointer(true),
 			Id:               certificateId,
 		}
@@ -179,7 +180,7 @@ func validateCertificatesInStore(conn *keyfactor.Client, certificateStores []str
 	return nil
 }
 
-func setCertificatesInStore(conn *keyfactor.Client, d *schema.ResourceData) error {
+func setCertificatesInStore(conn *api.Client, d *schema.ResourceData) error {
 	certId := d.Get("certificate_id").(int)
 	stores := d.Get("store").(*schema.Set).List()
 	password := d.Get("password").(string)
@@ -193,7 +194,7 @@ func setCertificatesInStore(conn *keyfactor.Client, d *schema.ResourceData) erro
 	}
 
 	// Then, compile a list of stores that the certificate is found in, and figure out the delta
-	args := &keyfactor.GetCertificateContextArgs{
+	args := &api.GetCertificateContextArgs{
 		IncludeLocations: boolToPointer(true),
 		Id:               certId,
 	}
@@ -219,10 +220,10 @@ func setCertificatesInStore(conn *keyfactor.Client, d *schema.ResourceData) erro
 
 	// The elements of diff should be removed
 	// Also, removing a certificate from a certificate store implies that the certificate is currently in the store.
-	var diff []keyfactor.CertificateStore
+	var diff []api.CertificateStore
 	for _, x := range locations {
 		if _, found := list[x.CertStoreId]; !found {
-			temp := keyfactor.CertificateStore{
+			temp := api.CertificateStore{
 				CertificateStoreId: x.CertStoreId,
 				Alias:              x.Alias,
 			}
@@ -250,7 +251,7 @@ func setCertificatesInStore(conn *keyfactor.Client, d *schema.ResourceData) erro
 func resourceDeploymentRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
 
-	conn := m.(*keyfactor.Client)
+	conn := m.(*api.Client)
 
 	certId, err := strconv.Atoi(d.Id())
 	if err != nil {
@@ -258,7 +259,7 @@ func resourceDeploymentRead(ctx context.Context, d *schema.ResourceData, m inter
 	}
 
 	// Then, compile a list of stores that the certificate is found in, and figure out the delta
-	args := &keyfactor.GetCertificateContextArgs{
+	args := &api.GetCertificateContextArgs{
 		IncludeLocations: boolToPointer(true),
 		Id:               certId,
 	}
@@ -281,7 +282,7 @@ func resourceDeploymentRead(ctx context.Context, d *schema.ResourceData, m inter
 	return diags
 }
 
-func flattenLocationData(certId int, password string, locations []keyfactor.CertificateLocations) map[string]interface{} {
+func flattenLocationData(certId int, password string, locations []api.CertificateLocations) map[string]interface{} {
 	data := make(map[string]interface{})
 	data["certificate_id"] = certId
 	data["password"] = password
@@ -306,7 +307,7 @@ func schemaCertificateDeployStores() *schema.Resource {
 	}
 }
 
-func flattenStoresData(locations []keyfactor.CertificateLocations) *schema.Set {
+func flattenStoresData(locations []api.CertificateLocations) *schema.Set {
 	var temp []interface{}
 	if len(locations) > 0 {
 		for _, location := range locations {
@@ -320,7 +321,7 @@ func flattenStoresData(locations []keyfactor.CertificateLocations) *schema.Set {
 }
 
 func resourceDeploymentUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	conn := m.(*keyfactor.Client)
+	conn := m.(*api.Client)
 
 	if d.HasChange("store") {
 		err := setCertificatesInStore(conn, d)
@@ -344,7 +345,7 @@ func resourceDeploymentUpdate(ctx context.Context, d *schema.ResourceData, m int
 }
 
 func resourceDeploymentDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	conn := m.(*keyfactor.Client)
+	conn := m.(*api.Client)
 
 	// Set 'stores' schema with blank set.
 	empty := schema.NewSet(schema.HashResource(schemaCertificateDeployStores()), nil)

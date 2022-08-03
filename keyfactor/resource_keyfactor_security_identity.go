@@ -3,10 +3,10 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"log"
 	"strconv"
 	"strings"
 )
@@ -15,7 +15,7 @@ func resourceSecurityIdentity() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourceSecurityIdentityCreate,
 		ReadContext:   resourceSecurityIdentityRead,
-		UpdateContext: resourceSecurityIdentityUpdate,
+		UpdateContext: nil, //Since changing account_name forces a new identity to be created, we don't support updates
 		DeleteContext: resourceSecurityIdentityDelete,
 		Importer: &schema.ResourceImporter{
 			StateContext: schema.ImportStatePassthroughContext,
@@ -24,6 +24,7 @@ func resourceSecurityIdentity() *schema.Resource {
 			"account_name": {
 				Type:        schema.TypeString,
 				Required:    true,
+				ForceNew:    true,
 				Description: "A string containing the account name for the security identity. For Active Directory user and groups, this will be in the form DOMAIN\\\\user or group name",
 			},
 			"roles": {
@@ -52,12 +53,14 @@ func resourceSecurityIdentity() *schema.Resource {
 }
 
 func resourceSecurityIdentityCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
-	log.Println("[INFO] Creating Keyfactor security identity resource")
+	accountName := d.Get("account_name").(string)
+	ctx = tflog.SetField(ctx, "account_name", accountName)
+	tflog.Info(ctx, "Creating Keyfactor security identity resource")
 
-	identityArg := &keyfactor.CreateSecurityIdentityArg{
-		AccountName: d.Get("account_name").(string),
+	identityArg := &api.CreateSecurityIdentityArg{
+		AccountName: accountName,
 	}
 
 	createResponse, err := kfClient.CreateSecurityIdentity(identityArg)
@@ -73,7 +76,7 @@ func resourceSecurityIdentityCreate(ctx context.Context, d *schema.ResourceData,
 
 	if rolesSet, ok := d.GetOk("roles"); ok {
 		roles := rolesSet.(*schema.Set).List()
-		err = setIdentityRole(kfClient, identityArg.AccountName, roles)
+		err = setIdentityRole(ctx, kfClient, identityArg.AccountName, roles)
 		if err != nil {
 			return diag.FromErr(err)
 		}
@@ -85,7 +88,7 @@ func resourceSecurityIdentityCreate(ctx context.Context, d *schema.ResourceData,
 	return resourceSecurityIdentityRead(ctx, d, m)
 }
 
-func setIdentityRole(kfClient *keyfactor.Client, identityAccountName string, roleIds []interface{}) error {
+func setIdentityRole(ctx context.Context, kfClient *api.Client, identityAccountName string, roleIds []interface{}) error {
 	// Basic idea here is that we want to sync the output of the GET identity endpoint with the roleIds passed to
 	// this function. This could mean that we are removing the identity from a role, adding an identity, or not making
 	// any change. This is required because no PUT endpoint exists for /identity.
@@ -93,7 +96,7 @@ func setIdentityRole(kfClient *keyfactor.Client, identityAccountName string, rol
 	// Start by blindly adding the identity to each role.
 	if len(roleIds) > 0 {
 		for _, role := range roleIds {
-			err := addIdentityToRole(kfClient, identityAccountName, role.(int))
+			err := addIdentityToRole(ctx, kfClient, identityAccountName, role.(int))
 			if err != nil {
 				return err
 			}
@@ -107,9 +110,9 @@ func setIdentityRole(kfClient *keyfactor.Client, identityAccountName string, rol
 	if err != nil {
 		return err
 	}
-	var identity keyfactor.GetSecurityIdentityResponse
+	var identity api.GetSecurityIdentityResponse
 	for _, identity = range identities {
-		if strings.ToLower(identity.AccountName) == strings.ToLower(identityAccountName) {
+		if strings.EqualFold(identity.AccountName, identityAccountName) {
 			break
 		}
 	}
@@ -130,7 +133,7 @@ func setIdentityRole(kfClient *keyfactor.Client, identityAccountName string, rol
 	}
 
 	for _, role := range diff {
-		err = removeIdentityFromRole(kfClient, identity.AccountName, role)
+		err = removeIdentityFromRole(ctx, kfClient, identity.AccountName, role)
 		if err != nil {
 			return err
 		}
@@ -138,17 +141,20 @@ func setIdentityRole(kfClient *keyfactor.Client, identityAccountName string, rol
 	return nil
 }
 
-func removeIdentityFromRole(kfClient *keyfactor.Client, identityAccountName string, roleId int) error {
-	log.Printf("[DEBUG] Removing account %s from Keyfactor role %d", identityAccountName, roleId)
+func removeIdentityFromRole(ctx context.Context, kfClient *api.Client, identityAccountName string, roleId int) error {
+	ctx = tflog.SetField(ctx, "role_id", roleId)
+	ctx = tflog.SetField(ctx, "identity_account_name", identityAccountName)
+	tflog.Debug(ctx, "Removing account from Keyfactor role")
 	// Construct a list of security identities currently attached to role
 	role, err := kfClient.GetSecurityRole(roleId)
 	if err != nil {
 		return err
 	}
-	var identityList []keyfactor.SecurityRoleIdentityConfig
+	var identityList []api.SecurityRoleIdentityConfig
 	for _, identity := range role.Identities {
-		if strings.ToLower(identityAccountName) != strings.ToLower(identity.AccountName) {
-			temp := keyfactor.SecurityRoleIdentityConfig{
+		if strings.EqualFold(identity.AccountName, identityAccountName) {
+
+			temp := api.SecurityRoleIdentityConfig{
 				AccountName: identity.AccountName,
 			}
 			identityList = append(identityList, temp)
@@ -156,9 +162,9 @@ func removeIdentityFromRole(kfClient *keyfactor.Client, identityAccountName stri
 	}
 
 	// Note - update security role wraps the create role structure but compiles to the desired JSON request body.
-	updateArg := &keyfactor.UpdatteSecurityRoleArg{
+	updateArg := &api.UpdatteSecurityRoleArg{
 		Id: roleId,
-		CreateSecurityRoleArg: keyfactor.CreateSecurityRoleArg{
+		CreateSecurityRoleArg: api.CreateSecurityRoleArg{
 			Name:        role.Name,
 			Identities:  &identityList,
 			Description: role.Description,
@@ -174,36 +180,38 @@ func removeIdentityFromRole(kfClient *keyfactor.Client, identityAccountName stri
 	return nil
 }
 
-func addIdentityToRole(kfClient *keyfactor.Client, identityAccountName string, roleId int) error {
-	log.Printf("[DEBUG] Adding account %s to Keyfactor role %d", identityAccountName, roleId)
+func addIdentityToRole(ctx context.Context, kfClient *api.Client, identityAccountName string, roleId int) error {
+	ctx = tflog.SetField(ctx, "role_id", roleId)
+	ctx = tflog.SetField(ctx, "identity_account_name", identityAccountName)
+	tflog.Debug(ctx, "Adding account to Keyfactor role.")
 	// Construct a list of security identities currently attached to role
 	role, err := kfClient.GetSecurityRole(roleId)
 	if err != nil {
 		return err
 	}
 
-	identityList := make([]keyfactor.SecurityRoleIdentityConfig, len(role.Identities), len(role.Identities))
+	identityList := make([]api.SecurityRoleIdentityConfig, len(role.Identities))
 	for i, identity := range role.Identities {
 		if identity.AccountName == identityAccountName {
-			log.Printf("[DEBUG] Account %s is already associated with Keyfactor role %d", identityAccountName, roleId)
+			tflog.Debug(ctx, "Account is already associated with Keyfactor role.")
 			return nil
 		}
-		temp := keyfactor.SecurityRoleIdentityConfig{
+		temp := api.SecurityRoleIdentityConfig{
 			AccountName: identity.AccountName,
 		}
 		identityList[i] = temp
 	}
 
 	// Add new identity to identity list and update role
-	temp := keyfactor.SecurityRoleIdentityConfig{
+	temp := api.SecurityRoleIdentityConfig{
 		AccountName: identityAccountName,
 	}
 	identityList = append(identityList, temp)
 
 	// Note - update security role wraps the create role structure but compiles to the desired JSON request body.
-	updateArg := &keyfactor.UpdatteSecurityRoleArg{
+	updateArg := &api.UpdatteSecurityRoleArg{
 		Id: roleId,
-		CreateSecurityRoleArg: keyfactor.CreateSecurityRoleArg{
+		CreateSecurityRoleArg: api.CreateSecurityRoleArg{
 			Name:        role.Name,
 			Identities:  &identityList,
 			Description: role.Description,
@@ -219,13 +227,13 @@ func addIdentityToRole(kfClient *keyfactor.Client, identityAccountName string, r
 	return nil
 }
 
-func resourceSecurityIdentityRead(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceSecurityIdentityRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	var identityContext keyfactor.GetSecurityIdentityResponse
+	var identityContext api.GetSecurityIdentityResponse
 
-	log.Println("[INFO] Read called on security identity resource")
+	tflog.Info(ctx, "Read called on security identity resource")
 
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	Id := d.Id()
 	identityId, err := strconv.Atoi(Id)
@@ -258,7 +266,7 @@ func resourceSecurityIdentityRead(_ context.Context, d *schema.ResourceData, m i
 	return diags
 }
 
-func flattenSecurityIdentity(identityContext *keyfactor.GetSecurityIdentityResponse) map[string]interface{} {
+func flattenSecurityIdentity(identityContext *api.GetSecurityIdentityResponse) map[string]interface{} {
 	data := make(map[string]interface{})
 	if identityContext != nil {
 		// Create list of identities
@@ -281,10 +289,10 @@ func flattenSecurityIdentity(identityContext *keyfactor.GetSecurityIdentityRespo
 
 func resourceSecurityIdentityUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	kfClient := m.(*keyfactor.Client)
-	log.Println("[INFO] Update called on security identity resource")
+	kfClient := m.(*api.Client)
+	tflog.Info(ctx, "Update called on security identity resource")
 
-	if roleSchemaHasChange(d) == true {
+	if roleSchemaHasChange(d) {
 
 		// Keyfactor security roles are often created once at the beginning of a deployment and then subsequently used
 		// to regulate an identities access to a resource. As per customer request, the Terraform provider modifies
@@ -292,7 +300,7 @@ func resourceSecurityIdentityUpdate(ctx context.Context, d *schema.ResourceData,
 		// Accomplish this by attaching the identity to each role provided by Terraform configuration
 		if rolesSet := d.Get("roles"); rolesSet != nil {
 			roles := rolesSet.(*schema.Set).List()
-			err := setIdentityRole(kfClient, d.Get("account_name").(string), roles)
+			err := setIdentityRole(ctx, kfClient, d.Get("account_name").(string), roles)
 			if err != nil {
 				return diag.FromErr(err)
 			}
@@ -327,9 +335,9 @@ func roleSchemaHasChange(d *schema.ResourceData) bool {
 
 func resourceSecurityIdentityDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	log.Println("[INFO] Deleting Keyfactor security identity resource")
+	tflog.Info(ctx, "Deleting Keyfactor security identity resource")
 
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	id := d.Id()
 	identityId, err := strconv.Atoi(id)

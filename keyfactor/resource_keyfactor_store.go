@@ -2,7 +2,7 @@ package keyfactor
 
 import (
 	"context"
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
@@ -169,9 +169,9 @@ func resourceStore() *schema.Resource {
 
 func resourceStoreCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	kfClientData := m.(*keyfactor.Client)
+	kfClientData := m.(*api.Client)
 
-	newStoreArgs := &keyfactor.CreateStoreFctArgs{
+	newStoreArgs := &api.CreateStoreFctArgs{
 		ContainerId:           intToPointer(d.Get("container_id").(int)),
 		ClientMachine:         d.Get("client_machine").(string),
 		StorePath:             d.Get("store_path").(string),
@@ -202,8 +202,8 @@ func resourceStoreCreate(ctx context.Context, d *schema.ResourceData, m interfac
 	return diags
 }
 
-func createInventorySchedule(m []interface{}) *keyfactor.InventorySchedule {
-	inventorySchedule := &keyfactor.InventorySchedule{}
+func createInventorySchedule(m []interface{}) *api.InventorySchedule {
+	inventorySchedule := &api.InventorySchedule{}
 	i := m[0].(map[string]interface{})
 	for key, value := range i {
 		if key == "immediate" {
@@ -220,17 +220,17 @@ func createInventorySchedule(m []interface{}) *keyfactor.InventorySchedule {
 				// Return from if statement is found. This prevents user from inputting multiple
 				for _, innerValue := range temp[0].(map[string]interface{}) {
 					if key == "interval" {
-						interval := &keyfactor.InventoryInterval{Minutes: innerValue.(int)}
+						interval := &api.InventoryInterval{Minutes: innerValue.(int)}
 						inventorySchedule.Interval = interval
 						return inventorySchedule
 					}
 					if key == "daily" {
-						daily := &keyfactor.InventoryDaily{Time: innerValue.(string)}
+						daily := &api.InventoryDaily{Time: innerValue.(string)}
 						inventorySchedule.Daily = daily
 						return inventorySchedule
 					}
 					if key == "exactly_once" {
-						once := &keyfactor.InventoryOnce{Time: innerValue.(string)}
+						once := &api.InventoryOnce{Time: innerValue.(string)}
 						inventorySchedule.ExactlyOnce = once
 						return inventorySchedule
 					}
@@ -241,9 +241,9 @@ func createInventorySchedule(m []interface{}) *keyfactor.InventorySchedule {
 	return inventorySchedule
 }
 
-func createPasswordConfig(m []interface{}) *keyfactor.StorePasswordConfig {
+func createPasswordConfig(m []interface{}) *api.StorePasswordConfig {
 	password := stringToPointer(m[0].(map[string]interface{})["value"].(string))
-	res := &keyfactor.StorePasswordConfig{
+	res := &api.StorePasswordConfig{
 		Value: password,
 	}
 
@@ -251,7 +251,7 @@ func createPasswordConfig(m []interface{}) *keyfactor.StorePasswordConfig {
 }
 
 func resourceStoreRead(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	kfClientData := m.(*keyfactor.Client)
+	kfClientData := m.(*api.Client)
 
 	var diags diag.Diagnostics
 	storeId := d.Id()
@@ -274,7 +274,7 @@ func resourceStoreRead(_ context.Context, d *schema.ResourceData, m interface{})
 	return diags
 }
 
-func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, password []interface{}) map[string]interface{} {
+func flattenCertificateStoreItems(storeContext *api.GetStoreByIDResp, password []interface{}) map[string]interface{} {
 	if storeContext != nil {
 		data := make(map[string]interface{})
 
@@ -302,7 +302,7 @@ func flattenCertificateStoreItems(storeContext *keyfactor.GetStoreByIDResp, pass
 	return make(map[string]interface{})
 }
 
-func flattenCertificateStoreInventorySched(schedule keyfactor.InventorySchedule) []interface{} {
+func flattenCertificateStoreInventorySched(schedule api.InventorySchedule) []interface{} {
 	medium := make(map[string]interface{})
 	// Structure being constructed:
 	// 	inventory_schedule -> []interface{} (1 wide)
@@ -314,7 +314,7 @@ func flattenCertificateStoreInventorySched(schedule keyfactor.InventorySchedule)
 	if schedule.Immediate != nil {
 		medium["immediate"] = schedule.Immediate
 	} else {
-		tempArray := make([]interface{}, 1, 1)
+		tempArray := make([]interface{}, 1)
 		tempMap := make(map[string]interface{})
 		// Build inner layers
 		if schedule.Daily != nil {
@@ -331,22 +331,22 @@ func flattenCertificateStoreInventorySched(schedule keyfactor.InventorySchedule)
 			medium["interval"] = tempArray
 		} else {
 			// If the API returned nothing, return a blank slice
-			return make([]interface{}, 0, 0) // Return blank array if none
+			return make([]interface{}, 0) // Return blank array if none
 		}
 
 	}
 	// Append medium layer to outer
-	scheduleInterface := make([]interface{}, 1, 1)
+	scheduleInterface := make([]interface{}, 1)
 	scheduleInterface[0] = medium
 	return scheduleInterface
 }
 
 func resourceStoreUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
-	updateStoreArgs := &keyfactor.UpdateStoreFctArgs{
+	updateStoreArgs := &api.UpdateStoreFctArgs{
 		Id: d.Get("keyfactor_id").(string),
-		CreateStoreFctArgs: keyfactor.CreateStoreFctArgs{
+		CreateStoreFctArgs: api.CreateStoreFctArgs{
 			ContainerId:           intToPointer(d.Get("container_id").(int)),
 			ClientMachine:         d.Get("client_machine").(string),
 			StorePath:             d.Get("store_path").(string),
@@ -383,7 +383,7 @@ func interfaceToMappedString(in map[string]interface{}) map[string]string {
 
 func resourceStoreDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
-	kfClient := m.(*keyfactor.Client)
+	kfClient := m.(*api.Client)
 
 	log.Println("[INFO] Deleting store resource")
 

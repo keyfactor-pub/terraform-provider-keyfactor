@@ -2,7 +2,7 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"log"
@@ -110,13 +110,13 @@ func testAccCheckKeyfactorCertificateDeployed(name string, storeId string, alias
 			return fmt.Errorf("no resource ID set")
 		}
 
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 		certId, err := strconv.Atoi(rs.Primary.ID)
 		if err != nil {
 			return err
 		}
 
-		args := &keyfactor.GetCertificateContextArgs{
+		args := &api.GetCertificateContextArgs{
 			IncludeLocations: boolToPointer(true),
 			Id:               certId,
 		}
@@ -129,7 +129,7 @@ func testAccCheckKeyfactorCertificateDeployed(name string, storeId string, alias
 		for _, location := range locations {
 			log.Printf("Comparing %s to %s", storeId, location.CertStoreId)
 			log.Printf("Comparing %s to %s", alias, location.Alias)
-			if strings.ToLower(location.CertStoreId) == strings.ToLower(storeId) && strings.ToLower(location.Alias) == strings.ToLower(alias) {
+			if strings.EqualFold(location.CertStoreId, storeId) && strings.EqualFold(location.Alias, alias) {
 				return nil
 			} else {
 				log.Println("Determined not equal")
@@ -177,9 +177,9 @@ func testAccKeyfactorDeployCertDestroy(s *terraform.State) error {
 		}
 
 		// Pull the provider metadata interface out of the testAccProvider provider
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 
-		args := &keyfactor.GetCertificateContextArgs{
+		args := &api.GetCertificateContextArgs{
 			IncludeLocations: boolToPointer(true),
 			Id:               certId,
 		}

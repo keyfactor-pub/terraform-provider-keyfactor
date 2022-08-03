@@ -2,10 +2,11 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/pkg/keyfactor"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"log"
 	"os"
 	"strings"
 	"testing"
@@ -111,16 +112,14 @@ func testAccCheckKeyfactorStoreDestroy(s *terraform.State) error {
 			continue
 		}
 
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 		var exists bool
 		_, err := conn.GetCertificateStoreByID(rs.Primary.ID)
 		if err != nil {
 			// Should return an error if the cert doesn't exist, but let's analyze the error first to be sure
 			// todo analyze the error
-			exists = false
+			log.Println("[ERROR]:", err)
 			break
-
-			return err
 		}
 		if exists {
 			return fmt.Errorf("resource still exists, ID: %s", rs.Primary.ID)
@@ -139,7 +138,7 @@ func testAccCheckKeyfactorStoreExists(name string) resource.TestCheckFunc {
 			return fmt.Errorf("no store ID set")
 		}
 
-		conn := testAccProvider.Meta().(*keyfactor.Client)
+		conn := testAccProvider.Meta().(*api.Client)
 
 		store, err := conn.GetCertificateStoreByID(rs.Primary.ID)
 		if err != nil {

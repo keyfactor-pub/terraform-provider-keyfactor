@@ -39,6 +39,7 @@ func resourceCertificate() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 				ForceNew:    true,
+				Sensitive:   true,
 				Description: "Password to protect certificate and private key with",
 			},
 			"subject": {
@@ -323,6 +324,7 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 	if err != nil {
 		return diag.FromErr(err)
 	}
+	log.Printf("[TRACE] Certificate ID: %v\n", CertificateId)
 
 	// Get certificate context
 	args := &api.GetCertificateContextArgs{
@@ -331,27 +333,35 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 		CollectionId:     nil,
 		Id:               CertificateId,
 	}
+	log.Printf("[TRACE] Passing args %v to Keyfactor\n", args)
 	certificateData, err := kfClient.GetCertificateContext(args)
 	if err != nil {
 		return diag.FromErr(err)
 	}
+	log.Printf("[TRACE] Certificate data: %v\n", certificateData)
 
 	// Get the password out of current schema
 	password := d.Get("key_password").(string)
+	log.Printf("[TRACE] Password: %v\n", password)
 	csr := d.Get("csr").(string)
+	log.Printf("[TRACE] CSR: %v\n", csr)
 
 	// Download and assign certificates to proper location
 	err, cert, chain, key := downloadCertificate(certificateData.Id, kfClient, password, csr != "")
 	if err != nil {
 		return diag.FromErr(err)
 	}
+	log.Printf("[TRACE] Certificate: %v\n", cert)
+	log.Printf("[TRACE] Chain: %v\n", chain)
+	log.Printf("[TRACE] Key: %v\n", key)
 
 	newSchema, err := flattenCertificateItems(certificateData, kfClient, cert, chain, key, password, csr) // Set schema
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	for key, value := range newSchema {
-		err = d.Set(key, value)
+	//log.Printf("[TRACE] New schema: %v\n", newSchema)
+	for k, v := range newSchema {
+		err = d.Set(k, v)
 		if err != nil {
 			diags = append(diags, diag.FromErr(err)[0])
 		}

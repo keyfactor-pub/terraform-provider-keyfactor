@@ -58,36 +58,44 @@ func resourceTemplateRoleBinding() *schema.Resource {
 	}
 }
 
-func verifyTemplateIds(kfClient *api.Client, templateIds []interface{}) diag.Diagnostics {
+func verifyTemplateIds(kfClient *api.Client, templateIds []interface{}) ([]interface{}, diag.Diagnostics) {
 	var diags diag.Diagnostics
+	var validTemplateIds []interface{}
 	for _, templateId := range templateIds {
 		_, err := kfClient.GetTemplate(templateId.(int))
 		if err != nil {
 			diags = append(diags, diag.FromErr(err)...)
+		} else {
+			validTemplateIds = append(validTemplateIds, templateId)
 		}
 	}
-	return diags
+	return validTemplateIds, diags
 }
 
 /*
  * The resourceTemplateRoleBindingCreate function is responsible for creating a Keyfactor security role.
  */
 func resourceTemplateRoleBindingCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
+	//var diags diag.Diagnostics
 	log.Println("[DEBUG] Creating Attach Keyfactor Role resource")
 
 	kfClient := m.(*api.Client)
 
 	roleName := d.Get("role_name")
-	templateIds := d.Get("template_ids")
+	templateIds := d.Get("template_ids").(*schema.Set).List()
 	templateNames := d.Get("template_short_names")
 
-	log.Printf("[DEBUG] templateNames: %v", templateNames)
+	log.Printf("[DEBUG] templateNames: %v\n", templateNames)
 
+	validTemplateIds, diags := verifyTemplateIds(kfClient, templateIds)
 	// Add provided role to each of the certificate templates provided in configuration
-	err := setRoleAllowedRequester(kfClient, roleName.(string), templateIds.(*schema.Set), templateNames.(*schema.Set))
+	err := setRoleAllowedRequester(kfClient, roleName.(string), validTemplateIds, templateNames.(*schema.Set))
 	if err != nil {
 		return err
+	}
+
+	if len(diags) > 0 {
+		return diags
 	}
 
 	// Other role attachments happen should below
@@ -101,10 +109,10 @@ func resourceTemplateRoleBindingCreate(ctx context.Context, d *schema.ResourceDa
  * The resourceTemplateAttachRoleUpdate function is responsible for updating a Keyfactor security role.
  * TODO: Can this be used with Identitys?
  */
-func setRoleAllowedRequester(kfClient *api.Client, roleName string, templateSet *schema.Set, namedTemplateSet *schema.Set) diag.Diagnostics {
+func setRoleAllowedRequester(kfClient *api.Client, roleName string, templateSet []interface{}, namedTemplateSet *schema.Set) diag.Diagnostics {
 	var diags diag.Diagnostics
 	log.Println("[DEBUG] Setting Keyfactor role with name " + roleName + " to be allowed requester for the following templates:")
-	templateList := templateSet.List()
+	templateList := templateSet
 	log.Println("[DEBUG] Template IDs: " + strconv.Itoa(len(templateList)))
 	var namedTemplateList []interface{}
 	if namedTemplateSet != nil {
@@ -172,7 +180,7 @@ func setRoleAllowedRequester(kfClient *api.Client, roleName string, templateSet 
  */
 func addAllowedRequesterToTemplate(kfClient *api.Client, roleName string, templateId string) diag.Diagnostics {
 	var diags diag.Diagnostics
-	log.Printf("[DEBUG] Adding Keyfactor role with ID %s to template with ID %v", roleName, templateId)
+	log.Printf("[DEBUG] Adding Keyfactor role with ID %s to template with ID %v\n", roleName, templateId)
 
 	// First get info about template from Keyfactor
 	if _, err := strconv.Atoi(templateId); err == nil {
@@ -180,19 +188,19 @@ func addAllowedRequesterToTemplate(kfClient *api.Client, roleName string, templa
 	}
 	templateIdNumber, err := strconv.Atoi(templateId)
 	if err != nil {
-		log.Printf("[ERROR] %s", err)
+		log.Printf("[ERROR] %s\n", err)
 		log.Println("Assuming templateId is a short name")
 		templates, err2 := kfClient.GetTemplates()
 		if err2 != nil {
-			log.Printf("[ERROR] %s", err2)
+			log.Printf("[ERROR] %s\n", err2)
 			diags = append(diags, diag.FromErr(err2)...)
 		}
 		for template := range templates {
-			log.Printf("[DEBUG] Template ID: %v", template)
+			log.Printf("[DEBUG] Template ID: %v\n", template)
 			kfTemplate, err3 := kfClient.GetTemplate(template)
-			log.Printf("[DEBUG] Keyfactor Template: %v", kfTemplate)
+			log.Printf("[DEBUG] Keyfactor Template: %v\n", kfTemplate)
 			if err3 != nil {
-				log.Printf("[ERROR] %s", err3)
+				log.Printf("[ERROR] %s\n", err3)
 				diags = append(diags, diag.FromErr(err3)...)
 				continue
 			}
@@ -213,7 +221,7 @@ func addAllowedRequesterToTemplate(kfClient *api.Client, roleName string, templa
 	var newAllowedRequester []string
 	for _, name := range template.AllowedRequesters {
 		if name == roleName {
-			log.Printf("[WARNING] Keyfactor security role %v is already listed as an allowed requester for template %v (ID %v)", roleName, template.TemplateName, templateId)
+			log.Printf("[WARNING] Keyfactor security role %v is already listed as an allowed requester for template %v (ID %v)\n", roleName, template.TemplateName, templateId)
 			return diags
 		}
 		newAllowedRequester = append(newAllowedRequester, name)
@@ -296,7 +304,7 @@ func resourceTemplateAttachRoleRead(ctx context.Context, d *schema.ResourceData,
 
 	// Check that templates exist
 	newSchema := flattenAttachRoleSchema(roleName, templateIds)
-	err := verifyTemplateIds(kfClient, templateIds)
+	_, err := verifyTemplateIds(kfClient, templateIds)
 
 	// Convert to a warning on read so manual state editing isn't required.
 	for _, dg := range err {
@@ -307,6 +315,10 @@ func resourceTemplateAttachRoleRead(ctx context.Context, d *schema.ResourceData,
 			AttributePath: dg.AttributePath,
 		})
 	}
+	if len(diags) > 0 {
+		diags = append(diags, diag.FromErr(fmt.Errorf("templates dont exist"))...)
+		return diags
+	}
 
 	for key, value := range newSchema {
 		err := d.Set(key, value)
@@ -314,6 +326,8 @@ func resourceTemplateAttachRoleRead(ctx context.Context, d *schema.ResourceData,
 			diags = append(diags, diag.FromErr(err)[0])
 		}
 	}
+
+	//d.Set("template_ids", validTemplateIds)
 
 	log.Printf("[DEBUG] Data: %v", d)
 	return diags
@@ -375,14 +389,19 @@ func resourceTemplateAttachRoleUpdate(ctx context.Context, d *schema.ResourceDat
 	kfClient := m.(*api.Client)
 
 	roleName := d.Get("role_name")
-	templateIds := d.Get("template_ids")
+	templateIds := d.Get("template_ids").(*schema.Set).List()
 	templateNames := d.Get("template_short_names")
-	log.Printf("[DEBUG] roleName: %s", roleName)
-	log.Printf("[DEBUG] Template IDs: %s", templateIds)
-	log.Printf("[DEBUG] Template names: %s", templateNames)
+	log.Printf("[DEBUG] roleName: %s\n", roleName)
+	log.Printf("[DEBUG] Template IDs: %s\n", templateIds)
+	log.Printf("[DEBUG] Template names: %s\n", templateNames)
 
+	validTemplateIds, _ := verifyTemplateIds(kfClient, templateIds)
+	//if err != nil {
+	//	return err
+	//}
+	//d.Set("template_ids", validTemplateIds)
 	// Add provided role to each of the certificate templates provided in configuration
-	err := setRoleAllowedRequester(kfClient, roleName.(string), templateIds.(*schema.Set), templateNames.(*schema.Set))
+	err := setRoleAllowedRequester(kfClient, roleName.(string), validTemplateIds, templateNames.(*schema.Set))
 	if err != nil {
 		return err
 	}
@@ -400,8 +419,9 @@ func resourceTemplateAttachRoleDelete(ctx context.Context, d *schema.ResourceDat
 	kfClient := m.(*api.Client)
 	roleName := d.Id()
 
-	tempSet := schema.Set{F: schema.HashInt}
-	err := setRoleAllowedRequester(kfClient, roleName, &tempSet, nil)
+	tempSet := schema.Set{F: schema.HashInt} //TODO: What is this doing?
+	validTemplateIds, _ := verifyTemplateIds(kfClient, tempSet.List())
+	err := setRoleAllowedRequester(kfClient, roleName, validTemplateIds, nil)
 	if err != nil {
 		return err
 	}

@@ -3,6 +3,7 @@
   <component name="Go" enabled="true" />
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$" />
+    <content url="file://$MODULE_DIR$/vendor/github.com/Keyfactor/keyfactor-go-client" />
     <content url="file://$MODULE_DIR$/vendor/software.sslmate.com/src" />
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

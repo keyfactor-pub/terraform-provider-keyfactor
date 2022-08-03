@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"log"
@@ -218,7 +219,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 	csr := d.Get("csr").(string)
 	var id int
 	if csr != "" {
-		log.Println("[DEBUG] Creating certificate from CSR")
+		tflog.Debug(ctx, "Creating certificate from CSR.")
 		CSRArgs := &api.EnrollCSRFctArgs{
 			CSR:                  csr,
 			CertificateAuthority: d.Get("certificate_authority").(string),
@@ -228,7 +229,9 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 			SANs:                 getSans(sans),
 			Metadata:             metadata,
 		}
-		log.Println("[TRACE] Passing ", CSRArgs, " to Keyfactor API. ")
+		tflog.Trace(ctx, "Passing args to Keyfactor API.", map[string]interface{}{
+			"args": CSRArgs,
+		})
 		enrollResponse, err := kfClient.EnrollCSR(CSRArgs)
 		if err != nil {
 			resourceCertificateRead(ctx, d, m)
@@ -238,7 +241,7 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 
 		resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 	} else {
-		log.Println("[DEBUG] No CSR provided, creating certificate from template.")
+		tflog.Debug(ctx, "No CSR provided, creating certificate from template.")
 		subject := d.Get("subject").([]interface{})[0].(map[string]interface{}) // Extract subject data from schema
 		PFXArgs := &api.EnrollPFXFctArgs{
 			CustomFriendlyName:          "Terraform",
@@ -261,7 +264,9 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 		}
 
 		// Error checking for invalid fields inside PFX enrollment function
-		log.Printf("[TRACE] Passing %v to Keyfactor\n", PFXArgs)
+		tflog.Trace(ctx, "Passing PFX args to Keyfactor", map[string]interface{}{
+			"pfx_args": PFXArgs,
+		})
 		enrollResponse, err := kfClient.EnrollPFX(PFXArgs) // If no CSR is present, enroll a PFX certificate
 		if err != nil {
 			resourceCertificateRead(ctx, d, m)
@@ -271,20 +276,25 @@ func resourceCertificateCreate(ctx context.Context, d *schema.ResourceData, m in
 		id = enrollResponse.CertificateInformation.KeyfactorID
 	}
 	// todo maybe find a more elegant solution to this
-	log.Println("[DEBUG] Sleeping for 20 seconds to allow Keyfactor to finish processing.")
+	tflog.Debug(ctx, "Sleeping for 20 seconds to allow Keyfactor to finish processing.")
 	time.Sleep(20 * time.Second)
 	arg := &api.UpdateMetadataArgs{
 		CertID:   id,
 		Metadata: metadata,
 	}
+	tflog.Trace(ctx, "Updating metadata for certificate.", map[string]interface{}{
+		"metadata": arg,
+	})
 	err := kfClient.UpdateMetadata(arg)
 	if err != nil {
+		tflog.Error(ctx, "Error updating metadata for certificate.")
 		resourceCertificateRead(ctx, d, m)
 		return diag.FromErr(err)
 	}
 
 	// Set resource ID to tell Terraform that operation was successful
 	d.SetId(strconv.Itoa(id))
+	tflog.Info(ctx, "Certificate created successfully.")
 	return resourceCertificateRead(ctx, d, m) // populate terraform state to current state after creation
 }
 
@@ -310,21 +320,31 @@ func getSans(s []interface{}) *api.SANs {
 	return nil
 }
 
-func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceCertificateRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	kfClient := m.(*api.Client)
 
 	var diags diag.Diagnostics
 
-	log.Printf("[TRACE] Resource RAW: %v\n", d)
+	tflog.Trace(ctx, "Resource RAW: ", map[string]interface{}{
+		"raw": d,
+	})
+
 	Id := d.Id()
+	ctx = tflog.SetField(ctx, "resource_id", Id)
+	tflog.Debug(ctx, "Reading certificate with ID: ", map[string]interface{}{
+		"resource_id": Id,
+	})
 	if Id == "" { //Assume 'data_source_keyfactor_certificate'
 		Id = fmt.Sprintf("%v", d.Get("keyfactor_id").(int))
 	}
 	CertificateId, err := strconv.Atoi(Id)
 	if err != nil {
+		tflog.Error(ctx, "Error converting certificate ID to integer.")
 		return diag.FromErr(err)
 	}
-	log.Printf("[TRACE] Certificate ID: %v\n", CertificateId)
+	tflog.Debug(ctx, "Reading certificate with ID: ", map[string]interface{}{
+		"certificate_id": CertificateId,
+	})
 
 	// Get certificate context
 	args := &api.GetCertificateContextArgs{
@@ -333,36 +353,65 @@ func resourceCertificateRead(_ context.Context, d *schema.ResourceData, m interf
 		CollectionId:     nil,
 		Id:               CertificateId,
 	}
-	log.Printf("[TRACE] Passing args %v to Keyfactor\n", args)
+	tflog.Trace(ctx, "Passing args to Keyfactor\n", map[string]interface{}{
+		"args": args,
+	})
 	certificateData, err := kfClient.GetCertificateContext(args)
 	if err != nil {
+		tflog.Error(ctx, "Error getting certificate context.")
 		return diag.FromErr(err)
 	}
-	log.Printf("[TRACE] Certificate data: %v\n", certificateData)
+	tflog.Trace(ctx, "Certificate data:", map[string]interface{}{
+		"certificate_data": certificateData,
+	})
 
 	// Get the password out of current schema
 	password := d.Get("key_password").(string)
-	log.Printf("[TRACE] Password: %v\n", password)
+	tflog.Trace(ctx, "Certificate password: ", map[string]interface{}{
+		"password": password,
+	})
+
 	csr := d.Get("csr").(string)
-	log.Printf("[TRACE] CSR: %v\n", csr)
+	tflog.Trace(ctx, "CSR: ", map[string]interface{}{
+		"csr": csr,
+	})
 
 	// Download and assign certificates to proper location
-	err, cert, chain, key := downloadCertificate(certificateData.Id, kfClient, password, csr != "")
+	tflog.Info(ctx, "Downloading certificate.")
+	err, cert, chain, key := downloadCertificate(ctx, certificateData.Id, kfClient, password, csr != "")
 	if err != nil {
+		tflog.Error(ctx, "Error downloading certificate.")
 		return diag.FromErr(err)
 	}
-	log.Printf("[TRACE] Certificate: %v\n", cert)
-	log.Printf("[TRACE] Chain: %v\n", chain)
-	log.Printf("[TRACE] Key: %v\n", key)
+	tflog.Trace(ctx, "Certificate: ", map[string]interface{}{
+		"certificate": cert,
+	})
+	tflog.Trace(ctx, "Chain: ", map[string]interface{}{
+		"chain": chain,
+	})
+	tflog.Trace(ctx, "Key: ", map[string]interface{}{
+		"key": key,
+	})
 
+	tflog.Debug(ctx, "Flattening certificate items.")                                                     //TODO: is this what this actually does, co-pilot?
 	newSchema, err := flattenCertificateItems(certificateData, kfClient, cert, chain, key, password, csr) // Set schema
 	if err != nil {
+		tflog.Error(ctx, "Error flattening certificate items.")
 		return diag.FromErr(err)
 	}
-	//log.Printf("[TRACE] New schema: %v\n", newSchema)
+	tflog.Trace(ctx, "New schema: ", map[string]interface{}{
+		"new_schema": newSchema,
+	})
+
+	tflog.Debug(ctx, "Writing certificate to state.")
 	for k, v := range newSchema {
+		tflog.Trace(ctx, "Writing certificate item to state.", map[string]interface{}{
+			"key":   k,
+			"value": v,
+		})
 		err = d.Set(k, v)
 		if err != nil {
+			tflog.Error(ctx, "Error writing certificate item to state.")
 			diags = append(diags, diag.FromErr(err)[0])
 		}
 	}
@@ -526,7 +575,7 @@ func computeASN1Thumbprint(cert *x509.Certificate) (error, string) {
 	return nil, buf.String()
 }
 
-func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrollment bool) (error, string, string, string) {
+func downloadCertificate(ctx context.Context, id int, kfClient *api.Client, password string, csrEnrollment bool) (error, string, string, string) {
 	certificateContext, err := kfClient.GetCertificateContext(&api.GetCertificateContextArgs{Id: id})
 	if err != nil {
 		return err, "", "", ""
@@ -548,7 +597,7 @@ func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrol
 	var chainPem []byte
 
 	if !recoverable || csrEnrollment {
-
+		tflog.Info(ctx, "Downloading an unrecoverable certificate")
 		leaf, chain, err := kfClient.DownloadCertificate(id, "", "", "")
 		if err != nil {
 			return err, "", "", ""
@@ -561,17 +610,20 @@ func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrol
 		}
 
 	} else {
+		tflog.Info(ctx, "Attempting to recover certificate:", map[string]interface{}{
+			"certificate_id": id,
+		})
+		tflog.Trace(ctx, "Recovering with password:", map[string]interface{}{
+			"password": password,
+		})
 
-		log.Println("[INFO] Attempting to recover certificate:", id)
 		priv, leaf, chain, err := kfClient.RecoverCertificate(id, "", "", "", password)
-		if err != nil {
-			return err, "", "", ""
-		}
 		if err != nil {
 			return err, "", "", ""
 		}
 
 		// Encode DER to PEM
+		tflog.Debug(ctx, "Encoding leaf certificate to PEM")
 		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
 		for _, i := range chain {
 			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
@@ -580,6 +632,7 @@ func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrol
 		// Figure out the format of the private key, then encode it to PEM
 		rsa, ok := priv.(*rsa2.PrivateKey)
 		if ok {
+			tflog.Debug(ctx, "Encoding RSA private key to PEM")
 			buf := x509.MarshalPKCS1PrivateKey(rsa)
 			if len(buf) > 0 {
 				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "RSA PRIVATE KEY"})
@@ -590,6 +643,7 @@ func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrol
 		if ok {
 			// We don't really care about the error here. An error just means that the key will be blank which isn't a
 			// reason to fail
+			tflog.Debug(ctx, "Encoding ECDSA private key to PEM")
 			buf, _ := x509.MarshalECPrivateKey(ecc)
 			if len(buf) > 0 {
 				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "EC PRIVATE KEY"})
@@ -605,6 +659,7 @@ func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m in
 	kfClient := m.(*api.Client)
 
 	if d.HasChange("metadata") {
+		tflog.Debug(ctx, "Updating certificate metadata")
 		metadata := d.Get("metadata").(map[string]interface{})
 		strId := d.Id()
 		id, err := strconv.Atoi(strId)
@@ -621,31 +676,24 @@ func resourceCertificateUpdate(ctx context.Context, d *schema.ResourceData, m in
 		if err != nil {
 			return diag.FromErr(err)
 		}
-	} else {
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Warning,
-			Summary:  "Failed to update keyfactor_certificate configuration.",
-			Detail: "The only supported update field is Metadata. X.509 certificate attributes cannot be changed " +
-				"after enrollment, please create a new keyfactor_certificate resource block.",
-			AttributePath: nil,
-		})
 	}
 	resourceCertificateRead(ctx, d, m)
 	return diags
 }
 
-func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceCertificateDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	var diags diag.Diagnostics
 
-	log.Println("[INFO] Deleting certificate resource")
+	tflog.Debug(ctx, "Deleting certificate resource")
 
 	// When Terraform Destroy is called, we want Keyfactor to revoke the certificate.
 	kfClient := m.(*api.Client)
-
-	log.Println("[INFO] Revoking certificate in Keyfactor")
 	strId := d.Id()
+	ctx = tflog.SetField(ctx, "certificate_id", strId)
+	tflog.Info(ctx, "Revoking certificate in Keyfactor")
 	id, err := strconv.Atoi(strId)
 	if err != nil {
+		tflog.Error(ctx, "Error converting certificate ID to integer")
 		return diag.FromErr(err)
 	}
 	revokeArgs := &api.RevokeCertArgs{
@@ -655,9 +703,15 @@ func resourceCertificateDelete(_ context.Context, d *schema.ResourceData, m inte
 	}
 
 	if collectionId := d.Get("collection_id"); collectionId.(int) != 0 {
+		tflog.Debug(ctx, "Revoking certificate in Keyfactor collection", map[string]interface{}{
+			"collection_id": collectionId,
+		})
 		revokeArgs.CollectionId = collectionId.(int)
 	}
 
+	tflog.Trace(ctx, "Revoking certificate with args:", map[string]interface{}{
+		"args": revokeArgs,
+	})
 	err = kfClient.RevokeCert(revokeArgs)
 	if err != nil {
 		return diag.FromErr(err)

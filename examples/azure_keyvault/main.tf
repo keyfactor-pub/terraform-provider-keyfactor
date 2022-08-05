@@ -22,13 +22,13 @@ resource "keyfactor_store" "AKV1" {
   agent_id        = "keyfactorOrchestratorAgentID"
   cert_store_type = 106
   properties {
-    TenantID  = var.az_tenant_id
+    TenantID          = var.az_tenant_id
     ResourceGroupName = var.az_resource_group_name
-    ApplicationId = var.az_application_id
-    ClientSecret = var.az_client_secret
-    SubscriptionId = var.az_subscription_id
-    APIObjectId = var.az_app_object_id
-    VaultName = var.az_vault_name
+    ApplicationId     = var.az_application_id
+    ClientSecret      = var.az_client_secret
+    SubscriptionId    = var.az_subscription_id
+    APIObjectId       = var.az_app_object_id
+    VaultName         = var.az_vault_name
   }
   inventory_schedule {
     interval {
@@ -53,7 +53,7 @@ resource "keyfactor_certificate" "PFXCertificate" {
     san_uri = ["example.com"]
   }
   metadata {
-    Department  = "Engineering"
+    Department    = "Engineering"
     Email-Contact = "admin@example.com"
   }
   key_password          = "P@s5w0Rd2321!"

@@ -5,7 +5,7 @@ terraform {
       source  = "keyfactor.com/keyfactordev/keyfactor"
     }
     google = {
-      source = "hashicorp/google"
+      source  = "hashicorp/google"
       version = "4.27.0"
     }
   }
@@ -19,14 +19,14 @@ provider "google" {
 }
 
 provider "keyfactor" {
-  alias       = "command"
-  hostname    = "keyfactor.example.com"
+  alias    = "command"
+  hostname = "keyfactor.example.com"
 }
 
 resource "keyfactor_certificate" "aws_cert1" {
   provider = keyfactor.command
   subject {
-    subject_common_name         = "aws_lb_test1"
+    subject_common_name = "aws_lb_test1"
   }
   sans {
     san_dns = ["aws_lb_test1"]

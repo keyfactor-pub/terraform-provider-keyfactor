@@ -17,14 +17,14 @@ provider "aws" {
 }
 
 provider "keyfactor" {
-  alias       = "command"
-  hostname    = "keyfactor.example.com"
+  alias    = "command"
+  hostname = "keyfactor.example.com"
 }
 
 resource "keyfactor_certificate" "aws_cert1" {
   provider = keyfactor.command
   subject {
-    subject_common_name         = "aws_lb_test1"
+    subject_common_name = "aws_lb_test1"
   }
   sans {
     san_dns = ["aws_lb_test1"]
@@ -36,7 +36,7 @@ resource "keyfactor_certificate" "aws_cert1" {
 }
 
 resource "aws_acm_certificate" "cert" {
-  private_key      = keyfactor_certificate.aws_cert1.private_key
-  certificate_body = keyfactor_certificate.aws_cert1.certificate_pem
+  private_key       = keyfactor_certificate.aws_cert1.private_key
+  certificate_body  = keyfactor_certificate.aws_cert1.certificate_pem
   certificate_chain = keyfactor_certificate.aws_cert1.certificate_chain
 }

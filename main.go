@@ -4,10 +4,8 @@ import (
 	"context"
 	"flag"
 	"github.com/Keyfactor/terraform-provider-keyfactor/keyfactor"
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"log"
-
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/plugin"
 )
 
 //go:generate terraform fmt -recursive ./examples/
@@ -19,23 +17,19 @@ import (
 // To run these tools, run 'go generate'
 
 func main() {
-	var debugMode bool
-	flag.BoolVar(&debugMode, "debug", false, "set to true to run the provider with support for debuggers like delve")
+	var debug bool
+
+	flag.BoolVar(&debug, "debug", false, "set to true to run the provider with support for debuggers like delve")
 	flag.Parse()
 
-	opts := &plugin.ServeOpts{
-		ProviderFunc: func() *schema.Provider {
-			return keyfactor.Provider()
-		},
+	opts := providerserver.ServeOpts{
+		Address: "keyfactor.com/keyfactordev/keyfactor",
+		Debug:   debug,
 	}
 
-	if debugMode {
-		err := plugin.Debug(context.Background(), "keyfactor.com/keyfactordev/keyfactor", opts)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-		return
-	}
+	err := providerserver.Serve(context.Background(), keyfactor.New, opts)
 
-	plugin.Serve(opts)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 }

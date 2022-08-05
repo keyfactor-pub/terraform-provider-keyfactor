@@ -6,7 +6,7 @@ NAMESPACE=keyfactordev
 WEBSITE_REPO=https://github.com/Keyfactor/terraform-provider-keyfactor
 NAME=keyfactor
 BINARY=terraform-provider-${NAME}
-VERSION=1.0.1
+VERSION=2.0.0
 OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 BASEDIR := ~/.terraform.d/plugins
 INSTALLDIR := ${BASEDIR}/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
@@ -15,6 +15,9 @@ default: build
 
 build: fmtcheck
 	go install
+
+tfdocs:
+	tfplugindocs generate
 
 release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64

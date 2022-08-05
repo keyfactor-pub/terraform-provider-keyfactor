@@ -8,8 +8,8 @@ terraform {
 }
 
 provider "keyfactor" {
-  alias       = "command"
-  hostname    = "keyfactor.example.com"
+  alias    = "command"
+  hostname = "keyfactor.example.com"
 }
 
 resource "keyfactor_store" "f5_bigip" {
@@ -19,10 +19,10 @@ resource "keyfactor_store" "f5_bigip" {
   agent_id        = "keyfactorOrchestratorAgentID"
   cert_store_type = 10
   property {
-    PrimaryNode  = var.f5_primary_node
+    PrimaryNode                   = var.f5_primary_node
     PrimaryNodeCheckRetryWaitSecs = var.f5_primary_node_retry_wait_sec
-    PrimaryNodeCheckRetryMax = var.f5_primary_node_retry_max
-    F5Version = var.f5_version
+    PrimaryNodeCheckRetryMax      = var.f5_primary_node_retry_max
+    F5Version                     = var.f5_version
   }
   inventory_schedule {
     interval {

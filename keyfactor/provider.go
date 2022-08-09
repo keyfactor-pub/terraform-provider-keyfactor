@@ -80,7 +80,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		return
 	}
 
-	tflog.Debug(ctx, fmt.Sprintf("Environmentals: %v", os.Environ()))
+	tflog.Debug(ctx, fmt.Sprintf("Environmentals: %v", os.Environ())) //TODO: Remove this before production
 
 	// User must provide a user to the provider
 	var username string

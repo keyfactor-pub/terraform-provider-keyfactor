@@ -8,12 +8,14 @@ import (
 type SecurityIdentity struct {
 	ID           types.Int64  `tfsdk:"identity_id"`
 	AccountName  types.String `tfsdk:"account_name"`
-	Roles        []Role       `tfsdk:"roles"`
+	Roles        types.List   `tfsdk:"roles"`
 	IdentityType types.String `tfsdk:"identity_type"`
 	Valid        types.Bool   `tfsdk:"valid"`
 }
 
 // Role -
 type Role struct {
-	Name types.String `tfsdk:"role_name"`
+	ID          types.Int64  `tfsdk:"role_id"`
+	Name        types.String `tfsdk:"role_name"`
+	Description types.String `tfsdk:"role_description"`
 }

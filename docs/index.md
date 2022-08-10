@@ -17,8 +17,8 @@ description: |-
 
 ### Optional
 
+- `appkey` (String, Sensitive) Application key provisioned by Keyfactor instance
 - `domain` (String) Domain that Keyfactor instance is hosted on
 - `hostname` (String) Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com
-- `kf_appkey` (String, Sensitive) Application key provisioned by Keyfactor instance
-- `kf_password` (String, Sensitive) Password of Keyfactor service account
-- `kf_username` (String) Username of Keyfactor service account
+- `password` (String, Sensitive) Password of Keyfactor service account
+- `username` (String) Username of Keyfactor service account

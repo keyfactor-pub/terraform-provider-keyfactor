@@ -17,23 +17,23 @@ description: |-
 
 ### Required
 
-- `cert_template` (String) Short name of certificate template to be deployed
 - `certificate_authority` (String) Name of certificate authority to deploy certificate with Ex: Example Company CA 1
+- `certificate_template` (String) Short name of certificate template to be deployed
 
 ### Optional
 
-- `collection_id` (Number) Collection identifier used to validate user permissions (if service account has global permissions, this is not needed)
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
+- `dns_sans` (List of String) List of DNS names to use as subjects of the certificate
+- `ip_sans` (List of String) List of DNS names to use as subjects of the certificate
 - `key_password` (String, Sensitive) Password to protect certificate and private key with
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
-- `sans` (Block List, Max: 1) Certificate subject-alternative names (see [below for nested schema](#nestedblock--sans))
-- `subject` (Block List, Max: 1) Certificate subject (see [below for nested schema](#nestedblock--subject))
+- `subject` (Attributes) KeyfactorCertificate subject (see [below for nested schema](#nestedatt--subject))
+- `uri_sans` (List of String) List of URIs to use as subjects of the certificate
 
 ### Read-Only
 
 - `certificate_chain` (String) PEM formatted certificate chain
 - `certificate_pem` (String) PEM formatted certificate
-- `id` (String) The ID of this resource.
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
 - `keyfactor_id` (Number) Keyfactor certificate ID
 - `keyfactor_request_id` (Number) Keyfactor request ID necessary for deploying certificate
@@ -41,17 +41,7 @@ description: |-
 - `serial_number` (String) Serial number of newly enrolled certificate
 - `thumbprint` (String) Thumbprint of newly enrolled certificate
 
-<a id="nestedblock--sans"></a>
-### Nested Schema for `sans`
-
-Optional:
-
-- `san_dns` (List of String) List of DNS names to use as subjects of the certificate
-- `san_ip4` (List of String) List of IPv4 addresses to use as subjects of the certificate
-- `san_uri` (List of String) List of IPv6 addresses to use as subjects of the certificate
-
-
-<a id="nestedblock--subject"></a>
+<a id="nestedatt--subject"></a>
 ### Nested Schema for `subject`
 
 Optional:

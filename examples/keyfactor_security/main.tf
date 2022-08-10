@@ -28,6 +28,12 @@ resource "keyfactor_security_role" "kf_terraform_role1" {
   identities {
     account_name = keyfactor_security_identity.identity1.account_name
   }
+  identities {
+    account_name = meow2
+  }
+  identities {
+    account_name = meow3
+  }
   permissions = ["Monitoring:Read", "SecuritySettings:Modify"]
 }
 

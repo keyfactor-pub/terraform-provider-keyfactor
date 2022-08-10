@@ -56,7 +56,7 @@ func resourceStore() *schema.Resource {
 			"properties": {
 				Type:        schema.TypeMap,
 				Optional:    true,
-				Description: "Certificate properties specific to certificate store type configured as key-value pairs",
+				Description: "KfCertificate properties specific to certificate store type configured as key-value pairs",
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},

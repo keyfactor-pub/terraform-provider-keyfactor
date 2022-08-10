@@ -258,7 +258,7 @@ func revokePFXCertificate(conn *api.Client, certId int) error {
 	}
 
 	revokeArgs := &api.RevokeCertArgs{
-		CertificateIds: []int{certId}, // Certificate ID expects array of integers
+		CertificateIds: []int{certId}, // KfCertificate ID expects array of integers
 		Reason:         5,             // reason = 5 means Cessation of Operation
 		Comment:        "Terraform acceptance test cleanup",
 	}

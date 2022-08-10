@@ -143,16 +143,16 @@ func testAccCheckKeyfactorCertificateDeployed(name string, storeId string, alias
 func testAccCheckKeyfactorDeployCertGetConfig(t *testing.T) (string, string) {
 	var store1, store2 string
 	if store1 = os.Getenv("KEYFACTOR_DEPLOY_CERT_STOREID1"); store1 == "" {
-		t.Log("Note: Terraform Deploy Certificate attempts to deploy a new PFX certificate to a certificate store that already exists in Keyfactor")
-		t.Log("Set an environment variable for KEYFACTOR_SKIP_DEPLOY_CERT_TESTS to 'true' to skip Deploy Certificate " +
+		t.Log("Note: Terraform Deploy KfCertificate attempts to deploy a new PFX certificate to a certificate store that already exists in Keyfactor")
+		t.Log("Set an environment variable for KEYFACTOR_SKIP_DEPLOY_CERT_TESTS to 'true' to skip Deploy KfCertificate " +
 			"resource acceptance tests")
-		t.Fatal("KEYFACTOR_DEPLOY_CERT_STOREID1 must be set to perform Deploy Certificate acceptance tests")
+		t.Fatal("KEYFACTOR_DEPLOY_CERT_STOREID1 must be set to perform Deploy KfCertificate acceptance tests")
 	}
 	if store2 = os.Getenv("KEYFACTOR_DEPLOY_CERT_STOREID2"); store2 == "" {
-		t.Log("Note: Terraform Deploy Certificate attempts to deploy a new PFX certificate to a certificate store that already exists in Keyfactor")
-		t.Log("Set an environment variable for KEYFACTOR_SKIP_DEPLOY_CERT_TESTS to 'true' to skip Deploy Certificate " +
+		t.Log("Note: Terraform Deploy KfCertificate attempts to deploy a new PFX certificate to a certificate store that already exists in Keyfactor")
+		t.Log("Set an environment variable for KEYFACTOR_SKIP_DEPLOY_CERT_TESTS to 'true' to skip Deploy KfCertificate " +
 			"resource acceptance tests")
-		t.Fatal("KEYFACTOR_DEPLOY_CERT_STOREID2 must be set to perform Deploy Certificate acceptance tests")
+		t.Fatal("KEYFACTOR_DEPLOY_CERT_STOREID2 must be set to perform Deploy KfCertificate acceptance tests")
 	}
 	return store1, store2
 }

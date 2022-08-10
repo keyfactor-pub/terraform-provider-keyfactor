@@ -93,11 +93,34 @@ func (r resourceSecurityIdentity) Read(ctx context.Context, request tfsdk.ReadRe
 		if accountName == identity.AccountName {
 			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %s", accountName))
 
+			var validRoles []attr.Value
+			var validRolesInterface []interface{}
+			for _, role := range state.Roles.Elems {
+				//validRoles = append(validRoles.Elems, role.Name.Value)
+				tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
+				tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
+
+				//TODO: Verify role exists in Keyfactor or throw warning
+				re, _ := regexp.Compile(`[^\w]`)
+				roleStr := re.ReplaceAllString(role.String(), "")
+				kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
+				if roleLookupErr != nil || kfRole == nil {
+					tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
+					response.Diagnostics.AddWarning(
+						"Error looking up role on Keyfactor.",
+						fmt.Sprintf("Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.", roleStr, state.AccountName.Value, roleStr),
+					)
+					continue
+				}
+				validRoles = append(validRoles, types.String{Value: fmt.Sprintf("%s", roleStr)})
+				validRolesInterface = append(validRolesInterface, kfRole.Id)
+			}
+
 			state = SecurityIdentity{
 				ID:           types.Int64{Value: int64(identity.Id)},
 				AccountName:  types.String{Value: identity.AccountName},
 				IdentityType: types.String{Value: identity.IdentityType},
-				Roles:        types.List{Elems: state.Roles.Elems, ElemType: types.StringType},
+				Roles:        types.List{Elems: validRoles, ElemType: types.StringType},
 				Valid:        types.Bool{Value: identity.Valid},
 			}
 			break
@@ -150,10 +173,10 @@ func (r resourceSecurityIdentity) Update(ctx context.Context, request tfsdk.Upda
 		fmt.Println(roleStr)
 		kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
 		if roleLookupErr != nil || kfRole == nil {
-			tflog.Warn(ctx, fmt.Sprintf("Error looking up role with id: %s", role))
-			response.Diagnostics.AddError(
+			tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
+			response.Diagnostics.AddWarning(
 				"Error looking up role on Keyfactor.",
-				fmt.Sprintf("Error looking up role with id: %s", role),
+				fmt.Sprintf("Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.", roleStr, state.AccountName.Value, roleStr),
 			)
 			continue
 		}
@@ -172,11 +195,11 @@ func (r resourceSecurityIdentity) Update(ctx context.Context, request tfsdk.Upda
 		AccountName:  types.String{Value: state.AccountName.Value},
 		IdentityType: types.String{Value: state.IdentityType.Value},
 		Valid:        types.Bool{Value: state.Valid.Value},
-		Roles:        types.List{Elems: validRoles, ElemType: types.StringType},
+		Roles:        plan.Roles,
 	}
 
 	// Set state
-	response.State.Set(ctx, result)
+	diags = response.State.Set(ctx, result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -252,8 +275,8 @@ func (r resourceSecurityIdentity) Create(ctx context.Context, request tfsdk.Crea
 	// for more information on logging from providers, refer to
 	// https://pkg.go.dev/github.com/hashicorp/terraform-plugin-log/tflog
 	tflog.Trace(ctx, "created security id", map[string]interface{}{"identity_account_name": plan.AccountName.Value})
+	var validRoles []attr.Value
 	if len(plan.Roles.Elems) > 0 {
-		var validRoles []attr.Value
 		var validRolesInterface []interface{}
 		for _, role := range plan.Roles.Elems {
 			//validRoles = append(validRoles.Elems, role.Name.Value)
@@ -267,9 +290,9 @@ func (r resourceSecurityIdentity) Create(ctx context.Context, request tfsdk.Crea
 			kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
 			if roleLookupErr != nil || kfRole == nil {
 				tflog.Warn(ctx, fmt.Sprintf("Error looking up role with id: %s", role))
-				response.Diagnostics.AddError(
+				response.Diagnostics.AddWarning(
 					"Error looking up role on Keyfactor.",
-					fmt.Sprintf("Error looking up role with id: %s", role),
+					fmt.Sprintf("Error looking up role '%s' on Keyfactor. %s will not have role %s.", roleStr, accountName, roleStr),
 				)
 				continue
 			}
@@ -282,13 +305,16 @@ func (r resourceSecurityIdentity) Create(ctx context.Context, request tfsdk.Crea
 		}
 	}
 
+	if validRoles == nil {
+		validRoles = plan.Roles.Elems
+	}
 	// Generate resource state struct
 	var result = SecurityIdentity{
 		ID:           types.Int64{Value: int64(createResponse.Id)},
 		AccountName:  types.String{Value: accountName},
 		IdentityType: types.String{Value: plan.IdentityType.Value},
 		Valid:        types.Bool{Value: plan.Valid.Value},
-		Roles:        types.List{Elems: plan.Roles.Elems, ElemType: types.StringType},
+		Roles:        plan.Roles,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -316,10 +342,11 @@ func (r resourceSecurityIdentity) ImportState(ctx context.Context, request tfsdk
 		response.Diagnostics.AddError("Error listing identities from Keyfactor.", "Error reading identities: "+err.Error())
 	}
 
+	identityExists := false
 	for _, identity := range identities {
 		if accountName == identity.AccountName {
 			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %s", accountName))
-
+			identityExists = true
 			var roles []attr.Value
 			for _, role := range identity.Roles {
 				roles = append(roles, types.String{Value: role.Name})
@@ -331,9 +358,15 @@ func (r resourceSecurityIdentity) ImportState(ctx context.Context, request tfsdk
 				Roles:        types.List{Elems: roles, ElemType: types.StringType},
 				Valid:        types.Bool{Value: identity.Valid},
 			}
+
 			break
 		}
 
+	}
+
+	if !identityExists {
+		response.Diagnostics.AddError("Unknown identity error.", fmt.Sprintf("Unable to find identity %s on Keyfactor. Import failed.", accountName))
+		return
 	}
 
 	diags := response.State.Set(ctx, &state)

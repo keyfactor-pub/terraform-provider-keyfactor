@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"strconv"
 )
 
 type resourceSecurityRoleType struct{}
@@ -276,6 +275,7 @@ func (r resourceSecurityRole) ImportState(ctx context.Context, request tfsdk.Imp
 	roleId := request.ID
 	//roleName := state.Name.Value
 	tflog.SetField(ctx, "role_id", roleId)
+	//_, err := strconv.Atoi(roleId)
 
 	remoteState, err := r.p.client.GetSecurityRole(roleId)
 	if remoteState == nil {
@@ -289,9 +289,9 @@ func (r resourceSecurityRole) ImportState(ctx context.Context, request tfsdk.Imp
 	}
 
 	var permissionValues []attr.Value
-	for perm := range remoteState.Permissions {
+	for _, perm := range remoteState.Permissions {
 		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
-		permissionValues = append(permissionValues, types.String{Value: strconv.Itoa(perm)})
+		permissionValues = append(permissionValues, types.String{Value: perm})
 	}
 
 	var result = SecurityRole{

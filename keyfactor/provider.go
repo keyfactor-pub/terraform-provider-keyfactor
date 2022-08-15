@@ -2,12 +2,10 @@ package keyfactor
 
 import (
 	"context"
-	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"os"
 )
 
@@ -79,8 +77,6 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	tflog.Debug(ctx, fmt.Sprintf("Environmentals: %v", os.Environ())) //TODO: Remove this before production
 
 	// User must provide a user to the provider
 	var username string
@@ -177,7 +173,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		return
 	}
 
-	// Create a new HashiCups client and set it to the provider client
+	// Create a new Keyfactor client and set it to the provider client
 	var clientAuth api.AuthConfig
 	clientAuth.Username = config.Username.Value
 	clientAuth.Password = config.Password.Value
@@ -203,7 +199,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
 		"keyfactor_security_identity": resourceSecurityIdentityType{},
-		"keyfactor_certificate":       resourceKeyfactorCertificate{},
+		"keyfactor_certificate":       resourceKeyfactorCertificateType{},
+		"keyfactor_role":              resourceSecurityRoleType{},
 	}, nil
 }
 
@@ -212,21 +209,7 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 	return map[string]tfsdk.DataSourceType{}, nil
 }
 
-//// Nice-to-have functions
-//
-func interfaceArrayToStringTuple(m []interface{}) []api.StringTuple {
-	// Unpack metadata expects []interface{} containing a list of lists of key-value pairs
-	if len(m) > 0 {
-		temp := make([]api.StringTuple, len(m)) // size of m is the number of metadata fields provided by .tf file
-		for i, field := range m {
-			temp[i].Elem1 = field.(map[string]interface{})["name"].(string)  // Unless changed in the future, this interface
-			temp[i].Elem2 = field.(map[string]interface{})["value"].(string) // will always have 'name' and 'value'
-		}
-		return temp
-	}
-	return nil
-}
-
+//// Utility functions
 func boolToPointer(b bool) *bool {
 	return &b
 }

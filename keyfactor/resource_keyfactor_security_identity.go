@@ -327,11 +327,6 @@ func (r resourceSecurityIdentity) Create(ctx context.Context, request tfsdk.Crea
 func (r resourceSecurityIdentity) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
 	ctx = context.WithValue(ctx, "import", true)
 	var state SecurityIdentity
-	//diags := request.State.Get(ctx, &state)
-	//response.Diagnostics.Append(diags...)
-	//if response.Diagnostics.HasError() {
-	//	return
-	//}
 
 	tflog.Info(ctx, "Read called on security identity resource")
 	accountName := request.ID
@@ -455,7 +450,7 @@ func removeIdentityFromRole(kfClient *api.Client, identityAccountName string, ro
 	}
 
 	// Note - update security role wraps the create role structure but compiles to the desired JSON request body.
-	updateArg := &api.UpdatteSecurityRoleArg{
+	updateArg := &api.UpdateSecurityRoleArg{
 		Id: roleId,
 		CreateSecurityRoleArg: api.CreateSecurityRoleArg{
 			Name:        role.Name,
@@ -502,7 +497,7 @@ func addIdentityToRole(ctx context.Context, kfClient *api.Client, identityAccoun
 	identityList = append(identityList, temp)
 
 	// Note - update security role wraps the create role structure but compiles to the desired JSON request body.
-	updateArg := &api.UpdatteSecurityRoleArg{
+	updateArg := &api.UpdateSecurityRoleArg{
 		Id: roleId,
 		CreateSecurityRoleArg: api.CreateSecurityRoleArg{
 			Name:        role.Name,

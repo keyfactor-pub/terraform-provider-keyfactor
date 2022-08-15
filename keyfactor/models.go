@@ -14,10 +14,11 @@ type SecurityIdentity struct {
 }
 
 // Role -
-type Role struct {
+type SecurityRole struct {
 	ID          types.Int64  `tfsdk:"role_id"`
-	Name        types.String `tfsdk:"role_name"`
-	Description types.String `tfsdk:"role_description"`
+	Name        types.String `tfsdk:"name"`
+	Description types.String `tfsdk:"description"`
+	Permissions types.List   `tfsdk:"permissions"`
 }
 
 type KeyfactorCertificate struct {

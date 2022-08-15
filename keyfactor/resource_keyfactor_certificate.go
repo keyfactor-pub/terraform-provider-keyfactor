@@ -16,11 +16,9 @@ import (
 	"strconv"
 )
 
-type resourceKeyfactorCertificate struct {
-	p provider
-}
+type resourceKeyfactorCertificateType struct{}
 
-func (r resourceKeyfactorCertificate) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
+func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"csr": {
@@ -179,10 +177,14 @@ func (r resourceKeyfactorCertificate) GetSchema(_ context.Context) (tfsdk.Schema
 	}, nil
 }
 
-func (r resourceKeyfactorCertificate) NewResource(_ context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
+func (r resourceKeyfactorCertificateType) NewResource(_ context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
 	return resourceKeyfactorCertificate{
 		p: *(p.(*provider)),
 	}, nil
+}
+
+type resourceKeyfactorCertificate struct {
+	p provider
 }
 
 func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {

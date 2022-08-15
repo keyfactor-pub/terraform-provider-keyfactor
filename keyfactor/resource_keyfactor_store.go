@@ -2,247 +2,419 @@ package keyfactor
 
 import (
 	"context"
+	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"log"
 )
 
-func resourceStore() *schema.Resource {
-	return &schema.Resource{
-		CreateContext: resourceStoreCreate,
-		ReadContext:   resourceStoreRead,
-		UpdateContext: resourceStoreUpdate,
-		DeleteContext: resourceStoreDelete,
-		Importer: &schema.ResourceImporter{
-			StateContext: schema.ImportStatePassthroughContext,
-		},
-		Schema: map[string]*schema.Schema{
+type resourceCertificateStoreType struct{}
+
+func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
+	return tfsdk.Schema{
+		Attributes: map[string]tfsdk.Attribute{
 			"container_id": {
-				Type:        schema.TypeInt,
+				Type:        types.Int64Type,
 				Optional:    true,
 				Description: "Container identifier of the store's associated certificate store container.",
 			},
 			"client_machine": {
-				Type:        schema.TypeString,
+				Type:        types.StringType,
 				Required:    true,
 				Description: "Client machine name; value depends on certificate store type. See API reference guide",
 			},
 			"store_path": {
-				Type:        schema.TypeString,
+				Type:        types.StringType,
 				Required:    true,
 				Description: "Path to the new certificate store on a target. Format varies depending on type.",
 			},
-			"cert_store_type": {
-				Type:        schema.TypeInt,
+			"store_type": {
+				Type:        types.StringType,
 				Required:    true,
-				Description: "Integer specifying the store type. Specific types require different parameters.",
+				Description: "Short name of certificate store type. See API reference guide",
 			},
 			"approved": {
-				Type:     schema.TypeBool,
+				Type:     types.BoolType,
 				Optional: true,
-				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					// For some reason Terraform detects this particular function as having drift; this function
-					// gives us a definitive answer.
-					return !d.HasChange(k)
-				},
+				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+				//	// For some reason Terraform detects this particular function as having drift; this function
+				//	// gives us a definitive answer.
+				//	return !d.HasChange(k)
+				//},
 				Description: "Bool that indicates the approval status of store created. Default is true, omit if unsure",
 			},
 			"create_if_missing": {
-				Type:        schema.TypeBool,
+				Type:        types.BoolType,
 				Optional:    true,
 				Description: "Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure",
 			},
 			"properties": {
-				Type:        schema.TypeMap,
+				Type:        types.MapType{ElemType: types.StringType},
 				Optional:    true,
-				Description: "KfCertificate properties specific to certificate store type configured as key-value pairs",
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
+				Description: "Certificate properties specific to certificate store type configured as key-value pairs",
 			},
 			"agent_id": {
-				Type:        schema.TypeString,
+				Type:        types.StringType,
 				Required:    true,
 				Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store",
 			},
 			"agent_assigned": {
-				Type:     schema.TypeBool,
+				Type:     types.BoolType,
 				Optional: true,
-				DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-					// For some reason Terraform detects this particular function as having drift; this function
-					// gives us a definitive answer.
-					return !d.HasChange(k)
-				},
+				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
+				//	// For some reason Terraform detects this particular function as having drift; this function
+				//	// gives us a definitive answer.
+				//	return !d.HasChange(k)
+				//},
 				Description: "Bool indicating if there is an orchestrator assigned to the new certificate store",
 			},
 			"container_name": {
-				Type:        schema.TypeString,
+				Type:        types.StringType,
 				Optional:    true,
 				Description: "Name of certificate store's associated container, if applicable",
 			},
 			"inventory_schedule": {
-				Type:        schema.TypeList,
+				Type:        types.StringType,
 				Optional:    true,
-				MaxItems:    1,
 				Description: "Inventory schedule for new certificate store",
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"immediate": {
-							Type:        schema.TypeBool,
-							Optional:    true,
-							Description: "Boolean that indicates whether the job should run immediately",
-						},
-						"interval": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "Indicates that the job should be scheduled to run every x minutes",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"minutes": {
-										Type:        schema.TypeInt,
-										Required:    true,
-										Description: "An integer indicating the number of minutes between each interval",
-									},
-								},
-							},
-						},
-						"daily": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "Indicates that the job should be scheduled to run every day at the same time",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"time": {
-										Type:        schema.TypeString,
-										Required:    true,
-										Description: "The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format",
-									},
-								},
-							},
-						},
-						"exactly_once": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							Description: "Indicates that the job should be scheduled to run at the time specified",
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"time": {
-										Type:        schema.TypeString,
-										Required:    true,
-										Description: "The date and time to next run the job. The date and time should be given using the ISO 8601 UTC time format",
-									},
-								},
-							},
-						},
-					},
-				},
 			},
 			"set_new_password_allowed": {
-				Type:        schema.TypeBool,
+				Type:        types.BoolType,
 				Optional:    true,
 				Description: "Indicates whether the store password can be changed",
 			},
 			"password": {
-				Type:        schema.TypeList,
+				Type:        types.StringType,
 				Optional:    true,
-				MaxItems:    1,
 				Description: "Configures credential options for certificate store",
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"value": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Configures a password to be stored a Keyfactor secret",
-						},
-					},
-				},
 			},
 			"keyfactor_id": {
-				Type:        schema.TypeString,
+				Type:        types.StringType,
 				Computed:    true,
 				Description: "Keyfactor certificate store GUID",
 			},
 		},
-	}
+	}, nil
 }
 
-func resourceStoreCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-	kfClientData := m.(*api.Client)
+func (r resourceCertificateStoreType) NewResource(_ context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
+	return resourceCertificateStore{
+		p: *(p.(*provider)),
+	}, nil
+}
 
-	newStoreArgs := &api.CreateStoreFctArgs{
-		ContainerId:           intToPointer(d.Get("container_id").(int)),
-		ClientMachine:         d.Get("client_machine").(string),
-		StorePath:             d.Get("store_path").(string),
-		CertStoreType:         d.Get("cert_store_type").(int),
-		Approved:              boolToPointer(d.Get("approved").(bool)),
-		CreateIfMissing:       boolToPointer(d.Get("create_if_missing").(bool)),
-		Properties:            interfaceToMappedString(d.Get("properties").(map[string]interface{})),
-		AgentId:               d.Get("agent_id").(string),
-		AgentAssigned:         boolToPointer(d.Get("agent_assigned").(bool)),
-		ContainerName:         stringToPointer(d.Get("container_name").(string)),
-		InventorySchedule:     createInventorySchedule(d.Get("inventory_schedule").([]interface{})),
-		SetNewPasswordAllowed: boolToPointer(d.Get("set_new_password_allowed").(bool)),
-		Password:              createPasswordConfig(d.Get("password").([]interface{})),
+type resourceCertificateStore struct {
+	p provider
+}
+
+func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+	if !r.p.configured {
+		response.Diagnostics.AddError(
+			"Provider not configured",
+			"The provider hasn't been configured before apply, likely because it depends on an unknown value from another resource. This leads to weird stuff happening, so we'd prefer if you didn't do that. Thanks!",
+		)
+		return
 	}
 
-	createResp, err := kfClientData.CreateStore(newStoreArgs)
+	// Retrieve values from plan
+	var plan CertificateStore
+	diags := request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Generate API request body from plan
+
+	kfClient := r.p.client
+
+	certificateStoreId := plan.ID.Value
+	ctx = tflog.SetField(ctx, "store_id", certificateStoreId)
+	tflog.Info(ctx, "Create called on certificate store resource")
+
+	csType, csTypeErr := r.p.client.GetCertStoreTypeByName(plan.StoreType.Value)
+	if csTypeErr != nil {
+		response.Diagnostics.AddError(
+			"Invalid certificate store type.",
+			fmt.Sprintf("Could not retrieve certificate store type '%s' from Keyfactor"+csTypeErr.Error(), plan.StoreType.Value),
+		)
+		return
+	}
+
+	containerId := int(plan.ContainerID.Value)
+	var properties map[string]string
+	if plan.Properties.Elems != nil {
+		diags = plan.Properties.ElementsAs(ctx, &properties, false)
+
+	}
+	newStoreArgs := &api.CreateStoreFctArgs{
+		ContainerId:     &containerId,
+		ClientMachine:   plan.ClientMachine.Value,
+		StorePath:       plan.StorePath.Value,
+		CertStoreType:   csType.StoreType,
+		Approved:        &plan.Approved.Value,
+		CreateIfMissing: &plan.CreateIfMissing.Value,
+		Properties:      properties,
+		AgentId:         plan.AgentId.Value,
+		AgentAssigned:   &plan.AgentAssigned.Value,
+		ContainerName:   &plan.ContainerName.Value,
+		//InventorySchedule:     createInventorySchedule(plan.InventorySchedule.Value),
+		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
+		Password:              createPasswordConfig(plan.Password.Value),
+	}
+
+	createStoreResponse, err := kfClient.CreateStore(newStoreArgs)
 	if err != nil {
-		resourceStoreRead(ctx, d, m)
-		return diag.FromErr(err)
+		response.Diagnostics.AddError(
+			"Error creating certificate store",
+			"Error creating certificate store: %s"+err.Error(),
+		)
+		return
 	}
 
 	// Set resource ID to certificate ID
-	d.SetId(createResp.Id)
-
-	// Call read function to update schema with new state
-	resourceStoreRead(ctx, d, m)
-
-	return diags
-}
-
-func createInventorySchedule(m []interface{}) *api.InventorySchedule {
-	inventorySchedule := &api.InventorySchedule{}
-	i := m[0].(map[string]interface{})
-	for key, value := range i {
-		if key == "immediate" {
-			if value == true {
-				inventorySchedule.Immediate = boolToPointer(value.(bool))
-				return inventorySchedule
-			}
-			// If the value isn't true, the user probably didn't specify immediate interval. Next!
-		} else {
-			// Expecting EITHER daily/exactly_once/interval. Element found if/when length of inner array > 0
-			temp := value.([]interface{})
-			if len(temp) > 0 {
-				// We don't know what the key/value will be for element. Use a for loop to iterate
-				// Return from if statement is found. This prevents user from inputting multiple
-				for _, innerValue := range temp[0].(map[string]interface{}) {
-					if key == "interval" {
-						interval := &api.InventoryInterval{Minutes: innerValue.(int)}
-						inventorySchedule.Interval = interval
-						return inventorySchedule
-					}
-					if key == "daily" {
-						daily := &api.InventoryDaily{Time: innerValue.(string)}
-						inventorySchedule.Daily = daily
-						return inventorySchedule
-					}
-					if key == "exactly_once" {
-						once := &api.InventoryOnce{Time: innerValue.(string)}
-						inventorySchedule.ExactlyOnce = once
-						return inventorySchedule
-					}
-				}
-			}
-		}
+	// Set state
+	var result = CertificateStore{
+		ID:                    types.String{Value: createStoreResponse.Id},
+		ContainerID:           types.Int64{Value: int64(createStoreResponse.ContainerId)},
+		ClientMachine:         types.String{Value: createStoreResponse.ClientMachine},
+		StorePath:             types.String{Value: createStoreResponse.Storepath},
+		StoreType:             types.String{Value: plan.StoreType.Value},
+		Approved:              plan.Approved,
+		CreateIfMissing:       plan.CreateIfMissing,
+		Properties:            plan.Properties,
+		AgentId:               types.String{Value: createStoreResponse.AgentId},
+		AgentAssigned:         plan.AgentAssigned,
+		ContainerName:         plan.ContainerName,
+		InventorySchedule:     plan.InventorySchedule,
+		SetNewPasswordAllowed: plan.SetNewPasswordAllowed,
+		Password:              plan.Password,
 	}
-	return inventorySchedule
+
+	diags = response.State.Set(ctx, result)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
 }
 
-func createPasswordConfig(m []interface{}) *api.StorePasswordConfig {
-	password := stringToPointer(m[0].(map[string]interface{})["value"].(string))
+func (r resourceCertificateStore) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
+	var state CertificateStore
+	diags := request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	tflog.Info(ctx, "Read called on certificate store resource")
+	certificateStoreId := state.ID.Value
+
+	tflog.SetField(ctx, "certificate_id", certificateStoreId)
+
+	_, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error reading certificate store",
+			"Error reading certificate store: %s"+err.Error(),
+		)
+		return
+	}
+
+	password := state.Password.Value
+	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", certificateStoreId, password))
+
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error reading Keyfactor certificate.",
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateStoreId),
+		)
+		return
+	}
+
+	// Set state
+	diags = response.State.Set(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+}
+
+func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
+	// Get plan values
+	var plan CertificateStore
+	diags := request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Get current state
+	var state CertificateStore
+	diags = request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Generate API request body from plan
+	containerId := int(plan.ContainerID.Value)
+	csType, csTypeErr := r.p.client.GetCertStoreTypeByName(plan.StoreType.Value)
+	if csTypeErr != nil {
+		response.Diagnostics.AddError(
+			"Invalid certificate store type.",
+			fmt.Sprintf("Could not retrieve certificate store type '%s' from Keyfactor"+csTypeErr.Error(), plan.StoreType.Value),
+		)
+		return
+	}
+	updateStoreArgs := &api.UpdateStoreFctArgs{
+		Id: state.ID.Value,
+		CreateStoreFctArgs: api.CreateStoreFctArgs{
+			ContainerId:     &containerId,
+			ClientMachine:   plan.ClientMachine.Value,
+			StorePath:       plan.StorePath.Value,
+			CertStoreType:   csType.StoreType,
+			Approved:        &plan.Approved.Value,
+			CreateIfMissing: &plan.CreateIfMissing.Value,
+			//Properties:            map[string]interface{}(plan.Properties.Elems),
+			AgentId:       plan.AgentId.Value,
+			AgentAssigned: &plan.AgentAssigned.Value,
+			ContainerName: &plan.ContainerName.Value,
+			//InventorySchedule:     createInventorySchedule(d.Get("inventory_schedule").([]interface{})),
+			SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
+			//Password:              createPasswordConfig(d.Get("password").([]interface{})),
+		}}
+
+	updateResponse, err := r.p.client.UpdateStore(updateStoreArgs)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error updating certificate store",
+			"Error updating certificate store: %s"+err.Error(),
+		)
+	}
+
+	result := CertificateStore{
+		ID:                    types.String{Value: state.ID.Value},
+		ContainerID:           types.Int64{Value: int64(updateResponse.ContainerId)},
+		ClientMachine:         types.String{Value: updateResponse.ClientMachine},
+		StorePath:             types.String{Value: updateResponse.Storepath},
+		StoreType:             plan.StoreType,
+		Approved:              types.Bool{Value: updateResponse.Approved},
+		CreateIfMissing:       types.Bool{Value: updateResponse.CreateIfMissing},
+		Properties:            plan.Properties,
+		AgentId:               types.String{Value: updateResponse.AgentId},
+		AgentAssigned:         types.Bool{Value: updateResponse.AgentAssigned},
+		ContainerName:         types.String{Value: updateResponse.ContainerName},
+		InventorySchedule:     plan.InventorySchedule,
+		SetNewPasswordAllowed: types.Bool{Value: updateResponse.SetNewPasswordAllowed},
+		Password:              plan.Password,
+	}
+
+	// Set state
+	diags = response.State.Set(ctx, &result)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+}
+
+func (r resourceCertificateStore) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
+	var state CertificateStore
+	diags := request.State.Get(ctx, &state)
+	kfClient := r.p.client
+
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Get order ID from state
+	certificateStoreId := state.ID.Value
+	tflog.SetField(ctx, "certificate_id", certificateStoreId)
+
+	// Delete order by calling API
+	log.Println("[INFO] Deleting certificate resource")
+
+	// When Terraform Destroy is called, we want Keyfactor to revoke the certificate.
+
+	tflog.Info(ctx, fmt.Sprintf("Revoking certificate %s in Keyfactor", certificateStoreId))
+
+	err := kfClient.DeleteCertificateStore(certificateStoreId)
+	if err != nil {
+		response.Diagnostics.AddError("Certificate store delete error.", fmt.Sprintf("Could not delete certificate store '%s' on Keyfactor: "+err.Error(), certificateStoreId))
+		return
+	}
+
+	// Remove resource from state
+	response.State.RemoveResource(ctx)
+
+}
+
+func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+	var state CertificateStore
+
+	tflog.Info(ctx, "Read called on certificate store resource")
+	certificateStoreId := state.ID.Value
+
+	tflog.SetField(ctx, "certificate_store_id", certificateStoreId)
+
+	readResponse, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error reading certificate store",
+			"Error reading certificate store: %s"+err.Error(),
+		)
+		return
+	}
+
+	password := state.Password.Value
+	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", certificateStoreId, password))
+
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error reading Keyfactor certificate.",
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateStoreId),
+		)
+		return
+	}
+
+	csType, csTypeErr := r.p.client.GetCertStoreType(readResponse.CertStoreType)
+	if csTypeErr != nil {
+		response.Diagnostics.AddError(
+			"Error reading Keyfactor certificate.",
+			fmt.Sprintf("Could not retrieve certificate store type '%s' from Keyfactor: "+err.Error(), readResponse.CertStoreType),
+		)
+		return
+	}
+	// Set state
+	result := CertificateStore{
+		ID:              types.String{Value: state.ID.Value},
+		ContainerID:     types.Int64{Value: int64(readResponse.ContainerId)},
+		ClientMachine:   types.String{Value: readResponse.ClientMachine},
+		StorePath:       types.String{Value: readResponse.StorePath},
+		StoreType:       types.String{Value: csType.Name},
+		Approved:        types.Bool{Value: readResponse.Approved},
+		CreateIfMissing: types.Bool{Value: readResponse.CreateIfMissing},
+		//Properties:            plan.Properties,
+		AgentId:       types.String{Value: readResponse.AgentId},
+		AgentAssigned: types.Bool{Value: readResponse.AgentAssigned},
+		ContainerName: types.String{Value: readResponse.ContainerName},
+		//InventorySchedule:     plan.InventorySchedule,
+		SetNewPasswordAllowed: types.Bool{Value: readResponse.SetNewPasswordAllowed},
+		//Password:              plan.Password,
+	}
+	diags := response.State.Set(ctx, &result)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+}
+
+func createPasswordConfig(m interface{}) *api.StorePasswordConfig {
+	password := stringToPointer(m.(map[string]interface{})["value"].(string))
 	res := &api.StorePasswordConfig{
 		Value: password,
 	}
@@ -250,152 +422,33 @@ func createPasswordConfig(m []interface{}) *api.StorePasswordConfig {
 	return res
 }
 
-func resourceStoreRead(_ context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	kfClientData := m.(*api.Client)
-
-	var diags diag.Diagnostics
-	storeId := d.Id()
-
-	storeData, err := kfClientData.GetCertificateStoreByID(storeId)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
-	// Extract the password schema from current stored schema and pass it right back
-	password := d.Get("password").([]interface{})
-
-	newSchema := flattenCertificateStoreItems(storeData, password)
-	for key, value := range newSchema {
-		err = d.Set(key, value)
-		if err != nil {
-			diags = append(diags, diag.FromErr(err)[0])
-		}
-	}
-	return diags
-}
-
-func flattenCertificateStoreItems(storeContext *api.GetStoreByIDResp, password []interface{}) map[string]interface{} {
-	if storeContext != nil {
-		data := make(map[string]interface{})
-
-		// Assign response data to associated schema
-		data["keyfactor_id"] = storeContext.Id
-		data["container_id"] = storeContext.ContainerId
-		data["client_machine"] = storeContext.ClientMachine
-		data["store_path"] = storeContext.StorePath
-		data["cert_store_type"] = storeContext.CertStoreType
-		data["approved"] = storeContext.Approved
-		data["create_if_missing"] = storeContext.CreateIfMissing
-		data["agent_id"] = storeContext.AgentId
-		data["agent_assigned"] = storeContext.AgentAssigned
-		data["container_name"] = storeContext.ContainerName
-		data["set_new_password_allowed"] = storeContext.SetNewPasswordAllowed
-
-		// Assign schema that require flattening
-		data["properties"] = storeContext.Properties
-		data["inventory_schedule"] = flattenCertificateStoreInventorySched(storeContext.InventorySchedule)
-		data["password"] = password
-
-		return data
-	}
-
-	return make(map[string]interface{})
-}
-
-func flattenCertificateStoreInventorySched(schedule api.InventorySchedule) []interface{} {
-	medium := make(map[string]interface{})
-	// Structure being constructed:
-	// 	inventory_schedule -> []interface{} (1 wide)
-	//      interval/daily/exactly_once -> []interface{} (1 wide)
-	// 		    minutes/time -> map[string]interface{}
-
-	// Build medium and inner layers
-	// Immediate schedule has no child structure
-	if schedule.Immediate != nil {
-		medium["immediate"] = schedule.Immediate
-	} else {
-		tempArray := make([]interface{}, 1)
-		tempMap := make(map[string]interface{})
-		// Build inner layers
-		if schedule.Daily != nil {
-			tempMap["time"] = schedule.Daily.Time
-			tempArray[0] = tempMap
-			medium["daily"] = tempArray
-		} else if schedule.ExactlyOnce != nil {
-			tempMap["time"] = schedule.ExactlyOnce.Time
-			tempArray[0] = tempMap
-			medium["exactly_once"] = tempArray
-		} else if schedule.Interval != nil {
-			tempMap["minutes"] = schedule.Interval.Minutes
-			tempArray[0] = tempMap
-			medium["interval"] = tempArray
-		} else {
-			// If the API returned nothing, return a blank slice
-			return make([]interface{}, 0) // Return blank array if none
-		}
-
-	}
-	// Append medium layer to outer
-	scheduleInterface := make([]interface{}, 1)
-	scheduleInterface[0] = medium
-	return scheduleInterface
-}
-
-func resourceStoreUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	kfClient := m.(*api.Client)
-
-	updateStoreArgs := &api.UpdateStoreFctArgs{
-		Id: d.Get("keyfactor_id").(string),
-		CreateStoreFctArgs: api.CreateStoreFctArgs{
-			ContainerId:           intToPointer(d.Get("container_id").(int)),
-			ClientMachine:         d.Get("client_machine").(string),
-			StorePath:             d.Get("store_path").(string),
-			CertStoreType:         d.Get("cert_store_type").(int),
-			Approved:              boolToPointer(d.Get("approved").(bool)),
-			CreateIfMissing:       boolToPointer(d.Get("create_if_missing").(bool)),
-			Properties:            interfaceToMappedString(d.Get("properties").(map[string]interface{})),
-			AgentId:               d.Get("agent_id").(string),
-			AgentAssigned:         boolToPointer(d.Get("agent_assigned").(bool)),
-			ContainerName:         stringToPointer(d.Get("container_name").(string)),
-			InventorySchedule:     createInventorySchedule(d.Get("inventory_schedule").([]interface{})),
-			SetNewPasswordAllowed: boolToPointer(d.Get("set_new_password_allowed").(bool)),
-			Password:              createPasswordConfig(d.Get("password").([]interface{})),
-		},
-	}
-
-	_, err := kfClient.UpdateStore(updateStoreArgs)
-	if err != nil {
-		resourceStoreRead(ctx, d, m)
-		return diag.FromErr(err)
-	}
-
-	// Call read function to update schema with new state
-	return resourceStoreRead(ctx, d, m)
-}
-
-func interfaceToMappedString(in map[string]interface{}) map[string]string {
-	newMap := make(map[string]string)
-	for key, value := range in {
-		newMap[key] = value.(string)
-	}
-	return newMap
-}
-
-func resourceStoreDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-	kfClient := m.(*api.Client)
-
-	id := d.Get("keyfactor_id").(string)
-	ctx = tflog.SetField(ctx, "keyfactor_id", id)
-	tflog.Info(ctx, "Deleting certificate store resource")
-
-	err := kfClient.DeleteCertificateStore(id)
-	if err != nil {
-		tflog.Error(ctx, "Error deleting certificate store resource: ", map[string]interface{}{
-			"error": err,
-		})
-		return diag.FromErr(err)
-	}
-
-	return diags
-}
+//func createInventorySchedule(interval string) (*api.InventorySchedule, error) {
+//	inventorySchedule := &api.InventorySchedule{}
+//
+//	if interval == "immediate" {
+//		immediate := true
+//		inventorySchedule.Immediate = &immediate
+//	} else {
+//		if strings.HasSuffix(interval, "m") {
+//			minutes, err := strconv.Atoi(interval[:len(interval)-1])
+//			if err != nil {
+//				return nil, err
+//			}
+//			iv := &api.InventoryInterval{Minutes: minutes}
+//			inventorySchedule.Interval = iv
+//			return inventorySchedule, nil
+//		}
+//		if key == "daily" {
+//			daily := &api.InventoryDaily{Time: innerValue.(string)}
+//			inventorySchedule.Daily = daily
+//			return inventorySchedule
+//		}
+//		if key == "exactly_once" {
+//			once := &api.InventoryOnce{Time: innerValue.(string)}
+//			inventorySchedule.ExactlyOnce = once
+//			return inventorySchedule
+//		}
+//	}
+//
+//	return inventorySchedule
+//}

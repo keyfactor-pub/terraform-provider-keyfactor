@@ -200,6 +200,7 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 	return map[string]tfsdk.ResourceType{
 		"keyfactor_security_identity": resourceSecurityIdentityType{},
 		"keyfactor_certificate":       resourceKeyfactorCertificateType{},
+		"keyfactor_certificate_store": resourceCertificateStoreType{},
 		"keyfactor_role":              resourceSecurityRoleType{},
 	}, nil
 }

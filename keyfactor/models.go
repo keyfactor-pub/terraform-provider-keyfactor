@@ -13,7 +13,7 @@ type SecurityIdentity struct {
 	Valid        types.Bool   `tfsdk:"valid"`
 }
 
-// Role -
+// Security Role -
 type SecurityRole struct {
 	ID          types.Int64  `tfsdk:"role_id"`
 	Name        types.String `tfsdk:"name"`
@@ -76,4 +76,21 @@ type CertificateRequest struct {
 	DNSSANs     types.List           `tfsdk:"dns_subject_alternative_names"`
 	IPSANs      types.List           `tfsdk:"ip_subject_alternative_names"`
 	URISANs     types.List           `tfsdk:"uri_subject_alternative_names"`
+}
+
+type CertificateStore struct {
+	ID                    types.String `tfsdk:"keyfactor_id"`
+	ContainerID           types.Int64  `tfsdk:"container_id"`
+	ContainerName         types.String `tfsdk:"container_name"`
+	AgentId               types.String `tfsdk:"agent_id"`
+	AgentAssigned         types.Bool   `tfsdk:"agent_assigned"`
+	ClientMachine         types.String `tfsdk:"client_machine"`
+	StorePath             types.String `tfsdk:"store_path"`
+	StoreType             types.String `tfsdk:"store_type"`
+	Approved              types.Bool   `tfsdk:"approved"`
+	CreateIfMissing       types.Bool   `tfsdk:"create_if_missing"`
+	Properties            types.Map    `tfsdk:"properties"`
+	Password              types.String `tfsdk:"password"`
+	SetNewPasswordAllowed types.Bool   `tfsdk:"set_new_password_allowed"`
+	InventorySchedule     types.String `tfsdk:"inventory_schedule"`
 }

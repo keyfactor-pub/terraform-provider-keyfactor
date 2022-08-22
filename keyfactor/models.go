@@ -94,3 +94,25 @@ type CertificateStore struct {
 	SetNewPasswordAllowed types.Bool   `tfsdk:"set_new_password_allowed"`
 	InventorySchedule     types.String `tfsdk:"inventory_schedule"`
 }
+
+type CertificateTemplate struct {
+	ID                     types.Int64  `tfsdk:"id"`
+	CommonName             types.String `tfsdk:"short_name"`
+	TemplateName           types.String `tfsdk:"name"`
+	OID                    types.String `tfsdk:"oid"`
+	KeySize                types.String `tfsdk:"key_size"`
+	KeyType                types.String `tfsdk:"key_type"`
+	ForestRoot             types.String `tfsdk:"forest_root"`
+	FriendlyName           types.String `tfsdk:"friendly_name"`
+	KeyRetention           types.String `tfsdk:"key_retention"`
+	KeyRetentionDays       types.Int64  `tfsdk:"key_retention_days"`
+	KeyArchival            types.Bool   `tfsdk:"key_archival"`
+	EnrollmentFields       types.List   `tfsdk:"enrollment_fields"`
+	AllowedEnrollmentTypes types.Int64  `tfsdk:"allowed_enrollment_types"`
+	TemplateRegexes        types.List   `tfsdk:"template_regexes"`
+	AllowedRequesters      types.List   `tfsdk:"allowed_requesters"`
+	RFCEnforcement         types.Bool   `tfsdk:"rfc_enforcement"`
+	RequiresApproval       types.Bool   `tfsdk:"requires_approval"`
+	KeyUsage               types.Int64  `tfsdk:"key_usage"`
+	//ExtendedKeyUsage       types.List   `tfsdk:"extended_key_usage"`
+}

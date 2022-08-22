@@ -32,7 +32,6 @@ func (r resourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Schema
 				Type: types.ListType{
 					ElemType: types.StringType,
 				},
-				//Computed:    true,
 				Optional:    true,
 				Description: "An array containing the role IDs that the identity is attached to.",
 			},

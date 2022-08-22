@@ -198,7 +198,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 // GetResources - Defines provider resources
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
-		"keyfactor_security_identity": resourceSecurityIdentityType{},
+		"keyfactor_identity":          resourceSecurityIdentityType{},
 		"keyfactor_certificate":       resourceKeyfactorCertificateType{},
 		"keyfactor_certificate_store": resourceCertificateStoreType{},
 		"keyfactor_role":              resourceSecurityRoleType{},
@@ -207,7 +207,12 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 
 // GetDataSources - Defines provider data sources
 func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourceType, diag.Diagnostics) {
-	return map[string]tfsdk.DataSourceType{}, nil
+	return map[string]tfsdk.DataSourceType{
+		"keyfactor_certificate":          dataSourceCertificateType{},
+		"keyfactor_certificate_template": dataSourceCertificateTemplateType{},
+		"keyfactor_role":                 dataSourceSecurityRoleType{},
+		"keyfactor_identity":             dataSourceSecurityIdentityType{},
+	}, nil
 }
 
 //// Utility functions

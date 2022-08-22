@@ -44,22 +44,22 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				//	// gives us a definitive answer.
 				//	return !d.HasChange(k)
 				//},
-				Description: "Bool that indicates the approval status of store created. Default is true, omit if unsure",
+				Description: "Bool that indicates the approval status of store created. Default is true, omit if unsure.",
 			},
 			"create_if_missing": {
 				Type:        types.BoolType,
 				Optional:    true,
-				Description: "Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure",
+				Description: "Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure.",
 			},
 			"properties": {
 				Type:        types.MapType{ElemType: types.StringType},
 				Optional:    true,
-				Description: "Certificate properties specific to certificate store type configured as key-value pairs",
+				Description: "Certificate properties specific to certificate store type configured as key-value pairs.",
 			},
 			"agent_id": {
 				Type:        types.StringType,
 				Required:    true,
-				Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store",
+				Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store.",
 			},
 			"agent_assigned": {
 				Type:     types.BoolType,
@@ -69,32 +69,37 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				//	// gives us a definitive answer.
 				//	return !d.HasChange(k)
 				//},
-				Description: "Bool indicating if there is an orchestrator assigned to the new certificate store",
+				Description: "Bool indicating if there is an orchestrator assigned to the new certificate store.",
 			},
 			"container_name": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Name of certificate store's associated container, if applicable",
+				Description: "Name of certificate store's associated container, if applicable.",
 			},
 			"inventory_schedule": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Inventory schedule for new certificate store",
+				Description: "Inventory schedule for new certificate store.",
 			},
 			"set_new_password_allowed": {
 				Type:        types.BoolType,
 				Optional:    true,
-				Description: "Indicates whether the store password can be changed",
+				Description: "Indicates whether the store password can be changed.",
 			},
 			"password": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Configures credential options for certificate store",
+				Description: "Sets password for certificate store.",
 			},
 			"keyfactor_id": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "Keyfactor certificate store GUID",
+				Description: "Keyfactor certificate store GUID.",
+			},
+			"certificates": {
+				Type:        types.ListType{ElemType: types.Int64Type},
+				Computed:    true,
+				Description: "A list of certificate IDs associated with the certificate store.",
 			},
 		},
 	}, nil

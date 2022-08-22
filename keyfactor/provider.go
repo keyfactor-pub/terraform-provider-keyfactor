@@ -209,6 +209,7 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourceType, diag.Diagnostics) {
 	return map[string]tfsdk.DataSourceType{
 		"keyfactor_certificate":          dataSourceCertificateType{},
+		"keyfactor_certificate_store":    dataSourceCertificateStoreType{},
 		"keyfactor_certificate_template": dataSourceCertificateTemplateType{},
 		"keyfactor_role":                 dataSourceSecurityRoleType{},
 		"keyfactor_identity":             dataSourceSecurityIdentityType{},

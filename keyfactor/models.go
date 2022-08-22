@@ -117,3 +117,9 @@ type CertificateTemplate struct {
 	KeyUsage               types.Int64  `tfsdk:"key_usage"`
 	//ExtendedKeyUsage       types.List   `tfsdk:"extended_key_usage"`
 }
+
+type CertificateTemplateRoleBinding struct {
+	ID            types.String `tfsdk:"id"`
+	RoleName      types.String `tfsdk:"role_name"`
+	TemplateNames types.List   `tfsdk:"template_short_names"`
+}

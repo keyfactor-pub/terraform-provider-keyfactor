@@ -62,4 +62,10 @@ resource "keyfactor_certificate_store" "iis_trusted_roots" {
 - `certificates` (List of Number) A list of certificate IDs associated with the certificate store.
 - `keyfactor_id` (String) Keyfactor certificate store GUID.
 
+## Import
 
+Import is supported using the following syntax:
+
+```shell
+terraform import keyfactor_certificate_store.mystore "9f8855f1-80ff-4475-89ec-d82accb32cea" # Where this is the GUID of the certificate store
+```

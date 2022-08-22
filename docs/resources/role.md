@@ -63,4 +63,10 @@ resource "keyfactor_role" "kf_terraform_role" {
 
 - `role_id` (Number)
 
+## Import
 
+Import is supported using the following syntax:
+
+```shell
+terraform import keyfactor_security_role.myrole "My Role" # The name of the role to import
+```

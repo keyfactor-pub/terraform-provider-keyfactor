@@ -117,4 +117,10 @@ Optional:
 - `subject_organizational_unit` (String) Subject organizational unit for new certificate
 - `subject_state` (String) Subject state for new certificate
 
+## Import
 
+Import is supported using the following syntax:
+
+```shell
+terraform import keyfactor_certificate.mycert 65 # Where this is the ID of the certificate on Keyfactor
+```

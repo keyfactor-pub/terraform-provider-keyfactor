@@ -5,6 +5,6 @@ provider "keyfactor" {
 }
 
 resource "keyfactor_security_identity" "identity" {
-  account_name = "COMMAND\\your_username"         # your_domain\\your_username
-  roles = ["EnrollPFX", "Administrator", "Nginx"] # List of existing role names to assign to the identity
+  account_name = "COMMAND\\your_username"                # your_domain\\your_username
+  roles        = ["EnrollPFX", "Administrator", "Nginx"] # List of existing role names to assign to the identity
 }

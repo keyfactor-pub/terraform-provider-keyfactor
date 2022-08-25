@@ -90,7 +90,7 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Sensitive:   true,
 				Description: "Sets password for certificate store.",
 			},
-			"keyfactor_id": {
+			"id": {
 				Type:        types.StringType,
 				Required:    true,
 				Description: "Keyfactor certificate store GUID.",

@@ -2,34 +2,37 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
-func TestAccKeyfactorDataSourceSecurityRole(t *testing.T) {
-	t.Skip()
-	roleName := "Administrator"
+func TestAccKeyfactorSecurityRoleDataSource(t *testing.T) {
+	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_role")
+	var rName = "Administrator"
+
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: providerFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
+			// Read testing
 			{
-				Config: testAccKeyfactorDataSourceSecurityRoleBasic(roleName),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("keyfactor_security_role.test", "role_name", roleName),
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "description"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities"),
-					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "permissions"),
+				Config: testAccDataSourceKeyfactorSecurityRoleBasic(rName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "id", "1"),
+					resource.TestCheckResourceAttr(resourceName, "name", rName),
+					resource.TestCheckResourceAttrSet(resourceName, "description"),
+					resource.TestCheckResourceAttrSet(resourceName, "permissions.#"),
 				),
 			},
 		},
 	})
 }
 
-func testAccKeyfactorDataSourceSecurityRoleBasic(roleName string) string {
+func testAccDataSourceKeyfactorSecurityRoleBasic(resourceName string) string {
 	return fmt.Sprintf(`
-	data "keyfactor_security_role" "test" {
-		role_name = "%s"
+	data "keyfactor_role" "test" {
+		name = "%s"
 	}
-	`, roleName)
+	`, resourceName)
 }

@@ -16,6 +16,11 @@ import (
 
 // To run these tools, run 'go generate'
 
+var (
+	// Example version string that can be overwritten by a release process
+	version string = "dev"
+)
+
 func main() {
 	var debug bool
 
@@ -23,8 +28,9 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "keyfactor.com/keyfactordev/keyfactor",
-		Debug:   debug,
+		Address:         "keyfactor.com/keyfactordev/keyfactor",
+		Debug:           debug,
+		ProtocolVersion: 6,
 	}
 
 	err := providerserver.Serve(context.Background(), keyfactor.New, opts)

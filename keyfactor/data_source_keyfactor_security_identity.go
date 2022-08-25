@@ -30,7 +30,7 @@ func (r dataSourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Sche
 				Optional:    true,
 				Description: "An array containing the role IDs that the identity is attached to.",
 			},
-			"identity_id": {
+			"id": {
 				Type:        types.Int64Type,
 				Computed:    true,
 				Description: "An integer containing the Keyfactor Command identifier for the security identity.",
@@ -91,7 +91,7 @@ func (r dataSourceSecurityIdentity) Read(ctx context.Context, request tfsdk.Read
 
 				kfRole, roleLookupErr := r.p.client.GetSecurityRole(role.Name)
 				if roleLookupErr != nil || kfRole == nil {
-					tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
+					tflog.Warn(ctx, fmt.Sprintf("Error looking up role %v on Keyfactor.", role))
 					response.Diagnostics.AddWarning(
 						"Error looking up role on Keyfactor.",
 						fmt.Sprintf("Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.", role.Name, state.AccountName.Value, role.Name),

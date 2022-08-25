@@ -556,7 +556,7 @@ func (r resourceKeyfactorCertificate) Delete(ctx context.Context, request tfsdk.
 
 	// When Terraform Destroy is called, we want Keyfactor to revoke the certificate.
 
-	tflog.Info(ctx, fmt.Sprintf("Revoking certificate %s in Keyfactor", certificateId))
+	tflog.Info(ctx, fmt.Sprintf("Revoking certificate %v in Keyfactor", certificateId))
 
 	revokeArgs := &api.RevokeCertArgs{
 		CertificateIds: []int{int(certificateId)}, // Certificate ID expects array of integers

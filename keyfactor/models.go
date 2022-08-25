@@ -6,7 +6,7 @@ import (
 
 // Security Identity -
 type SecurityIdentity struct {
-	ID           types.Int64  `tfsdk:"identity_id"`
+	ID           types.Int64  `tfsdk:"id"`
 	AccountName  types.String `tfsdk:"account_name"`
 	Roles        types.List   `tfsdk:"roles"`
 	IdentityType types.String `tfsdk:"identity_type"`
@@ -15,14 +15,14 @@ type SecurityIdentity struct {
 
 // Security Role -
 type SecurityRole struct {
-	ID          types.Int64  `tfsdk:"role_id"`
+	ID          types.Int64  `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
 	Description types.String `tfsdk:"description"`
 	Permissions types.List   `tfsdk:"permissions"`
 }
 
 type KeyfactorCertificate struct {
-	ID types.Int64 `tfsdk:"keyfactor_id"`
+	ID types.Int64 `tfsdk:"id"`
 	// CSR Request Fields
 	CSR types.String `tfsdk:"csr"`
 	// PFX KfCertificate Fields
@@ -79,7 +79,7 @@ type CertificateRequest struct {
 }
 
 type CertificateStore struct {
-	ID                    types.String `tfsdk:"keyfactor_id"`
+	ID                    types.String `tfsdk:"id"`
 	ContainerID           types.Int64  `tfsdk:"container_id"`
 	ContainerName         types.String `tfsdk:"container_name"`
 	AgentId               types.String `tfsdk:"agent_id"`

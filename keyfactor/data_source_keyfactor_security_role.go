@@ -15,7 +15,7 @@ type dataSourceSecurityRoleType struct{}
 func (r dataSourceSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
-			"role_id": {
+			"id": {
 				Type:        types.Int64Type,
 				Computed:    true,
 				Description: "Internal ID of the role.",

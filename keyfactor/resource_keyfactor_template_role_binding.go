@@ -78,7 +78,7 @@ func (r resourceCertificateTemplateRoleBinding) Create(ctx context.Context, requ
 
 	diags = plan.TemplateNames.ElementsAs(ctx, &templateNames, true)
 
-	hid := fmt.Sprintf("%d%v", roleName, templateNames)
+	hid := fmt.Sprintf("%v%v", roleName, templateNames)
 	ctx = tflog.SetField(ctx, "role_binding_id", hid)
 
 	// List all templates
@@ -148,7 +148,7 @@ func (r resourceCertificateTemplateRoleBinding) Read(ctx context.Context, reques
 		return
 	}
 
-	hid := fmt.Sprintf("%d%v", roleName, templateNames)
+	hid := fmt.Sprintf("%v%v", roleName, templateNames)
 	ctx = tflog.SetField(ctx, "role_binding_id", hid)
 
 	// Set state
@@ -199,7 +199,7 @@ func (r resourceCertificateTemplateRoleBinding) Update(ctx context.Context, requ
 	}
 
 	// Set binding ID
-	hid := fmt.Sprintf("%d%v", roleName, templateNames)
+	hid := fmt.Sprintf("%v%v", roleName, templateNames)
 	ctx = tflog.SetField(ctx, "role_binding_id", hid)
 
 	// Set role allowed requester
@@ -236,7 +236,7 @@ func (r resourceCertificateTemplateRoleBinding) Delete(ctx context.Context, requ
 
 	diags = state.TemplateNames.ElementsAs(ctx, &templateNames, true)
 
-	hid := fmt.Sprintf("%d%v", roleName, templateNames)
+	hid := fmt.Sprintf("%v%v", roleName, templateNames)
 	ctx = tflog.SetField(ctx, "role_binding_id", hid)
 
 	// List all templates

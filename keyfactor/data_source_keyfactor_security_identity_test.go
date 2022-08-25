@@ -1,88 +1,40 @@
 package keyfactor
 
 import (
-	"context"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
-	"reflect"
+	"fmt"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
-func Test_dataSourceSecurityIdentityType_GetSchema(t *testing.T) {
-	type args struct {
-		in0 context.Context
-	}
-	tests := []struct {
-		name  string
-		args  args
-		want  tfsdk.Schema
-		want1 diag.Diagnostics
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := dataSourceSecurityIdentityType{}
-			got, got1 := r.GetSchema(tt.args.in0)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetSchema() got = %v, want %v", got, tt.want)
-			}
-			if !reflect.DeepEqual(got1, tt.want1) {
-				t.Errorf("GetSchema() got1 = %v, want %v", got1, tt.want1)
-			}
-		})
-	}
+func TestAcckeyfactorSecurityIdentityDataSource(t *testing.T) {
+	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_identity")
+	var iNameEscaped = "COMMAND\\\\Keyfactor-Customer-Admins"
+	var iName = "COMMAND\\Keyfactor-Customer-Admins"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Read testing
+			{
+				Config: testAccKeyfactorDataSourceSecurityIdentityBasic(iNameEscaped),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "id", "2"),
+					resource.TestCheckResourceAttr(resourceName, "account_name", iName),
+					resource.TestCheckResourceAttrSet(resourceName, "roles.0"),
+					resource.TestCheckResourceAttrSet(resourceName, "identity_type"),
+					resource.TestCheckResourceAttrSet(resourceName, "valid"),
+				),
+			},
+		},
+	})
 }
 
-func Test_dataSourceSecurityIdentityType_NewDataSource(t *testing.T) {
-	type args struct {
-		ctx context.Context
-		p   tfsdk.Provider
+func testAccKeyfactorDataSourceSecurityIdentityBasic(identityName string) string {
+	return fmt.Sprintf(`
+	data "keyfactor_identity" "test" {
+		account_name = "%s"
 	}
-	tests := []struct {
-		name  string
-		args  args
-		want  tfsdk.DataSource
-		want1 diag.Diagnostics
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := dataSourceSecurityIdentityType{}
-			got, got1 := r.NewDataSource(tt.args.ctx, tt.args.p)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewDataSource() got = %v, want %v", got, tt.want)
-			}
-			if !reflect.DeepEqual(got1, tt.want1) {
-				t.Errorf("NewDataSource() got1 = %v, want %v", got1, tt.want1)
-			}
-		})
-	}
-}
-
-func Test_dataSourceSecurityIdentity_Read(t *testing.T) {
-	type fields struct {
-		p provider
-	}
-	type args struct {
-		ctx      context.Context
-		request  tfsdk.ReadDataSourceRequest
-		response *tfsdk.ReadDataSourceResponse
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := dataSourceSecurityIdentity{
-				p: tt.fields.p,
-			}
-			r.Read(tt.args.ctx, tt.args.request, tt.args.response)
-		})
-	}
+	`, identityName)
 }

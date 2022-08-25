@@ -2,44 +2,51 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
-func TestAccKeyfactorDataSourceTemplate(t *testing.T) {
-	t.Skip()
+func TestAccKeyfactorTemplateDataSource(t *testing.T) {
+	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate_template")
+	var shortName = "2YearTestWebServer"
+
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { testAccPreCheck(t) },
-		ProviderFactories: providerFactories,
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
+			// Read testing
 			{
-				Config: testAccKeyfactorDataSourceTemplateBasic(),
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "id"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "common_name"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "template_name"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "oid"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "key_size"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "key_type"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "forest_root"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "friendly_name"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "key_retention"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "key_retention_days"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "key_archival"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "allowed_enrollment_types"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "use_allowed_requesters"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "use_allowed_requesters"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "allowed_requesters"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "rfc_enforcement"),
-					resource.TestCheckResourceAttrSet("keyfactor_template.test", "key_usage"),
+				Config: testAccDataSourceKeyfactorTemplateBasic(shortName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "short_name", shortName),
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttrSet(resourceName, "name"),
+					resource.TestCheckResourceAttrSet(resourceName, "oid"),
+					resource.TestCheckResourceAttrSet(resourceName, "key_size"),
+					//resource.TestCheckResourceAttrSet(resourceName, "key_type"), // TODO: Check this
+					resource.TestCheckResourceAttrSet(resourceName, "forest_root"),
+					//resource.TestCheckResourceAttrSet(resourceName, "friendly_name"), // TODO: Check this
+					resource.TestCheckResourceAttrSet(resourceName, "key_retention"),
+					resource.TestCheckResourceAttrSet(resourceName, "key_retention_days"),
+					resource.TestCheckResourceAttrSet(resourceName, "key_archival"),
+					//resource.TestCheckResourceAttrSet(resourceName, "enrollment_fields.#"), // TODO: Check this
+					resource.TestCheckResourceAttrSet(resourceName, "allowed_enrollment_types"),
+					resource.TestCheckResourceAttrSet(resourceName, "template_regexes.#"),
+					resource.TestCheckResourceAttrSet(resourceName, "allowed_requesters.#"),
+					resource.TestCheckResourceAttrSet(resourceName, "rfc_enforcement"),
+					resource.TestCheckResourceAttrSet(resourceName, "requires_approval"),
+					resource.TestCheckResourceAttrSet(resourceName, "key_usage"),
 				),
 			},
 		},
 	})
 }
 
-func testAccKeyfactorDataSourceTemplateBasic() string {
+func testAccDataSourceKeyfactorTemplateBasic(resourceName string) string {
 	return fmt.Sprintf(`
-	data "keyfactor_template" "test" {}
-	`)
+	data "keyfactor_certificate_template" "test" {
+		short_name = "%s"
+	}
+	`, resourceName)
 }

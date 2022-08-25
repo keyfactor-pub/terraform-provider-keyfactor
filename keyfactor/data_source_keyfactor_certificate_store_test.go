@@ -1,88 +1,49 @@
 package keyfactor
 
 import (
-	"context"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
-	"reflect"
+	"fmt"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
-func Test_dataSourceCertificateStoreType_GetSchema(t *testing.T) {
-	type args struct {
-		in0 context.Context
-	}
-	tests := []struct {
-		name  string
-		args  args
-		want  tfsdk.Schema
-		want1 diag.Diagnostics
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := dataSourceCertificateStoreType{}
-			got, got1 := r.GetSchema(tt.args.in0)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetSchema() got = %v, want %v", got, tt.want)
-			}
-			if !reflect.DeepEqual(got1, tt.want1) {
-				t.Errorf("GetSchema() got1 = %v, want %v", got1, tt.want1)
-			}
-		})
-	}
+func TestAccKeyfactorCertificateStoreDataSource(t *testing.T) {
+	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate_store")
+	var sID = "9f8855f1-80ff-4475-89ec-d82accb32cea"
+	var sPass = "changeme!"
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Read testing
+			{
+				Config: testAccDataSourceKeyfactorCertificateStoreBasic(sID, sPass),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "id", sID),
+					resource.TestCheckResourceAttr(resourceName, "password", sPass),
+					resource.TestCheckResourceAttrSet(resourceName, "store_path"),
+					resource.TestCheckResourceAttrSet(resourceName, "store_type"),
+					resource.TestCheckResourceAttrSet(resourceName, "approved"),
+					resource.TestCheckResourceAttrSet(resourceName, "create_if_missing"),
+					//resource.TestCheckResourceAttrSet(resourceName, "properties"), //TODO: Check this
+					resource.TestCheckResourceAttrSet(resourceName, "agent_id"),
+					resource.TestCheckResourceAttrSet(resourceName, "agent_assigned"),
+					//resource.TestCheckResourceAttrSet(resourceName, "container_name"), //TODO: Check this
+					//resource.TestCheckResourceAttrSet(resourceName, "inventory_schedule"), //TODO: Check this
+					resource.TestCheckResourceAttrSet(resourceName, "set_new_password_allowed"),
+					//resource.TestCheckResourceAttrSet(resourceName, "certificates.#"), //TODO: Check this
+				),
+			},
+		},
+	})
 }
 
-func Test_dataSourceCertificateStoreType_NewDataSource(t *testing.T) {
-	type args struct {
-		ctx context.Context
-		p   tfsdk.Provider
+func testAccDataSourceKeyfactorCertificateStoreBasic(resourceName string, password string) string {
+	return fmt.Sprintf(`
+	data "keyfactor_certificate_store" "test" {
+		id = "%s"
+		password = "%s"
 	}
-	tests := []struct {
-		name  string
-		args  args
-		want  tfsdk.DataSource
-		want1 diag.Diagnostics
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := dataSourceCertificateStoreType{}
-			got, got1 := r.NewDataSource(tt.args.ctx, tt.args.p)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewDataSource() got = %v, want %v", got, tt.want)
-			}
-			if !reflect.DeepEqual(got1, tt.want1) {
-				t.Errorf("NewDataSource() got1 = %v, want %v", got1, tt.want1)
-			}
-		})
-	}
-}
-
-func Test_dataSourceCertificateStore_Read(t *testing.T) {
-	type fields struct {
-		p provider
-	}
-	type args struct {
-		ctx      context.Context
-		request  tfsdk.ReadDataSourceRequest
-		response *tfsdk.ReadDataSourceResponse
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := dataSourceCertificateStore{
-				p: tt.fields.p,
-			}
-			r.Read(tt.args.ctx, tt.args.request, tt.args.response)
-		})
-	}
+	`, resourceName, password)
 }

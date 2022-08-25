@@ -88,18 +88,41 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		)
 		return
 	}
-
 	if config.Username.Null {
 		username = os.Getenv("KEYFACTOR_USERNAME")
+		config.Username.Value = username
 	} else {
 		username = config.Username.Value
 	}
-
 	if username == "" {
 		// Error vs warning - empty value must stop execution
 		resp.Diagnostics.AddError(
 			"Unable to find username",
 			"Username cannot be an empty string",
+		)
+		return
+	}
+	// User must provide a user to the provider
+	var domain string
+	if config.Domain.Unknown {
+		// Cannot connect to client with an unknown value
+		resp.Diagnostics.AddWarning(
+			"Unable to create client",
+			"Cannot use unknown value as domain",
+		)
+		return
+	}
+	if config.Domain.Null {
+		domain = os.Getenv("KEYFACTOR_DOMAIN")
+		config.Domain.Value = domain
+	} else {
+		username = config.Domain.Value
+	}
+	if domain == "" {
+		// Error vs warning - empty value must stop execution
+		resp.Diagnostics.AddError(
+			"Unable to find username",
+			"Domain cannot be an empty string",
 		)
 		return
 	}
@@ -117,6 +140,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 
 	if config.ApiKey.Null {
 		apiKey = os.Getenv("KEYFACTOR_APPKEY")
+		config.ApiKey.Value = apiKey
 	} else {
 		apiKey = config.Password.Value
 	}
@@ -134,6 +158,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 
 	if config.Password.Null {
 		password = os.Getenv("KEYFACTOR_PASSWORD")
+		config.Password.Value = password
 	} else {
 		password = config.Password.Value
 	}
@@ -160,6 +185,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 
 	if config.Hostname.Null {
 		host = os.Getenv("KEYFACTOR_HOSTNAME")
+		config.Hostname.Value = host
 	} else {
 		host = config.Hostname.Value
 	}

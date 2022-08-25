@@ -143,7 +143,7 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Computed:    true,
 				Description: "Thumbprint of newly enrolled certificate",
 			},
-			"keyfactor_id": {
+			"id": {
 				Type:        types.Int64Type,
 				Required:    true,
 				Description: "Keyfactor certificate ID",

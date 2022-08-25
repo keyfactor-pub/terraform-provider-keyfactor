@@ -5,6 +5,6 @@ provider "keyfactor" {
 }
 
 data "keyfactor_certificate" "protected_cert" {
-  keyfactor_id = "26"                       #Internal ID of the certificate
+  id = "26"                       #Internal ID of the certificate
   key_password = "my certificate password!" # This is bad practice. Use TF_VAR_<variable_name> instead.
 }

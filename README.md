@@ -14,7 +14,7 @@ is a work in progress, and feature requests can be submitted by opening an issue
 * [License](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/LICENSE)
 
 ## Requirements
-* [Go](https://golang.org/doc/install) 1.19.x (to build the provider plugin)
+* [Go](https://golang.org/doc/install) 1.18.x (to build the provider plugin)
 * [Terraform](https://www.terraform.io/downloads) 1.1.x
 * [Keyfactor Command](https://www.keyfactor.com/) v9.x
     * Keyfactor Command account with permissions to required Keyfactor features (IE certificate)

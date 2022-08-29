@@ -2,9 +2,9 @@ package keyfactor
 
 import (
 	"context"
-	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/spbsoluble/kfctl/api"
 	"reflect"
 	"testing"
 )

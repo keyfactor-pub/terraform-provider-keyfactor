@@ -3,11 +3,12 @@ module github.com/Keyfactor/terraform-provider-keyfactor
 go 1.18
 
 require (
-	github.com/Keyfactor/keyfactor-go-client v1.1.5
 	github.com/hashicorp/terraform-plugin-framework v0.10.0
 	github.com/hashicorp/terraform-plugin-go v0.12.0
 	github.com/hashicorp/terraform-plugin-log v0.7.0
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.20.0
+	//github.com/spbsoluble/kfctl v1.1.5
+	github.com/spbsoluble/kfctl v1.0.1
 )
 
 require (
@@ -61,4 +62,4 @@ require (
 )
 
 // todo: Remove this before merge
-//replace github.com/Keyfactor/keyfactor-go-client => /Users/sbailey/go/pkg/mod/github.com/Keyfactor/keyfactor-go-client
+//replace github.com/spbsoluble/kfctl => /Users/sbailey/go/pkg/mod/github.com/spbsoluble/kfctl

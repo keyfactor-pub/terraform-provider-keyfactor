@@ -61,4 +61,4 @@ require (
 )
 
 // todo: Remove this before merge
-replace github.com/Keyfactor/keyfactor-go-client => /Users/sbailey/go/pkg/mod/github.com/Keyfactor/keyfactor-go-client
+//replace github.com/Keyfactor/keyfactor-go-client => /Users/sbailey/go/pkg/mod/github.com/Keyfactor/keyfactor-go-client

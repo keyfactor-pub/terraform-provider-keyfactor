@@ -98,8 +98,8 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 
 - `certificate_chain` (String) PEM formatted certificate chain
 - `certificate_pem` (String) PEM formatted certificate
+- `id` (Number) Keyfactor certificate ID
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
-- `keyfactor_id` (Number) Keyfactor certificate ID
 - `keyfactor_request_id` (Number) Keyfactor request ID necessary for deploying certificate
 - `private_key` (String, Sensitive) PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
 - `serial_number` (String) Serial number of newly enrolled certificate

@@ -61,7 +61,7 @@ resource "keyfactor_role" "kf_terraform_role" {
 
 ### Read-Only
 
-- `role_id` (Number)
+- `id` (Number) The ID of this resource.
 
 ## Import
 

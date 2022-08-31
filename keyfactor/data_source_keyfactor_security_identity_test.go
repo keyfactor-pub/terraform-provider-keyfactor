@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
-func TestAcckeyfactorSecurityIdentityDataSource(t *testing.T) {
+func TestAccKeyfactorSecurityIdentityDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_identity")
 	var iNameEscaped = "COMMAND\\\\Keyfactor-Customer-Admins"
 	var iName = "COMMAND\\Keyfactor-Customer-Admins"

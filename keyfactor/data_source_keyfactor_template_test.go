@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
-func TestAccKeyfactorTemplateDataSource(t *testing.T) {
+func TestAccKeyfactorCertificateTemplateDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate_template")
 	var shortName = "2YearTestWebServer"
 
@@ -17,7 +17,7 @@ func TestAccKeyfactorTemplateDataSource(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Read testing
 			{
-				Config: testAccDataSourceKeyfactorTemplateBasic(shortName),
+				Config: testAccDataSourceKeyfactorCertificateTemplateBasic(shortName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "short_name", shortName),
 					resource.TestCheckResourceAttrSet(resourceName, "id"),
@@ -43,7 +43,7 @@ func TestAccKeyfactorTemplateDataSource(t *testing.T) {
 	})
 }
 
-func testAccDataSourceKeyfactorTemplateBasic(resourceName string) string {
+func testAccDataSourceKeyfactorCertificateTemplateBasic(resourceName string) string {
 	return fmt.Sprintf(`
 	data "keyfactor_certificate_template" "test" {
 		short_name = "%s"

@@ -70,5 +70,11 @@ jobs:
       - run: go mod download
       - env:
           TF_ACC: "1"
+          TEST_CERTSTORE_SID: "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
+          TEST_CERTSTORE_PASS: ${{secrets.TEST_CERTSTORE_PASS}}
+          KEYFACTOR_HOSTNAME: ${{secrets.KEYFACTOR_HOSTNAME}}
+          KEYFACTOR_USERNAME: ${{secrets.KEYFACTOR_USERNAME}}
+          KEYFACTOR_PASSWORD: ${{secrets.KEYFACTOR_PASSWORD}}
+          KEYFACTOR_DOMAIN: ${{secrets.KEYFACTOR_DOMAIN}}
         run: go test -v -cover ./keyfactor
         timeout-minutes: 10

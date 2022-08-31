@@ -29,7 +29,7 @@ func TestAccKeyfactorIdentityResource(t *testing.T) {
 
 	// Update to multiple roles test
 	i2 := i
-	i2.roles = append(i2.roles, "Terraformer")
+	i2.roles = append(i2.roles, "Terraform")
 	r2Str, _ := json.Marshal(i2.roles)
 	i2.rolesStr = string(r2Str)
 
@@ -113,7 +113,7 @@ func testAccKeyfactorIdentityResourceConfig(t identityTestCase) string {
 	output := fmt.Sprintf(`
 resource "keyfactor_identity" "terraformer" {
 	account_name = "%s"
-	roles        = %s
+	roles        = sort(%s)
 }
 `, t.accountName, t.rolesStr)
 	return output

@@ -169,7 +169,7 @@ func (r resourceSecurityIdentity) Update(ctx context.Context, request tfsdk.Upda
 			log.Fatal(err)
 		}
 		roleStr := re.ReplaceAllString(role.String(), "")
-		fmt.Println(roleStr)
+		tflog.Debug(ctx, fmt.Sprintf("Role string: %s", roleStr))
 		kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
 		if roleLookupErr != nil || kfRole == nil {
 			tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))

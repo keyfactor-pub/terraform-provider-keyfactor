@@ -391,7 +391,7 @@ func addAllowedRequesterToTemplate(ctx context.Context, kfClient *api.Client, ro
 
 	// First get info about template from Keyfactor
 	if _, err := strconv.Atoi(templateId); err == nil {
-		fmt.Printf("[DEBUG] %q looks like a number.\n", templateId)
+		tflog.Debug(ctx, fmt.Sprintf("Getting template info from Keyfactor using ID '%s'", templateId))
 	}
 	templateIdNumber, err := strconv.Atoi(templateId)
 	ctx = tflog.SetField(ctx, "template_id", templateIdNumber)

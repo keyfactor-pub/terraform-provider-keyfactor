@@ -1,0 +1,11 @@
+{
+  "$schema": "https://keyfactor.github.io/integration-manifest-schema.json",
+  "integration_type": "terraform",
+  "name": "Keyfactor Provider for Terraform",
+  "status": "prototype",
+  "description": "The Keyfactor provider for Terraform enables programmatic management of Keyfactor resources. This project is a work in progress, and feature requests can be submitted by opening an issue.",
+  "support_level": "kf-community",
+  "link_github": false,
+  "update_catalog": false
+}
+

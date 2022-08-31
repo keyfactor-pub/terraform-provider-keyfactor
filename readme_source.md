@@ -1,10 +1,3 @@
-<a href="https://terraform.io">
-    <img src=".github/tf.png" alt="Terraform logo" title="Terraform" align="left" height="50" />
-</a>
-
-# Keyfactor Provider for Terraform
-The Keyfactor provider for Terraform enables programmatic management of Keyfactor resources. This project
-is a work in progress, and feature requests can be submitted by opening an issue.
 
 * [Getting Started](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/docs/guides/getting-started.md)
 * Usage

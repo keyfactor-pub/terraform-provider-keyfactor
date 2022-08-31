@@ -18,6 +18,7 @@ build: fmtcheck
 
 tfdocs:
 	tfplugindocs generate
+	terraform fmt -recursive ./examples/
 
 release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64

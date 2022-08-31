@@ -116,7 +116,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		domain = os.Getenv("KEYFACTOR_DOMAIN")
 		config.Domain.Value = domain
 	} else {
-		username = config.Domain.Value
+		domain = config.Domain.Value
 	}
 	if domain == "" {
 		// Error vs warning - empty value must stop execution

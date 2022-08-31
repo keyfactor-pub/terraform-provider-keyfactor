@@ -35,7 +35,7 @@ func (r resourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Schema
 				Optional:    true,
 				Description: "An array containing the role IDs that the identity is attached to.",
 			},
-			"identity_id": {
+			"id": {
 				Type:        types.Int64Type,
 				Computed:    true,
 				Description: "An integer containing the Keyfactor Command identifier for the security identity.",
@@ -76,7 +76,7 @@ func (r resourceSecurityIdentity) Read(ctx context.Context, request tfsdk.ReadRe
 	tflog.Info(ctx, "Read called on security identity resource")
 	identityId := state.ID.Value
 	accountName := state.AccountName.Value
-	tflog.SetField(ctx, "identity_id", identityId)
+	tflog.SetField(ctx, "id", identityId)
 
 	identities, err := r.p.client.GetSecurityIdentities()
 

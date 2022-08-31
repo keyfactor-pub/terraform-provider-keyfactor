@@ -78,7 +78,9 @@ func (r resourceCertificateTemplateRoleBinding) Create(ctx context.Context, requ
 
 	diags = plan.TemplateNames.ElementsAs(ctx, &templateNames, true)
 
-	hid := fmt.Sprintf("%v%v", roleName, templateNames)
+	tNameStr := strings.Join(templateNames, "-")
+
+	hid := fmt.Sprintf("%s-%s", roleName, tNameStr)
 	ctx = tflog.SetField(ctx, "role_binding_id", hid)
 
 	// List all templates
@@ -106,7 +108,7 @@ func (r resourceCertificateTemplateRoleBinding) Create(ctx context.Context, requ
 
 	// Set state
 	result := CertificateTemplateRoleBinding{
-		ID:            types.String{Value: fmt.Sprintf("%s", sha256.Sum256([]byte(hid)))},
+		ID:            types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
 		RoleName:      plan.RoleName,
 		TemplateNames: plan.TemplateNames,
 	}
@@ -268,94 +270,37 @@ func (r resourceCertificateTemplateRoleBinding) Delete(ctx context.Context, requ
 }
 
 func (r resourceCertificateTemplateRoleBinding) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-	var state KeyfactorCertificate
-	if response.Diagnostics.HasError() {
-		return
-	}
-
-	tflog.Info(ctx, "Read called on certificate resource")
-	certificateId := request.ID
-	certificateIdInt, err := strconv.Atoi(certificateId)
-	if err != nil {
-		response.Diagnostics.AddError("Import error.", fmt.Sprintf("Could not convert cert ID '%s' to integer: "+err.Error(), certificateId))
-		return
-	}
-
-	tflog.SetField(ctx, "certificate_id", certificateId)
-
-	// Get certificate context
-	args := &api.GetCertificateContextArgs{
-		IncludeMetadata:  boolToPointer(true),
-		IncludeLocations: boolToPointer(true),
-		CollectionId:     nil,
-		Id:               certificateIdInt,
-	}
-	certificateData, err := r.p.client.GetCertificateContext(args)
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateId),
-		)
-		return
-	}
-
-	// Get the password out of current schema
-	password := ""
-	csr := ""
-
-	// Download and assign certificates to proper location
-	priv, leaf, chain, dErr := downloadCertificate(certificateData.Id, r.p.client, password, csr != "")
-	if dErr != nil {
-		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), certificateId),
-		)
-		return
-	}
-
-	var result = KeyfactorCertificate{
-		ID:                   types.Int64{Value: state.ID.Value},
-		CSR:                  types.String{Value: csr},
-		Subject:              state.Subject,
-		DNSSANs:              state.DNSSANs,
-		IPSANs:               state.IPSANs,
-		URISANs:              state.URISANs,
-		SerialNumber:         state.SerialNumber,
-		IssuerDN:             state.IssuerDN,
-		Thumbprint:           state.Thumbprint,
-		PEM:                  types.String{Value: leaf},
-		PEMChain:             types.String{Value: chain},
-		PrivateKey:           types.String{Value: priv},
-		KeyPassword:          types.String{Value: password},
-		CertificateAuthority: state.CertificateAuthority,
-		CertificateTemplate:  state.CertificateTemplate,
-		RequestId:            state.RequestId,
-		Metadata:             state.Metadata,
-	}
-
-	// Set state
-	diags := response.State.Set(ctx, &result)
+	var state CertificateTemplateRoleBinding
+	var diags diag.Diagnostics
+	//diags := request.ID
+	diags.AddError("Import not implemented", "Import is not implemented for this resource")
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
+	response.State.Set(ctx, state)
 }
 
 func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateResponse, templateNames []string) ([]int, []diag.Diagnostic) {
 	var diags diag.Diagnostics
-	result := make([]int, len(templateNames))
+	var result []int
 	for _, templateName := range templateNames {
 		if templateName == "" {
 			diags.AddError("Error empty template name.", "Template name provided")
 		}
+		found := false
 		for _, template := range templates {
 			if strings.EqualFold(template.CommonName, templateName) {
 				//result.Elems = append(result.Elems, types.Int64{Value: int64(template.Id)})
 				result = append(result, template.Id)
+				found = true
+				break
 			}
-			break
 		}
-		diags.AddError("Error template name not found.", fmt.Sprintf("Template name '%s' not found", templateName))
+		if !found {
+			diags.AddError("Error template name not found.", "Template name "+templateName+" not found")
+		}
+
 	}
 	return result, diags
 }

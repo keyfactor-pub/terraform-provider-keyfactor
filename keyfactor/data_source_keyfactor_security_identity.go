@@ -70,7 +70,7 @@ func (r dataSourceSecurityIdentity) Read(ctx context.Context, request tfsdk.Read
 	tflog.Info(ctx, "Read called on security identity resource")
 	identityId := state.ID.Value
 	accountName := state.AccountName.Value
-	tflog.SetField(ctx, "identity_id", identityId)
+	tflog.SetField(ctx, "id", identityId)
 
 	identities, err := r.p.client.GetSecurityIdentities()
 

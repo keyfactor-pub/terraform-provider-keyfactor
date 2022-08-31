@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -91,7 +92,7 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				Optional:    true,
 				Description: "Sets password for certificate store.",
 			},
-			"keyfactor_id": {
+			"id": {
 				Type:        types.StringType,
 				Computed:    true,
 				Description: "Keyfactor certificate store GUID.",
@@ -136,8 +137,8 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 
 	kfClient := r.p.client
 
-	certificateStoreId := plan.ID.Value
-	ctx = tflog.SetField(ctx, "store_id", certificateStoreId)
+	//certificateStoreId := plan.ID.Value
+	//ctx = tflog.SetField(ctx, "id", certificateStoreId)
 	tflog.Info(ctx, "Create called on certificate store resource")
 
 	csType, csTypeErr := r.p.client.GetCertStoreTypeByName(plan.StoreType.Value)
@@ -166,7 +167,7 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		AgentId:         plan.AgentId.Value,
 		AgentAssigned:   &plan.AgentAssigned.Value,
 		ContainerName:   &plan.ContainerName.Value,
-		//InventorySchedule:     createInventorySchedule(plan.InventorySchedule.Value),
+		//InventorySchedule:     createInventorySchedule(plan.InventorySchedule.Value), // TODO: Implement inventory schedule
 		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
 		Password:              createPasswordConfig(plan.Password.Value),
 	}
@@ -180,7 +181,6 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		return
 	}
 
-	// Set resource ID to certificate ID
 	// Set state
 	var result = CertificateStore{
 		ID:                    types.String{Value: createStoreResponse.Id},
@@ -197,6 +197,7 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		InventorySchedule:     plan.InventorySchedule,
 		SetNewPasswordAllowed: plan.SetNewPasswordAllowed,
 		Password:              plan.Password,
+		Certificates:          types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -218,7 +219,7 @@ func (r resourceCertificateStore) Read(ctx context.Context, request tfsdk.ReadRe
 	tflog.Info(ctx, "Read called on certificate store resource")
 	certificateStoreId := state.ID.Value
 
-	tflog.SetField(ctx, "certificate_id", certificateStoreId)
+	tflog.SetField(ctx, "id", certificateStoreId)
 
 	_, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
 	if err != nil {
@@ -338,7 +339,7 @@ func (r resourceCertificateStore) Delete(ctx context.Context, request tfsdk.Dele
 
 	// Get order ID from state
 	certificateStoreId := state.ID.Value
-	tflog.SetField(ctx, "certificate_id", certificateStoreId)
+	tflog.SetField(ctx, "id", certificateStoreId)
 
 	// Delete order by calling API
 	log.Println("[INFO] Deleting certificate resource")
@@ -364,7 +365,7 @@ func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk
 	tflog.Info(ctx, "Read called on certificate store resource")
 	certificateStoreId := state.ID.Value
 
-	tflog.SetField(ctx, "certificate_store_id", certificateStoreId)
+	tflog.SetField(ctx, "id", certificateStoreId)
 
 	readResponse, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
 	if err != nil {
@@ -418,8 +419,8 @@ func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk
 	}
 }
 
-func createPasswordConfig(m interface{}) *api.StorePasswordConfig {
-	password := stringToPointer(m.(map[string]interface{})["value"].(string))
+func createPasswordConfig(p string) *api.StorePasswordConfig {
+	password := stringToPointer(p)
 	res := &api.StorePasswordConfig{
 		Value: password,
 	}

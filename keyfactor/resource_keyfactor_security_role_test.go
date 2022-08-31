@@ -1,202 +1,145 @@
 package keyfactor
 
-//
-//import (
-//	"fmt"
-//	"github.com/spbsoluble/kfctl/api"
-//	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
-//	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-//	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-//	"os"
-//	"strconv"
-//	"strings"
-//	"testing"
-//)
-//
-//func TestAccKeyfactorSecurityRoleBasic(t *testing.T) {
-//	skipRole := testAccKeyfactorSecurityRoleCheckSkip()
-//	if skipRole {
-//		t.Skip("Skipping security role tests (KEYFACTOR_SKIP_ROLE_TESTS=true)")
-//	}
-//
-//	iName := testAccKeyfactorSecurityRoleGetConfig(t)
-//	roleName := "TerraformRole_" + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
-//	description := "Terraform acceptance test check description - " + acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
-//	permission1a := "Monitoring:Read"
-//	permission1b := "Monitoring:Modify"
-//	permission2a := "SecuritySettings:Read"
-//	permission2b := "SecuritySettings:Modify"
-//
-//	resource.Test(t, resource.TestCase{
-//		PreCheck:          func() { testAccPreCheck(t) },
-//		IDRefreshName:     "keyfactor_security_role.test",
-//		ProviderFactories: providerFactories,
-//		CheckDestroy:      testAccCheckKeyfactorSecurityRoleDestroy,
-//		Steps: []resource.TestStep{
-//			{
-//				Config: testAccCheckKeyfactorSecurityRoleBasic(roleName, description),
-//				Check: resource.ComposeTestCheckFunc(
-//					// Check inputted values
-//					testAccCheckKeyfactorSecurityRoleExists("keyfactor_security_role.test"),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "role_name", roleName),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "description", description),
-//					// Check computed values
-//					// jk there aren't any computed values for the basic test
-//				),
-//			},
-//			{
-//				// Add some permissions
-//				Config: testAccCheckKeyfactorSecurityRoleModified(roleName, description, iName, permission1a, permission2a),
-//				Check: resource.ComposeTestCheckFunc(
-//					// Check inputted values
-//					testAccCheckKeyfactorSecurityRoleExists("keyfactor_security_role.test"),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "role_name", roleName),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "description", description),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "identities.#", "1"),
-//					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.account_name"), // todo figure out how to fix escape character problems
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.#", "2"),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.0", permission1a),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.1", permission2a),
-//					// Check computed values
-//					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.id"),
-//					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.identity_type"),
-//					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.sid"),
-//				),
-//			},
-//			{
-//				// Change the permissions
-//				Config: testAccCheckKeyfactorSecurityRoleModified(roleName, description, iName, permission1b, permission2b),
-//				Check: resource.ComposeTestCheckFunc(
-//					// Check inputted values
-//					testAccCheckKeyfactorSecurityRoleExists("keyfactor_security_role.test"),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "role_name", roleName),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "description", description),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "identities.#", "1"),
-//					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.account_name"), // todo figure out how to fix escape character problems
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.#", "2"),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.0", permission1b),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "permissions.1", permission2b),
-//					// Check computed values
-//					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.id"),
-//					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.identity_type"),
-//					resource.TestCheckResourceAttrSet("keyfactor_security_role.test", "identities.0.sid"),
-//				),
-//			},
-//			{
-//				// Delete the permissions and remove the identity
-//				Config: testAccCheckKeyfactorSecurityRoleBasic(roleName, description),
-//				Check: resource.ComposeTestCheckFunc(
-//					// Check inputted values
-//					testAccCheckKeyfactorSecurityRoleExists("keyfactor_security_role.test"),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "role_name", roleName),
-//					resource.TestCheckResourceAttr("keyfactor_security_role.test", "description", description),
-//					// Check computed values
-//					// jk there aren't any computed values for the basic test
-//				),
-//			},
-//		},
-//	})
-//}
-//
-//func testAccKeyfactorSecurityRoleCheckSkip() bool {
-//	skipRoleTests := false
-//	if temp := os.Getenv("KEYFACTOR_SKIP_ROLE_TESTS"); temp != "" {
-//		if strings.ToLower(temp) == "true" {
-//			skipRoleTests = true
-//		}
-//	}
-//	return skipRoleTests
-//}
-//
-//func testAccCheckKeyfactorSecurityRoleDestroy(s *terraform.State) error {
-//	for _, rs := range s.RootModule().Resources {
-//
-//		if rs.Type != "keyfactor_security_role" {
-//			continue
-//		}
-//
-//		id, err := strconv.Atoi(rs.Primary.ID)
-//		if err != nil {
-//			return err
-//		}
-//
-//		// Pull the provider metadata interface out of the testAccProvider provider
-//		conn := testAccProvider.Meta().(*api.Client)
-//
-//		// conn is a configured Keyfactor Go Client object, pull down the role id
-//		_, err = conn.GetSecurityRole(id)
-//		// If GetSecurityRole doesn't fail, resource still exists
-//		if err == nil {
-//			return fmt.Errorf("resource still exists, ID: %s", rs.Primary.ID)
-//		}
-//
-//		// If we get here, the identity doesn't exist in Keyfactor
-//	}
-//	return nil
-//}
-//
-//func testAccKeyfactorSecurityRoleGetConfig(t *testing.T) string {
-//	var iName string
-//	if iName = os.Getenv("KEYFACTOR_SECURITY_ROLE_IDENTITY_ACCOUNTNAME"); iName == "" {
-//		t.Log("Note: Terraform Security Role tests attempt to add previously created identities to a new role. " +
-//			"Create a new security identity in Keyfactor, and set this environment to test the role resource.")
-//		t.Log("Set an environment variable for KEYFACTOR_SKIP_IDENTITY_TESTS to 'true' to skip Security Identity " +
-//			"resource acceptance tests")
-//		t.Fatal("KEYFACTOR_SECURITY_ROLE_IDENTITY_ACCOUNTNAME must be set to perform Security Identity acceptance test. " +
-//			"(EX '<DOMAIN>\\\\<user or group name>')")
-//	}
-//	return iName
-//}
-//
-//func testAccCheckKeyfactorSecurityRoleExists(name string) resource.TestCheckFunc {
-//	return func(s *terraform.State) error {
-//		rs, ok := s.RootModule().Resources[name]
-//		if !ok {
-//			return fmt.Errorf("not found: %s", name)
-//		}
-//		if rs.Primary.ID == "" {
-//			return fmt.Errorf("no Identity ID set")
-//		}
-//
-//		conn := testAccProvider.Meta().(*api.Client)
-//
-//		id, err := strconv.Atoi(rs.Primary.ID)
-//		if err != nil {
-//			return err
-//		}
-//
-//		role, err := conn.GetSecurityRole(id)
-//		if err != nil {
-//			return err
-//		}
-//
-//		if role.Name != "" && role.Description != "" {
-//			return nil
-//		}
-//
-//		// If we get to this point, role does not exist.
-//		return fmt.Errorf("identity does not exist in kefactor")
-//	}
-//}
-//
-//func testAccCheckKeyfactorSecurityRoleBasic(roleName string, roleDesc string) string {
-//	return fmt.Sprintf(`
-//	resource "keyfactor_security_role" "test" {
-//		role_name = "%s"
-//		description = "%s"
-//	}
-//	`, roleName, roleDesc)
-//}
-//
-//func testAccCheckKeyfactorSecurityRoleModified(roleName string, roleDesc string, iName string, permission1 string, permission2 string) string {
-//	return fmt.Sprintf(`
-//	resource "keyfactor_security_role" "test" {
-//		role_name = "%s"
-//		description = "%s"
-//		identities {
-//			account_name = "%s"
-//		}
-//		permissions = ["%s", "%s"]
-//	}
-//	`, roleName, roleDesc, iName, permission1, permission2)
-//}
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"testing"
+)
+
+type roleTestCase struct {
+	name           string
+	description    string
+	permissions    []string
+	permissionsStr string
+	resourceName   string
+}
+
+func TestAccKeyfactorRoleResource(t *testing.T) {
+
+	r := roleTestCase{
+		name:        "TerraformTest",
+		description: "Role used for a Terraform.",
+		permissions: []string{
+			"AdminPortal:Read",
+			"API:Read",
+		},
+		resourceName: "keyfactor_role.terraform_test",
+	}
+	pStr, _ := json.Marshal(r.permissions)
+	r.permissionsStr = string(pStr)
+
+	// Update to multiple roles test
+	r2 := r
+	additionalPermissions := []string{
+		"Certificates:Read",
+		"Certificates:EditMetadata",
+		"Certificates:Import",
+		"Certificates:Recover",
+		"Certificates:Revoke",
+		"Certificates:Delete",
+		"Certificates:ImportPrivateKey",
+		"CertificateCollections:Modify",
+		"PkiManagement:Read",
+		"PkiManagement:Modify",
+		"CertificateStoreManagement:Read",
+		"CertificateStoreManagement:Modify",
+		"CertificateStoreManagement:Schedule",
+		"CertificateEnrollment:EnrollPFX",
+		"CertificateEnrollment:EnrollCSR",
+		"CertificateEnrollment:CsrGeneration",
+		"CertificateEnrollment:PendingCsr",
+	}
+	r2.permissions = append(r2.permissions, additionalPermissions...)
+	r2Str, _ := json.Marshal(r2.permissions)
+	r2.permissionsStr = string(r2Str)
+
+	// Update to no roles test
+	r3 := r2
+	r3.permissions = []string{}
+	r3Str, _ := json.Marshal(r3.permissions)
+	r3.permissionsStr = string(r3Str)
+
+	// Testing Role
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read testing
+			{
+				//ResourceName: "",
+				//PreConfig:    nil,
+				//Taint:        nil,
+				Config: testAccKeyfactorRoleResourceConfig(r),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourceName, "id"),
+					resource.TestCheckResourceAttrSet(r.resourceName, "name"),          // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "permissions.0"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "permissions.1"), // TODO: Check specific value
+
+				),
+				//Destroy:                   false,
+				//ExpectNonEmptyPlan:        false,
+				//ExpectError:               nil,
+				//PlanOnly:                  false,
+				//PreventDiskCleanup:        false,
+				//PreventPostDestroyRefresh: false,
+				//SkipFunc:                  nil,
+				//ImportState:               false,
+				//ImportStateId:             "",
+				//ImportStateIdPrefix:       "",
+				//ImportStateIdFunc:         nil,
+				//ImportStateCheck:          nil,
+				//ImportStateVerify:         false,
+				//ImportStateVerifyIgnore:   nil,
+				//ProviderFactories:         nil,
+				//ProtoV5ProviderFactories:  nil,
+				//ProtoV6ProviderFactories:  nil,
+				//ExternalProviders:         nil,
+			},
+			// ImportState testing
+			//{
+			//	ResourceName:      "scaffolding_example.test",
+			//	ImportState:       false,
+			//	ImportStateVerify: false,
+			//	// This is not normally necessary, but is here because this
+			//	// example code does not have an actual upstream service.
+			//	// Once the Read method is able to refresh information from
+			//	// the upstream service, this can be removed.
+			//	ImportStateVerifyIgnore: []string{"configurable_attribute"},
+			//},
+			// Update and Read testing
+			{
+				Config: testAccKeyfactorRoleResourceConfig(r2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r2.resourceName, "id"),
+					resource.TestCheckResourceAttrSet(r2.resourceName, "name"),          // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r2.resourceName, "permissions.0"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r2.resourceName, "permissions.1"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r2.resourceName, "permissions.3"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r2.resourceName, "permissions.4"), // TODO: Check specific value
+				),
+			},
+			{
+				Config: testAccKeyfactorRoleResourceConfig(r3),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r3.resourceName, "id"),
+					resource.TestCheckResourceAttrSet(r3.resourceName, "name"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r3.resourceName, "permissions.#"),
+				),
+			},
+			// Delete testing automatically occurs in TestCase
+		},
+	})
+}
+
+func testAccKeyfactorRoleResourceConfig(t roleTestCase) string {
+	output := fmt.Sprintf(`
+resource "keyfactor_role" "terraform_test" {
+	name = "%s"
+	description  = "%s"
+	permissions  = distinct(sort(%s))
+}
+`, t.name, t.description, t.permissionsStr)
+	return output
+}

@@ -1,145 +1,120 @@
 package keyfactor
 
-//
-//import (
-//	"fmt"
-//	"github.com/spbsoluble/kfctl/api"
-//	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-//	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-//	"os"
-//	"strconv"
-//	"strings"
-//	"testing"
-//)
-//
-//func TestAccKeyfactorSecurityIdentityBasic(t *testing.T) {
-//	skipIdentity := testAccKeyfactorSecurityIdentityCheckSkip()
-//	if skipIdentity {
-//		t.Skip("Skipping security identity tests (KEYFACTOR_SKIP_IDENTITY_TESTS=true)")
-//	}
-//
-//	iName := testAccKeyfactorSecurityIdentityGetConfig(t)
-//
-//	resource.Test(t, resource.TestCase{
-//		PreCheck:          func() { testAccPreCheck(t) },
-//		IDRefreshName:     "keyfactor_security_identity.test",
-//		ProviderFactories: providerFactories,
-//		CheckDestroy:      testAccCheckKeyfactorSecurityIdentityDestroy,
-//		Steps: []resource.TestStep{
-//			{
-//				// Test basic creation of a Keyfactor identity
-//				Config: testAccCheckKeyfactorSecurityIdentityBasic(iName),
-//				Check: resource.ComposeTestCheckFunc(
-//					// Check inputted values
-//					testAccCheckKeyfactorSecurityIdentityExists("keyfactor_security_identity.test"),
-//					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "account_name"), // todo figure out how to fix escape character problems
-//					// Check computed values
-//					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "identity_id"),
-//					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "identity_type"),
-//					resource.TestCheckResourceAttrSet("keyfactor_security_identity.test", "valid"),
-//				),
-//			},
-//		},
-//	})
-//}
-//
-//func testAccCheckKeyfactorSecurityIdentityExists(name string) resource.TestCheckFunc {
-//	return func(s *terraform.State) error {
-//		rs, ok := s.RootModule().Resources[name]
-//		if !ok {
-//			return fmt.Errorf("not found: %s", name)
-//		}
-//		if rs.Primary.ID == "" {
-//			return fmt.Errorf("no Identity ID set")
-//		}
-//
-//		conn := testAccProvider.Meta().(*api.Client)
-//
-//		id, err := strconv.Atoi(rs.Primary.ID)
-//		if err != nil {
-//			return err
-//		}
-//
-//		identities, err := conn.GetSecurityIdentities()
-//		if err != nil {
-//			return err
-//		}
-//
-//		var identityContext api.GetSecurityIdentityResponse
-//
-//		// Search the returned list of identies for the ID of the resource
-//		for _, identity := range identities {
-//			if identity.Id == id {
-//				identityContext = identity
-//			}
-//		}
-//
-//		if identityContext.Valid == true && identityContext.AccountName != "" {
-//			return nil
-//		}
-//
-//		return fmt.Errorf("identity does not exist in kefactor")
-//	}
-//}
-//
-//func testAccKeyfactorSecurityIdentityGetConfig(t *testing.T) string {
-//	var iName string
-//	if iName = os.Getenv("KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME"); iName == "" {
-//		t.Log("Note: Terraform Security Identity tests attempt to create a new identity based on an AD user or " +
-//			"group. Please create a new user/group in AD for testing if one isn't already created.")
-//		t.Log("Set an environment variable for KEYFACTOR_SKIP_IDENTITY_TESTS to 'true' to skip Security Identity " +
-//			"resource acceptance tests")
-//		t.Fatal("KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME must be set to perform Security Identity acceptance test. " +
-//			"(EX '<DOMAIN>\\\\<user or group name>')")
-//	}
-//	return iName
-//}
-//
-//func testAccKeyfactorSecurityIdentityCheckSkip() bool {
-//	skipIdentityTests := false
-//	if temp := os.Getenv("KEYFACTOR_SKIP_IDENTITY_TESTS"); temp != "" {
-//		if strings.ToLower(temp) == "true" {
-//			skipIdentityTests = true
-//		}
-//	}
-//	return skipIdentityTests
-//}
-//
-//func testAccCheckKeyfactorSecurityIdentityDestroy(s *terraform.State) error {
-//	for _, rs := range s.RootModule().Resources {
-//		if rs.Type != "keyfactor_security_identity" {
-//			continue
-//		}
-//
-//		id, err := strconv.Atoi(rs.Primary.ID)
-//		if err != nil {
-//			return err
-//		}
-//
-//		// Pull the provider metadata interface out of the testAccProvider provider
-//		conn := testAccProvider.Meta().(*api.Client)
-//
-//		// conn is a configured Keyfactor Go Client object, get all Keyfactor security identities
-//		identities, err := conn.GetSecurityIdentities()
-//		if err != nil {
-//			return err
-//		}
-//
-//		// Search the returned list of identies for the ID of the resource
-//		for _, identity := range identities {
-//			if identity.Id == id {
-//				return fmt.Errorf("resource still exists, ID: %d", id)
-//			}
-//		}
-//		// If we get here, the identity doesn't exist in Keyfactor
-//	}
-//	return nil
-//}
-//
-//func testAccCheckKeyfactorSecurityIdentityBasic(iName string) string {
-//	return fmt.Sprintf(`
-//	resource "keyfactor_security_identity" "test" {
-//		account_name = "%s"
-//	}
-//	`, iName)
-//}
+import (
+	"encoding/json"
+	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"testing"
+)
+
+type identityTestCase struct {
+	accountName  string
+	roles        []string
+	resourceName string
+	rolesStr     string
+}
+
+func TestAccKeyfactorIdentityResource(t *testing.T) {
+	// Single role test
+	i := identityTestCase{
+		accountName: `COMMAND\\terraformer`,
+		roles: []string{
+			"EnrollPFX",
+		},
+		resourceName: "keyfactor_identity.terraformer",
+	}
+
+	rStr, _ := json.Marshal(i.roles)
+	i.rolesStr = string(rStr)
+
+	// Update to multiple roles test
+	i2 := i
+	i2.roles = append(i2.roles, "Terraformer")
+	r2Str, _ := json.Marshal(i2.roles)
+	i2.rolesStr = string(r2Str)
+
+	// Update to no roles test
+	i3 := i2
+	i3.roles = []string{}
+	r3Str, _ := json.Marshal(i3.roles)
+	i3.rolesStr = string(r3Str)
+
+	// Testing Identity
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read testing
+			{
+				//ResourceName: "",
+				//PreConfig:    nil,
+				//Taint:        nil,
+				Config: testAccKeyfactorIdentityResourceConfig(i),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(i.resourceName, "id"),
+					resource.TestCheckResourceAttrSet(i.resourceName, "account_name"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(i.resourceName, "roles.0"),      // TODO: Check specific value
+
+				),
+				//Destroy:                   false,
+				//ExpectNonEmptyPlan:        false,
+				//ExpectError:               nil,
+				//PlanOnly:                  false,
+				//PreventDiskCleanup:        false,
+				//PreventPostDestroyRefresh: false,
+				//SkipFunc:                  nil,
+				//ImportState:               false,
+				//ImportStateId:             "",
+				//ImportStateIdPrefix:       "",
+				//ImportStateIdFunc:         nil,
+				//ImportStateCheck:          nil,
+				//ImportStateVerify:         false,
+				//ImportStateVerifyIgnore:   nil,
+				//ProviderFactories:         nil,
+				//ProtoV5ProviderFactories:  nil,
+				//ProtoV6ProviderFactories:  nil,
+				//ExternalProviders:         nil,
+			},
+			// ImportState testing
+			//{
+			//	ResourceName:      "scaffolding_example.test",
+			//	ImportState:       false,
+			//	ImportStateVerify: false,
+			//	// This is not normally necessary, but is here because this
+			//	// example code does not have an actual upstream service.
+			//	// Once the Read method is able to refresh information from
+			//	// the upstream service, this can be removed.
+			//	ImportStateVerifyIgnore: []string{"configurable_attribute"},
+			//},
+			// Update and Read testing
+			{
+				Config: testAccKeyfactorIdentityResourceConfig(i2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(i2.resourceName, "id"),
+					resource.TestCheckResourceAttrSet(i2.resourceName, "account_name"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(i2.resourceName, "roles.0"),      // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(i2.resourceName, "roles.1"),      // TODO: Check specific value
+				),
+			},
+			{
+				Config: testAccKeyfactorIdentityResourceConfig(i3),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(i3.resourceName, "id"),
+					resource.TestCheckResourceAttrSet(i3.resourceName, "account_name"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(i3.resourceName, "roles.#"),
+				),
+			},
+			// Delete testing automatically occurs in TestCase
+		},
+	})
+}
+
+func testAccKeyfactorIdentityResourceConfig(t identityTestCase) string {
+	output := fmt.Sprintf(`
+resource "keyfactor_identity" "terraformer" {
+	account_name = "%s"
+	roles        = %s
+}
+`, t.accountName, t.rolesStr)
+	return output
+}

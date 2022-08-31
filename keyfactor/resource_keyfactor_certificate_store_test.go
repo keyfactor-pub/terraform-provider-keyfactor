@@ -1,199 +1,125 @@
 package keyfactor
 
-//
-//import (
-//	"fmt"
-//	"github.com/spbsoluble/kfctl/api"
-//	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
-//	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-//	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-//	"log"
-//	"os"
-//	"strings"
-//	"testing"
-//)
-//
-//func TestAccKeyfactorStore_Basic(t *testing.T) {
-//	skipStore := testAccKeyfactorStoreCheckSkip()
-//	if skipStore {
-//		t.Skip("Skipping store acceptance tests (KEYFACTOR_SKIP_STORE_TESTS=true)")
-//	}
-//
-//	t.Log("Note that this test doesn't care if the certificate store can be inventoried properly; it only cares ")
-//	t.Log("if the data going to/from Keyfactor is accurate within Terraform's expectations.")
-//
-//	// Testing the store resource should only occur if the proper environment variables are set
-//	clientMachine, agentId := testAccKeyfactorStoreGetConfig(t)
-//
-//	rand := acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
-//
-//	storePathPub := "~/terraform_pub_" + rand + ".pem"
-//	storePathPriv := "~/terraform_priv_" + rand + ".pem"
-//
-//	certStoreType := "2"
-//	password := "TerraformAccTestBasic"
-//	inventoryMins := "60"
-//
-//	resource.Test(t, resource.TestCase{
-//		PreCheck:          func() { testAccPreCheck(t) },
-//		IDRefreshName:     "keyfactor_store.test",
-//		ProviderFactories: providerFactories,
-//		CheckDestroy:      testAccCheckKeyfactorStoreDestroy,
-//		Steps: []resource.TestStep{
-//			{
-//				Config: testAccCheckKeyfactorStoreBasic(clientMachine, storePathPub, agentId, certStoreType, password, inventoryMins),
-//				Check: resource.ComposeTestCheckFunc(
-//					// Check inputted values
-//					testAccCheckKeyfactorStoreExists("keyfactor_store.test"),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "client_machine", clientMachine),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "store_path", storePathPub),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "cert_store_type", certStoreType),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "agent_id", agentId),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "inventory_schedule.0.interval.0.minutes", inventoryMins),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "password.0.value", password),
-//					// Check computed values
-//					resource.TestCheckResourceAttrSet("keyfactor_store.test", "keyfactor_id"),
-//				),
-//			},
-//			{
-//				Config: testAccCheckKeyfactorStoreModified(clientMachine, storePathPub, agentId, certStoreType, password, inventoryMins, storePathPriv),
-//				Check: resource.ComposeTestCheckFunc(
-//					// Check inputted values
-//					testAccCheckKeyfactorStoreExists("keyfactor_store.test"),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "client_machine", clientMachine),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "store_path", storePathPub),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "cert_store_type", certStoreType),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "agent_id", agentId),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "inventory_schedule.0.interval.0.minutes", inventoryMins),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "password.0.value", password),
-//					// Check computed values
-//					resource.TestCheckResourceAttrSet("keyfactor_store.test", "keyfactor_id"),
-//					// Check that the change propagated to new state
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "properties.%", "2"),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "properties.separatePrivateKey", "true"),
-//					resource.TestCheckResourceAttr("keyfactor_store.test", "properties.privateKeyPath", storePathPriv),
-//				),
-//			},
-//		},
-//	})
-//}
-//
-//func testAccKeyfactorStoreCheckSkip() bool {
-//	skipStoreTests := false
-//	if temp := os.Getenv("KEYFACTOR_SKIP_STORE_TESTS"); temp != "" {
-//		if strings.ToLower(temp) == "true" {
-//			skipStoreTests = true
-//		}
-//	}
-//	return skipStoreTests
-//}
-//
-//func testAccKeyfactorStoreGetConfig(t *testing.T) (string, string) {
-//	var clientMachine, agentId string
-//	if clientMachine = os.Getenv("KEYFACTOR_CLIENT_MACHINE"); clientMachine == "" {
-//		t.Log("Note: Terraform Store Acceptance test tries to create a new PEM certificate store with the provided " +
-//			"orchestrator details. Ensure that this capability is supported.")
-//		t.Log("Set an environment variable for KEYFACTOR_SKIP_STORE_TESTS to true to skip Store resource acceptance tests")
-//		t.Fatal("KEYFACTOR_CLIENT_MACHINE must be set to perform store acceptance test")
-//	}
-//
-//	if agentId = os.Getenv("KEYFACTOR_ORCHESTRATOR_AGENT_ID"); agentId == "" {
-//		t.Log("Note: Terraform Store Acceptance test tries to create a new PEM certificate store with the provided " +
-//			"orchestrator details. Ensure that this capability is supported.")
-//		t.Log("Set an environment variable for KEYFACTOR_SKIP_STORE_TESTS to true to skip Store resource acceptance tests")
-//		t.Fatal("KEYFACTOR_ORCHESTRATOR_AGENT_ID must be set to perform store acceptance test")
-//	}
-//
-//	return clientMachine, agentId
-//}
-//
-//func testAccCheckKeyfactorStoreDestroy(s *terraform.State) error {
-//	for _, rs := range s.RootModule().Resources {
-//		if rs.Type != "keyfactor_store" {
-//			continue
-//		}
-//
-//		conn := testAccProvider.Meta().(*api.Client)
-//		var exists bool
-//		_, err := conn.GetCertificateStoreByID(rs.Primary.ID)
-//		if err != nil {
-//			// Should return an error if the cert doesn't exist, but let's analyze the error first to be sure
-//			// todo analyze the error
-//			log.Println("[ERROR]:", err)
-//			break
-//		}
-//		if exists {
-//			return fmt.Errorf("resource still exists, ID: %s", rs.Primary.ID)
-//		}
-//	}
-//	return nil
-//}
-//
-//func testAccCheckKeyfactorStoreExists(name string) resource.TestCheckFunc {
-//	return func(s *terraform.State) error {
-//		rs, ok := s.RootModule().Resources[name]
-//		if !ok {
-//			return fmt.Errorf("not found: %s", name)
-//		}
-//		if rs.Primary.ID == "" {
-//			return fmt.Errorf("no store ID set")
-//		}
-//
-//		conn := testAccProvider.Meta().(*api.Client)
-//
-//		store, err := conn.GetCertificateStoreByID(rs.Primary.ID)
-//		if err != nil {
-//			return err
-//		}
-//
-//		if store.Id == "" || store.StorePath == "" {
-//			return fmt.Errorf("store not found")
-//		}
-//
-//		return nil
-//	}
-//}
-//
-//func testAccCheckKeyfactorStoreBasic(clientMachine string, storePath string, agentId string, certStoreType string, password string, inventoryMins string) string {
-//	// Return the minimum (basic) required fields to enroll PRX certificate
-//	return fmt.Sprintf(`
-//	resource "keyfactor_store" "test" {
-//    client_machine  = "%s"
-//	store_path      = "%s"
-//	cert_store_type = %s
-//	inventory_schedule {
-//		interval {
-//			minutes = %s
-//		}
-//	}
-//	agent_id = "%s"
-//	password {
-//		value = "%s"
-//	}
-//}
-//	`, clientMachine, storePath, certStoreType, inventoryMins, agentId, password)
-//}
-//
-//func testAccCheckKeyfactorStoreModified(clientMachine string, storePathPub string, agentId string, certStoreType string, password string, inventoryMins string, storePathPriv string) string {
-//	// Return the minimum (basic) required fields to enroll PRX certificate
-//	return fmt.Sprintf(`
-//	resource "keyfactor_store" "test" {
-//    client_machine  = "%s"
-//	store_path      = "%s"
-//	cert_store_type = %s
-//	inventory_schedule {
-//		interval {
-//			minutes = %s
-//		}
-//	}
-//	agent_id = "%s"
-//	password {
-//		value = "%s"
-//	}
-//	properties = {
-//		separatePrivateKey  = "true"
-//		privateKeyPath = "%s"
-//	}
-//}
-//	`, clientMachine, storePathPub, certStoreType, inventoryMins, agentId, password, storePathPriv)
-//}
+import (
+	"fmt"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"testing"
+)
+
+type certificateStoreTestCase struct {
+	orchestrator string
+	storePath    string
+	agentId      string
+	storeType    string
+	schedule     string
+	containerId  int
+	password     string
+	resourceName string
+}
+
+func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
+
+	r := certificateStoreTestCase{
+		orchestrator: "myorchestrator01",
+		storePath:    "IIS Trusted Roots",
+		agentId:      "c2b2084f-3d89-4ded-bb8b-b4e0e74d2b59",
+		storeType:    "IIS",
+		schedule:     "60m",
+		containerId:  2,
+		password:     "my store password@!",
+		resourceName: "keyfactor_certificate_store.iis_trusted_roots",
+	}
+
+	// Update to multiple certificateStores test
+	r2 := r
+	r2.containerId = 2
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read testing
+			{
+				//ResourceName: "",
+				//PreConfig:    nil,
+				//Taint:        nil,
+				Config: testAccKeyfactorCertificateStoreResourceConfig(r),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourceName, "id"),
+					resource.TestCheckResourceAttrSet(r.resourceName, "store_path"),         // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "store_type"),         // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "client_machine"),     // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "agent_id"),           // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "inventory_schedule"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "container_id"),       // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "password"),           // TODO: Check specific value
+
+				),
+				//Destroy:                   false,
+				//ExpectNonEmptyPlan:        false,
+				//ExpectError:               nil,
+				//PlanOnly:                  false,
+				//PreventDiskCleanup:        false,
+				//PreventPostDestroyRefresh: false,
+				//SkipFunc:                  nil,
+				//ImportState:               false,
+				//ImportStateId:             "",
+				//ImportStateIdPrefix:       "",
+				//ImportStateIdFunc:         nil,
+				//ImportStateCheck:          nil,
+				//ImportStateVerify:         false,
+				//ImportStateVerifyIgnore:   nil,
+				//ProviderFactories:         nil,
+				//ProtoV5ProviderFactories:  nil,
+				//ProtoV6ProviderFactories:  nil,
+				//ExternalProviders:         nil,
+			},
+			// ImportState testing
+			//{
+			//	ResourceName:      "scaffolding_example.test",
+			//	ImportState:       false,
+			//	ImportStateVerify: false,
+			//	// This is not normally necessary, but is here because this
+			//	// example code does not have an actual upstream service.
+			//	// Once the Read method is able to refresh information from
+			//	// the upstream service, this can be removed.
+			//	ImportStateVerifyIgnore: []string{"configurable_attribute"},
+			//},
+			// Update and Read testing
+			//{
+			//	Config: testAccKeyfactorCertificateStoreResourceConfig(r2),
+			//	Check: resource.ComposeAggregateTestCheckFunc(
+			//		resource.TestCheckResourceAttrSet(r2.resourceName, "id"),
+			//		resource.TestCheckResourceAttrSet(r2.resourceName, "store_path"),         // TODO: Check specific value
+			//		resource.TestCheckResourceAttrSet(r2.resourceName, "store_type"),         // TODO: Check specific value
+			//		resource.TestCheckResourceAttrSet(r2.resourceName, "client_machine"),     // TODO: Check specific value
+			//		resource.TestCheckResourceAttrSet(r2.resourceName, "agent_id"),           // TODO: Check specific value
+			//		resource.TestCheckResourceAttrSet(r2.resourceName, "inventory_schedule"), // TODO: Check specific value
+			//		resource.TestCheckResourceAttrSet(r2.resourceName, "container_id"),       // TODO: Check specific value
+			//		resource.TestCheckResourceAttrSet(r2.resourceName, "password"),           // TODO: Check specific value
+			//	),
+			//},
+			// Delete testing automatically occurs in TestCase
+		},
+	})
+}
+
+func testAccKeyfactorCertificateStoreResourceConfig(t certificateStoreTestCase) string {
+	output := fmt.Sprintf(`
+resource "keyfactor_certificate_store" "iis_trusted_roots" {
+  client_machine = "%s" # Orchestrator client name
+  store_path     = "%s" # Varies based on store type
+  agent_id       = "%s" # Orchestrator GUID
+  store_type     = "%s" # Must exist in KeyFactor
+  properties = {
+    # Optional properties based on the store type
+    UseSSL = true
+  }
+  inventory_schedule = "%s" # How often to update the inventory
+  container_id       = %v   # ID of the KeyFactor container
+  password           = "%s"
+  # The password for the certificate store. Note: This is bad practice, use TF_VAR_<variable_name> instead.
+}
+`, t.orchestrator, t.storePath, t.agentId, t.storeType, t.schedule, t.containerId, t.password)
+	return output
+}

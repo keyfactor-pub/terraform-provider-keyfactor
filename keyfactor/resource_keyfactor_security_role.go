@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/spbsoluble/kfctl/api"
+	"sort"
 )
 
 type resourceSecurityRoleType struct{}
@@ -16,7 +17,7 @@ type resourceSecurityRoleType struct{}
 func (r resourceSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
-			"role_id": {
+			"id": {
 				Type:     types.Int64Type,
 				Computed: true,
 			},
@@ -101,7 +102,7 @@ func (r resourceSecurityRole) Update(ctx context.Context, request tfsdk.UpdateRe
 	}
 
 	roleId := state.ID.Value
-	tflog.SetField(ctx, "role_id", roleId)
+	tflog.SetField(ctx, "id", roleId)
 
 	// Generate API request body from plan
 
@@ -124,6 +125,7 @@ func (r resourceSecurityRole) Update(ctx context.Context, request tfsdk.UpdateRe
 	}
 
 	var permissionValues []attr.Value
+	sort.Strings(*remoteState.Permissions)
 	for _, perm := range *remoteState.Permissions {
 		tflog.Info(ctx, "Permission: "+perm)
 		permissionValues = append(permissionValues, types.String{
@@ -201,6 +203,7 @@ func (r resourceSecurityRole) Create(ctx context.Context, request tfsdk.CreateRe
 
 	var permissions []string
 	plan.Permissions.ElementsAs(ctx, &permissions, false)
+	sort.Strings(permissions)
 
 	roleArg := &api.CreateSecurityRoleArg{
 		Name:        roleName,
@@ -217,45 +220,7 @@ func (r resourceSecurityRole) Create(ctx context.Context, request tfsdk.CreateRe
 		return
 	}
 	tflog.Trace(ctx, "Created security role", map[string]interface{}{"role_name": plan.Name.Value})
-	//var validPermissions []attr.Value
-	//var validPermissionsInterface []interface{}
-	//if len(plan.Permissions.Elems) > 0 {
-	//	var validRolesInterface []interface{}
-	//	for _, permission := range plan.Permissions.Elems {
-	//		tflog.Info(ctx, fmt.Sprintf("Adding permission: %s", permission))
-	//		tflog.Debug(ctx, fmt.Sprintf("Looking up permission %v in Keyfactor", permission))
-	//
-	//		//TODO: Verify permission exists in Keyfactor or throw warning
-	//		re, _ := regexp.Compile(`[^\w]`)
-	//		permissionStr := re.ReplaceAllString(permission.String(), "")
-	//		fmt.Println(permissionStr)
-	//		kfPerm, plErr := kfClient.GetPermission(permissionStr)
-	//		if plErr != nil || kfPerm == nil {
-	//			tflog.Warn(ctx, fmt.Sprintf("Error looking up permission with id: %s", permission))
-	//			response.Diagnostics.AddWarning(
-	//				"Error looking up permission on Keyfactor.",
-	//				fmt.Sprintf("Error looking up permission '%s' on Keyfactor. %s will not have permission %s.", permissionStr, roleName, permissionStr),
-	//			)
-	//			continue
-	//		}
-	//		validPermissions = append(validPermissions, types.String{Value: fmt.Sprintf("%s", permissionStr)})
-	//		//validPermissionsInterface = append(validRolesInterface, kfPerm.Name)
-	//	}
-	//	err = setIdentityRole(ctx, kfClient, roleArg.Name, validRolesInterface)
-	//	if err != nil {
-	//		response.Diagnostics.AddError("Error updating identity roles.", "Error updating identity roles: "+err.Error())
-	//	}
-	//}
-	//if validPermissions == nil {
-	//	validPermissions = plan.Permissions.Elems
-	//}
 
-	// Generate resource state struct
-	//var permissionValues []attr.Value
-	//for perm := range *createResponse.Permissions {
-	//	tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
-	//	permissionValues = append(permissionValues, types.String{Value: strconv.Itoa(perm)})
-	//}
 	var result = SecurityRole{
 		ID:          types.Int64{Value: int64(createResponse.Id)},
 		Name:        types.String{Value: createResponse.Name},

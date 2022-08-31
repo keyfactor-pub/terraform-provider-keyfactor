@@ -1,0 +1,10 @@
+{
+  "$schema": "https://keyfactor.github.io/integration-manifest-schema.json",
+  "integration_type": "api-client",
+  "name": "Keyfactor Terraform Provider",
+  "status": "production",
+  "link_github": true,
+  "update_catalog": false,
+  "support_level": "community",
+  "description": "Terraform provider for Keyfactor platform."
+}

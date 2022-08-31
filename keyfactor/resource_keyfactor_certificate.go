@@ -147,7 +147,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Computed:    true,
 				Description: "Thumbprint of newly enrolled certificate",
 			},
-			"keyfactor_id": {
+			"id": {
 				Type:        types.Int64Type,
 				Computed:    true,
 				Description: "Keyfactor certificate ID",
@@ -512,6 +512,33 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 		var result = KeyfactorCertificate{
 			ID:                   types.Int64{Value: state.ID.Value},
 			CSR:                  types.String{Value: csr},
+			Subject:              state.Subject,
+			DNSSANs:              state.DNSSANs,
+			IPSANs:               state.IPSANs,
+			URISANs:              state.URISANs,
+			SerialNumber:         state.SerialNumber,
+			IssuerDN:             state.IssuerDN,
+			Thumbprint:           state.Thumbprint,
+			PEM:                  state.PEM,
+			PEMChain:             state.PEMChain,
+			PrivateKey:           state.PrivateKey,
+			KeyPassword:          state.KeyPassword,
+			CertificateAuthority: state.CertificateAuthority,
+			CertificateTemplate:  state.CertificateTemplate,
+			RequestId:            state.RequestId,
+			Metadata:             plan.Metadata,
+		}
+
+		diags = response.State.Set(ctx, result)
+		response.Diagnostics.Append(diags...)
+		if response.Diagnostics.HasError() {
+			return
+		}
+	} else {
+		// Set state
+		var result = KeyfactorCertificate{
+			ID:                   types.Int64{Value: state.ID.Value},
+			CSR:                  state.CSR,
 			Subject:              state.Subject,
 			DNSSANs:              state.DNSSANs,
 			IPSANs:               state.IPSANs,

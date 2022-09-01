@@ -3,13 +3,14 @@ package keyfactor
 import (
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"os"
 	"testing"
 )
 
 func TestAccKeyfactorCertificateDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate")
-	var cID = "26"
-	var password = "meow mix is good!"
+	var cID = os.Getenv("KEYFACTOR_CERTIFICATE_ID")
+	var password = os.Getenv("KEYFACTOR_CERTIFICATE_PASSWORD")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },

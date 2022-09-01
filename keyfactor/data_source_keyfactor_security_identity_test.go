@@ -2,6 +2,7 @@ package keyfactor
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -9,8 +10,8 @@ import (
 
 func TestAccKeyfactorSecurityIdentityDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_identity")
-	var iNameEscaped = "COMMAND\\\\Keyfactor-Customer-Admins"
-	var iName = "COMMAND\\Keyfactor-Customer-Admins"
+	var iNameEscaped = fmt.Sprintf("%s\\\\%s", os.Getenv("KEYFACTOR_DOMAIN"), os.Getenv("KEYFACTOR_USERNAME"))
+	var iName = fmt.Sprintf("%s\\%s", os.Getenv("KEYFACTOR_DOMAIN"), os.Getenv("KEYFACTOR_USERNAME"))
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -20,9 +21,9 @@ func TestAccKeyfactorSecurityIdentityDataSource(t *testing.T) {
 			{
 				Config: testAccKeyfactorDataSourceSecurityIdentityBasic(iNameEscaped),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceName, "id", "2"),
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
 					resource.TestCheckResourceAttr(resourceName, "account_name", iName),
-					resource.TestCheckResourceAttrSet(resourceName, "roles.0"),
+					resource.TestCheckResourceAttrSet(resourceName, "roles.#"),
 					resource.TestCheckResourceAttrSet(resourceName, "identity_type"),
 					resource.TestCheckResourceAttrSet(resourceName, "valid"),
 				),

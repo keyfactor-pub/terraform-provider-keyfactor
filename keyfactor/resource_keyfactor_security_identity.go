@@ -285,7 +285,7 @@ func (r resourceSecurityIdentity) Create(ctx context.Context, request tfsdk.Crea
 			//TODO: Verify role exists in Keyfactor or throw warning
 			re, _ := regexp.Compile(`[^\w]`)
 			roleStr := re.ReplaceAllString(role.String(), "")
-			fmt.Println(roleStr)
+			tflog.Debug(ctx, fmt.Sprintf("Role string: %s", roleStr))
 			kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
 			if roleLookupErr != nil || kfRole == nil {
 				tflog.Warn(ctx, fmt.Sprintf("Error looking up role with id: %s", role))

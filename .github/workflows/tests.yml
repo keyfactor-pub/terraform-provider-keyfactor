@@ -70,11 +70,31 @@ jobs:
       - run: go mod download
       - env:
           TF_ACC: "1"
-          TEST_CERTSTORE_SID: "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
-          TEST_CERTSTORE_PASS: ${{secrets.TEST_CERTSTORE_PASS}}
+          KEYFACTOR_DEPLOY_CERT_STOREID1: "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
+          KEYFACTOR_DEPLOY_CERT_STOREID2: "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
+
           KEYFACTOR_HOSTNAME: ${{secrets.KEYFACTOR_HOSTNAME}}
           KEYFACTOR_USERNAME: ${{secrets.KEYFACTOR_USERNAME}}
           KEYFACTOR_PASSWORD: ${{secrets.KEYFACTOR_PASSWORD}}
           KEYFACTOR_DOMAIN: ${{secrets.KEYFACTOR_DOMAIN}}
-        run: go test -v -cover ./keyfactor
+
+          KEYFACTOR_CERTIFICATE_STORE_ID: "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
+          KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE: "myorchestrator01"
+          KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID: "c2b2084f-3d89-4ded-bb8b-b4e0e74d2b59"
+          KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID1: "2"
+          KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2: "2"
+          KEYFACTOR_CERTIFICATE_STORE_PASS: ${{secrets.TEST_CERTSTORE_PASS}}
+
+          KEYFACTOR_SECURITY_ROLE_NAME: "TerraformTest"
+
+          KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME: 'COMMAND\\terraformer'
+          KEYFACTOR_SECURITY_IDENTITY_ROLE1: "EnrollPFX"
+          KEYFACTOR_SECURITY_IDENTITY_ROLE2: "Terraform"
+
+          KEYFACTOR_TEMPLATE_ROLE_BINDING_ROLE_NAME: "Terraform"
+          KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1: "2YearTestWebServer"
+          KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2: "Workstation"
+          KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3: "User"
+
+        run: sleep $[ ( $RANDOM % 30 )  + 1 ]s && go test -v -cover ./keyfactor
         timeout-minutes: 10

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"os"
 	"testing"
 )
 
@@ -17,9 +18,9 @@ type roleBindingTestCase struct {
 func TestAccKeyfactorTemplateRoleBindingResource(t *testing.T) {
 
 	r := roleBindingTestCase{
-		roleName: "Terraform",
+		roleName: os.Getenv("KEYFACTOR_TEMPLATE_ROLE_BINDING_ROLE_NAME"),
 		templates: []string{
-			"2YearTestWebServer",
+			os.Getenv("KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1"),
 		},
 		resourceName: "keyfactor_template_role_binding.terraform_test",
 	}
@@ -29,8 +30,8 @@ func TestAccKeyfactorTemplateRoleBindingResource(t *testing.T) {
 	// Update to multiple roleBindings test
 	r2 := r
 	additionalTemplates := []string{
-		"Workstation",
-		"User",
+		os.Getenv("KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2"),
+		os.Getenv("KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3"),
 	}
 	r2.templates = append(r2.templates, additionalTemplates...)
 	r2Str, _ := json.Marshal(r2.templates)

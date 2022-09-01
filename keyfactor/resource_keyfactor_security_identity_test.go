@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"os"
 	"testing"
 )
 
@@ -17,9 +18,9 @@ type identityTestCase struct {
 func TestAccKeyfactorIdentityResource(t *testing.T) {
 	// Single role test
 	i := identityTestCase{
-		accountName: `COMMAND\\terraformer`,
+		accountName: os.Getenv("KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME"),
 		roles: []string{
-			"EnrollPFX",
+			os.Getenv("KEYFACTOR_SECURITY_IDENTITY_ROLE1"),
 		},
 		resourceName: "keyfactor_identity.terraformer",
 	}
@@ -29,7 +30,7 @@ func TestAccKeyfactorIdentityResource(t *testing.T) {
 
 	// Update to multiple roles test
 	i2 := i
-	i2.roles = append(i2.roles, "Terraform")
+	i2.roles = append(i2.roles, os.Getenv("KEYFACTOR_SECURITY_IDENTITY_ROLE2"))
 	r2Str, _ := json.Marshal(i2.roles)
 	i2.rolesStr = string(r2Str)
 

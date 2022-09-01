@@ -3,6 +3,8 @@ package keyfactor
 import (
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"os"
+	"strconv"
 	"testing"
 )
 
@@ -19,20 +21,23 @@ type certificateStoreTestCase struct {
 
 func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 
+	containerId1, _ := strconv.Atoi(os.Getenv("KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID1"))
+	containerId2, _ := strconv.Atoi(os.Getenv("KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2"))
+
 	r := certificateStoreTestCase{
-		orchestrator: "myorchestrator01",
+		orchestrator: os.Getenv("KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE"),
 		storePath:    "IIS Trusted Roots",
-		agentId:      "c2b2084f-3d89-4ded-bb8b-b4e0e74d2b59",
+		agentId:      os.Getenv("KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID"),
 		storeType:    "IIS",
 		schedule:     "60m",
-		containerId:  2,
-		password:     "my store password@!",
+		containerId:  containerId1,
+		password:     os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PASS"),
 		resourceName: "keyfactor_certificate_store.iis_trusted_roots",
 	}
 
 	// Update to multiple certificateStores test
 	r2 := r
-	r2.containerId = 2
+	r2.containerId = containerId2
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -52,7 +57,7 @@ func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(r.resourceName, "agent_id"),           // TODO: Check specific value
 					resource.TestCheckResourceAttrSet(r.resourceName, "inventory_schedule"), // TODO: Check specific value
 					resource.TestCheckResourceAttrSet(r.resourceName, "container_id"),       // TODO: Check specific value
-					resource.TestCheckResourceAttrSet(r.resourceName, "password"),           // TODO: Check specific value
+					//resource.TestCheckResourceAttrSet(r.resourceName, "password"),           // TODO: Check specific value
 
 				),
 				//Destroy:                   false,

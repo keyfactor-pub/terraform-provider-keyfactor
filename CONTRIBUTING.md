@@ -37,6 +37,7 @@ Note that the following environment variables must exist regardless of the test 
 * ```KEYFACTOR_USERNAME```
 * ```KEYFACTOR_PASSWORD```
 * ```KEYFACTOR_HOSTNAME```
+* ```KEYFACTOR_DOMAIN```
 
 #### Certificate resource acceptance tests
 To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_CERTIFICATE_TESTS=True```.
@@ -49,17 +50,19 @@ The following environment variables must exist to run acceptance tests for the D
 To skip acceptance tests for the Deploy Certificate resource, export ```KEYFACTOR_SKIP_DEPLOY_CERT_TESTS=True```.
 
 
-#### Store resource acceptance tests
+#### Certificate Store resource acceptance tests
 The following environment variables must exist to run acceptance tests for the Store resource:
-* ```KEYFACTOR_CLIENT_MACHINE```
-* ```KEYFACTOR_ORCHESTRATOR_AGENT_ID```
+* ```KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE``` - Note that this client must exist in Keyfactor.
+* ```KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID``` - Note this orchestrator agent must exist in Keyfactor.
+* ```KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID1``` - Note that this container must exist in Keyfactor.
+* ```KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2``` - Note that this container must exist in Keyfactor.
+* ```KEYFACTOR_CERTIFICATE_STORE_PASS``` - Should be an actions secret.
 
 To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_STORE_TESTS=True```.
 
 #### Security Role resource acceptance tests
 The following environment variable must exist to run acceptance tests for the Security Role resource:
-* ```KEYFACTOR_SECURITY_ROLE_IDENTITY_ACCOUNTNAME``` - This account _must already exist_ in Keyfactor. Terraform acceptance
-  tests create a Keyfactor security roles and attach them to the security identity configured by this environment variable.
+* ```KEYFACTOR_SECURITY_ROLE_NAME``` - Note this role must NOT exist in Keyfactor.
 
 To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_ROLE_TESTS=True```.
 
@@ -69,11 +72,14 @@ The following environment variable must exist to run acceptance tests for the Se
 
 To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_IDENTITY_TESTS=True```.
 
-#### Attach Security Role resource acceptance tests
-The following environment variables must exist to run acceptance tests for the Attach Security Role resource:
-* ```KEYFACTOR_ATTACH_ROLE_TEMPLATE1``` - It's advised that the templates specified by these environment variables are not
-  often used, as Terraform will add allowed requesters as Keyfactor roles.
-* ```KEYFACTOR_ATTACH_ROLE_TEMPLATE2```
+#### Certificate Template Role Binding resource acceptance tests
+The following environment variables must exist to run acceptance tests for the binding of roles to certificate templates.
+It's advised that the templates specified by these environment variables are not often used, as Terraform will add 
+allowed requesters as Keyfactor roles.
+* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_ROLE_NAME``` - Note this role must exist in Keyfactor.
+* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1``` - Note that this template must exist in Keyfactor.
+* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2``` - Note that this template must exist in Keyfactor.
+* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3``` - Note that this template must exist in Keyfactor.
 
 To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_ATTACH_ROLE_TESTS=True```.
 

@@ -9,8 +9,8 @@ import (
 
 func TestAccKeyfactorCertificateStoreDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate_store")
-	var sID = os.Getenv("TEST_CERTSTORE_SID")
-	var sPass = os.Getenv("TEST_CERTSTORE_PASS")
+	var sID = os.Getenv("KEYFACTOR_CERTIFICATE_STORE_ID")
+	var sPass = os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PASS")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },

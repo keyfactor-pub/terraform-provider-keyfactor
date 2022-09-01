@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"os"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ type roleTestCase struct {
 func TestAccKeyfactorRoleResource(t *testing.T) {
 
 	r := roleTestCase{
-		name:        "TerraformTest",
+		name:        os.Getenv("KEYFACTOR_SECURITY_ROLE_NAME"),
 		description: "Role used for a Terraform.",
 		permissions: []string{
 			"AdminPortal:Read",

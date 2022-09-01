@@ -157,7 +157,7 @@ func (r dataSourceCertificateTemplate) Read(ctx context.Context, request tfsdk.R
 		if templateName == template.CommonName {
 			allowedRequesters := flattenAllowedRequesters(template.AllowedRequesters)
 			templateRegexes := flattenTemplateRegexes(template.TemplateRegexes)
-			enrollmentFields := flattenEnrollmentFields(template.EnrollmentFields)
+			enrollmentFields := flattenEnrollmentFields(template.EnrollmentFields) //TODO: Fix this it causes a panic...
 			tflog.Debug(ctx, fmt.Sprintf("Enrollment fields: %v", enrollmentFields))
 			tflog.Info(ctx, fmt.Sprintf("Found template with account name: %s", templateName))
 			result = CertificateTemplate{
@@ -171,6 +171,7 @@ func (r dataSourceCertificateTemplate) Read(ctx context.Context, request tfsdk.R
 				KeyRetention:           types.String{Value: template.KeyRetention},
 				KeyRetentionDays:       types.Int64{Value: int64(template.KeyRetentionDays)},
 				KeyArchival:            types.Bool{Value: template.KeyArchival},
+				KeyType:                types.String{Value: template.KeyType},
 				EnrollmentFields:       state.EnrollmentFields,
 				AllowedEnrollmentTypes: types.Int64{Value: int64(template.AllowedEnrollmentTypes)},
 				TemplateRegexes:        templateRegexes,

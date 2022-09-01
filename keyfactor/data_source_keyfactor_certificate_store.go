@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -149,6 +150,10 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 		return
 	}
 
+	propElems := make(map[string]attr.Value)
+	for k, v := range sResp.Properties {
+		propElems[k] = types.String{Value: v}
+	}
 	var result = CertificateStore{
 		ID:                    state.ID,
 		ContainerID:           types.Int64{Value: int64(sResp.ContainerId)},
@@ -160,7 +165,7 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 		StoreType:             types.String{Value: fmt.Sprintf("%v", sResp.CertStoreType)},
 		Approved:              types.Bool{Value: sResp.Approved},
 		CreateIfMissing:       types.Bool{Value: sResp.CreateIfMissing},
-		Properties:            state.Properties,
+		Properties:            types.Map{ElemType: types.StringType, Elems: propElems},
 		Password:              state.Password,
 		SetNewPasswordAllowed: types.Bool{Value: sResp.SetNewPasswordAllowed},
 		InventorySchedule:     state.InventorySchedule,

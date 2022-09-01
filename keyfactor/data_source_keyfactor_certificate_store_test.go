@@ -26,13 +26,13 @@ func TestAccKeyfactorCertificateStoreDataSource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "store_type"),
 					resource.TestCheckResourceAttrSet(resourceName, "approved"),
 					resource.TestCheckResourceAttrSet(resourceName, "create_if_missing"),
-					//resource.TestCheckResourceAttrSet(resourceName, "properties"), //TODO: Check this
+					resource.TestCheckResourceAttrSet(resourceName, "properties.%"),
 					resource.TestCheckResourceAttrSet(resourceName, "agent_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "agent_assigned"),
-					//resource.TestCheckResourceAttrSet(resourceName, "container_name"), //TODO: Check this
-					//resource.TestCheckResourceAttrSet(resourceName, "inventory_schedule"), //TODO: Check this
+					resource.TestCheckResourceAttrSet(resourceName, "container_name"),
+					//resource.TestCheckResourceAttrSet(resourceName, "inventory_schedule"), //TODO: Check this when implemented
 					resource.TestCheckResourceAttrSet(resourceName, "set_new_password_allowed"),
-					//resource.TestCheckResourceAttrSet(resourceName, "certificates.#"), //TODO: Check this
+					//resource.TestCheckResourceAttrSet(resourceName, "certificates.#"), //TODO: Check this when implemented
 				),
 			},
 		},

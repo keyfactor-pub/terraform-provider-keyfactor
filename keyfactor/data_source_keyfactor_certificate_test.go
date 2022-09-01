@@ -34,7 +34,7 @@ func TestAccKeyfactorCertificateDataSource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "keyfactor_request_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "certificate_pem"),
 					resource.TestCheckResourceAttrSet(resourceName, "certificate_chain"),
-					//resource.TestCheckResourceAttrSet(resourceName, "private_key"), #TODO: Check this
+					resource.TestCheckResourceAttrSet(resourceName, "private_key"),
 				),
 			},
 		},

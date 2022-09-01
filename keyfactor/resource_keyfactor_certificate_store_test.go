@@ -57,8 +57,7 @@ func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(r.resourceName, "agent_id"),           // TODO: Check specific value
 					resource.TestCheckResourceAttrSet(r.resourceName, "inventory_schedule"), // TODO: Check specific value
 					resource.TestCheckResourceAttrSet(r.resourceName, "container_id"),       // TODO: Check specific value
-					//resource.TestCheckResourceAttrSet(r.resourceName, "password"),           // TODO: Check specific value
-
+					resource.TestCheckResourceAttrSet(r.resourceName, "password"),           // TODO: Check specific value
 				),
 				//Destroy:                   false,
 				//ExpectNonEmptyPlan:        false,

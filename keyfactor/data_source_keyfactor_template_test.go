@@ -25,9 +25,9 @@ func TestAccKeyfactorCertificateTemplateDataSource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "name"),
 					resource.TestCheckResourceAttrSet(resourceName, "oid"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_size"),
-					//resource.TestCheckResourceAttrSet(resourceName, "key_type"), // TODO: Check this
+					resource.TestCheckResourceAttrSet(resourceName, "key_type"),
 					resource.TestCheckResourceAttrSet(resourceName, "forest_root"),
-					//resource.TestCheckResourceAttrSet(resourceName, "friendly_name"), // TODO: Check this
+					resource.TestCheckResourceAttrSet(resourceName, "friendly_name"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_retention"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_retention_days"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_archival"),

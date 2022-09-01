@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -10,8 +11,8 @@ import (
 
 func TestAccKeyfactorSecurityIdentityDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_identity")
-	var iNameEscaped = fmt.Sprintf("%s\\\\%s", os.Getenv("KEYFACTOR_DOMAIN"), os.Getenv("KEYFACTOR_USERNAME"))
-	var iName = fmt.Sprintf("%s\\%s", os.Getenv("KEYFACTOR_DOMAIN"), os.Getenv("KEYFACTOR_USERNAME"))
+	var iNameEscaped = fmt.Sprintf("%s\\\\%s", strings.ToUpper(os.Getenv("KEYFACTOR_DOMAIN")), os.Getenv("KEYFACTOR_USERNAME"))
+	var iName = fmt.Sprintf("%s\\%s", strings.ToUpper(os.Getenv("KEYFACTOR_DOMAIN")), os.Getenv("KEYFACTOR_USERNAME"))
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },

@@ -102,5 +102,5 @@ jobs:
           KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2: "Workstation"
           KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3: "User"
 
-        run: sleep $[ ( $RANDOM % 30 )  + 1 ]s && go test -v -cover ./keyfactor
+        run: sleep $[ ( $RANDOM % 10 )  + 1 ]s && go test -v -cover ./keyfactor
         timeout-minutes: 10

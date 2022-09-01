@@ -460,17 +460,25 @@ func addAllowedRequesterToTemplate(ctx context.Context, kfClient *api.Client, ro
 	// If it's not already added, create update context to add role to template.
 
 	newAllowedRequester = append(newAllowedRequester, roleName)
+	useAllowedRequesters := false
+	if len(newAllowedRequester) > 0 || len(template.AllowedRequesters) > 0 {
+		useAllowedRequesters = true
+	}
 	// Fill required fields with information retrieved from the get request above
 	tflog.Debug(ctx, "Creating update context to add role to template")
 	updateContext := &api.UpdateTemplateArg{
-		Id:                   template.Id,
-		CommonName:           template.CommonName,
-		TemplateName:         template.TemplateName,
-		Oid:                  template.Oid,
-		KeySize:              template.KeySize,
-		ForestRoot:           template.ForestRoot,
-		UseAllowedRequesters: boolToPointer(true),
-		AllowedRequesters:    &newAllowedRequester,
+		Id:                     template.Id,
+		CommonName:             template.CommonName,
+		TemplateName:           template.TemplateName,
+		Oid:                    template.Oid,
+		KeySize:                template.KeySize,
+		ForestRoot:             template.ForestRoot,
+		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
+		AllowedRequesters:      &newAllowedRequester,
+		FriendlyName:           stringToPointer(template.FriendlyName),
+		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
+		KeyRetention:           stringToPointer(template.KeyRetention),
+		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
 	}
 
 	tflog.Trace(ctx, "Updating template in Keyfactor with context:", map[string]interface{}{
@@ -518,16 +526,24 @@ func removeRoleFromTemplate(ctx context.Context, kfClient *api.Client, roleName 
 		}
 	}
 
+	useAllowedRequesters := false
+	if len(newAllowedRequester) > 0 || len(template.AllowedRequesters) > 0 {
+		useAllowedRequesters = true
+	}
 	// Fill required fields with information retrieved from the get request above
 	updateContext := &api.UpdateTemplateArg{
-		Id:                   template.Id,
-		CommonName:           template.CommonName,
-		TemplateName:         template.TemplateName,
-		Oid:                  template.Oid,
-		KeySize:              template.KeySize,
-		ForestRoot:           template.ForestRoot,
-		UseAllowedRequesters: boolToPointer(true),
-		AllowedRequesters:    &newAllowedRequester,
+		Id:                     template.Id,
+		CommonName:             template.CommonName,
+		TemplateName:           template.TemplateName,
+		Oid:                    template.Oid,
+		KeySize:                template.KeySize,
+		ForestRoot:             template.ForestRoot,
+		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
+		AllowedRequesters:      &newAllowedRequester,
+		FriendlyName:           stringToPointer(template.FriendlyName),
+		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
+		KeyRetention:           stringToPointer(template.KeyRetention),
+		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
 	}
 
 	tflog.Trace(ctx, "Updating template in Keyfactor with context:", map[string]interface{}{

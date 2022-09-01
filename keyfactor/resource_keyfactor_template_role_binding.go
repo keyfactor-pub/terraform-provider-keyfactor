@@ -527,7 +527,7 @@ func removeRoleFromTemplate(ctx context.Context, kfClient *api.Client, roleName 
 	}
 
 	useAllowedRequesters := false
-	if len(newAllowedRequester) > 0 || len(template.AllowedRequesters) > 0 {
+	if len(newAllowedRequester) > 0 {
 		useAllowedRequesters = true
 	}
 	// Fill required fields with information retrieved from the get request above

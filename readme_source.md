@@ -1,8 +1,6 @@
-
-* [Getting Started](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/docs/guides/getting-started.md)
-* Usage
-  * [Documentation](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/docs/index.md)
-  * [Examples](https://github.com/Keyfactor/terraform-provider-keyfactor/tree/main/examples)
+## Usage
+* [Documentation](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/docs/index.md)
+* [Examples](https://github.com/Keyfactor/terraform-provider-keyfactor/tree/main/examples)
 * [Contributing](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/CONTRIBUTING.md)
 * [License](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/LICENSE)
 

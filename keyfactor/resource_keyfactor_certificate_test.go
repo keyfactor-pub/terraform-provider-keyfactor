@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"os"
 	"testing"
 )
 
@@ -28,19 +29,19 @@ const CsrContent = `-----BEGIN CERTIFICATE REQUEST-----\nMIIFMTCCAxkCAQAwgesxCzA
 func TestAccKeyfactorCertificateResource(t *testing.T) {
 
 	r := certificateTestCase{
-		template:     "WebServer",
+		template:     os.Getenv("KEYFACTOR_CERTIFICATE_TEMPLATE_NAME"),
 		cn:           "terraform_test_certificate",
 		o:            "Keyfactor Inc.",
 		l:            "Independence",
 		c:            "US",
 		ou:           "Integrations Engineering",
 		st:           "OH",
-		ca:           `DC-CA.Command.local\\CommandCA1`,
+		ca:           fmt.Sprintf(`%s\\%s`, os.Getenv("KEYFACTOR_CERTIFICATE_CA_DOMAIN"), os.Getenv("KEYFACTOR_CERTIFICATE_CA_NAME")),
 		ipSans:       `["192.168.0.2", "10.10.0.9"]`,
 		dnsSans:      `["tfprovider.keyfactor.com", "terraform_test_certificate"]`,
 		metadata:     nil,
 		email:        "",
-		keyPassword:  "tf provider testing@!",
+		keyPassword:  os.Getenv("KEYFACTOR_CERTIFICATE_KEY_PASSWORD"),
 		resourceName: "keyfactor_certificate.PFXCertificate",
 	}
 

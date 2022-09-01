@@ -39,49 +39,49 @@ Note that the following environment variables must exist regardless of the test 
 * ```KEYFACTOR_HOSTNAME```
 * ```KEYFACTOR_DOMAIN```
 
+#### Certificate data source acceptance tests
+* ```KEYFACTOR_CERTIFICATE_ID``` - Note: the certificate ID must exist in Keyfactor.
+* ```KEYFACTOR_CERTIFICATE_PASSWORD``` - Should be an actions secret, and be valid for the referenced cert.
+
 #### Certificate resource acceptance tests
-To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_CERTIFICATE_TESTS=True```.
+* ```KEYFACTOR_CERTIFICATE_TEMPLATE_NAME``` - Note: the template must exist in Keyfactor, allow both CSR and PFX 
+enrollments and the executing user should have permissions to enroll with the template.
+* ```KEYFACTOR_CERTIFICATE_CA_DOMAIN```
+* ```KEYFACTOR_CERTIFICATE_CA_NAME``` - Note: the CA must exist in Keyfactor and have the template specified in `KEYFACTOR_CERTIFICATE_TEMPLATE_NAME`.
+* ```KEYFACTOR_CERTIFICATE_PASSWORD``` - Should be an actions secret, and be valid for the referenced cert.
 
 #### Deploy Certificate acceptance tests
 The following environment variables must exist to run acceptance tests for the Deploy Certificate resource:
-* ```KEYFACTOR_DEPLOY_CERT_STOREID1```
-* ```KEYFACTOR_DEPLOY_CERT_STOREID2```
+* ```KEYFACTOR_DEPLOY_CERT_STOREID1``` - Note: the certificate store must exist in Keyfactor.
+* ```KEYFACTOR_DEPLOY_CERT_STOREID2``` - Note: the certificate store must exist in Keyfactor.
 
-To skip acceptance tests for the Deploy Certificate resource, export ```KEYFACTOR_SKIP_DEPLOY_CERT_TESTS=True```.
-
+#### Certificate Store data source acceptance tests
+* ```KEYFACTOR_CERTIFICATE_STORE_ID``` - Note that the store must exist in Keyfactor.
 
 #### Certificate Store resource acceptance tests
-The following environment variables must exist to run acceptance tests for the Store resource:
-* ```KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE``` - Note that this client must exist in Keyfactor.
-* ```KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID``` - Note this orchestrator agent must exist in Keyfactor.
-* ```KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID1``` - Note that this container must exist in Keyfactor.
-* ```KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2``` - Note that this container must exist in Keyfactor.
+The following environment variables must exist to run acceptance tests for Certificate Store resources:
+* ```KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE``` - Note: the client must exist in Keyfactor.
+* ```KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID``` - Note: the orchestrator agent must exist in Keyfactor.
+* ```KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID1``` - Note: the container must exist in Keyfactor and be compatible with the store type.
+* ```KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2``` - Note: the container must exist in Keyfactor and be compatible with the store type.
 * ```KEYFACTOR_CERTIFICATE_STORE_PASS``` - Should be an actions secret.
 
-To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_STORE_TESTS=True```.
-
 #### Security Role resource acceptance tests
-The following environment variable must exist to run acceptance tests for the Security Role resource:
-* ```KEYFACTOR_SECURITY_ROLE_NAME``` - Note this role must NOT exist in Keyfactor.
-
-To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_ROLE_TESTS=True```.
+The following environment variable must exist to run acceptance tests for Security Role resources:
+* ```KEYFACTOR_SECURITY_ROLE_NAME``` - Note: the role must *NOT* exist in Keyfactor.
 
 #### Security Identity resource acceptance tests
-The following environment variable must exist to run acceptance tests for the Security Identity resource:
-* ```KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME``` - Note that this account must exist in AD, but not in Keyfactor.
-
-To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_IDENTITY_TESTS=True```.
+The following environment variable must exist to run acceptance tests for Security Identity resources:
+* ```KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME``` - Note: the account *must exist in AD*, but *NOT* in Keyfactor.
 
 #### Certificate Template Role Binding resource acceptance tests
 The following environment variables must exist to run acceptance tests for the binding of roles to certificate templates.
 It's advised that the templates specified by these environment variables are not often used, as Terraform will add 
 allowed requesters as Keyfactor roles.
-* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_ROLE_NAME``` - Note this role must exist in Keyfactor.
-* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1``` - Note that this template must exist in Keyfactor.
-* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2``` - Note that this template must exist in Keyfactor.
-* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3``` - Note that this template must exist in Keyfactor.
-
-To skip acceptance tests for the Certificate resource, export ```KEYFACTOR_SKIP_ATTACH_ROLE_TESTS=True```.
+* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_ROLE_NAME``` - Note: the role must exist in Keyfactor.
+* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1``` - Note: the template must exist in Keyfactor.
+* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2``` - Note: the template must exist in Keyfactor.
+* ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3``` - Note: the template must exist in Keyfactor.
 
 ### Referencing private go repos in import() statement
 * The best way to clone private repositories in the import statement is to use SSH. Create an SSH key, import the private

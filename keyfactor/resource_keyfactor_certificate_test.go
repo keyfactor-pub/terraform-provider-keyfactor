@@ -41,7 +41,7 @@ func TestAccKeyfactorCertificateResource(t *testing.T) {
 		dnsSans:      `["tfprovider.keyfactor.com", "terraform_test_certificate"]`,
 		metadata:     nil,
 		email:        "",
-		keyPassword:  os.Getenv("KEYFACTOR_CERTIFICATE_KEY_PASSWORD"),
+		keyPassword:  os.Getenv("KEYFACTOR_CERTIFICATE_PASSWORD"),
 		resourceName: "keyfactor_certificate.PFXCertificate",
 	}
 
@@ -150,7 +150,8 @@ func TestAccKeyfactorCertificateResource(t *testing.T) {
 				Config: testAccKeyfactorCertificateResourceCSRConfig(r),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(r.resourceName, "id"),
-					resource.TestCheckResourceAttr(r.resourceName, "csr", CsrContent),
+					resource.TestCheckResourceAttrSet(r.resourceName, "csr"),
+					//resource.TestCheckResourceAttr(r.resourceName, "csr", CsrContent),
 					resource.TestCheckResourceAttrSet(r.resourceName, "serial_number"),
 					resource.TestCheckResourceAttrSet(r.resourceName, "issuer_dn"),
 					resource.TestCheckResourceAttrSet(r.resourceName, "thumbprint"),

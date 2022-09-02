@@ -7,9 +7,9 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"github.com/Keyfactor/keyfactor-go-client/api"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/spbsoluble/kfctl/api"
 	"strconv"
 	"time"
 )

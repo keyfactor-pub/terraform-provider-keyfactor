@@ -3,12 +3,11 @@ module github.com/Keyfactor/terraform-provider-keyfactor
 go 1.18
 
 require (
+	github.com/Keyfactor/keyfactor-go-client v1.0.0
 	github.com/hashicorp/terraform-plugin-framework v0.10.0
 	github.com/hashicorp/terraform-plugin-go v0.14.0
 	github.com/hashicorp/terraform-plugin-log v0.7.0
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.21.0
-	github.com/spbsoluble/kfctl v1.0.1
-//github.com/Keyfactor/keyfactor-go-client v1.0.0
 )
 
 require (

@@ -1,0 +1,1 @@
+terraform import keyfactor_security_role.myrole "My Role" # The name of the role to import

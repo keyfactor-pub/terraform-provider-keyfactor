@@ -1,0 +1,106 @@
+# Terraform Provider testing workflow.
+name: Tests
+
+# This GitHub action runs your tests for each pull request and push.
+# Optionally, you can turn it on using a schedule for regular testing.
+on:
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+  push:
+    paths-ignore:
+      - 'README.md'
+
+# Testing only needs permissions to read the repository contents.
+permissions:
+  contents: read
+
+jobs:
+  # Ensure project builds before running testing matrix
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - run: go mod download
+      - run: go build -v .
+
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - run: go generate ./...
+      - name: git diff
+        run: |
+          git diff --compact-summary --exit-code || \
+            (echo; echo "Unexpected difference in directories after code generation. Run 'go generate ./...' command and commit."; exit 1)
+  # Run acceptance tests in a matrix with Terraform CLI versions
+  test:
+    name: Terraform Provider Acceptance Tests
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # list whatever Terraform versions here you would like to support
+        terraform:
+          - '1.0.*'
+#          - '1.1.*'
+#          - '1.2.*'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ matrix.terraform }}
+          terraform_wrapper: false
+      - run: go mod download
+      - env:
+          TF_ACC: "1"
+          KEYFACTOR_DEPLOY_CERT_STOREID1: "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
+          KEYFACTOR_DEPLOY_CERT_STOREID2: "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
+
+          KEYFACTOR_HOSTNAME: ${{secrets.KEYFACTOR_HOSTNAME}}
+          KEYFACTOR_USERNAME: ${{secrets.KEYFACTOR_USERNAME}}
+          KEYFACTOR_PASSWORD: ${{secrets.KEYFACTOR_PASSWORD}}
+          KEYFACTOR_DOMAIN: ${{secrets.KEYFACTOR_DOMAIN}}
+
+          KEYFACTOR_CERTIFICATE_ID: "26"
+          KEYFACTOR_CERTIFICATE_PASSWORD: ${{secrets.TEST_CERTIFICATE_PASS}}
+          KEYFACTOR_CERTIFICATE_TEMPLATE_NAME: "2YearTestWebServer"
+          KEYFACTOR_CERTIFICATE_CA_DOMAIN: "DC-CA.Command.local"
+          KEYFACTOR_CERTIFICATE_CA_NAME: "CommandCA1"
+
+          KEYFACTOR_CERTIFICATE_STORE_ID: "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
+          KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE: "myorchestrator01"
+          KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID: "c2b2084f-3d89-4ded-bb8b-b4e0e74d2b59"
+          KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID1: "2"
+          KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2: "2"
+          KEYFACTOR_CERTIFICATE_STORE_PASS: ${{secrets.TEST_CERTSTORE_PASS}}
+
+          KEYFACTOR_SECURITY_ROLE_NAME: "TerraformTest"
+
+          KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME: 'COMMAND\\terraformer'
+          KEYFACTOR_SECURITY_IDENTITY_ROLE1: "EnrollPFX"
+          KEYFACTOR_SECURITY_IDENTITY_ROLE2: "Terraform"
+
+          KEYFACTOR_TEMPLATE_ROLE_BINDING_ROLE_NAME: "Terraform"
+          KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1: "2YearTestWebServer"
+          KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2: "Workstation"
+          KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3: "User"
+
+        run: go test -v -cover ./keyfactor
+        timeout-minutes: 10

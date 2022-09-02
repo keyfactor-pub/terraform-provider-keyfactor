@@ -1,0 +1,1 @@
+terraform import keyfactor_certificate.mycert 65 # Where this is the ID of the certificate on Keyfactor

@@ -1,0 +1,1 @@
+terraform import keyfactor_certificate_store.mystore "9f8855f1-80ff-4475-89ec-d82accb32cea" # Where this is the GUID of the certificate store

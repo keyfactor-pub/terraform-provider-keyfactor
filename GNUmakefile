@@ -54,6 +54,7 @@ fmtcheck:
 
 fmt:
 	gofmt -w $(GOFMT_FILES)
+	terraform fmt -recursive ./examples/
 
 debug: install
 	@./scripts/gofmtcheck.sh

@@ -10,7 +10,7 @@ resource "keyfactor_certificate_store" "iis_trusted_roots" {
   store_path     = "IIS Trusted Roots"                    # Varies based on store type
   agent_id       = "c2b2084f-3d89-4ded-bb8b-b4e0e74d2b59" # Orchestrator GUID
   store_type     = "IIS"                                  # Must exist in KeyFactor
-  properties     = {
+  properties = {
     # Optional properties based on the store type
     UseSSL = true
   }

@@ -6,7 +6,7 @@ provider "keyfactor" {
 }
 
 resource "keyfactor_role" "kf_terraform_role" {
-  name        = "Terraform"                                                                 # Name of the role to create
+  name        = "Terraform" # Name of the role to create
   description = "Role used to demonstrate Keyfactor's ability to integrate with Terraform."
   # Description of the role to create
   permissions = distinct([

@@ -17,6 +17,7 @@ provider "keyfactor" {
   username = "COMMAND\\your_username"
   password = "your_api_password"
   hostname = "mykfinstance.kfdelivery.com"
+  domain   = "mydomain.com"
 }
 
 ## PFX Enrollment
@@ -32,11 +33,12 @@ resource "keyfactor_certificate" "PFXCertificate" {
   }
 
   # Optional SANs
-  ip_sans               = ["192.168.123.2", "172.51.2.4"] # Optional IP SANs
-  dns_sans              = ["meow.example.com", "meow2"]   # Optional DNS SANs
-  key_password          = "my certificate password!"      # The password for the certificate. Note: This is bad practice, use TF_VAR_<variable_name> instead.
-  certificate_authority = "COMMAND\\MY_CA_01"             # Keyfactor CA to use to handle the certificate request.
-  certificate_template  = "2yrWebServer"                  # The template shortname to use for the certificate.
+  ip_sans      = ["192.168.123.2", "172.51.2.4"] # Optional IP SANs
+  dns_sans     = ["meow.example.com", "meow2"]   # Optional DNS SANs
+  key_password = "my certificate password!"
+  # The password for the certificate. Note: This is bad practice, use TF_VAR_<variable_name> instead.
+  certificate_authority = "COMMAND\\MY_CA_01" # Keyfactor CA to use to handle the certificate request.
+  certificate_template  = "2yrWebServer"      # The template shortname to use for the certificate.
 }
 
 ## CSR Enrollment
@@ -71,7 +73,8 @@ resource "keyfactor_certificate" "kf_csr_cert" {
   ip_sans  = ["172.16.0.2", "192.168.0.2"]    # Optional IP SANs
   uri_sans = ["https://mycsr.kfdelivery.com"] # Optional URI SANs
   metadata = {
-    "Email-Contact" = "my_username@mydomain.com" # Note: metadata keys must be defined in Keyfactor and cannot just be arbitrarily added
+    "Email-Contact" = "my_username@mydomain.com"
+    # Note: metadata keys must be defined in Keyfactor and cannot just be arbitrarily added
   }
 }
 ```

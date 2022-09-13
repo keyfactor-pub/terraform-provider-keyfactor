@@ -27,33 +27,33 @@ func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics)
 			"hostname": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com",
+				Description: "Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com. This can also be set via the KEYFACTOR_HOSTNAME environment variable.",
 			},
 
 			"username": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Username of Keyfactor service account",
+				Description: "Username of Keyfactor service account. This can also be set via the KEYFACTOR_USERNAME environment variable.",
 			},
 
 			"password": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Password of Keyfactor service account",
+				Description: "Password of Keyfactor service account. This can also be set via the KEYFACTOR_PASSWORD environment variable.",
 			},
 
 			"appkey": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Application key provisioned by Keyfactor instance",
+				Description: "Application key provisioned by Keyfactor instance. This can also be set via the KEYFACTOR_APPKEY environment variable.",
 			},
 
 			"domain": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Domain that Keyfactor instance is hosted on",
+				Description: "Domain that Keyfactor instance is hosted on. This can also be set via the KEYFACTOR_DOMAIN environment variable.",
 			},
 		},
 	}, nil

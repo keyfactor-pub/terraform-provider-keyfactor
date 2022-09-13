@@ -17,6 +17,7 @@ provider "keyfactor" {
   username = "COMMAND\\your_username"
   password = "your_api_password"
   hostname = "mykfinstance.kfdelivery.com"
+  domain   = "mydomain.com"
 }
 ```
 
@@ -25,8 +26,8 @@ provider "keyfactor" {
 
 ### Optional
 
-- `appkey` (String, Sensitive) Application key provisioned by Keyfactor instance
-- `domain` (String) Domain that Keyfactor instance is hosted on
-- `hostname` (String) Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com
-- `password` (String, Sensitive) Password of Keyfactor service account
-- `username` (String) Username of Keyfactor service account
+- `appkey` (String, Sensitive) Application key provisioned by Keyfactor instance. This can also be set via the KEYFACTOR_APPKEY environment variable.
+- `domain` (String) Domain that Keyfactor instance is hosted on. This can also be set via the KEYFACTOR_DOMAIN environment variable.
+- `hostname` (String) Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com. This can also be set via the KEYFACTOR_HOSTNAME environment variable.
+- `password` (String, Sensitive) Password of Keyfactor service account. This can also be set via the KEYFACTOR_PASSWORD environment variable.
+- `username` (String) Username of Keyfactor service account. This can also be set via the KEYFACTOR_USERNAME environment variable.

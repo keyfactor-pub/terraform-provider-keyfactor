@@ -224,11 +224,12 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 // GetResources - Defines provider resources
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
-		"keyfactor_identity":              resourceSecurityIdentityType{},
-		"keyfactor_certificate":           resourceKeyfactorCertificateType{},
-		"keyfactor_certificate_store":     resourceCertificateStoreType{},
-		"keyfactor_role":                  resourceSecurityRoleType{},
-		"keyfactor_template_role_binding": resourceCertificateTemplateRoleBindingType{},
+		"keyfactor_identity":               resourceSecurityIdentityType{},
+		"keyfactor_certificate":            resourceKeyfactorCertificateType{},
+		"keyfactor_certificate_store":      resourceCertificateStoreType{},
+		"keyfactor_certificate_deployment": resourceKeyfactorCertificateDeploymentType{},
+		"keyfactor_role":                   resourceSecurityRoleType{},
+		"keyfactor_template_role_binding":  resourceCertificateTemplateRoleBindingType{},
 	}, nil
 }
 

@@ -1,124 +1,414 @@
 package keyfactor
 
-/*
- * Resource designed to add one certificate to one or many certificate stores
- */
-
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/api"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"strconv"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"time"
 )
 
-func resourceCertificateDeploy() *schema.Resource {
-	return &schema.Resource{
-		CreateContext: resourceDeploymentCreate,
-		ReadContext:   resourceDeploymentRead,
-		UpdateContext: resourceDeploymentUpdate,
-		DeleteContext: resourceDeploymentDelete,
-		Importer: &schema.ResourceImporter{
-			StateContext: schema.ImportStatePassthroughContext,
-		},
-		Schema: map[string]*schema.Schema{
+type resourceKeyfactorCertificateDeploymentType struct{}
+
+func (r resourceKeyfactorCertificateDeploymentType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
+	return tfsdk.Schema{
+		Attributes: map[string]tfsdk.Attribute{
+			"id": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "A unique identifier for this certificate deployment.",
+			},
 			"certificate_id": {
-				Type:        schema.TypeInt,
-				Required:    true,
-				Description: "Keyfactor certificate ID",
+				Type:          types.Int64Type,
+				Required:      true,
+				Description:   "Keyfactor certificate ID",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
-			"store": {
-				Type:        schema.TypeSet,
-				Optional:    true,
-				Description: "List of certificates stores that the certificate should be deployed into.",
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"certificate_store_id": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: "A string containing the GUID for the certificate store to which the certificate should be added.",
-						},
-						"alias": {
-							Type:        schema.TypeString,
-							Required:    true,
-							Description: "A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type. Please ensure that the alias is lowercase, or problems can arise in Terraform Plan.",
-						},
-					},
-				},
+			"certificate_store_id": {
+				Type:          types.StringType,
+				Required:      true,
+				Description:   "A string containing the GUID for the certificate store to which the certificate should be added.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
-			"password": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Sensitive:   true,
-				Description: "Password that protects PFX certificate, if the certificate was enrolled using PFX enrollment, or is password protected in general. This value cannot change, and Terraform will throw an error if a change is attempted.",
+			"certificate_alias": {
+				Type:          types.StringType,
+				Required:      true,
+				Description:   "A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type. Please ensure that the alias is lowercase, or problems can arise in Terraform Plan.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+			},
+			"key_password": {
+				Type:          types.StringType,
+				Optional:      true,
+				Sensitive:     true,
+				Description:   "Password that protects PFX certificate, if the certificate was enrolled using PFX enrollment, or is password protected in general. This value cannot change, and Terraform will throw an error if a change is attempted.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 		},
-	}
+	}, nil
 }
 
-func resourceDeploymentCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	conn := m.(*api.Client)
+func (r resourceKeyfactorCertificateDeploymentType) NewResource(_ context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
+	return resourceKeyfactorCertificateDeployment{
+		p: *(p.(*provider)),
+	}, nil
+}
 
-	certId := d.Get("certificate_id").(int)
+type resourceKeyfactorCertificateDeployment struct {
+	p provider
+}
 
-	err := setCertificatesInStore(conn, d)
+func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+	if !r.p.configured {
+		response.Diagnostics.AddError(
+			"Provider not configured",
+			"The provider hasn't been configured before apply, likely because it depends on an unknown value from another resource. This leads to weird stuff happening, so we'd prefer if you didn't do that. Thanks!",
+		)
+		return
+	}
+
+	// Retrieve values from plan
+	var plan KeyfactorCertificateDeployment
+	diags := request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Generate API request body from plan
+
+	kfClient := r.p.client
+
+	certificateId := plan.CertificateId.Value
+	certificateIdInt := int(certificateId)
+	storeId := plan.StoreId.Value
+	certificateAlias := plan.CertificateAlias.Value
+	keyPassword := plan.KeyPassword.Value
+	hid := fmt.Sprintf("%v-%s-%s", certificateId, storeId, certificateAlias)
+
+	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
+	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
+	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
+	tflog.Info(ctx, "Create called on certificate deployment resource")
+
+	//sans := plan.SANs
+	//metadata := plan.Metadata.Elems
+	addErr := addCertificateToStore(ctx, kfClient, certificateIdInt, certificateAlias, keyPassword, storeId)
+	if addErr != nil {
+		response.Diagnostics.AddError(
+			"Certificate deployment error",
+			fmt.Sprintf("Unknown error during deploy of certificate '%s' to store '%s (%s)': "+addErr.Error(), certificateId, storeId, certificateAlias),
+		)
+	}
+
+	vErr := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId)
+	if vErr != nil {
+		response.Diagnostics.AddError(
+			"Deployment validation error.",
+			fmt.Sprintf("Unknown error during validation of deploy of certificate '%s' to store '%s (%s)': "+vErr.Error(), certificateId, storeId, certificateAlias),
+		)
+	}
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Set state
+	var result = KeyfactorCertificateDeployment{
+		ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
+		CertificateId:    plan.CertificateId,
+		StoreId:          plan.StoreId,
+		CertificateAlias: plan.CertificateAlias,
+		KeyPassword:      plan.KeyPassword,
+	}
+
+	diags = response.State.Set(ctx, result)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+}
+
+func (r resourceKeyfactorCertificateDeployment) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
+	var state KeyfactorCertificateDeployment
+	diags := request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	kfClient := r.p.client
+
+	certificateId := state.CertificateId.Value
+	certificateIdInt := int(certificateId)
+	storeId := state.StoreId.Value
+	//storeIdInt := int(storeId)
+	certificateAlias := state.CertificateAlias.Value
+	//keyPassword := state.KeyPassword.Value
+	//hid := fmt.Sprintf("%s-%s-%s", certificateId, storeId, certificateAlias)
+
+	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
+	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
+	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
+	tflog.Info(ctx, "Create called on certificate deployment resource")
+
+	// Get certificate context
+	args := &api.GetCertificateContextArgs{
+		IncludeLocations: boolToPointer(true),
+		Id:               certificateIdInt,
+	}
+	certificateData, err := kfClient.GetCertificateContext(args)
 	if err != nil {
-		return diag.FromErr(err)
+		response.Diagnostics.AddError(
+			"Deployment read error.",
+			fmt.Sprintf("Unknown error during read status of deployment of certificate '%s' to store '%s (%s)': "+err.Error(), certificateId, storeId, certificateAlias),
+		)
+	}
+	locations := certificateData.Locations
+	for _, location := range locations {
+		tflog.Debug(ctx, fmt.Sprintf("Certificate %v stored in location: %v", certificateIdInt, location))
 	}
 
-	d.SetId(strconv.Itoa(certId))
+	// Set state
+	var result = KeyfactorCertificateDeployment{
+		ID:               state.ID,
+		CertificateId:    state.CertificateId,
+		StoreId:          state.StoreId,
+		CertificateAlias: state.CertificateAlias,
+		KeyPassword:      state.KeyPassword,
+	}
 
-	return resourceDeploymentRead(ctx, d, m)
+	diags = response.State.Set(ctx, result)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 }
+
+func (r resourceKeyfactorCertificateDeployment) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
+	// Get plan values
+	var plan KeyfactorCertificate
+	diags := request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Get current state
+	var state KeyfactorCertificate
+	diags = request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// API Actions
+
+	// Set state
+	tflog.Error(ctx, "Update called on certificate deployment resource")
+	response.Diagnostics.AddError(
+		"Certificate deployment updates not implemented.",
+		fmt.Sprintf("Error, only create and delete actions are supported for certificate deployments."),
+	)
+	if response.Diagnostics.HasError() {
+		return
+	}
+}
+
+func (r resourceKeyfactorCertificateDeployment) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
+	var state KeyfactorCertificateDeployment
+	diags := request.State.Get(ctx, &state)
+
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Vars and logging contexts
+	kfClient := r.p.client
+
+	certificateId := state.CertificateId.Value
+	//certificateIdInt := int(certificateId)
+	storeId := state.StoreId.Value
+	//storeIdInt := int(storeId)
+	certificateAlias := state.CertificateAlias.Value
+	//keyPassword := state.KeyPassword.Value
+	//hid := fmt.Sprintf("%s-%s-%s", certificateId, storeId, certificateAlias)
+
+	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
+	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
+	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
+	tflog.Info(ctx, "Create called on certificate deployment resource")
+
+	// Remove certificate from store
+	var diff []api.CertificateStore
+	certStoreRequest := api.CertificateStore{
+		CertificateStoreId: storeId,
+		Alias:              certificateAlias,
+	}
+	diff = append(diff, certStoreRequest)
+
+	// Remove resource from state
+	err := removeCertificateAliasFromStore(ctx, kfClient, &diff)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Certificate deployment error",
+			fmt.Sprintf("Unknown error during removal of certificate '%s' from store '%s (%s)': "+err.Error(), certificateId, storeId, certificateAlias),
+		)
+	}
+
+	if response.Diagnostics.HasError() {
+		return
+	}
+	response.State.RemoveResource(ctx)
+}
+
+func (r resourceKeyfactorCertificateDeployment) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+	tflog.Error(ctx, "Import called on certificate deployment resource")
+	response.Diagnostics.AddError(
+		"Certificate deployment imports not implemented.",
+		fmt.Sprintf("Error, only create and delete actions are supported for certificate deployments."),
+	)
+	if response.Diagnostics.HasError() {
+		return
+	}
+}
+
+//func setCertificatesInStore(ctx context.Context, conn *api.Client, certificateId int, keyPassword string, storeId int, storeAlias string) error {
+//
+//	tflog.Debug(ctx, fmt.Sprintf("Setting certificate %v in Keyfactor store %v", certificateId, storeId))
+//	// First, blindly add the certificate to each of the certificate storeId found in storeList.
+//	err := addCertificateToStore(conn, certificateId, keyPassword, storeId, storeAlias)
+//	if err != nil {
+//		return err
+//	}
+//
+//	// Then, compile a list of storeId that the certificate is found in, and figure out the delta
+//	args := &api.GetCertificateContextArgs{
+//		IncludeLocations: boolToPointer(true),
+//		Id:               certificateId,
+//	}
+//	certificateData, err := conn.GetCertificateContext(args)
+//	if err != nil {
+//		return err
+//	}
+//	locations := certificateData.Locations
+//	expectedStores := make([]string, len(storeId))
+//
+//	// Want to find the elements in locations that are not in storeId
+//	// We also want to retain the alias
+//	list := make(map[string]struct{}, len(storeId))
+//	for i, x := range storeId {
+//		j := x.(map[string]interface{})
+//
+//		storeId := j["certificate_store_id"].(string)
+//		list[storeId] = struct{}{}
+//
+//		// Since we're already looping through the store IDs, place them in a more readable data structre for later use
+//		expectedStores[i] = storeId
+//	}
+//
+//	// The elements of diff should be removed
+//	// Also, removing a certificate from a certificate store implies that the certificate is currently in the store.
+//	var diff []api.CertificateStore
+//	for _, x := range locations {
+//		if _, found := list[x.CertStoreId]; !found {
+//			temp := api.CertificateStore{
+//				CertificateStoreId: x.CertStoreId,
+//				Alias:              x.Alias,
+//			}
+//			diff = append(diff, temp)
+//		}
+//	}
+//
+//	if len(diff) > 0 {
+//		err = removeCertificateAliasFromStore(conn, &diff)
+//		if err != nil {
+//			return err
+//		}
+//	}
+//
+//	// Finally, Keyfactor tends to take a hot second to enact these changes despite being told to make them immediately.
+//	// Block for a long time until the changes are validated.
+//	err = validateCertificatesInStore(conn, expectedStores, certificateId)
+//	if err != nil {
+//		return err
+//	}
+//
+//	return nil
+//}
 
 // addCertificateToStore adds certificate certId to each of the stores configured by stores. Note that stores is a list of
 // map[string]interface{} and contains the required configuration for api.AddCertificateToStores().
-func addCertificateToStores(conn *api.Client, certId int, stores []interface{}, password string) error {
+func addCertificateToStore(ctx context.Context, conn *api.Client, certificateId int, certificateAlias string, keyPassword string, storeId string) error {
 	var storesStruct []api.CertificateStore
-	if len(stores) <= 0 {
-		return nil
-	}
 
-	for _, store := range stores {
-		i := store.(map[string]interface{})
-		temp := new(api.CertificateStore)
+	storeRequest := new(api.CertificateStore)
 
-		id, ok := i["certificate_store_id"]
-		if ok {
-			temp.CertificateStoreId = id.(string)
-		}
-		alias, ok := i["alias"]
-		if ok {
-			temp.Alias = alias.(string)
-		}
-		temp.IncludePrivateKey = true
-		temp.Overwrite = true
-		temp.PfxPassword = password
-		storesStruct = append(storesStruct, *temp)
-	}
+	storeRequest.CertificateStoreId = storeId
+	storeRequest.Alias = certificateAlias
+
+	storeRequest.IncludePrivateKey = true
+	storeRequest.Overwrite = true
+	storeRequest.PfxPassword = keyPassword
+	storesStruct = append(storesStruct, *storeRequest)
+
 	// We want Keyfactor to immediately apply these changes.
+	tflog.Debug(ctx, "Creating immediate request to add certificate to store")
 	schedule := &api.InventorySchedule{
 		Immediate: boolToPointer(true),
 	}
 	config := &api.AddCertificateToStore{
-		CertificateId:     certId,
+		CertificateId:     certificateId,
 		CertificateStores: &storesStruct,
 		InventorySchedule: schedule,
 	}
+	tflog.Debug(ctx, fmt.Sprintf("Adding certificate %v to Keyfactor store %v", certificateId, storeId))
 	_, err := conn.AddCertificateToStores(config)
 	if err != nil {
+		tflog.Error(ctx, fmt.Sprintf("Error adding certificate %v to Keyfactor store %v: %v", certificateId, storeId, err))
 		return err
 	}
-
+	tflog.Debug(ctx, fmt.Sprintf("Successfully added certificate %v to Keyfactor store %v", certificateId, storeId))
 	return nil
 }
 
-// The Keyfactor RemoveCertificateFromStores function works by removing a certificate stored under a specific alias in a store.
-// The certificateStores argument must contain a list of Keyfactor CertificateStore structs configured with a store ID and
-// the alias name that the certificate is stored under.
-func removeCertificateAliasFromStore(conn *api.Client, certificateStores *[]api.CertificateStore) error {
+func validateCertificatesInStore(ctx context.Context, conn *api.Client, certificateId int, storeId string) error {
+	valid := false
+	tflog.Debug(ctx, fmt.Sprintf("Validating certificate %v is in Keyfactor store %v", certificateId, storeId))
+	retry_delay := 2
+	for i := 0; i < 5; i++ {
+		args := &api.GetCertificateContextArgs{
+			IncludeLocations: boolToPointer(true),
+			Id:               certificateId,
+		}
+		certificateData, err := conn.GetCertificateContext(args)
+		if err != nil {
+			return err
+		}
+		storeList := make([]string, len(certificateData.Locations))
+		for j, store := range certificateData.Locations {
+			storeList[j] = store.CertStoreId
+		}
+
+		//if len(findStringDifference(certificateStores, storeList)) == 0 && len(findStringDifference(storeList, certificateStores)) == 0 {
+		//	valid = true
+		//	break
+		//}
+		retry_delay = retry_delay * (i + 1)
+		tflog.Debug(ctx, fmt.Sprintf("Certificate %v not found in Keyfactor store %v. Retrying in %v seconds", certificateId, storeId, retry_delay))
+		time.Sleep(time.Duration(retry_delay) * time.Second)
+	}
+	if !valid {
+		return fmt.Errorf("validateCertificatesInStore timed out. certificate could deploy eventually, but terraform change operation will fail. run terraform plan later to verify that the certificate was deployed successfully")
+	}
+	return nil
+}
+
+func removeCertificateAliasFromStore(ctx context.Context, conn *api.Client, certificateStores *[]api.CertificateStore) error {
 	// We want Keyfactor to immediately apply these changes.
 	schedule := &api.InventorySchedule{
 		Immediate: boolToPointer(true),
@@ -134,232 +424,4 @@ func removeCertificateAliasFromStore(conn *api.Client, certificateStores *[]api.
 	}
 
 	return nil
-}
-
-// Return elements in 'a' that aren't in 'b'
-func findStringDifference(a, b []string) []string {
-	mb := make(map[string]struct{}, len(b))
-	for _, x := range b {
-		mb[x] = struct{}{}
-	}
-	var diff []string
-	for _, x := range a {
-		if _, found := mb[x]; !found {
-			diff = append(diff, x)
-		}
-	}
-	return diff
-}
-
-func validateCertificatesInStore(conn *api.Client, certificateStores []string, certificateId int) error {
-	valid := false
-	for i := 0; i < 1200; i++ {
-		args := &api.GetCertificateContextArgs{
-			IncludeLocations: boolToPointer(true),
-			Id:               certificateId,
-		}
-		certificateData, err := conn.GetCertificateContext(args)
-		if err != nil {
-			return err
-		}
-		storeList := make([]string, len(certificateData.Locations))
-		for j, store := range certificateData.Locations {
-			storeList[j] = store.CertStoreId
-		}
-
-		if len(findStringDifference(certificateStores, storeList)) == 0 && len(findStringDifference(storeList, certificateStores)) == 0 {
-			valid = true
-			break
-		}
-
-		time.Sleep(2 * time.Second)
-	}
-	if !valid {
-		return fmt.Errorf("validateCertificatesInStore timed out. certificate could deploy eventually, but terraform change operation will fail. run terraform plan later to verify that the certificate was deployed successfully")
-	}
-	return nil
-}
-
-func setCertificatesInStore(conn *api.Client, d *schema.ResourceData) error {
-	certId := d.Get("certificate_id").(int)
-	stores := d.Get("store").(*schema.Set).List()
-	password := d.Get("password").(string)
-
-	if len(stores) > 0 {
-		// First, blindly add the certificate to each of the certificate stores found in storeList.
-		err := addCertificateToStores(conn, certId, stores, password)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Then, compile a list of stores that the certificate is found in, and figure out the delta
-	args := &api.GetCertificateContextArgs{
-		IncludeLocations: boolToPointer(true),
-		Id:               certId,
-	}
-	certificateData, err := conn.GetCertificateContext(args)
-	if err != nil {
-		return err
-	}
-	locations := certificateData.Locations
-	expectedStores := make([]string, len(stores))
-
-	// Want to find the elements in locations that are not in stores
-	// We also want to retain the alias
-	list := make(map[string]struct{}, len(stores))
-	for i, x := range stores {
-		j := x.(map[string]interface{})
-
-		storeId := j["certificate_store_id"].(string)
-		list[storeId] = struct{}{}
-
-		// Since we're already looping through the store IDs, place them in a more readable data structre for later use
-		expectedStores[i] = storeId
-	}
-
-	// The elements of diff should be removed
-	// Also, removing a certificate from a certificate store implies that the certificate is currently in the store.
-	var diff []api.CertificateStore
-	for _, x := range locations {
-		if _, found := list[x.CertStoreId]; !found {
-			temp := api.CertificateStore{
-				CertificateStoreId: x.CertStoreId,
-				Alias:              x.Alias,
-			}
-			diff = append(diff, temp)
-		}
-	}
-
-	if len(diff) > 0 {
-		err = removeCertificateAliasFromStore(conn, &diff)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Finally, Keyfactor tends to take a hot second to enact these changes despite being told to make them immediately.
-	// Block for a long time until the changes are validated.
-	err = validateCertificatesInStore(conn, expectedStores, certId)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func resourceDeploymentRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-
-	conn := m.(*api.Client)
-
-	certId, err := strconv.Atoi(d.Id())
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
-	// Then, compile a list of stores that the certificate is found in, and figure out the delta
-	args := &api.GetCertificateContextArgs{
-		IncludeLocations: boolToPointer(true),
-		Id:               certId,
-	}
-	certificateData, err := conn.GetCertificateContext(args)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-	locations := certificateData.Locations
-
-	password := d.Get("password").(string)
-
-	newSchema := flattenLocationData(certId, password, locations)
-	for key, value := range newSchema {
-		err = d.Set(key, value)
-		if err != nil {
-			diags = append(diags, diag.FromErr(err)[0])
-		}
-	}
-
-	return diags
-}
-
-func flattenLocationData(certId int, password string, locations []api.CertificateLocations) map[string]interface{} {
-	data := make(map[string]interface{})
-	data["certificate_id"] = certId
-	data["password"] = password
-	data["store"] = flattenStoresData(locations)
-	return data
-}
-
-func schemaCertificateDeployStores() *schema.Resource {
-	return &schema.Resource{
-		Schema: map[string]*schema.Schema{
-			"certificate_store_id": {
-				Type:        schema.TypeString,
-				Required:    true,
-				Description: "A string containing the GUID for the certificate store to which the certificate should be added.",
-			},
-			"alias": {
-				Type:        schema.TypeString,
-				Required:    true,
-				Description: "A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type.",
-			},
-		},
-	}
-}
-
-func flattenStoresData(locations []api.CertificateLocations) *schema.Set {
-	var temp []interface{}
-	if len(locations) > 0 {
-		for _, location := range locations {
-			data := make(map[string]interface{})
-			data["certificate_store_id"] = location.CertStoreId
-			data["alias"] = location.Alias
-			temp = append(temp, data)
-		}
-	}
-	return schema.NewSet(schema.HashResource(schemaCertificateDeployStores()), temp)
-}
-
-func resourceDeploymentUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	conn := m.(*api.Client)
-
-	if d.HasChange("store") {
-		err := setCertificatesInStore(conn, d)
-		if err != nil {
-			return diag.FromErr(err)
-		}
-	} else {
-		var diags diag.Diagnostics
-		diags = append(diags, diag.Diagnostic{
-			Severity: diag.Warning,
-			Summary:  "Failed to update deployment resource. Invalid schema",
-			Detail: "The only supported update field is stores, since password and certificate ID are both configuration" +
-				"used to facilitate the addition/removal of the certificate to each of the stores specified in 'stores'.",
-			AttributePath: nil,
-		})
-		resourceDeploymentRead(ctx, d, m)
-		return diags
-	}
-
-	return resourceDeploymentRead(ctx, d, m)
-}
-
-func resourceDeploymentDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	conn := m.(*api.Client)
-
-	// Set 'stores' schema with blank set.
-	empty := schema.NewSet(schema.HashResource(schemaCertificateDeployStores()), nil)
-	err := d.Set("store", empty)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
-	// Call setCertificatesInStore, which will match Keyfactor store configuration to schema 'd', which
-	// contains an empty list of stores.
-	err = setCertificatesInStore(conn, d)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
-	return resourceDeploymentRead(ctx, d, m)
 }

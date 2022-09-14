@@ -44,6 +44,14 @@ type KeyfactorCertificate struct {
 	Metadata             types.Map    `tfsdk:"metadata"`
 }
 
+type KeyfactorCertificateDeployment struct {
+	ID               types.String `tfsdk:"id"`
+	CertificateId    types.Int64  `tfsdk:"certificate_id"`
+	CertificateAlias types.String `tfsdk:"certificate_alias"`
+	StoreId          types.String `tfsdk:"certificate_store_id"`
+	KeyPassword      types.String `tfsdk:"key_password"`
+}
+
 type CSRCertificate struct {
 	ID types.Int64 `tfsdk:"keyfactor_id"`
 	// CSR Request Fields

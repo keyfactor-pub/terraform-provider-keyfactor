@@ -19,8 +19,8 @@ provider "keyfactor" {
   hostname = "mykfinstance.kfdelivery.com"
 }
 
-data "keyfactor_role" "kf_role" {
-  role_name = "Administrator" # The name of the existing role you want to reference
+data "keyfactor_role" "admin" {
+  name = "Administrator"
 }
 ```
 

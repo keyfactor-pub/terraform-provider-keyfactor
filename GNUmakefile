@@ -8,7 +8,7 @@ NAME=keyfactor
 BINARY=terraform-provider-${NAME}
 VERSION=1.1.0-rc1
 OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
-BASEDIR := ~/.terraform.d/plugins/
+BASEDIR := ~/.terraform.d/plugins
 INSTALLDIR := ${BASEDIR}/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
 
 default: build

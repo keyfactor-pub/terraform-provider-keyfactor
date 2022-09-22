@@ -16,7 +16,7 @@ support ticket through their Keyfactor representative.
 
 ## Local install
 
-### From Github
+### From GitHub
 - Download the latest release from the [releases page](https://github.com/Keyfactor/terraform-provider-keyfactor/releases)
 - Unzip the release
 - Move the binary to a location in your local Terraform plugins directory (typically `$HOME/.terraform.d/plugins` or `%APPDATA%\terraform.d\plugins` on Windows)

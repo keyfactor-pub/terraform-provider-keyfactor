@@ -1,3 +1,28 @@
+## Local install
+
+### From GitHub
+- Download the latest release from the [releases page](https://github.com/Keyfactor/terraform-provider-keyfactor/releases)
+- Unzip the release
+- Move the binary to a location in your local Terraform plugins directory (typically `$HOME/.terraform.d/plugins` or `%APPDATA%\terraform.d\plugins` on Windows)
+  for more information refer to the [Hashicorp documentation](https://www.terraform.io/docs/cli/config/config-file.html#implied-local-mirror-directories)
+- Run `terraform init` to initialize the provider
+
+## From Source
+
+### Mac OS/Linux
+```bash
+git clone https://github.com/Keyfactor/terraform-provider-keyfactor.git
+cd terraform-provider-keyfactor
+make install
+```
+
+### Windows
+```powershell
+git clone https://github.com/Keyfactor/terraform-provider-keyfactor.git
+cd terraform-provider-keyfactor
+go build -o %APPDATA%\terraform.d\plugins\keyfactor.com\keyfactor\keyfactor\1.0.2\terraform-provider-keyfactor.exe
+```
+
 ## Usage
 * [Documentation](https://github.com/Keyfactor/terraform-provider-keyfactor/blob/main/docs/index.md)
 * [Examples](https://github.com/Keyfactor/terraform-provider-keyfactor/tree/main/examples)

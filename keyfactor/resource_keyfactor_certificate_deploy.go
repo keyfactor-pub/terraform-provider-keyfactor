@@ -100,8 +100,11 @@ func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, requ
 	if addErr != nil {
 		response.Diagnostics.AddError(
 			"Certificate deployment error",
-			fmt.Sprintf("Unknown error during deploy of certificate '%s' to store '%s (%s)': "+addErr.Error(), certificateId, storeId, certificateAlias),
+			fmt.Sprintf("Unknown error during deploy of certificate '%v'(%s) to store '%s': "+addErr.Error(), certificateId, certificateAlias, storeId),
 		)
+	}
+	if response.Diagnostics.HasError() {
+		return
 	}
 
 	vErr := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId)
@@ -351,7 +354,7 @@ func addCertificateToStore(ctx context.Context, conn *api.Client, certificateId 
 	storeRequest.CertificateStoreId = storeId
 	storeRequest.Alias = certificateAlias
 
-	storeRequest.IncludePrivateKey = true
+	storeRequest.IncludePrivateKey = true //todo: make this configurable
 	storeRequest.Overwrite = true
 	storeRequest.PfxPassword = keyPassword
 	storesStruct = append(storesStruct, *storeRequest)

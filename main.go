@@ -25,7 +25,7 @@ func main() {
 
 	version := os.Getenv("GITHUB_REF_NAME")
 	if version == "" {
-		version = "dev"
+		version = "1.1.0rc-1"
 	}
 
 	flag.BoolVar(&debug, "debug", false, "set to true to run the provider with support for debuggers like delve")

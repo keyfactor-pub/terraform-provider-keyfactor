@@ -27,33 +27,33 @@ func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics)
 			"hostname": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com. This can also be set via the KEYFACTOR_HOSTNAME environment variable.",
+				Description: "Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com. This can also be set via the `KEYFACTOR_HOSTNAME` environment variable.",
 			},
 
 			"username": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Username of Keyfactor service account. This can also be set via the KEYFACTOR_USERNAME environment variable.",
+				Description: "Username of Keyfactor service account. This can also be set via the `KEYFACTOR_USERNAME` environment variable.",
 			},
 
 			"password": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Password of Keyfactor service account. This can also be set via the KEYFACTOR_PASSWORD environment variable.",
+				Description: "Password of Keyfactor service account. This can also be set via the `KEYFACTOR_PASSWORD` environment variable.",
 			},
 
 			"appkey": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Application key provisioned by Keyfactor instance. This can also be set via the KEYFACTOR_APPKEY environment variable.",
+				Description: "Application key provisioned by Keyfactor instance. This can also be set via the `KEYFACTOR_APPKEY` environment variable.",
 			},
 
 			"domain": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Domain that Keyfactor instance is hosted on. This can also be set via the KEYFACTOR_DOMAIN environment variable.",
+				Description: "Domain that Keyfactor instance is hosted on. This can also be set via the `KEYFACTOR_DOMAIN` environment variable.",
 			},
 		},
 	}, nil
@@ -83,8 +83,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if config.Username.Unknown {
 		// Cannot connect to client with an unknown value
 		resp.Diagnostics.AddWarning(
-			"Unable to create client",
-			"Cannot use unknown value as username",
+			"Invalid provider username.",
+			"Cannot use unknown value as `username`",
 		)
 		return
 	}
@@ -97,8 +97,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if username == "" {
 		// Error vs warning - empty value must stop execution
 		resp.Diagnostics.AddError(
-			"Unable to find username",
-			"Username cannot be an empty string",
+			"Invalid provider username.",
+			"`username` cannot be an empty string.",
 		)
 		return
 	}
@@ -107,8 +107,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if config.Domain.Unknown {
 		// Cannot connect to client with an unknown value
 		resp.Diagnostics.AddWarning(
-			"Unable to create client",
-			"Cannot use unknown value as domain",
+			"Invalid provider `domain`.",
+			"Cannot use unknown value for `domain`.",
 		)
 		return
 	}
@@ -121,8 +121,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if domain == "" {
 		// Error vs warning - empty value must stop execution
 		resp.Diagnostics.AddError(
-			"Unable to find username",
-			"Domain cannot be an empty string",
+			"Invalid provider `domain`.",
+			"`domain` cannot be an empty string.",
 		)
 		return
 	}
@@ -132,8 +132,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if config.ApiKey.Unknown {
 		// Cannot connect to client with an unknown value
 		resp.Diagnostics.AddError(
-			"Unable to create client",
-			"Cannot use unknown value as password",
+			"Invalid provider API key.",
+			"Cannot use unknown value as `appkey`.",
 		)
 		return
 	}
@@ -142,7 +142,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		apiKey = os.Getenv("KEYFACTOR_APPKEY")
 		config.ApiKey.Value = apiKey
 	} else {
-		apiKey = config.Password.Value
+		apiKey = config.ApiKey.Value
 	}
 
 	// User must provide a password to the provider
@@ -150,8 +150,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if config.Password.Unknown {
 		// Cannot connect to client with an unknown value
 		resp.Diagnostics.AddError(
-			"Unable to create client",
-			"Cannot use unknown value as password",
+			"Invalid provider `password`.",
+			"Cannot use unknown value as `password`",
 		)
 		return
 	}
@@ -166,8 +166,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if password == "" && apiKey == "" {
 		// Error vs warning - empty value must stop execution
 		resp.Diagnostics.AddError(
-			"Unable to find password or API key",
-			"password and API key cannot both be empty string",
+			"Invlaid provider credentials. ",
+			"`password` and `appkey` cannot both be empty string.",
 		)
 		return
 	}
@@ -177,8 +177,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if config.Hostname.Unknown {
 		// Cannot connect to client with an unknown value
 		resp.Diagnostics.AddError(
-			"Unable to create client",
-			"Cannot use unknown value as host",
+			"Invalid provider `host`.",
+			"Cannot use unknown value as `host`.",
 		)
 		return
 	}
@@ -193,8 +193,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if host == "" {
 		// Error vs warning - empty value must stop execution
 		resp.Diagnostics.AddError(
-			"Unable to find host",
-			"Host cannot be an empty string",
+			"Invalid provider `host`.",
+			"Provider `host` cannot be an empty string.",
 		)
 		return
 	}
@@ -224,9 +224,10 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 // GetResources - Defines provider resources
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
-		"keyfactor_identity":              resourceSecurityIdentityType{},
-		"keyfactor_certificate":           resourceKeyfactorCertificateType{},
-		"keyfactor_certificate_store":     resourceCertificateStoreType{},
+		"keyfactor_identity":          resourceSecurityIdentityType{},
+		"keyfactor_certificate":       resourceKeyfactorCertificateType{},
+		"keyfactor_certificate_store": resourceCertificateStoreType{},
+		//"keyfactor_certificate_deployment": resourceKeyfactorCertificateDeploymentType{},
 		"keyfactor_role":                  resourceSecurityRoleType{},
 		"keyfactor_template_role_binding": resourceCertificateTemplateRoleBindingType{},
 	}, nil

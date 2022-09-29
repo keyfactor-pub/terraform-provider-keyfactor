@@ -101,7 +101,6 @@ type CertificateStore struct {
 	Password              types.String `tfsdk:"password"`
 	SetNewPasswordAllowed types.Bool   `tfsdk:"set_new_password_allowed"`
 	InventorySchedule     types.String `tfsdk:"inventory_schedule"`
-	Certificates          types.List   `tfsdk:"certificates"`
 }
 
 type CertificateTemplate struct {

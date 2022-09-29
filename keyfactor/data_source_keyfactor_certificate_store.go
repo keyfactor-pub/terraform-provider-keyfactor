@@ -96,11 +96,6 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Required:    true,
 				Description: "Keyfactor certificate store GUID.",
 			},
-			"certificates": {
-				Type:        types.ListType{ElemType: types.Int64Type},
-				Computed:    true,
-				Description: "A list of certificate IDs associated with the certificate store.",
-			},
 		},
 	}, nil
 }
@@ -169,7 +164,6 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 		Password:              state.Password,
 		SetNewPasswordAllowed: types.Bool{Value: sResp.SetNewPasswordAllowed},
 		InventorySchedule:     state.InventorySchedule,
-		Certificates:          state.Certificates,
 	}
 
 	// Set state

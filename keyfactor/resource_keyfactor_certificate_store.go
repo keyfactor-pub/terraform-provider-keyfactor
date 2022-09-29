@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/api"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"log"
+	"strconv"
+	"strings"
 )
 
 type resourceCertificateStoreType struct{}
@@ -38,14 +39,19 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				Description: "Short name of certificate store type. See API reference guide",
 			},
 			"approved": {
-				Type:     types.BoolType,
-				Optional: true,
+				Type:       types.BoolType,
+				Attributes: nil,
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
 				//	return !d.HasChange(k)
 				//},
-				Description: "Bool that indicates the approval status of store created. Default is true, omit if unsure.",
+
+				Description:         "Bool that indicates the approval status of store created. Default is true, omit if unsure.",
+				MarkdownDescription: "",
+				Required:            false,
+				Optional:            true,
+				Computed:            false,
 			},
 			"create_if_missing": {
 				Type:        types.BoolType,
@@ -96,11 +102,6 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				Type:        types.StringType,
 				Computed:    true,
 				Description: "Keyfactor certificate store GUID.",
-			},
-			"certificates": {
-				Type:        types.ListType{ElemType: types.Int64Type},
-				Computed:    true,
-				Description: "A list of certificate IDs associated with the certificate store.",
 			},
 		},
 	}, nil
@@ -156,18 +157,26 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		diags = plan.Properties.ElementsAs(ctx, &properties, false)
 
 	}
+	schedule, err := createInventorySchedule(plan.InventorySchedule.Value) // TODO: Implement inventory schedule
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Invalid inventory schedule.",
+			fmt.Sprintf("Could not create inventory schedule: %s", err.Error()),
+		)
+		return
+	}
 	newStoreArgs := &api.CreateStoreFctArgs{
-		ContainerId:     &containerId,
-		ClientMachine:   plan.ClientMachine.Value,
-		StorePath:       plan.StorePath.Value,
-		CertStoreType:   csType.StoreType,
-		Approved:        &plan.Approved.Value,
-		CreateIfMissing: &plan.CreateIfMissing.Value,
-		Properties:      properties,
-		AgentId:         plan.AgentId.Value,
-		AgentAssigned:   &plan.AgentAssigned.Value,
-		ContainerName:   &plan.ContainerName.Value,
-		//InventorySchedule:     createInventorySchedule(plan.InventorySchedule.Value), // TODO: Implement inventory schedule
+		ContainerId:           &containerId,
+		ClientMachine:         plan.ClientMachine.Value,
+		StorePath:             plan.StorePath.Value,
+		CertStoreType:         csType.StoreType,
+		Approved:              &plan.Approved.Value,
+		CreateIfMissing:       &plan.CreateIfMissing.Value,
+		Properties:            properties,
+		AgentId:               plan.AgentId.Value,
+		AgentAssigned:         &plan.AgentAssigned.Value,
+		ContainerName:         &plan.ContainerName.Value,
+		InventorySchedule:     schedule,
 		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
 		Password:              createPasswordConfig(plan.Password.Value),
 	}
@@ -197,7 +206,7 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		InventorySchedule:     plan.InventorySchedule,
 		SetNewPasswordAllowed: plan.SetNewPasswordAllowed,
 		Password:              plan.Password,
-		Certificates:          types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
+		//Certificates:          types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -230,16 +239,8 @@ func (r resourceCertificateStore) Read(ctx context.Context, request tfsdk.ReadRe
 		return
 	}
 
-	password := state.Password.Value
-	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", certificateStoreId, password))
-
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateStoreId),
-		)
-		return
-	}
+	//password := state.Password.Value
+	//tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", certificateStoreId, password))
 
 	// Set state
 	diags = response.State.Set(ctx, &state)
@@ -276,6 +277,14 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 		)
 		return
 	}
+	schedule, err := createInventorySchedule(plan.InventorySchedule.Value) // TODO: Implement inventory schedule
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Invalid inventory schedule.",
+			fmt.Sprintf("Could not create inventory schedule: %s", err.Error()),
+		)
+		return
+	}
 	updateStoreArgs := &api.UpdateStoreFctArgs{
 		Id: state.ID.Value,
 		CreateStoreFctArgs: api.CreateStoreFctArgs{
@@ -286,10 +295,10 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 			Approved:        &plan.Approved.Value,
 			CreateIfMissing: &plan.CreateIfMissing.Value,
 			//Properties:            map[string]interface{}(plan.Properties.Elems),
-			AgentId:       plan.AgentId.Value,
-			AgentAssigned: &plan.AgentAssigned.Value,
-			ContainerName: &plan.ContainerName.Value,
-			//InventorySchedule:     createInventorySchedule(d.Get("inventory_schedule").([]interface{})),
+			AgentId:               plan.AgentId.Value,
+			AgentAssigned:         &plan.AgentAssigned.Value,
+			ContainerName:         &plan.ContainerName.Value,
+			InventorySchedule:     schedule,
 			SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
 			//Password:              createPasswordConfig(d.Get("password").([]interface{})),
 		}}
@@ -303,19 +312,20 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 	}
 
 	result := CertificateStore{
-		ID:                    types.String{Value: state.ID.Value},
-		ContainerID:           types.Int64{Value: int64(updateResponse.ContainerId)},
-		ClientMachine:         types.String{Value: updateResponse.ClientMachine},
-		StorePath:             types.String{Value: updateResponse.Storepath},
+		ID:          types.String{Value: state.ID.Value},
+		ContainerID: types.Int64{Value: int64(updateResponse.ContainerId)},
+		//ClientMachine:   types.String{Value: updateResponse.ClientMachine},
+		ClientMachine:         plan.ClientMachine,
+		StorePath:             plan.StorePath,
 		StoreType:             plan.StoreType,
-		Approved:              types.Bool{Value: updateResponse.Approved},
-		CreateIfMissing:       types.Bool{Value: updateResponse.CreateIfMissing},
+		Approved:              plan.Approved,
+		CreateIfMissing:       plan.CreateIfMissing,
 		Properties:            plan.Properties,
-		AgentId:               types.String{Value: updateResponse.AgentId},
-		AgentAssigned:         types.Bool{Value: updateResponse.AgentAssigned},
-		ContainerName:         types.String{Value: updateResponse.ContainerName},
+		AgentId:               plan.AgentId,
+		AgentAssigned:         plan.AgentAssigned,
+		ContainerName:         plan.ContainerName,
 		InventorySchedule:     plan.InventorySchedule,
-		SetNewPasswordAllowed: types.Bool{Value: updateResponse.SetNewPasswordAllowed},
+		SetNewPasswordAllowed: plan.SetNewPasswordAllowed,
 		Password:              plan.Password,
 	}
 
@@ -408,7 +418,11 @@ func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk
 		AgentId:       types.String{Value: readResponse.AgentId},
 		AgentAssigned: types.Bool{Value: readResponse.AgentAssigned},
 		ContainerName: types.String{Value: readResponse.ContainerName},
-		//InventorySchedule:     plan.InventorySchedule,
+		InventorySchedule: types.String{
+			Unknown: false,
+			Null:    true,
+			Value:   fmt.Sprintf("%v", readResponse.InventorySchedule),
+		},
 		SetNewPasswordAllowed: types.Bool{Value: readResponse.SetNewPasswordAllowed},
 		//Password:              plan.Password,
 	}
@@ -428,33 +442,33 @@ func createPasswordConfig(p string) *api.StorePasswordConfig {
 	return res
 }
 
-//func createInventorySchedule(interval string) (*api.InventorySchedule, error) {
-//	inventorySchedule := &api.InventorySchedule{}
-//
-//	if interval == "immediate" {
-//		immediate := true
-//		inventorySchedule.Immediate = &immediate
-//	} else {
-//		if strings.HasSuffix(interval, "m") {
-//			minutes, err := strconv.Atoi(interval[:len(interval)-1])
-//			if err != nil {
-//				return nil, err
-//			}
-//			iv := &api.InventoryInterval{Minutes: minutes}
-//			inventorySchedule.Interval = iv
-//			return inventorySchedule, nil
-//		}
-//		if key == "daily" {
-//			daily := &api.InventoryDaily{Time: innerValue.(string)}
-//			inventorySchedule.Daily = daily
-//			return inventorySchedule
-//		}
-//		if key == "exactly_once" {
-//			once := &api.InventoryOnce{Time: innerValue.(string)}
-//			inventorySchedule.ExactlyOnce = once
-//			return inventorySchedule
-//		}
-//	}
-//
-//	return inventorySchedule
-//}
+func createInventorySchedule(interval string) (*api.InventorySchedule, error) {
+	inventorySchedule := &api.InventorySchedule{}
+
+	if interval == "immediate" {
+		immediate := true
+		inventorySchedule.Immediate = &immediate
+	} else {
+		if strings.HasSuffix(interval, "m") {
+			minutes, err := strconv.Atoi(interval[:len(interval)-1])
+			if err != nil {
+				return nil, err
+			}
+			iv := &api.InventoryInterval{Minutes: minutes}
+			inventorySchedule.Interval = iv
+			return inventorySchedule, nil
+		}
+		if interval == "daily" {
+			daily := &api.InventoryDaily{Time: interval}
+			inventorySchedule.Daily = daily
+			return inventorySchedule, nil
+		}
+		if interval == "exactly_once" {
+			once := &api.InventoryOnce{Time: interval}
+			inventorySchedule.ExactlyOnce = once
+			return inventorySchedule, nil
+		}
+	}
+
+	return inventorySchedule, nil
+}

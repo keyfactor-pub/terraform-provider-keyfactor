@@ -100,7 +100,7 @@ func (r resourceCertificateTemplateRoleBinding) Create(ctx context.Context, requ
 	}
 
 	// Create role binding
-	diags = setRoleAllowedRequester(ctx, kfClient, roleName, validTemplateIds)
+	diags = setRoleAllowedRequester(ctx, kfClient, roleName, validTemplateIds, []int{}, "create")
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -185,27 +185,30 @@ func (r resourceCertificateTemplateRoleBinding) Update(ctx context.Context, requ
 	tflog.Info(ctx, "Create called on certificate template role binding.")
 
 	// Validate template names
-	var templateNames []string
-	var validTemplateIds []int
+	var stateTemplateNames []string
+	var planTemplateNames []string
+	var stateValidTemplateIds []int
 	var apiDiags []diag.Diagnostic
-	diags = state.TemplateNames.ElementsAs(ctx, &templateNames, true)
+	diags = state.TemplateNames.ElementsAs(ctx, &stateTemplateNames, true)
+	diags = plan.TemplateNames.ElementsAs(ctx, &planTemplateNames, true)
 	kfTemplates, err := kfClient.GetTemplates()
 	if err != nil {
 		return
 	}
-	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)
-	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", validTemplateIds))
+	stateValidTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, stateTemplateNames)
+	planValidTemplateIds, apiDiags := verifyTemplateNames(ctx, kfTemplates, planTemplateNames)
+	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", stateValidTemplateIds))
 	response.Diagnostics.Append(apiDiags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
 	// Set binding ID
-	hid := fmt.Sprintf("%v%v", roleName, templateNames)
+	hid := fmt.Sprintf("%v%v", roleName, stateTemplateNames)
 	ctx = tflog.SetField(ctx, "role_binding_id", hid)
 
 	// Set role allowed requester
-	diags = setRoleAllowedRequester(ctx, kfClient, roleName, validTemplateIds)
+	diags = setRoleAllowedRequester(ctx, kfClient, roleName, stateValidTemplateIds, planValidTemplateIds, "update")
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -213,7 +216,7 @@ func (r resourceCertificateTemplateRoleBinding) Update(ctx context.Context, requ
 
 	// Set state
 	result := CertificateTemplateRoleBinding{
-		ID:            types.String{Value: fmt.Sprintf("%s", sha256.Sum256([]byte(hid)))},
+		ID:            state.ID,
 		RoleName:      plan.RoleName,
 		TemplateNames: plan.TemplateNames,
 	}
@@ -258,7 +261,7 @@ func (r resourceCertificateTemplateRoleBinding) Delete(ctx context.Context, requ
 	}
 
 	// Create role binding
-	diags = setRoleAllowedRequester(ctx, kfClient, roleName, validTemplateIds)
+	diags = setRoleAllowedRequester(ctx, kfClient, roleName, validTemplateIds, []int{}, "destroy")
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -308,13 +311,13 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 /*
  * The resourceTemplateAttachRoleUpdate function is responsible for updating a Keyfactor security role.
  */
-func setRoleAllowedRequester(ctx context.Context, kfClient *api.Client, roleName string, templateSet []int) diag.Diagnostics {
+func setRoleAllowedRequester(ctx context.Context, kfClient *api.Client, roleName string, stateTemplateSet []int, planTemplateSet []int, caller string) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	ctx = tflog.SetField(ctx, "role_name", roleName)
 	tflog.Debug(ctx, "Setting Keyfactor role with name to be allowed requester for the following templates:")
 
-	templateList := templateSet
+	templateList := stateTemplateSet
 	tflog.Debug(ctx, "Template IDs: ", map[string]interface{}{
 		"template_ids": templateList,
 	})
@@ -345,10 +348,10 @@ func setRoleAllowedRequester(ctx context.Context, kfClient *api.Client, roleName
 		return err
 	}
 
-	// Finally, find the difference between templateSet and roleAttachments. Recall that Terraform acts as the primary
+	// Finally, find the difference between stateTemplateSet and roleAttachments. Recall that Terraform acts as the primary
 	// manager of the role roleName, and Terraform is calling this function to explicitly set the allowed requesters.
 
-	tflog.Debug(ctx, "Finding difference between templateSet and roleAttachments")
+	tflog.Debug(ctx, "Finding difference between stateTemplateSet and roleAttachments")
 	list := make(map[string]struct{}, len(templateList))
 	for _, x := range templateList {
 		list[strconv.Itoa(x)] = struct{}{}
@@ -356,26 +359,81 @@ func setRoleAllowedRequester(ctx context.Context, kfClient *api.Client, roleName
 	var diff []int
 	for _, x := range roleAttachments {
 		if _, found := list[strconv.Itoa(x.(int))]; !found {
-			tflog.Debug(ctx, "Found difference between templateSet and roleAttachments", map[string]interface{}{
+			tflog.Debug(ctx, "Found difference between stateTemplateSet and roleAttachments", map[string]interface{}{
 				"template_id": x,
 			})
 			diff = append(diff, x.(int))
 		}
 	}
+	additions := []int{}
+	removals := []int{}
 
-	tflog.Debug(ctx, "Removing difference between templateSet and roleAttachments")
-	for _, template := range diff {
-		tempCtx := tflog.SetField(ctx, "template_id", template)
-		tflog.Debug(tempCtx, "Removing role from template")
-		err = removeRoleFromTemplate(ctx, kfClient, roleName, template)
-		if err != nil {
-			tflog.Error(tempCtx, "Error removing role from template")
-			diags = append(diags, err...)
+	for _, templateId := range planTemplateSet {
+		if !Contains(stateTemplateSet, templateId) {
+			additions = append(additions, templateId)
 		}
 	}
 
-	tflog.Info(ctx, "Finished binding roles to templates")
+	for _, templateId := range stateTemplateSet {
+		if !Contains(planTemplateSet, templateId) {
+			removals = append(removals, templateId)
+		}
+	}
+
+	if caller == "destroy" {
+		removals = append(removals, additions...)
+		additions = []int{}
+	} else if caller == "create" {
+		additions = append(additions, removals...)
+		removals = []int{}
+	}
+
+	tflog.Debug(ctx, "Adding difference between stateTemplateSet and roleAttachments")
+	for _, template := range additions {
+		tempCtx := tflog.SetField(ctx, "template_id", template)
+		tempCtx = tflog.SetField(tempCtx, "role_name", roleName)
+		tflog.Info(tempCtx, "Attaching role to template ID ")
+		aErr := addAllowedRequesterToTemplate(ctx, kfClient, roleName, strconv.Itoa(template))
+		if aErr != nil {
+			tflog.Error(tempCtx, "Error attaching role to template")
+			diags = append(diags, aErr...)
+		}
+	}
+
+	tflog.Debug(ctx, "Removing difference between stateTemplateSet and roleAttachments")
+	for _, template := range removals {
+		tempCtx := tflog.SetField(ctx, "template_id", template)
+		tempCtx = tflog.SetField(tempCtx, "role_name", roleName)
+		tflog.Info(tempCtx, "Detaching role from template ID ")
+		rErr := removeRoleFromTemplate(ctx, kfClient, roleName, template)
+		if rErr != nil {
+			tflog.Error(tempCtx, "Error detaching role from template")
+			diags = append(diags, rErr...)
+		}
+	}
+
+	tflog.Debug(ctx, "Removing difference between stateTemplateSet and roleAttachments")
+	//for _, template := range diff {
+	//	tempCtx := tflog.SetField(ctx, "template_id", template)
+	//	tflog.Debug(tempCtx, "Removing role from template")
+	//	err = removeRoleFromTemplate(ctx, kfClient, roleName, template)
+	//	if err != nil {
+	//		tflog.Error(tempCtx, "Error removing role from template")
+	//		diags = append(diags, err...)
+	//	}
+	//}
+	//
+	//tflog.Info(ctx, "Finished binding roles to templates")
 	return diags
+}
+
+func Contains(sl []int, val int) bool {
+	for _, value := range sl {
+		if value == val {
+			return true
+		}
+	}
+	return false
 }
 
 /*

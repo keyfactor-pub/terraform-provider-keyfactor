@@ -1,5 +1,5 @@
 provider "keyfactor" {
-  username = "COMMAND\\your_username"
+  username = "your_username"
   password = "your_api_password"
   hostname = "mykfinstance.kfdelivery.com"
   domain   = "mydomain.com"

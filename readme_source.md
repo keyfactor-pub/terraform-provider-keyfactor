@@ -20,7 +20,7 @@ make install
 ```powershell
 git clone https://github.com/Keyfactor/terraform-provider-keyfactor.git
 cd terraform-provider-keyfactor
-go build -o %APPDATA%\terraform.d\plugins\keyfactor.com\keyfactor\keyfactor\1.0.2\terraform-provider-keyfactor.exe
+go build -o %APPDATA%\terraform.d\plugins\keyfactor.com\keyfactor\keyfactor\1.0.3\terraform-provider-keyfactor.exe
 ```
 
 ## Usage

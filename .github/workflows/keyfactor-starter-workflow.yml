@@ -30,7 +30,7 @@ jobs:
 
   call-generate-readme-workflow:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    uses: Keyfactor/actions/.github/workflows/generate-readme.yml@tfrprovider_support
+    uses: Keyfactor/actions/.github/workflows/generate-readme.yml@tfprovider_support
 
   call-update-catalog-workflow:
     needs: catalog-update-check

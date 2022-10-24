@@ -8,8 +8,6 @@ jobs:
       upd_cat: ${{ steps.read-json.outputs.prop }}
     steps:
       - uses: actions/checkout@v3
-          with:
-              ref: tfprovider_support
       - name: Read json
         id: read-json
         shell: pwsh
@@ -32,7 +30,7 @@ jobs:
 
   call-generate-readme-workflow:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    uses: Keyfactor/actions/.github/workflows/generate-readme.yml@main
+    uses: Keyfactor/actions/.github/workflows/generate-readme.yml@tfrprovider_support
 
   call-update-catalog-workflow:
     needs: catalog-update-check

@@ -1,18 +1,14 @@
-# Keyfactor Provider for Terraform
+# Keyfactor Terraform Provider
 
-The Keyfactor provider for Terraform enables programmatic management of Keyfactor resources. This project is a work in progress, and feature requests can be submitted by opening an issue.
 
-#### Integration status: Pilot - Ready for use in test environments. Not for use in production.
 
-## About the Keyfactor Terraform Provider 
+#### Integration status: Production - Ready for use in production environments.
 
-The Keyfactor Terraform provider enables programmatic management of Keyfactor resources. 
+## About the Keyfactor Terraform Provider
 
-## Support for Keyfactor Terraform Provider
+The Terraform provider enables management of Keyfactor resources utilizing HashiCorp Terraform.
 
-Keyfactor Terraform Provider is open source and there is **no SLA** for this tool/library/client. 
-Keyfactor will address issues as resources become available. Keyfactor customers may request escalation by opening up a 
-support ticket through their Keyfactor representative.
+
 
 ## Local install
 
@@ -20,7 +16,7 @@ support ticket through their Keyfactor representative.
 - Download the latest release from the [releases page](https://github.com/Keyfactor/terraform-provider-keyfactor/releases)
 - Unzip the release
 - Move the binary to a location in your local Terraform plugins directory (typically `$HOME/.terraform.d/plugins` or `%APPDATA%\terraform.d\plugins` on Windows)
-for more information refer to the [Hashicorp documentation](https://www.terraform.io/docs/cli/config/config-file.html#implied-local-mirror-directories)
+  for more information refer to the [Hashicorp documentation](https://www.terraform.io/docs/cli/config/config-file.html#implied-local-mirror-directories)
 - Run `terraform init` to initialize the provider
 
 ## From Source

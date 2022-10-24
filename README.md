@@ -1,5 +1,7 @@
 # Keyfactor Terraform Provider
 
+The Terraform provider enables management of Keyfactor resources utilizing HashiCorp Terraform.
+
 
 
 #### Integration status: Production - Ready for use in production environments.
@@ -7,6 +9,16 @@
 ## About the Keyfactor Terraform Provider
 
 The Terraform provider enables management of Keyfactor resources utilizing HashiCorp Terraform.
+
+
+
+## Support for Keyfactor Terraform Provider
+
+Keyfactor Terraform Provider is open source and there is **no SLA** for this tool/library/client. Keyfactor will address issues as resources become available. Keyfactor customers may request escalation by opening up a support ticket through their Keyfactor representative.
+
+###### To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
+___
+
 
 
 
@@ -32,7 +44,7 @@ make install
 ```powershell
 git clone https://github.com/Keyfactor/terraform-provider-keyfactor.git
 cd terraform-provider-keyfactor
-go build -o %APPDATA%\terraform.d\plugins\keyfactor.com\keyfactor\keyfactor\1.0.2\terraform-provider-keyfactor.exe
+go build -o %APPDATA%\terraform.d\plugins\keyfactor.com\keyfactor\keyfactor\1.0.3\terraform-provider-keyfactor.exe
 ```
 
 ## Usage

@@ -3,7 +3,7 @@
   "integration_type": "terraform-provider",
   "name": "Keyfactor Terraform Provider",
   "status": "production",
-  "description": "",
+  "description": "The Terraform provider enables management of Keyfactor resources utilizing HashiCorp Terraform.\n\n",
   "support_level": "kf-community",
   "link_github": false,
   "update_catalog": false

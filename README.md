@@ -2,15 +2,11 @@
 
 The Terraform provider enables management of Keyfactor resources utilizing HashiCorp Terraform.
 
-
-
 #### Integration status: Production - Ready for use in production environments.
 
 ## About the Keyfactor Terraform Provider
 
 The Terraform provider enables management of Keyfactor resources utilizing HashiCorp Terraform.
-
-
 
 ## Support for Keyfactor Terraform Provider
 
@@ -19,8 +15,22 @@ Keyfactor Terraform Provider is open source and there is **no SLA** for this too
 ###### To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
 ___
 
+## Install
+Include the following provider config to pull from the public registry: https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs
+```terraform
+terraform {
+  required_providers {
+    keyfactor = {
+      source = "keyfactor-pub/keyfactor"
+      version = "1.1.1"
+    }
+  }
+}
 
-
+provider "keyfactor" {
+  # Configuration options
+}
+```
 
 ## Local install
 

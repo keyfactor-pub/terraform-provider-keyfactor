@@ -1,3 +1,20 @@
+## Install
+Include the following provider config to pull from the public registry: https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs
+```terraform
+terraform {
+  required_providers {
+    keyfactor = {
+      source = "keyfactor-pub/keyfactor"
+      version = "1.1.1"
+    }
+  }
+}
+
+provider "keyfactor" {
+  # Configuration options
+}
+```
+
 ## Local install
 
 ### From GitHub

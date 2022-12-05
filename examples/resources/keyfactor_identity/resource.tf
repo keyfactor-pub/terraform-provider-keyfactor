@@ -1,11 +1,11 @@
 provider "keyfactor" {
-  username = "COMMAND\\your_username"
+  username = "your_username"
   password = "your_api_password"
   hostname = "mykfinstance.kfdelivery.com"
   domain   = "mydomain.com"
 }
 
 resource "keyfactor_identity" "identity" {
-  account_name = "COMMAND\\your_username"                # your_domain\\your_username
+  account_name = "your_username"                # your_domain\\your_username
   roles        = ["EnrollPFX", "Administrator", "Nginx"] # List of existing role names to assign to the identity
 }

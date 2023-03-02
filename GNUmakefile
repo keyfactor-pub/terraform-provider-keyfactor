@@ -59,4 +59,7 @@ fmt:
 debug: install
 	@./scripts/gofmtcheck.sh
 
+setversion:
+	sed -i '' -e 's/VERSION = ".*"/VERSION = "$(VERSION)"/' keyfactor/version.go
+
 .PHONY: build release install test testacc fmtcheck fmt

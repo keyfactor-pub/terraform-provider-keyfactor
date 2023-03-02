@@ -60,6 +60,7 @@ resource "keyfactor_certificate_store" "iis_trusted_roots" {
 
 ### Read-Only
 
+- `certificates` (List of Number) A list of certificate IDs associated with the certificate store.
 - `id` (String) Keyfactor certificate store GUID.
 
 ## Import

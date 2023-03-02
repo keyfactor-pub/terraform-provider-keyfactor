@@ -6,7 +6,7 @@ NAMESPACE=keyfactor
 WEBSITE_REPO=https://github.com/Keyfactor/terraform-provider-keyfactor
 NAME=keyfactor
 BINARY=terraform-provider-${NAME}
-VERSION=1.2.0
+VERSION=v1.2.0
 OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 BASEDIR := ~/.terraform.d/plugins
 INSTALLDIR := ${BASEDIR}/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
@@ -62,4 +62,10 @@ debug: install
 setversion:
 	sed -i '' -e 's/VERSION = ".*"/VERSION = "$(VERSION)"/' keyfactor/version.go
 
-.PHONY: build release install test testacc fmtcheck fmt
+tag:
+	git tag -d $(VERSION) || true
+	git push origin $(VERSION) || true
+	git tag $(VERSION) || true
+	git push origin $(VERSION) || true
+
+.PHONY: build release install test testacc fmtcheck fmt tag setversion

@@ -2,8 +2,8 @@
   "$schema": "https://keyfactor.github.io/integration-manifest-schema.json",
   "integration_type": "terraform-provider",
   "name": "Keyfactor Terraform Provider",
-  "status": "pilot",
-  "description": "",
+  "status": "production",
+  "description": "The Terraform provider enables management of Keyfactor resources utilizing HashiCorp Terraform.\n\n",
   "support_level": "kf-community",
   "link_github": false,
   "update_catalog": false

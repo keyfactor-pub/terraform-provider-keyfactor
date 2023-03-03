@@ -26,12 +26,12 @@ func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 
 	r := certificateStoreTestCase{
 		orchestrator: os.Getenv("KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE"),
-		storePath:    "IIS Trusted Roots",
+		storePath:    os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PATH"),
 		agentId:      os.Getenv("KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID"),
-		storeType:    "IIS",
+		storeType:    os.Getenv("KEYFACTOR_CERTIFICATE_STORE_TYPE"),
 		containerId:  containerId1,
 		password:     os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PASS"),
-		resourceName: "keyfactor_certificate_store.iis_trusted_roots",
+		resourceName: "keyfactor_certificate_store.tf_acc_test",
 	}
 
 	// Update to multiple certificateStores test

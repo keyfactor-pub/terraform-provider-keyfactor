@@ -62,10 +62,13 @@ debug: install
 setversion:
 	sed -i '' -e 's/VERSION = ".*"/VERSION = "$(VERSION)"/' keyfactor/version.go
 
+vendor:
+	go mod vendor
+
 tag:
 	git tag -d $(VERSION) || true
 	git push origin $(VERSION) || true
 	git tag $(VERSION) || true
 	git push origin $(VERSION) || true
 
-.PHONY: build release install test testacc fmtcheck fmt tag setversion
+.PHONY: build release install test testacc fmtcheck fmt tag setversion vendor

@@ -142,7 +142,7 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 	//ctx = tflog.SetField(ctx, "id", certificateStoreId)
 	tflog.Info(ctx, "Create called on certificate store resource")
 
-	csType, csTypeErr := r.p.client.GetCertStoreTypeByName(plan.StoreType.Value)
+	csType, csTypeErr := r.p.client.GetCertificateStoreTypeByName(plan.StoreType.Value)
 	if csTypeErr != nil {
 		response.Diagnostics.AddError(
 			"Invalid certificate store type.",
@@ -269,7 +269,7 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 
 	// Generate API request body from plan
 	containerId := int(plan.ContainerID.Value)
-	csType, csTypeErr := r.p.client.GetCertStoreTypeByName(plan.StoreType.Value)
+	csType, csTypeErr := r.p.client.GetCertificateStoreTypeByName(plan.StoreType.Value)
 	if csTypeErr != nil {
 		response.Diagnostics.AddError(
 			"Invalid certificate store type.",
@@ -397,7 +397,7 @@ func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk
 		return
 	}
 
-	csType, csTypeErr := r.p.client.GetCertStoreType(readResponse.CertStoreType)
+	csType, csTypeErr := r.p.client.GetCertificateStoreType(readResponse.CertStoreType)
 	if csTypeErr != nil {
 		response.Diagnostics.AddError(
 			"Error reading Keyfactor certificate.",

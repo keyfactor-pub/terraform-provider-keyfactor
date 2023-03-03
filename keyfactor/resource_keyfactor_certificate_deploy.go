@@ -250,10 +250,23 @@ func (r resourceKeyfactorCertificateDeployment) Delete(ctx context.Context, requ
 	//keyPassword := state.KeyPassword.Value
 	//hid := fmt.Sprintf("%s-%s-%s", certificateId, storeId, certificateAlias)
 
+	if certificateAlias == "" {
+		// If no alias is provided then lookup the cert ID in keyfactor and use the alias from there
+		lookupCertResp, lkErr := kfClient.GetCertificateContext(&api.GetCertificateContextArgs{Id: int(certificateId)})
+		if lkErr != nil {
+			response.Diagnostics.AddWarning(
+				"Certificate removal error.",
+				fmt.Sprintf("Error looking up certificate '%s' in Keyfactor: "+lkErr.Error(), certificateId),
+			)
+			response.State.RemoveResource(ctx)
+			return
+		}
+		certificateAlias = lookupCertResp.Thumbprint
+	}
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
 	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
 	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
-	tflog.Info(ctx, "Create called on certificate deployment resource")
+	tflog.Info(ctx, "Delete called on certificate deployment resource")
 
 	// Remove certificate from store
 	var diff []api.CertificateStore
@@ -269,7 +282,7 @@ func (r resourceKeyfactorCertificateDeployment) Delete(ctx context.Context, requ
 		if strings.Contains(err.Error(), "not found") {
 			response.Diagnostics.AddWarning(
 				"Certificate deployment not found.",
-				fmt.Sprintf("Certificate deployment '%s' to store '%s (%s)' not found, removing from state.", certificateId, storeId, certificateAlias),
+				fmt.Sprintf("Certificate deployment '%v' to store '%s (%s)' not found, removing from state.", certificateId, storeId, certificateAlias),
 			)
 		} else {
 			response.Diagnostics.AddError(

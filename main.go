@@ -32,7 +32,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address:         "keyfactor.com/keyfactor/keyfactor",
+		Address:         "github.com/keyfactor-pub/keyfactor",
 		Debug:           debug,
 		ProtocolVersion: 6,
 	}

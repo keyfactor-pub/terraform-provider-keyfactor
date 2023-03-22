@@ -30,11 +30,12 @@ data "keyfactor_certificate" "protected_cert" {
 
 ### Required
 
-- `id` (Number) Keyfactor certificate ID
+- `id` (Number) Keyfactor certificate identifier.
 
 ### Optional
 
-- `key_password` (String, Sensitive) Password to protect certificate and private key with
+- `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
+- `key_password` (String, Sensitive) Optional, used to read the private key if it is password protected.
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
 
 ### Read-Only

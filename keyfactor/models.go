@@ -42,6 +42,7 @@ type KeyfactorCertificate struct {
 	CertificateTemplate  types.String `tfsdk:"certificate_template"`
 	RequestId            types.Int64  `tfsdk:"keyfactor_request_id"`
 	Metadata             types.Map    `tfsdk:"metadata"`
+	CollectionId         types.Int64  `tfsdk:"collection_id"`
 }
 
 type KeyfactorCertificateDeployment struct {

@@ -31,8 +31,12 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "set to true to run the provider with support for debuggers like delve")
 	flag.Parse()
 
+	address := "github.com/keyfactor-pub/keyfactor"
+	if debug {
+		address = "keyfactor.com/keyfactor/keyfactor"
+	}
 	opts := providerserver.ServeOpts{
-		Address:         "keyfactor.com/keyfactor-pub/keyfactor",
+		Address:         address,
 		Debug:           debug,
 		ProtocolVersion: 6,
 	}

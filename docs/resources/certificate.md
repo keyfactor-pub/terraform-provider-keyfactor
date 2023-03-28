@@ -89,6 +89,7 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 
 ### Optional
 
+- `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
 - `dns_sans` (List of String) List of DNS names to use as subjects of the certificate
 - `ip_sans` (List of String) List of DNS names to use as subjects of the certificate

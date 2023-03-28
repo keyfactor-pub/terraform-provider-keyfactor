@@ -6,7 +6,7 @@ NAMESPACE=keyfactor
 WEBSITE_REPO=https://github.com/Keyfactor/terraform-provider-keyfactor
 NAME=keyfactor
 BINARY=terraform-provider-${NAME}
-VERSION=1.3.0-rc1
+VERSION=1.3.0
 OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 BASEDIR := ~/.terraform.d/plugins
 INSTALLDIR := ${BASEDIR}/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
@@ -68,9 +68,9 @@ vendor:
 	go mod vendor
 
 tag:
-	git tag -d $(VERSION) || true
-	git push origin $(VERSION) || true
-	git tag $(VERSION) || true
-	git push origin $(VERSION) || true
+	git tag -d v$(VERSION) || true
+	git push origin v$(VERSION) || true
+	git tag v$(VERSION) || true
+	git push origin v$(VERSION) || true
 
 .PHONY: build release install test testacc fmtcheck fmt tag setversion vendor

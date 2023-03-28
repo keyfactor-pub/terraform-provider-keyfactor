@@ -152,6 +152,12 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Computed:    true,
 				Description: "Keyfactor certificate ID",
 			},
+			"collection_id": {
+				Type:        types.Int64Type,
+				Required:    false,
+				Optional:    true,
+				Description: "Optional certificate collection identifier used to ensure user access to the certificate.",
+			},
 			"keyfactor_request_id": {
 				Type:        types.Int64Type,
 				Computed:    true,
@@ -284,6 +290,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			CertificateTemplate:  plan.CertificateTemplate,
 			RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
 			Metadata:             plan.Metadata,
+			CollectionId:         plan.CollectionId,
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -360,6 +367,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			CertificateTemplate:  plan.CertificateTemplate,
 			RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
 			Metadata:             plan.Metadata,
+			CollectionId:         plan.CollectionId,
 		}
 
 		diags = response.State.Set(ctx, result)

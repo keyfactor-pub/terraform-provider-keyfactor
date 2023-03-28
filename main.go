@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"flag"
-	"github.com/Keyfactor/terraform-provider-keyfactor/keyfactor"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	"github.com/keyfactor-pub/terraform-provider-keyfactor/keyfactor"
 	"log"
 	"os"
 )
@@ -25,14 +25,18 @@ func main() {
 
 	version := os.Getenv("GITHUB_REF_NAME")
 	if version == "" {
-		version = "dev"
+		version = keyfactor.VERSION
 	}
 
 	flag.BoolVar(&debug, "debug", false, "set to true to run the provider with support for debuggers like delve")
 	flag.Parse()
 
+	address := "github.com/keyfactor-pub/keyfactor"
+	if debug {
+		address = "keyfactor.com/keyfactor/keyfactor"
+	}
 	opts := providerserver.ServeOpts{
-		Address:         "keyfactor.com/keyfactor/keyfactor",
+		Address:         address,
 		Debug:           debug,
 		ProtocolVersion: 6,
 	}

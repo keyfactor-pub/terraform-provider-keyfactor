@@ -6,7 +6,7 @@ NAMESPACE=keyfactor
 WEBSITE_REPO=https://github.com/Keyfactor/terraform-provider-keyfactor
 NAME=keyfactor
 BINARY=terraform-provider-${NAME}
-VERSION=1.0.3
+VERSION=1.3.0
 OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 BASEDIR := ~/.terraform.d/plugins
 INSTALLDIR := ${BASEDIR}/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
@@ -14,6 +14,7 @@ INSTALLDIR := ${BASEDIR}/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
 default: build
 
 build: fmtcheck
+	go mod tidy
 	go install
 
 tfdocs:
@@ -59,4 +60,17 @@ fmt:
 debug: install
 	@./scripts/gofmtcheck.sh
 
-.PHONY: build release install test testacc fmtcheck fmt
+setversion:
+	sed -i '' -e 's/VERSION = ".*"/VERSION = "$(VERSION)"/' keyfactor/version.go
+	@sed -i '' -e 's/TAG_VERSION=v*.*/TAG_VERSION=v$(VERSION)/' tag.sh
+
+vendor:
+	go mod vendor
+
+tag:
+	git tag -d v$(VERSION) || true
+	git push origin v$(VERSION) || true
+	git tag v$(VERSION) || true
+	git push origin v$(VERSION) || true
+
+.PHONY: build release install test testacc fmtcheck fmt tag setversion vendor

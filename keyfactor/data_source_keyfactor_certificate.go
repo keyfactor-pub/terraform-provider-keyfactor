@@ -2,14 +2,17 @@ package keyfactor
 
 import (
 	"context"
+	"crypto/ecdsa"
+	rsa2 "crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/api"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"strings"
 )
 
 type dataSourceCertificateType struct{}
@@ -28,7 +31,7 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 				Sensitive:     true,
-				Description:   "Password to protect certificate and private key with",
+				Description:   "Optional, used to read the private key if it is password protected.",
 			},
 			"subject": {
 				Computed:      true,
@@ -146,7 +149,13 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 			"id": {
 				Type:        types.Int64Type,
 				Required:    true,
-				Description: "Keyfactor certificate ID",
+				Description: "Keyfactor certificate identifier.",
+			},
+			"collection_id": {
+				Type:        types.Int64Type,
+				Required:    false,
+				Optional:    true,
+				Description: "Optional certificate collection identifier used to ensure user access to the certificate.",
 			},
 			"keyfactor_request_id": {
 				Type:        types.Int64Type,
@@ -186,43 +195,155 @@ type dataSourceCertificate struct {
 func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
 	var state KeyfactorCertificate
 
-	tflog.Info(ctx, "Read called on certificate resource")
+	tflog.Info(ctx, "Reading terraform data resource 'certificate'.")
 	diags := request.Config.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
-	certificateId := state.ID.Value
-	certificateIdInt := int(certificateId)
+	certificateID := state.ID.Value
+	certificateIDInt := int(certificateID)
 
-	tflog.SetField(ctx, "certificate_id", certificateId)
+	collectionID := state.CollectionId.Value
+	collectionIdInt := int(collectionID)
+
+	tflog.SetField(ctx, "collection_id", collectionID)
+	tflog.SetField(ctx, "certificate_id", certificateID)
 
 	// Get certificate context
+	tflog.Info(ctx, fmt.Sprintf("Attempting to lookup certificate '%v' in Keyfactor.", certificateID))
+	tflog.Debug(ctx, "Calling Keyfactor GO Client GetCertificateContext")
 	args := &api.GetCertificateContextArgs{
 		IncludeMetadata:  boolToPointer(true),
 		IncludeLocations: boolToPointer(true),
-		CollectionId:     nil,
-		Id:               certificateIdInt,
+		CollectionId:     intToPointer(collectionIdInt),
+		Id:               certificateIDInt,
 	}
 	cResp, err := r.p.client.GetCertificateContext(args)
 	if err != nil {
+		tflog.Error(ctx, "Error calling Keyfactor Go Client GetCertificateContext")
 		response.Diagnostics.AddError(
 			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateId),
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateID),
 		)
 		return
 	}
 
 	// Get the password out of current schema
 	csr := state.CSR.Value
+	password := state.KeyPassword.Value
 
-	// Download and assign certificates to proper location
-	//leaf, chain, pKey, dErr := downloadCertificate(certificateIdInt, r.p.client, state.KeyPassword.Value, csr != "")
-	leaf, chain, pKey, dErr := downloadCertificate(certificateIdInt, r.p.client, state.KeyPassword.Value, csr != "")
+	if password == "" {
+		tflog.Debug(ctx, "Generating password. This will be stored in the state file, but is only used to download and parse the PFX to PEM fields.")
+		password = generatePassword(32, 1, 1, 1)
+		state.KeyPassword.Value = password
+	}
+
+	var (
+		leaf  string
+		chain = ""
+		pKey  = ""
+		dErr  = error(nil)
+	)
+
+	if cResp.HasPrivateKey {
+		tflog.Info(ctx, "Requested certificate has a private key attempting to recover from Keyfactor Command.")
+		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(certificateIDInt, "", "", "", password)
+		if dErrO != nil {
+			response.Diagnostics.AddError(
+				"Error reading Keyfactor certificate.",
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErrO.Error(), certificateID),
+			)
+			return
+		}
+		// Convert string to []byte and then to pem.
+		//leaf = string(pem.EncodeToMemory(&pem.Block{
+		//	Type:  "CERTIFICATE",
+		//	Bytes: leafO.Raw,
+		//}))
+		lBytes, lbErr := base64.StdEncoding.DecodeString(cResp.ContentBytes)
+		if lbErr != nil {
+			response.Diagnostics.AddError(
+				"Error reading Keyfactor certificate.",
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), certificateID),
+			)
+			return
+		}
+		leaf = string(pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: lBytes,
+		}))
+		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
+		tflog.Debug(ctx, leaf)
+		tflog.Debug(ctx, "Recovered certificate chain from Keyfactor Command:")
+		for _, cert := range chainO {
+			chainLink := string(pem.EncodeToMemory(&pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: cert.Raw,
+			}))
+			chain = chain + chainLink
+			tflog.Debug(ctx, chainLink)
+		}
+
+		tflog.Debug(ctx, "Recovered private key from Keyfactor Command:")
+		tflog.Debug(ctx, "Attempting RSA private key recovery")
+		rsa, ok := pKeyO.(*rsa2.PrivateKey)
+		if ok {
+			tflog.Debug(ctx, "Recovered RSA private key from Keyfactor Command:")
+			buf := x509.MarshalPKCS1PrivateKey(rsa)
+			if len(buf) > 0 {
+				pKey = string(pem.EncodeToMemory(&pem.Block{
+					Bytes: buf,
+					Type:  "RSA PRIVATE KEY",
+				}))
+				tflog.Trace(ctx, pKey)
+			} else {
+				tflog.Debug(ctx, "Empty Key Recovered from Keyfactor Command.")
+			}
+		} else {
+			tflog.Debug(ctx, "Attempting ECC private key recovery")
+			ecc, ok := pKeyO.(*ecdsa.PrivateKey)
+			if ok {
+				// We don't really care about the error here. An error just means that the key will be blank which isn't a
+				// reason to fail
+				tflog.Debug(ctx, "Recovered ECC private key from Keyfactor Command:")
+				buf, _ := x509.MarshalECPrivateKey(ecc)
+				if len(buf) > 0 {
+					pKey = string(pem.EncodeToMemory(&pem.Block{
+						Bytes: buf,
+						Type:  "EC PRIVATE KEY",
+					}))
+					tflog.Trace(ctx, pKey)
+				}
+			}
+		}
+	} else {
+		// Convert string to []byte and then to pem.
+		tflog.Debug(ctx, "Requested certificate does not have a private key in Keyfactor Command.")
+		lBytes, lbErr := base64.StdEncoding.DecodeString(cResp.ContentBytes)
+		if lbErr != nil {
+			tflog.Error(ctx, "Error decoding certificate content bytes.")
+			tflog.Error(ctx, lbErr.Error())
+			response.Diagnostics.AddError(
+				"Error reading Keyfactor certificate.",
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), certificateID),
+			)
+			return
+		}
+
+		tflog.Debug(ctx, "Decoding leaf cert.")
+		leaf = string(pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: lBytes,
+		}))
+		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
+		tflog.Debug(ctx, leaf)
+	}
+
 	if dErr != nil {
 		response.Diagnostics.AddError(
 			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), certificateId),
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), certificateID),
 		)
 	}
 
@@ -260,130 +381,4 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 	if response.Diagnostics.HasError() {
 		return
 	}
-}
-
-func flattenSubject(subject string) types.Object {
-	data := make(map[string]string) // Inner subject interface is a string mapped interface
-	if subject != "" {
-		subjectFields := strings.Split(subject, ",") // Separate subject fields into slices
-		for _, field := range subjectFields {        // Iterate and assign slices to associated map
-			if strings.Contains(field, "CN=") {
-				//result["subject_common_name"] = types.String{Value: strings.Replace(field, "CN=", "", 1)}
-				data["subject_common_name"] = strings.Replace(field, "CN=", "", 1)
-			} else if strings.Contains(field, "OU=") {
-				//result["subject_organizational_unit"] = types.String{Value: strings.Replace(field, "OU=", "", 1)}
-				data["subject_organizational_unit"] = strings.Replace(field, "OU=", "", 1)
-			} else if strings.Contains(field, "C=") {
-				//result["subject_country"] = types.String{Value: strings.Replace(field, "C=", "", 1)}
-				data["subject_country"] = strings.Replace(field, "C=", "", 1)
-			} else if strings.Contains(field, "L=") {
-				//result["subject_locality"] = types.String{Value: strings.Replace(field, "L=", "", 1)}
-				data["subject_locality"] = strings.Replace(field, "L=", "", 1)
-			} else if strings.Contains(field, "ST=") {
-				//result["subject_state"] = types.String{Value: strings.Replace(field, "ST=", "", 1)}
-				data["subject_state"] = strings.Replace(field, "ST=", "", 1)
-			} else if strings.Contains(field, "O=") {
-				//result["subject_organization"] = types.String{Value: strings.Replace(field, "O=", "", 1)}
-				data["subject_organization"] = strings.Replace(field, "O=", "", 1)
-			}
-		}
-
-	}
-	result := types.Object{
-		Attrs: map[string]attr.Value{
-			"subject_common_name":         types.String{Value: data["subject_common_name"]},
-			"subject_locality":            types.String{Value: data["subject_locality"]},
-			"subject_organization":        types.String{Value: data["subject_organization"]},
-			"subject_state":               types.String{Value: data["subject_state"]},
-			"subject_country":             types.String{Value: data["subject_country"]},
-			"subject_organizational_unit": types.String{Value: data["subject_organizational_unit"]},
-		},
-		AttrTypes: map[string]attr.Type{
-			"subject_common_name":         types.StringType,
-			"subject_locality":            types.StringType,
-			"subject_organization":        types.StringType,
-			"subject_state":               types.StringType,
-			"subject_country":             types.StringType,
-			"subject_organizational_unit": types.StringType,
-		},
-	}
-
-	return result
-}
-
-func flattenMetadata(metadata interface{}) types.Map {
-	data := make(map[string]string)
-	if metadata != nil {
-		for k, v := range metadata.(map[string]interface{}) {
-			data[k] = v.(string)
-		}
-	}
-
-	result := types.Map{
-		Elems:    map[string]attr.Value{},
-		ElemType: types.StringType,
-	}
-	for k, v := range data {
-		result.Elems[k] = types.String{Value: v}
-	}
-	return result
-}
-
-func flattenSANs(sans []api.SubjectAltNameElements) (types.List, types.List, types.List) {
-	sanIP4Array := types.List{
-		ElemType: types.StringType,
-		Elems:    []attr.Value{},
-	}
-	sanDNSArray := types.List{
-		ElemType: types.StringType,
-		Elems:    []attr.Value{},
-	}
-	sanURIArray := types.List{
-		ElemType: types.StringType,
-		Elems:    []attr.Value{},
-	}
-	if len(sans) > 0 {
-		for _, san := range sans {
-			sanName := mapSanIDToName(san.Type)
-			if sanName == "IP Address" {
-				sanIP4Array.Elems = append(sanIP4Array.Elems, types.String{Value: san.Value})
-			} else if sanName == "DNS Name" {
-				sanDNSArray.Elems = append(sanDNSArray.Elems, types.String{Value: san.Value})
-			} else if sanName == "Uniform Resource Identifier" {
-				sanURIArray.Elems = append(sanURIArray.Elems, types.String{Value: san.Value})
-			}
-		}
-	}
-
-	return sanDNSArray, sanIP4Array, sanURIArray
-}
-
-// mapSanIDToName maps an inputted integer value as a SAN type returned by Keyfactor API and returns the associated
-// DNS type string
-func mapSanIDToName(sanID int) string {
-	switch sanID {
-	case 0:
-		return "Other Name"
-	case 1:
-		return "RFC 822 Name"
-	case 2:
-		return "DNS Name"
-	case 3:
-		return "X400 Address"
-	case 4:
-		return "Directory Name"
-	case 5:
-		return "Ediparty Name"
-	case 6:
-		return "Uniform Resource Identifier"
-	case 7:
-		return "IP Address"
-	case 8:
-		return "Registered Id"
-	case 100:
-		return "MS_NTPrincipalName"
-	case 101:
-		return "MS_NTDSReplication"
-	}
-	return ""
 }

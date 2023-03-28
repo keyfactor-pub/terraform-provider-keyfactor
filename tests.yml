@@ -1,0 +1,10 @@
+---
+data:
+  certificate:
+    - name: Enrollment w/o recoverable private key
+      cert_id: 1434
+      collection_id: 6
+      enrollment_type: csr
+      csr: "-----BEGIN CERTIFICATE REQUEST-----\nMIIC1jCCAb4CAQAwgZExCzAJBgNVBAYTAlVTMQswCQYDVQQIDAJDQTEQMA4GA1UE\nBwwHQXJpem9uZTEUMBIGA1UECgwLRW5jcnlwdGlvbjEUMBIGA1UECwwLRW5jcnlw\ndGlvbjEUMBIGA1UEAwwLRW5jcnlwdGlvbjEwggEiMA0GCSqGSIb3DQEBAQUAA4IB\nDwAwggEKAoI\n-----END CERTIFICATE REQUEST-----"
+    - name: Enrollment w/ recoverable private key
+      cert_id: 1087

@@ -26,18 +26,18 @@ func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 
 	r := certificateStoreTestCase{
 		orchestrator: os.Getenv("KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE"),
-		storePath:    "IIS Trusted Roots",
+		storePath:    os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PATH"),
 		agentId:      os.Getenv("KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID"),
-		storeType:    "IIS",
-		schedule:     "60m",
+		storeType:    os.Getenv("KEYFACTOR_CERTIFICATE_STORE_TYPE"),
 		containerId:  containerId1,
 		password:     os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PASS"),
-		resourceName: "keyfactor_certificate_store.iis_trusted_roots",
+		resourceName: "keyfactor_certificate_store.tf_acc_test",
 	}
 
 	// Update to multiple certificateStores test
 	r2 := r
 	r2.containerId = containerId2
+	r2.schedule = "immediate"
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -51,13 +51,11 @@ func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 				Config: testAccKeyfactorCertificateStoreResourceConfig(r),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(r.resourceName, "id"),
-					resource.TestCheckResourceAttrSet(r.resourceName, "store_path"),         // TODO: Check specific value
-					resource.TestCheckResourceAttrSet(r.resourceName, "store_type"),         // TODO: Check specific value
-					resource.TestCheckResourceAttrSet(r.resourceName, "client_machine"),     // TODO: Check specific value
-					resource.TestCheckResourceAttrSet(r.resourceName, "agent_id"),           // TODO: Check specific value
-					resource.TestCheckResourceAttrSet(r.resourceName, "inventory_schedule"), // TODO: Check specific value
-					resource.TestCheckResourceAttrSet(r.resourceName, "container_id"),       // TODO: Check specific value
-					resource.TestCheckResourceAttrSet(r.resourceName, "password"),           // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "store_path"),     // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "store_type"),     // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "client_machine"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "agent_id"),       // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r.resourceName, "password"),       // TODO: Check specific value
 				),
 				//Destroy:                   false,
 				//ExpectNonEmptyPlan:        false,
@@ -90,19 +88,19 @@ func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 			//	ImportStateVerifyIgnore: []string{"configurable_attribute"},
 			//},
 			// Update and Read testing
-			//{
-			//	Config: testAccKeyfactorCertificateStoreResourceConfig(r2),
-			//	Check: resource.ComposeAggregateTestCheckFunc(
-			//		resource.TestCheckResourceAttrSet(r2.resourceName, "id"),
-			//		resource.TestCheckResourceAttrSet(r2.resourceName, "store_path"),         // TODO: Check specific value
-			//		resource.TestCheckResourceAttrSet(r2.resourceName, "store_type"),         // TODO: Check specific value
-			//		resource.TestCheckResourceAttrSet(r2.resourceName, "client_machine"),     // TODO: Check specific value
-			//		resource.TestCheckResourceAttrSet(r2.resourceName, "agent_id"),           // TODO: Check specific value
-			//		resource.TestCheckResourceAttrSet(r2.resourceName, "inventory_schedule"), // TODO: Check specific value
-			//		resource.TestCheckResourceAttrSet(r2.resourceName, "container_id"),       // TODO: Check specific value
-			//		resource.TestCheckResourceAttrSet(r2.resourceName, "password"),           // TODO: Check specific value
-			//	),
-			//},
+			{
+				Config: testAccKeyfactorCertificateStoreResourceConfig(r2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r2.resourceName, "id"),
+					resource.TestCheckResourceAttrSet(r2.resourceName, "store_path"),         // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r2.resourceName, "store_type"),         // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r2.resourceName, "client_machine"),     // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r2.resourceName, "agent_id"),           // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r2.resourceName, "inventory_schedule"), // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r2.resourceName, "container_id"),       // TODO: Check specific value
+					resource.TestCheckResourceAttrSet(r2.resourceName, "password"),           // TODO: Check specific value
+				),
+			},
 			// Delete testing automatically occurs in TestCase
 		},
 	})

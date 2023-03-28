@@ -42,6 +42,7 @@ type KeyfactorCertificate struct {
 	CertificateTemplate  types.String `tfsdk:"certificate_template"`
 	RequestId            types.Int64  `tfsdk:"keyfactor_request_id"`
 	Metadata             types.Map    `tfsdk:"metadata"`
+	CollectionId         types.Int64  `tfsdk:"collection_id"`
 }
 
 type KeyfactorCertificateDeployment struct {
@@ -101,7 +102,6 @@ type CertificateStore struct {
 	Password              types.String `tfsdk:"password"`
 	SetNewPasswordAllowed types.Bool   `tfsdk:"set_new_password_allowed"`
 	InventorySchedule     types.String `tfsdk:"inventory_schedule"`
-	Certificates          types.List   `tfsdk:"certificates"`
 }
 
 type CertificateTemplate struct {

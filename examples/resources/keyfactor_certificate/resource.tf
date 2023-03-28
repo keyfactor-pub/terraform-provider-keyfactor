@@ -19,7 +19,7 @@ resource "keyfactor_certificate" "PFXCertificate" {
 
   # Optional SANs
   ip_sans      = ["192.168.123.2", "172.51.2.4"] # Optional IP SANs
-  dns_sans     = ["meow.example.com", "meow2"]   # Optional DNS SANs
+  dns_sans     = ["san1.example.com", "san2"]   # Optional DNS SANs
   key_password = "my certificate password!"
   # The password for the certificate. Note: This is bad practice, use TF_VAR_<variable_name> instead.
   certificate_authority = "COMMAND\\MY_CA_01" # Keyfactor CA to use to handle the certificate request.

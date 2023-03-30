@@ -2,6 +2,8 @@
 
 | Name | Version |
 |------|---------|
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.0 |
+| <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) | >=2.46.0 |
 | <a name="requirement_github"></a> [github](#requirement\_github) | >=5.18.3 |
 
 ## Providers
@@ -28,7 +30,6 @@ No modules.
 | [github_actions_secret.test_certificate_store_container_id2](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.test_certificate_store_id](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.test_certificate_store_orchestrator_agent_id](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
-| [github_actions_secret.test_certificate_store_password](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.test_deploy_cert_storeid1](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.test_deploy_cert_storeid2](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.test_domain](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
@@ -44,7 +45,6 @@ No modules.
 | [github_actions_secret.test_template_role_binding_template_name3](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.test_user_password](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
 | [github_actions_secret.test_username](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/actions_secret) | resource |
-| [github_actions_public_key.terraform_provider_keyfactor](https://registry.terraform.io/providers/integrations/github/latest/docs/data-sources/actions_public_key) | data source |
 | [github_repository.terraform_provider_keyfactor](https://registry.terraform.io/providers/integrations/github/latest/docs/data-sources/repository) | data source |
 
 ## Inputs
@@ -56,7 +56,6 @@ No modules.
 | <a name="input_repo_path"></a> [repo\_path](#input\_repo\_path) | The path to the repository | `string` | `"keyfactor-pub/terraform-provider-keyfactor"` | no |
 | <a name="input_test_cert_id"></a> [test\_cert\_id](#input\_test\_cert\_id) | The Keyfactor Command ID of a certificate to use for testing. Note: the certificate must exist. | `string` | `"1"` | no |
 | <a name="input_test_cert_password"></a> [test\_cert\_password](#input\_test\_cert\_password) | The password to use when creating test certificate(s). | `string` | `"cert_changeme@!!"` | no |
-| <a name="input_test_cert_template_name"></a> [test\_cert\_template\_name](#input\_test\_cert\_template\_name) | n/a | `string` | `""` | no |
 | <a name="input_test_certificate_ca_domain"></a> [test\_certificate\_ca\_domain](#input\_test\_certificate\_ca\_domain) | Domain of an existing CA to use for testing. Note: the domain must exist in Keyfactor. | `string` | n/a | yes |
 | <a name="input_test_certificate_ca_name"></a> [test\_certificate\_ca\_name](#input\_test\_certificate\_ca\_name) | Name of an existing CA to use for testing. Note: the CA must exist in Keyfactor and have the template specified in `test_cert_template_name` var. | `string` | n/a | yes |
 | <a name="input_test_certificate_store_client_machine"></a> [test\_certificate\_store\_client\_machine](#input\_test\_certificate\_store\_client\_machine) | Name of orchestrator to test cert deployments. Note: the agent must exist and be approved in Keyfactor. | `string` | n/a | yes |

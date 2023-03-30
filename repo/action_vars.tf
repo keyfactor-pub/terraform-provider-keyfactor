@@ -58,26 +58,26 @@ resource "github_actions_secret" "test_deploy_cert_storeid2" {
 //          KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID1: "2"
 //          KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2: "2"
 resource "github_actions_secret" "test_certificate_store_id" {
-  repository  = data.github_repository.terraform_provider_keyfactor.name
-  secret_name = "TEST_CERTIFICATE_STORE_ID"
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_STORE_ID"
   plaintext_value = var.test_certificate_store_id
 }
 
 resource "github_actions_secret" "test_certificate_store_client_machine" {
-  repository  = data.github_repository.terraform_provider_keyfactor.name
-  secret_name = "TEST_CERTIFICATE_STORE_CLIENT_MACHINE"
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_STORE_CLIENT_MACHINE"
   plaintext_value = var.test_certificate_store_client_machine
 }
 
 resource "github_actions_secret" "test_certificate_store_orchestrator_agent_id" {
-  repository  = data.github_repository.terraform_provider_keyfactor.name
-  secret_name = "TEST_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID"
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID"
   plaintext_value = var.test_certificate_store_orchestrator_agent_id
 }
 
 resource "github_actions_secret" "test_certificate_store_container_id1" {
-  repository  = data.github_repository.terraform_provider_keyfactor.name
-  secret_name = "TEST_CERTIFICATE_STORE_CONTAINER_ID1"
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_STORE_CONTAINER_ID1"
   plaintext_value = var.test_certificate_store_container_id1
 }
 
@@ -88,8 +88,8 @@ resource "github_actions_secret" "test_certificate_store_container_id1" {
 #}
 
 resource "github_actions_secret" "test_certificate_store_container_id2" {
-  repository  = data.github_repository.terraform_provider_keyfactor.name
-  secret_name = "TEST_CERTIFICATE_STORE_CONTAINER_ID2"
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_STORE_CONTAINER_ID2"
   plaintext_value = var.test_certificate_store_container_id2
 }
 

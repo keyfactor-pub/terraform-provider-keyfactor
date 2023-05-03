@@ -151,12 +151,28 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		return
 	}
 
-	containerId := int(plan.ContainerID.Value)
+	// check if plan.ContainerID.Value is nil
+	var containerId int
+	if !plan.ContainerID.Null {
+		containerId = int(plan.ContainerID.Value)
+	}
+
 	var properties map[string]string
 	if plan.Properties.Elems != nil {
-		diags = plan.Properties.ElementsAs(ctx, &properties, false)
-
+		diags = plan.Properties.ElementsAs(ctx, &properties, true)
+		if diags != nil {
+			response.Diagnostics.Append(diags...)
+			return
+		}
 	}
+
+	propertiesInt := make(map[string]interface{})
+	if properties != nil {
+		for k, v := range properties {
+			propertiesInt[k] = v
+		}
+	}
+
 	schedule, err := createInventorySchedule(plan.InventorySchedule.Value) // TODO: Implement inventory schedule
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -165,20 +181,32 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		)
 		return
 	}
+
+	// create pointer to interface of string
+
+	passwordInt := interface{}(plan.Password.Value)
+
+	var pointerToContainerId *int
+	if !plan.ContainerID.Null {
+		pointerToContainerId = &containerId
+	} else {
+		pointerToContainerId = nil
+	}
+
 	newStoreArgs := &api.CreateStoreFctArgs{
-		ContainerId:           &containerId,
+		ContainerId:           pointerToContainerId,
 		ClientMachine:         plan.ClientMachine.Value,
 		StorePath:             plan.StorePath.Value,
 		CertStoreType:         csType.StoreType,
 		Approved:              &plan.Approved.Value,
 		CreateIfMissing:       &plan.CreateIfMissing.Value,
-		Properties:            properties,
+		Properties:            propertiesInt,
 		AgentId:               plan.AgentId.Value,
 		AgentAssigned:         &plan.AgentAssigned.Value,
 		ContainerName:         &plan.ContainerName.Value,
 		InventorySchedule:     schedule,
 		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
-		Password:              createPasswordConfig(plan.Password.Value),
+		Password:              &passwordInt,
 	}
 
 	createStoreResponse, err := kfClient.CreateStore(newStoreArgs)
@@ -191,9 +219,10 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 	}
 
 	// Set state
-	var result = CertificateStore{
+
+	result := CertificateStore{
 		ID:                    types.String{Value: createStoreResponse.Id},
-		ContainerID:           types.Int64{Value: int64(createStoreResponse.ContainerId)},
+		ContainerID:           types.Int64{Null: plan.ContainerID.Null, Value: int64(createStoreResponse.ContainerId)},
 		ClientMachine:         types.String{Value: createStoreResponse.ClientMachine},
 		StorePath:             types.String{Value: createStoreResponse.Storepath},
 		StoreType:             types.String{Value: plan.StoreType.Value},
@@ -285,23 +314,49 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 		)
 		return
 	}
+
+	var pointerToContainerId *int
+	if !plan.ContainerID.Null {
+		pointerToContainerId = &containerId
+	} else {
+		pointerToContainerId = nil
+	}
+
+	var properties map[string]string
+	if plan.Properties.Elems != nil {
+		diags = plan.Properties.ElementsAs(ctx, &properties, true)
+		if diags != nil {
+			response.Diagnostics.Append(diags...)
+			return
+		}
+	}
+
+	propertiesInt := make(map[string]interface{})
+	if properties != nil {
+		for k, v := range properties {
+			//if k == "ServerPassword" || k == "ServerUsername" {
+			//	continue
+			//}
+			propertiesInt[k] = v
+		}
+	}
+
 	updateStoreArgs := &api.UpdateStoreFctArgs{
-		Id: state.ID.Value,
-		CreateStoreFctArgs: api.CreateStoreFctArgs{
-			ContainerId:     &containerId,
-			ClientMachine:   plan.ClientMachine.Value,
-			StorePath:       plan.StorePath.Value,
-			CertStoreType:   csType.StoreType,
-			Approved:        &plan.Approved.Value,
-			CreateIfMissing: &plan.CreateIfMissing.Value,
-			//Properties:            map[string]interface{}(plan.Properties.Elems),
-			AgentId:               plan.AgentId.Value,
-			AgentAssigned:         &plan.AgentAssigned.Value,
-			ContainerName:         &plan.ContainerName.Value,
-			InventorySchedule:     schedule,
-			SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
-			//Password:              createPasswordConfig(d.Get("password").([]interface{})),
-		}}
+		Id:                    state.ID.Value,
+		ContainerId:           pointerToContainerId,
+		ClientMachine:         plan.ClientMachine.Value,
+		StorePath:             plan.StorePath.Value,
+		CertStoreType:         csType.StoreType,
+		Approved:              &plan.Approved.Value,
+		CreateIfMissing:       &plan.CreateIfMissing.Value,
+		Properties:            propertiesInt,
+		AgentId:               plan.AgentId.Value,
+		AgentAssigned:         &plan.AgentAssigned.Value,
+		ContainerName:         &plan.ContainerName.Value,
+		InventorySchedule:     schedule,
+		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
+		//Password:              plan.Password,
+	}
 
 	updateResponse, err := r.p.client.UpdateStore(updateStoreArgs)
 	if err != nil {
@@ -309,6 +364,7 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 			"Error updating certificate store",
 			"Error updating certificate store: %s"+err.Error(),
 		)
+		return
 	}
 
 	result := CertificateStore{
@@ -436,7 +492,7 @@ func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk
 func createPasswordConfig(p string) *api.StorePasswordConfig {
 	password := stringToPointer(p)
 	res := &api.StorePasswordConfig{
-		Value: password,
+		Value: *password,
 	}
 
 	return res

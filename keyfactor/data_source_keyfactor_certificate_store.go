@@ -147,7 +147,7 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 
 	propElems := make(map[string]attr.Value)
 	for k, v := range sResp.Properties {
-		propElems[k] = types.String{Value: v}
+		propElems[k] = types.String{Value: v.(string)}
 	}
 	var result = CertificateStore{
 		ID:                    state.ID,

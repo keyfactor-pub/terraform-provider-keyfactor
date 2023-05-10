@@ -6,7 +6,7 @@ NAMESPACE=keyfactor
 WEBSITE_REPO=https://github.com/Keyfactor/terraform-provider-keyfactor
 NAME=keyfactor
 BINARY=terraform-provider-${NAME}
-VERSION=1.3.0
+VERSION=2.0.0-rc1
 OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 BASEDIR := ~/.terraform.d/plugins
 INSTALLDIR := ${BASEDIR}/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
@@ -23,18 +23,41 @@ tfdocs:
 
 release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64
+	mv ./bin/${BINARY}_${VERSION}_darwin_amd64 ./bin/terraform-provider-keyfactor
+	zip -j ./bin/${BINARY}_${VERSION}_darwin_amd64.zip ./bin/terraform-provider-keyfactor
 	GOOS=freebsd GOARCH=386 go build -o ./bin/${BINARY}_${VERSION}_freebsd_386
+	mv ./bin/${BINARY}_${VERSION}_freebsd_386 ./bin/terraform-provider-keyfactor
+	zip -j ./bin/${BINARY}_${VERSION}_freebsd_386.zip ./bin/terraform-provider-keyfactor
 	GOOS=freebsd GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_freebsd_amd64
+	mv ./bin/${BINARY}_${VERSION}_freebsd_amd64 ./bin/terraform-provider-keyfactor
+	zip -j ./bin/${BINARY}_${VERSION}_freebsd_amd64.zip ./bin/terraform-provider-keyfactor
 	GOOS=freebsd GOARCH=arm go build -o ./bin/${BINARY}_${VERSION}_freebsd_arm
+	mv ./bin/${BINARY}_${VERSION}_freebsd_arm ./bin/terraform-provider-keyfactor
+	zip -j ./bin/${BINARY}_${VERSION}_freebsd_arm.zip ./bin/terraform-provider-keyfactor
 	GOOS=linux GOARCH=386 go build -o ./bin/${BINARY}_${VERSION}_linux_386
+	mv ./bin/${BINARY}_${VERSION}_linux_386 ./bin/terraform-provider-keyfactor
+	zip -j ./bin/${BINARY}_${VERSION}_linux_386.zip ./bin/terraform-provider-keyfactor
 	GOOS=linux GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_linux_amd64
+	mv ./bin/${BINARY}_${VERSION}_linux_amd64 ./bin/terraform-provider-keyfactor
+	zip -j ./bin/${BINARY}_${VERSION}_linux_amd64.zip ./bin/terraform-provider-keyfactor
 	GOOS=linux GOARCH=arm go build -o ./bin/${BINARY}_${VERSION}_linux_arm
+	mv ./bin/${BINARY}_${VERSION}_linux_arm ./bin/terraform-provider-keyfactor
+	zip -j ./bin/${BINARY}_${VERSION}_linux_arm.zip ./bin/terraform-provider-keyfactor
 	GOOS=openbsd GOARCH=386 go build -o ./bin/${BINARY}_${VERSION}_openbsd_386
+	mv ./bin/${BINARY}_${VERSION}_openbsd_386 ./bin/terraform-provider-keyfactor
+	zip -j ./bin/${BINARY}_${VERSION}_openbsd_386.zip ./bin/terraform-provider-keyfactor
 	GOOS=openbsd GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_openbsd_amd64
+	mv ./bin/${BINARY}_${VERSION}_openbsd_amd64 ./bin/terraform-provider-keyfactor
+	zip -j ./bin/${BINARY}_${VERSION}_openbsd_amd64.zip ./bin/terraform-provider-keyfactor
 	GOOS=solaris GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_solaris_amd64
+	mv ./bin/${BINARY}_${VERSION}_solaris_amd64 ./bin/terraform-provider-keyfactor
+	zip -j ./bin/${BINARY}_${VERSION}_solaris_amd64.zip ./bin/terraform-provider-keyfactor
 	GOOS=windows GOARCH=386 go build -o ./bin/${BINARY}_${VERSION}_windows_386
+	mv ./bin/${BINARY}_${VERSION}_windows_386 ./bin/terraform-provider-keyfactor.exe
+	zip -j ./bin/${BINARY}_${VERSION}_windows_386.zip ./bin/terraform-provider-keyfactor.exe
 	GOOS=windows GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_windows_amd64
-
+	mv ./bin/${BINARY}_${VERSION}_windows_amd64 ./bin/terraform-provider-keyfactor.exe
+	zip -j ./bin/${BINARY}_${VERSION}_windows_amd64.zip ./bin/terraform-provider-keyfactor.exe
 install:
 	go build -o ${BINARY}
 	rm -rf ${INSTALLDIR}

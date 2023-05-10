@@ -1,8 +1,11 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/Keyfactor/keyfactor-go-client v1.3.4 h1:Dgl1vd8td4gWyrFKRNKlhkLrHqZhdKdwgjIlsLyXV+s=
-github.com/Keyfactor/keyfactor-go-client v1.3.4/go.mod h1:u1M1AjcwiO/Tbvc7EsNl9YTy757hO5wmey1/W/7Qkbs=
+github.com/Keyfactor/keyfactor-go-client v1.4.3 h1:CmGvWcuIbDRFM0PfYOQH6UdtAgplvZBpU++KTU8iseg=
+github.com/Keyfactor/keyfactor-go-client v1.4.3/go.mod h1:3ZymLNCaSazglcuYeNfm9nrzn22wcwLjIWURrnUygBo=
+github.com/Keyfactor/keyfactor-go-client-sdk v1.0.1 h1:cs8hhvsY3MJ2o1K11HLTRCjRT8SbsKhhi73Y4By2CI0=
+github.com/Keyfactor/keyfactor-go-client/v2 v2.0.0-rc.3 h1:+7JxsOqdrjYYbSk7am11JboAX97d+85SfNCAzgs48p8=
+github.com/Keyfactor/keyfactor-go-client/v2 v2.0.0-rc.3/go.mod h1:YzSIAKMkRUysjNosVV3UIWphaq70+DdHUVuVwYCOzbk=
 github.com/Microsoft/go-winio v0.4.14/go.mod h1:qXqCSQ3Xa7+6tgxaGTIe4Kpcdsi+P8jBhyzoq1bpyYA=
 github.com/Microsoft/go-winio v0.4.16 h1:FtSW/jqD+l4ba5iPBj9CODVtgfYAD8w2wS923g/cFDk=
 github.com/Microsoft/go-winio v0.4.16/go.mod h1:XB6nPKklQyQ7GC9LdcBEcBl8PF76WugXOPRXwdLnMv0=

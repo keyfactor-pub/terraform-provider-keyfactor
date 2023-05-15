@@ -1,8 +1,8 @@
 github.com/Keyfactor/keyfactor-go-client v1.4.3 h1:CmGvWcuIbDRFM0PfYOQH6UdtAgplvZBpU++KTU8iseg=
 github.com/Keyfactor/keyfactor-go-client v1.4.3/go.mod h1:3ZymLNCaSazglcuYeNfm9nrzn22wcwLjIWURrnUygBo=
 github.com/Keyfactor/keyfactor-go-client-sdk v1.0.1 h1:cs8hhvsY3MJ2o1K11HLTRCjRT8SbsKhhi73Y4By2CI0=
-github.com/Keyfactor/keyfactor-go-client/v2 v2.0.0-rc.3 h1:+7JxsOqdrjYYbSk7am11JboAX97d+85SfNCAzgs48p8=
-github.com/Keyfactor/keyfactor-go-client/v2 v2.0.0-rc.3/go.mod h1:YzSIAKMkRUysjNosVV3UIWphaq70+DdHUVuVwYCOzbk=
+github.com/Keyfactor/keyfactor-go-client/v2 v2.0.1 h1:q17xaESo55MSvO9aXjNUX4oXE7OeMaaWQxDx9POEXYc=
+github.com/Keyfactor/keyfactor-go-client/v2 v2.0.1/go.mod h1:YzSIAKMkRUysjNosVV3UIWphaq70+DdHUVuVwYCOzbk=
 github.com/Masterminds/goutils v1.1.1/go.mod h1:8cTjp+g8YejhMuvIA5y2vz3BpJxksy863GQaJW2MFNU=
 github.com/Masterminds/semver/v3 v3.1.1/go.mod h1:VPu/7SZ7ePZ3QOrcuXROw5FAcLl4a0cBrbBpGY/8hQs=
 github.com/Masterminds/sprig/v3 v3.2.1/go.mod h1:UoaO7Yp8KlPnJIYWTFkMaqPUYKTfGFPhxNuwnnxkKlk=

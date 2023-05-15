@@ -104,6 +104,22 @@ type CertificateStore struct {
 	InventorySchedule     types.String `tfsdk:"inventory_schedule"`
 }
 
+type CertificateStoreCredential struct {
+	ServerUsername struct {
+		Value struct {
+			SecretValue string `json:"SecretValue"`
+		} `json:"value"`
+	} `json:"ServerUsername"`
+	ServerPassword struct {
+		Value struct {
+			SecretValue string `json:"SecretValue"`
+		} `json:"value"`
+	} `json:"ServerPassword"`
+	ServerUseSsl struct {
+		Value string `json:"value"`
+	} `json:"ServerUseSsl"`
+}
+
 type CertificateTemplate struct {
 	ID                     types.Int64  `tfsdk:"id"`
 	CommonName             types.String `tfsdk:"short_name"`

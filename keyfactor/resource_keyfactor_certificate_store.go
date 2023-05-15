@@ -2,6 +2,7 @@ package keyfactor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -19,28 +20,28 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"container_id": {
-				Type:          types.Int64Type,
-				Optional:      true,
-				Description:   "Container identifier of the store's associated certificate store container.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.Int64Type,
+				Optional:    true,
+				Description: "Container identifier of the store's associated certificate store container.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"client_machine": {
-				Type:          types.StringType,
-				Required:      true,
-				Description:   "Client machine name; value depends on certificate store type. See API reference guide",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.StringType,
+				Required:    true,
+				Description: "Client machine name; value depends on certificate store type. See API reference guide",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"store_path": {
-				Type:          types.StringType,
-				Required:      true,
-				Description:   "Path to the new certificate store on a target. Format varies depending on type.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.StringType,
+				Required:    true,
+				Description: "Path to the new certificate store on a target. Format varies depending on type.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"store_type": {
-				Type:          types.StringType,
-				Required:      true,
-				Description:   "Short name of certificate store type. See API reference guide",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.StringType,
+				Required:    true,
+				Description: "Short name of certificate store type. See API reference guide",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"approved": {
 				Type:       types.BoolType,
@@ -59,22 +60,22 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				PlanModifiers:       []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"create_if_missing": {
-				Type:          types.BoolType,
-				Optional:      true,
-				Description:   "Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.BoolType,
+				Optional:    true,
+				Description: "Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"properties": {
-				Type:          types.MapType{ElemType: types.StringType},
-				Optional:      true,
-				Description:   "Certificate properties specific to certificate store type configured as key-value pairs.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.MapType{ElemType: types.StringType},
+				Optional:    true,
+				Description: "Certificate properties specific to certificate store type configured as key-value pairs.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"agent_id": {
-				Type:          types.StringType,
-				Required:      true,
-				Description:   "String indicating the Keyfactor Command GUID of the orchestrator for the created store.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.StringType,
+				Required:    true,
+				Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"agent_assigned": {
 				Type:     types.BoolType,
@@ -84,14 +85,14 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				//	// gives us a definitive answer.
 				//	return !d.HasChange(k)
 				//},
-				Description:   "Bool indicating if there is an orchestrator assigned to the new certificate store.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description: "Bool indicating if there is an orchestrator assigned to the new certificate store.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"container_name": {
-				Type:          types.StringType,
-				Optional:      true,
-				Description:   "Name of certificate store's associated container, if applicable.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.StringType,
+				Optional:    true,
+				Description: "Name of certificate store's associated container, if applicable.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"inventory_schedule": {
 				Type:     types.StringType,
@@ -102,19 +103,19 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 					"12h" - schedules a job every 12 hours
 					"30m" - schedules a job every 30 minutes
 				`,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"set_new_password_allowed": {
-				Type:          types.BoolType,
-				Optional:      true,
-				Description:   "Indicates whether the store password can be changed.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.BoolType,
+				Optional:    true,
+				Description: "Indicates whether the store password can be changed.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"password": {
-				Type:          types.StringType,
-				Optional:      true,
-				Description:   "Sets password for certificate store.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.StringType,
+				Optional:    true,
+				Description: "Sets password for certificate store.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"id": {
 				Type:        types.StringType,
@@ -312,6 +313,8 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 		diags = plan.Properties.ElementsAs(ctx, &properties, false)
 	}
 
+	propertiesInterface := buildPropertiesInterface(&properties)
+
 	// Generate API request body from plan
 	containerId := int(plan.ContainerID.Value)
 	csType, csTypeErr := r.p.client.GetCertificateStoreTypeByName(plan.StoreType.Value)
@@ -345,24 +348,46 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 		storePassFormatted = createPasswordConfig(plan.Password.Value)
 	}
 
-	updateStoreArgs := &api.UpdateStoreFctArgs{
-		Id: state.ID.Value,
-		CreateStoreFctArgs: api.CreateStoreFctArgs{
-			ContainerId:           containerIdP,
-			ClientMachine:         plan.ClientMachine.Value,
-			StorePath:             plan.StorePath.Value,
-			CertStoreType:         csType.StoreType,
-			Approved:              &plan.Approved.Value,
-			CreateIfMissing:       &plan.CreateIfMissing.Value,
-			Properties:            properties,
-			AgentId:               plan.AgentId.Value,
-			AgentAssigned:         &plan.AgentAssigned.Value,
-			ContainerName:         &plan.ContainerName.Value,
-			InventorySchedule:     schedule,
-			SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
-			Password:              storePassFormatted,
-		}}
+	propertiesStr, psErr := mapToEscapedJSONString(propertiesInterface)
+	if psErr != nil {
+		response.Diagnostics.AddError(
+			"Invalid properties error.",
+			fmt.Sprintf("Invalid properties for certificate store updating certificate store: %s", psErr.Error()),
+		)
+		return
+	}
 
+	updateStoreArgs := &api.UpdateStoreFctArgs{
+		Id:                    state.ID.Value,
+		ContainerId:           containerIdP,
+		ClientMachine:         plan.ClientMachine.Value,
+		StorePath:             plan.StorePath.Value,
+		CertStoreType:         csType.StoreType,
+		Approved:              &plan.Approved.Value,
+		CreateIfMissing:       &plan.CreateIfMissing.Value,
+		Properties:            propertiesInterface,
+		PropertiesString:      propertiesStr,
+		AgentId:               plan.AgentId.Value,
+		AgentAssigned:         &plan.AgentAssigned.Value,
+		ContainerName:         &plan.ContainerName.Value,
+		InventorySchedule:     schedule,
+		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
+		Password:              storePassFormatted,
+	}
+
+	// log updatestore args as json
+	tflog.Debug(ctx, fmt.Sprintf("UpdateStoreFctArgs: %s", updateStoreArgs))
+	// convert updatestore args to json string
+	updateStoreArgsJson, err := json.Marshal(updateStoreArgs)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Invalid certificate store configuration error.",
+			fmt.Sprintf("Invalid configuration for certificate store: %s", err.Error()),
+		)
+		return
+	}
+	// log updatestore args as json string
+	tflog.Debug(ctx, fmt.Sprintf("UpdateStoreFctArgs: %s", updateStoreArgsJson))
 	updateResponse, err := r.p.client.UpdateStore(updateStoreArgs)
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -372,9 +397,15 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 		return
 	}
 
+	// Log response
+	tflog.Trace(ctx, fmt.Sprintf("UpdateStoreResponse: %s", updateResponse))
+
 	result := CertificateStore{
-		ID:          types.String{Value: state.ID.Value},
-		ContainerID: types.Int64{Value: int64(updateResponse.ContainerId)},
+		ID: types.String{Value: state.ID.Value},
+		ContainerID: types.Int64{
+			Null:  state.ContainerID.Null,
+			Value: plan.ContainerID.Value,
+		},
 		//ClientMachine:   types.String{Value: updateResponse.ClientMachine},
 		ClientMachine:         plan.ClientMachine,
 		StorePath:             plan.StorePath,
@@ -548,4 +579,58 @@ func createInventorySchedule(interval string) (*api.InventorySchedule, error) {
 	}
 
 	return inventorySchedule, nil
+}
+
+func buildPropertiesInterface(properties *map[string]string) map[string]interface{} {
+	// Create temporary array of interfaces
+	// When updating a property in Keyfactor, API expects {"key": {"value": "key-value"}} - Build this interface
+	propertiesInterface := make(map[string]interface{})
+
+	creds := CertificateStoreCredential{
+		ServerUsername: struct {
+			Value struct {
+				SecretValue string `json:"SecretValue"`
+			} `json:"value"`
+		}{},
+		ServerPassword: struct {
+			Value struct {
+				SecretValue string `json:"SecretValue"`
+			} `json:"value"`
+		}{},
+		ServerUseSsl: struct {
+			Value string `json:"value"`
+		}{},
+	}
+
+	for key, value := range *properties {
+		if key == "ServerUsername" || key == "ServerPassword" || key == "Password" {
+			if key == "ServerUsername" {
+				creds.ServerUsername.Value.SecretValue = value
+				// add to propertiesInterface as JSON string
+				//jsonBytes, _ := json.Marshal(creds.ServerUsername)
+				propertiesInterface[key] = creds.ServerUsername
+			}
+			if key == "ServerPassword" || key == "Password" {
+				creds.ServerPassword.Value.SecretValue = value
+				//jsonBytes, _ := json.Marshal(creds.ServerPassword)
+				propertiesInterface[key] = creds.ServerPassword
+			}
+		} else {
+			propertiesInterface[key] = value // Create {"<key>": {"value": "key-value"}} interface
+		}
+	}
+	return propertiesInterface
+}
+
+func mapToEscapedJSONString(m map[string]interface{}) (string, error) {
+	// Convert the map to a byte slice of JSON
+	jsonBytes, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+
+	// Escape any special characters in the JSON string
+	escapedString := string(jsonBytes)
+
+	return escapedString, nil
 }

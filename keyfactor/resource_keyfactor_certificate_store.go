@@ -341,12 +341,7 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 		containerIdP = &containerId
 	}
 
-	var storePassFormatted *api.StorePasswordConfig
-	if plan.Password.Null {
-		storePassFormatted = nil
-	} else {
-		storePassFormatted = createPasswordConfig(plan.Password.Value)
-	}
+	storePassFormatted := createPasswordConfig(plan.Password.Value)
 
 	propertiesStr, psErr := mapToEscapedJSONString(propertiesInterface)
 	if psErr != nil {

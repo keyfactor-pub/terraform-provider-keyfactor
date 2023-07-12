@@ -22,21 +22,29 @@ type SecurityRole struct {
 }
 
 type KeyfactorCertificate struct {
-	ID types.Int64 `tfsdk:"id"`
+	ID types.String `tfsdk:"identifier"`
 	// CSR Request Fields
 	CSR types.String `tfsdk:"csr"`
-	// PFX KfCertificate Fields
-	Subject      types.Object `tfsdk:"subject"`
-	DNSSANs      types.List   `tfsdk:"dns_sans"`
-	IPSANs       types.List   `tfsdk:"ip_sans"`
-	URISANs      types.List   `tfsdk:"uri_sans"`
+	// Subject Fields
+	CommonName         types.String `tfsdk:"common_name"`
+	Locality           types.String `tfsdk:"locality"`
+	State              types.String `tfsdk:"state"`
+	Country            types.String `tfsdk:"country"`
+	Organization       types.String `tfsdk:"organization"`
+	OrganizationalUnit types.String `tfsdk:"organizational_unit"`
+	// SAN Fields
+	DNSSANs types.List `tfsdk:"dns_sans"`
+	IPSANs  types.List `tfsdk:"ip_sans"`
+	URISANs types.List `tfsdk:"uri_sans"`
+	// Certificate Identity Fields
 	SerialNumber types.String `tfsdk:"serial_number"`
 	IssuerDN     types.String `tfsdk:"issuer_dn"`
 	Thumbprint   types.String `tfsdk:"thumbprint"`
-	PEM          types.String `tfsdk:"certificate_pem"`
-	PEMChain     types.String `tfsdk:"certificate_chain"`
-	PrivateKey   types.String `tfsdk:"private_key"`
-	KeyPassword  types.String `tfsdk:"key_password"`
+	// Certificate Data Fields
+	PEM         types.String `tfsdk:"certificate_pem"`
+	PEMChain    types.String `tfsdk:"certificate_chain"`
+	PrivateKey  types.String `tfsdk:"private_key"`
+	KeyPassword types.String `tfsdk:"key_password"`
 	// Keyfactor Fields
 	CertificateAuthority types.String `tfsdk:"certificate_authority"`
 	CertificateTemplate  types.String `tfsdk:"certificate_template"`

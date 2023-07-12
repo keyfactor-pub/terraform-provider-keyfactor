@@ -49,6 +49,42 @@ func generatePassword(passwordLength, minSpecialChar, minNum, minUpperCase int) 
 	return string(inRune)
 }
 
+func expandSubject(subject string) (types.String, types.String, types.String, types.String, types.String, types.String) {
+	var (
+		cn string
+		ou string
+		o  string
+		l  string
+		st string
+		c  string
+	)
+	if subject != "" {
+		subjectFields := strings.Split(subject, ",") // Separate subject fields into slices
+		for _, field := range subjectFields {        // Iterate and assign slices to associated map
+			if strings.Contains(field, "CN=") {
+				//result["subject_common_name"] = types.String{Value: strings.Replace(field, "CN=", "", 1)}
+				cn = strings.Replace(field, "CN=", "", 1)
+			} else if strings.Contains(field, "OU=") {
+				//result["subject_organizational_unit"] = types.String{Value: strings.Replace(field, "OU=", "", 1)}
+				ou = strings.Replace(field, "OU=", "", 1)
+			} else if strings.Contains(field, "C=") {
+				//result["subject_country"] = types.String{Value: strings.Replace(field, "C=", "", 1)}
+				c = strings.Replace(field, "C=", "", 1)
+			} else if strings.Contains(field, "L=") {
+				//result["subject_locality"] = types.String{Value: strings.Replace(field, "L=", "", 1)}
+				l = strings.Replace(field, "L=", "", 1)
+			} else if strings.Contains(field, "ST=") {
+				//result["subject_state"] = types.String{Value: strings.Replace(field, "ST=", "", 1)}
+				st = strings.Replace(field, "ST=", "", 1)
+			} else if strings.Contains(field, "O=") {
+				//result["subject_organization"] = types.String{Value: strings.Replace(field, "O=", "", 1)}
+				o = strings.Replace(field, "O=", "", 1)
+			}
+		}
+	}
+	return types.String{Value: cn}, types.String{Value: ou}, types.String{Value: o}, types.String{Value: l}, types.String{Value: st}, types.String{Value: c}
+}
+
 func flattenSubject(subject string) types.Object {
 	data := make(map[string]string) // Inner subject interface is a string mapped interface
 	if subject != "" {

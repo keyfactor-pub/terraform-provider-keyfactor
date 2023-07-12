@@ -53,7 +53,11 @@ resource "keyfactor_certificate_store" "iis_trusted_roots" {
 - `container_id` (Number) Container identifier of the store's associated certificate store container.
 - `container_name` (String) Name of certificate store's associated container, if applicable.
 - `create_if_missing` (Boolean) Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure.
-- `inventory_schedule` (String) Inventory schedule for new certificate store.
+- `inventory_schedule` (String) String indicating the schedule for inventory updates. Valid formats are:
+					"immediate" - schedules and immediate job
+					"1d" - schedules a daily job
+					"12h" - schedules a job every 12 hours
+					"30m" - schedules a job every 30 minutes
 - `password` (String) Sets password for certificate store.
 - `properties` (Map of String) Certificate properties specific to certificate store type configured as key-value pairs.
 - `set_new_password_allowed` (Boolean) Indicates whether the store password can be changed.

@@ -97,7 +97,7 @@ func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, requ
 
 	//sans := plan.SANs
 	//metadata := plan.Metadata.Elems
-	vErr := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 1)
+	vErr := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 10000)
 	if vErr == nil {
 		response.Diagnostics.AddWarning(
 			"Duplicate deployment.",
@@ -115,7 +115,7 @@ func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, requ
 			return
 		}
 
-		vErr2 := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 5)
+		vErr2 := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 10000)
 		if vErr2 != nil {
 			response.Diagnostics.AddError(
 				"Deployment validation error.",

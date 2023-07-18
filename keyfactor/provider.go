@@ -211,8 +211,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to create client",
-			"Unable to create Keyfactor GO client client:\n\n"+err.Error(),
+			"Client error.",
+			"Unable to create client connection to Keyfactor Command:\n\n"+err.Error(),
 		)
 		return
 	}
@@ -224,8 +224,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 // GetResources - Defines provider resources
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
-		"keyfactor_identity": resourceSecurityIdentityType{},
-		//"keyfactor_certificate":            resourceKeyfactorCertificateType{},
+		"keyfactor_identity":               resourceSecurityIdentityType{},
+		"keyfactor_certificate":            resourceKeyfactorCertificateType{},
 		"keyfactor_certificate_store":      resourceCertificateStoreType{},
 		"keyfactor_certificate_deployment": resourceKeyfactorCertificateDeploymentType{},
 		"keyfactor_role":                   resourceSecurityRoleType{},

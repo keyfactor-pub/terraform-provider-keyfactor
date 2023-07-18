@@ -48,7 +48,8 @@ type KeyfactorCertificate struct {
 	// Keyfactor Fields
 	CertificateAuthority types.String `tfsdk:"certificate_authority"`
 	CertificateTemplate  types.String `tfsdk:"certificate_template"`
-	RequestId            types.Int64  `tfsdk:"keyfactor_request_id"`
+	RequestId            types.Int64  `tfsdk:"command_request_id"`
+	CertificateId        types.Int64  `tfsdk:"certificate_id"`
 	Metadata             types.Map    `tfsdk:"metadata"`
 	CollectionId         types.Int64  `tfsdk:"collection_id"`
 }
@@ -77,7 +78,7 @@ type CSRCertificate struct {
 	// Keyfactor Fields
 	CertificateAuthority types.String `tfsdk:"certificate_authority"`
 	CertificateTemplate  types.String `tfsdk:"certificate_template"`
-	RequestId            types.Int64  `tfsdk:"keyfactor_request_id"`
+	RequestId            types.Int64  `tfsdk:"command_request_id"`
 	Metadata             types.Map    `tfsdk:"metadata"`
 }
 

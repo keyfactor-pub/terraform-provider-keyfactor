@@ -155,10 +155,15 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Optional:    true,
 				Description: "Optional certificate collection identifier used to ensure user access to the certificate.",
 			},
-			"keyfactor_request_id": {
+			"command_request_id": {
 				Type:        types.Int64Type,
 				Computed:    true,
-				Description: "Keyfactor request ID necessary for deploying certificate",
+				Description: "Keyfactor Command request ID.",
+			},
+			"certificate_id": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Keyfactor Command certificate ID.",
 			},
 			"certificate_pem": {
 				Type:        types.StringType,
@@ -400,6 +405,7 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		},
 		CertificateTemplate: types.String{Value: cResp.TemplateName},
 		RequestId:           types.Int64{Value: int64(cResp.CertRequestId)},
+		CertificateId:       types.Int64{Value: int64(cResp.Id)},
 		Metadata:            metadata,
 	}
 

@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"log"
 	"strconv"
+	"strings"
 )
 
 type resourceKeyfactorCertificateType struct{}
@@ -247,7 +248,12 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 	diags = plan.DNSSANs.ElementsAs(ctx, &dnsSANs, true)
 	diags = plan.IPSANs.ElementsAs(ctx, &ipSANs, true)
 	diags = plan.URISANs.ElementsAs(ctx, &uriSANs, true)
-	diags = plan.Metadata.ElementsAs(ctx, &metadata, true)
+	// iterate over metadata map and convert to map[string]interface{}
+	metaDataElms := plan.Metadata.Elems
+	metadata = make(map[string]interface{})
+	for k, elm := range metaDataElms {
+		metadata[k] = strings.Replace(elm.String(), "\"", "", -1)
+	}
 
 	sans := append(dnsSANs, ipSANs...)
 	sans = append(sans, uriSANs...)
@@ -307,7 +313,6 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
 			CertificateTemplate:  plan.CertificateTemplate,
-			RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
 			Metadata:             plan.Metadata,
 			CollectionId:         types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)}, //TODO: Make this collection ID
 		}
@@ -319,7 +324,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		}
 	} else { //Enroll PFX
 		PFXArgs := &api.EnrollPFXFctArgs{
-			CustomFriendlyName:          "Terraform",
+			CustomFriendlyName:          plan.CommonName.Value,
 			Password:                    plan.KeyPassword.Value,
 			PopulateMissingValuesFromAD: false, //TODO: Add support for this
 			CertificateAuthority:        plan.CertificateAuthority.Value,
@@ -476,8 +481,6 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 		)
 	}
 
-	//TODO: Should this compare the current state to the downloaded state?
-
 	cn, ou, o, l, st, c := expandSubject(cResp.IssuedDN)
 	dnsSans, ipSans, uriSans := flattenSANs(cResp.SubjectAltNameElements)
 
@@ -584,35 +587,44 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 
 	metadata := flattenMetadata(cResp.Metadata)
 
+	/*
+		fix issuer_dn to match create response:
+		For some reason Command returns w/ spaces on create and w/o spaces on get.
+		It's safer to add spaces between commas rather than trim all spaces as CNs can have spaces.
+	*/
+
+	issuerDN := strings.Replace(cResp.IssuerDN, ",", ", ", -1)
+
 	var result = KeyfactorCertificate{
 		ID:                 types.String{Value: fmt.Sprintf("%v", cResp.Id)},
-		CSR:                types.String{Value: csr},
+		CSR:                types.String{Value: csr, Null: isNullString(csr)},
 		CommonName:         cn,
-		Locality:           l,
-		State:              st,
-		Country:            c,
-		Organization:       o,
-		OrganizationalUnit: ou,
+		Locality:           types.String{Value: l.Value, Null: isNullString(l.Value)},
+		State:              types.String{Value: st.Value, Null: isNullString(st.Value)},
+		Country:            types.String{Value: c.Value, Null: isNullString(c.Value)},
+		Organization:       types.String{Value: o.Value, Null: isNullString(o.Value)},
+		OrganizationalUnit: types.String{Value: ou.Value, Null: isNullString(ou.Value)},
 		DNSSANs:            dnsSans,
 		IPSANs:             ipSans,
 		URISANs:            uriSans,
-		SerialNumber:       types.String{Value: cResp.SerialNumber},
-		IssuerDN:           types.String{Value: cResp.IssuerDN},
-		Thumbprint:         types.String{Value: cResp.Thumbprint},
-		PEM:                types.String{Value: leaf},
-		PEMChain:           types.String{Value: chain},
-		PrivateKey:         types.String{Value: pKey},
-		KeyPassword:        types.String{Value: state.KeyPassword.Value},
+		SerialNumber:       types.String{Value: cResp.SerialNumber, Null: isNullString(cResp.SerialNumber)},
+		IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
+		Thumbprint:         types.String{Value: cResp.Thumbprint, Null: isNullString(cResp.Thumbprint)},
+		PEM:                types.String{Value: leaf, Null: isNullString(leaf)},
+		PEMChain:           types.String{Value: chain, Null: isNullString(chain)},
+		PrivateKey:         types.String{Value: pKey, Null: isNullString(pKey)},
+		KeyPassword:        types.String{Value: state.KeyPassword.Value, Null: isNullString(state.KeyPassword.Value)},
 		//PEM:                  state.PEM,
 		//PEMChain:             state.PEMChain,
 		//PrivateKey:           state.PrivateKey,
 		//KeyPassword:          state.KeyPassword,
 		CertificateAuthority: types.String{
 			Value: cResp.CertificateAuthorityName,
+			Null:  isNullString(cResp.CertificateAuthorityName),
 		},
-		CertificateTemplate: types.String{Value: cResp.TemplateName},
-		RequestId:           types.Int64{Value: int64(cResp.CertRequestId)},
+		CertificateTemplate: types.String{Value: cResp.TemplateName, Null: isNullString(cResp.TemplateName)},
 		Metadata:            metadata,
+		CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
 	}
 
 	// Set state
@@ -693,7 +705,7 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 		// Set state
 		var result = KeyfactorCertificate{
 			ID:                   types.String{Value: state.ID.Value},
-			CSR:                  types.String{Value: csr},
+			CSR:                  plan.CSR,
 			CommonName:           plan.CommonName,
 			Locality:             plan.Locality,
 			State:                plan.State,
@@ -712,7 +724,6 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 			KeyPassword:          plan.KeyPassword,
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
-			RequestId:            plan.RequestId,
 			Metadata:             plan.Metadata,
 		}
 
@@ -744,7 +755,6 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 			KeyPassword:          plan.KeyPassword,
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
-			RequestId:            plan.RequestId,
 			Metadata:             plan.Metadata,
 		}
 
@@ -835,7 +845,7 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	csr := ""
 
 	// Download and assign certificates to proper location
-	priv, leaf, chain, dErr := downloadCertificate(certificateData.Id, r.p.client, password, csr != "")
+	leaf, chain, priv, dErr := downloadCertificate(certificateData.Id, r.p.client, password, csr != "")
 	if dErr != nil {
 		response.Diagnostics.AddError(
 			"Error reading Keyfactor certificate.",
@@ -865,7 +875,6 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 		KeyPassword:          types.String{Value: password},
 		CertificateAuthority: state.CertificateAuthority,
 		CertificateTemplate:  state.CertificateTemplate,
-		RequestId:            state.RequestId,
 		Metadata:             state.Metadata,
 	}
 
@@ -948,4 +957,20 @@ func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrol
 	}
 
 	return string(leafPem), string(chainPem), string(privPem), nil
+}
+
+func isNullString(s string) bool {
+	switch s {
+	case "", "null":
+		return true
+	default:
+		return false
+	}
+}
+
+func isNullId(i int) bool {
+	if i <= 0 {
+		return true
+	}
+	return false
 }

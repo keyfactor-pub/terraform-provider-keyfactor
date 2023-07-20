@@ -2,12 +2,14 @@ package keyfactor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"strconv"
 )
 
 type dataSourceCertificateStoreType struct{}
@@ -21,13 +23,15 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Description: "Container identifier of the store's associated certificate store container.",
 			},
 			"client_machine": {
-				Type:        types.StringType,
-				Computed:    true,
+				Type: types.StringType,
+				//Computed:    true,
+				Required:    true,
 				Description: "Client machine name; value depends on certificate store type. See API reference guide",
 			},
 			"store_path": {
-				Type:        types.StringType,
-				Computed:    true,
+				Type: types.StringType,
+				//Computed:    true,
+				Required:    true,
 				Description: "Path to the new certificate store on a target. Format varies depending on type.",
 			},
 			"store_type": {
@@ -53,7 +57,7 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 			"properties": {
 				Type:        types.MapType{ElemType: types.StringType},
 				Optional:    true,
-				Description: "Certificate properties specific to certificate store type configured as key-value pairs.",
+				Description: "Properties specific to certificate store type configured as key-value pairs.",
 			},
 			"agent_id": {
 				Type:        types.StringType,
@@ -87,13 +91,14 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 			},
 			"password": {
 				Type:        types.StringType,
-				Optional:    true,
+				Computed:    true,
 				Sensitive:   true,
-				Description: "Sets password for certificate store.",
+				Description: "The StorePassword field for a certificate store. This is only set if store requires password.",
 			},
 			"id": {
-				Type:        types.StringType,
-				Required:    true,
+				Type: types.StringType,
+				//Required:    true,
+				Computed:    true,
 				Description: "Keyfactor certificate store GUID.",
 			},
 		},
@@ -121,11 +126,17 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 	}
 
 	tflog.Info(ctx, "Read called on certificate store resource")
-	certificateStoreId := state.ID.Value
+	//certificateStoreID := state.ID.Value
+	clientMachine := state.ClientMachine.Value
+	storePath := state.StorePath.Value
+	containerID := state.ContainerID.Value
 
-	tflog.SetField(ctx, "certificate_id", certificateStoreId)
+	//tflog.SetField(ctx, "certificate_id", certificateStoreID)
+	tflog.SetField(ctx, "client_machine", clientMachine)
+	tflog.SetField(ctx, "store_path", storePath)
 
-	sResp, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
+	//sResp, err := r.p.client.GetCertificateStoreByID(certificateStoreID)
+	sRespList, err := r.p.client.GetCertificateStoreByClientAndStorePath(clientMachine, storePath, containerID)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error reading certificate store",
@@ -134,34 +145,58 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 		return
 	}
 
+	if len(*sRespList) == 0 {
+		response.Diagnostics.AddError(
+			"Error reading certificate store",
+			"Error reading certificate store: %s"+err.Error(),
+		)
+		return
+	}
+	sRespRef := *sRespList
+	//Because we're looking up by client machine and store path, there should only be one result as that's what Command uses for uniqueness as of KF 9.x
+	sResp := sRespRef[0]
+
 	password := state.Password.Value
-	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", certificateStoreId, password))
+	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", sResp.Id, password))
 
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateStoreId),
+			"Certificate store not found",
+			fmt.Sprintf("Unable to locate certificate store using client machine '%s' and storepath '%s' %s", clientMachine, storePath, err.Error()),
 		)
 		return
 	}
 
 	propElems := make(map[string]attr.Value)
-	for k, v := range sResp.Properties {
+	propsObj := make(map[string]interface{})
+	if sResp.PropertiesString != "" {
+		//convert JSON string to map
+		unescapedJSON, _ := unescapeJSON(sResp.PropertiesString)
+		jsonErr := json.Unmarshal(unescapedJSON, &propsObj)
+		if jsonErr != nil {
+			response.Diagnostics.AddError(
+				"Error reading certificate store",
+				"Error reading certificate store: %s"+jsonErr.Error(),
+			)
+			return
+		}
+	}
+	for k, v := range propsObj {
 		propElems[k] = types.String{Value: v.(string)}
 	}
 	var result = CertificateStore{
-		ID:                    state.ID,
+		ID:                    types.String{Value: sResp.Id},
 		ContainerID:           types.Int64{Value: int64(sResp.ContainerId)},
 		ContainerName:         types.String{Value: sResp.ContainerName},
 		AgentId:               types.String{Value: sResp.AgentId},
 		AgentAssigned:         types.Bool{Value: sResp.AgentAssigned},
-		ClientMachine:         types.String{Value: sResp.ClientMachine},
-		StorePath:             types.String{Value: sResp.StorePath},
+		ClientMachine:         state.ClientMachine,
+		StorePath:             state.StorePath,
 		StoreType:             types.String{Value: fmt.Sprintf("%v", sResp.CertStoreType)},
 		Approved:              types.Bool{Value: sResp.Approved},
 		CreateIfMissing:       types.Bool{Value: sResp.CreateIfMissing},
 		Properties:            types.Map{ElemType: types.StringType, Elems: propElems},
-		Password:              state.Password,
+		Password:              types.String{Value: ""},
 		SetNewPasswordAllowed: types.Bool{Value: sResp.SetNewPasswordAllowed},
 		InventorySchedule:     state.InventorySchedule,
 	}
@@ -172,4 +207,12 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 	if response.Diagnostics.HasError() {
 		return
 	}
+}
+
+func unescapeJSON(jsonData string) ([]byte, error) {
+	unescapedJSON, err := strconv.Unquote(jsonData)
+	if err != nil {
+		return []byte(jsonData), err
+	}
+	return []byte(unescapedJSON), nil
 }

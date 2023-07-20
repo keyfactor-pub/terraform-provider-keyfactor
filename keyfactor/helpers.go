@@ -1,10 +1,18 @@
 package keyfactor
 
 import (
+	"crypto/ecdsa"
+	rsa2 "crypto/rsa"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"math/rand"
+	"strconv"
 	"strings"
 )
 
@@ -207,4 +215,225 @@ func mapSanIDToName(sanID int) string {
 		return "MS_NTDSReplication"
 	}
 	return ""
+}
+
+func unescapeJSON(jsonData string) ([]byte, error) {
+	unescapedJSON, err := strconv.Unquote(jsonData)
+	if err != nil {
+		return []byte(jsonData), err
+	}
+	return []byte(unescapedJSON), nil
+}
+
+func flattenEnrollmentFields(efs []api.TemplateEnrollmentFields) types.List {
+
+	result := types.List{
+		ElemType: types.MapType{},
+		Elems:    []attr.Value{},
+	}
+	for _, ef := range efs {
+		var options []attr.Value
+		for _, op := range ef.Options {
+			options = append(options, types.String{
+				Value: op,
+			})
+		}
+		result.Elems = append(result.Elems, types.Map{
+			ElemType: types.StringType,
+			Elems: map[string]attr.Value{
+				"id":   types.Int64{Value: int64(ef.Id)},
+				"name": types.String{Value: ef.Name},
+				"type": types.String{Value: strconv.Itoa(ef.DataType)},
+				"options": types.List{
+					Elems:    options,
+					ElemType: types.StringType,
+				},
+			},
+		})
+	}
+
+	return result
+}
+
+func flattenTemplateRegexes(regexes []api.TemplateRegex) types.List {
+	result := types.List{
+		ElemType: types.StringType,
+		Elems:    []attr.Value{},
+	}
+	for _, regex := range regexes {
+		result.Elems = append(result.Elems, types.String{Value: regex.RegEx})
+	}
+	return result
+}
+
+func flattenAllowedRequesters(requesters []string) types.List {
+	result := types.List{
+		ElemType: types.StringType,
+		Elems:    []attr.Value{},
+	}
+
+	if len(requesters) > 0 {
+		for _, requester := range requesters {
+			result.Elems = append(result.Elems, types.String{Value: requester})
+		}
+	}
+
+	return result
+}
+
+func isNullString(s string) bool {
+	switch s {
+	case "", "null":
+		return true
+	default:
+		return false
+	}
+}
+
+func isNullId(i int) bool {
+	if i <= 0 {
+		return true
+	}
+	return false
+}
+
+func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrollment bool) (string, string, string, error) {
+	certificateContext, err := kfClient.GetCertificateContext(&api.GetCertificateContextArgs{Id: id})
+	if err != nil {
+		return "", "", "", err
+	}
+
+	template, err := kfClient.GetTemplate(certificateContext.TemplateId)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	recoverable := false
+
+	if template.KeyRetention != "None" {
+		recoverable = true
+	}
+
+	var privPem []byte
+	var leafPem []byte
+	var chainPem []byte
+
+	if !recoverable || csrEnrollment {
+
+		leaf, chain, err := kfClient.DownloadCertificate(id, "", "", "")
+		if err != nil {
+			return "", "", "", err
+		}
+
+		// Encode DER to PEM
+		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+		for _, i := range chain {
+			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
+		}
+
+	} else {
+
+		priv, leaf, chain, err := kfClient.RecoverCertificate(id, "", "", "", password)
+		if err != nil {
+			return "", "", "", err
+		}
+		if err != nil {
+			return "", "", "", err
+		}
+
+		// Encode DER to PEM
+		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+		for _, i := range chain {
+			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
+		}
+
+		// Figure out the format of the private key, then encode it to PEM
+		rsa, ok := priv.(*rsa2.PrivateKey)
+		if ok {
+			buf := x509.MarshalPKCS1PrivateKey(rsa)
+			if len(buf) > 0 {
+				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "RSA PRIVATE KEY"})
+			}
+		}
+
+		ecc, ok := priv.(*ecdsa.PrivateKey)
+		if ok {
+			// We don't really care about the error here. An error just means that the key will be blank which isn't a
+			// reason to fail
+			buf, _ := x509.MarshalECPrivateKey(ecc)
+			if len(buf) > 0 {
+				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "EC PRIVATE KEY"})
+			}
+		}
+	}
+
+	return string(leafPem), string(chainPem), string(privPem), nil
+}
+
+func terraformBoolToGoBool(tfBool string) (bool, error) {
+	tfBool = strings.ToLower(tfBool)
+	if tfBool == "true" {
+		return true, nil
+	} else if tfBool == "false" {
+		return false, nil
+	}
+	return false, fmt.Errorf("invalid Terraform bool: %s", tfBool)
+}
+
+func parseProperties(properties string) (types.Map, types.String, types.String, types.Bool, diag.Diagnostics) {
+	var (
+		serverUsername types.String
+		serverPassword types.String
+		//storePassword  types.String
+		serverUseSsl types.Bool
+		diags        diag.Diagnostics
+	)
+	propElems := make(map[string]attr.Value)
+	propsObj := make(map[string]interface{})
+	if properties != "" {
+		//convert JSON string to map
+		unescapedJSON, _ := unescapeJSON(properties)
+		jsonErr := json.Unmarshal(unescapedJSON, &propsObj)
+		if jsonErr != nil {
+			diags.AddError(
+				"Error reading certificate store",
+				"Error reading certificate store: %s"+jsonErr.Error(),
+			)
+			return types.Map{}, types.String{Value: ""}, types.String{Value: ""}, types.Bool{Value: false}, diags
+		}
+	}
+
+	for k, v := range propsObj {
+		switch k {
+		case "ServerUsername":
+			serverUsername = types.String{Value: v.(string)}
+		case "ServerPassword":
+			serverPassword = types.String{Value: v.(string)}
+		case "ServerUseSsl":
+			// Convert terraform True/False to bool true/false
+			val, valErr := terraformBoolToGoBool(v.(string))
+			if valErr != nil {
+				val = true // Default to true if we can't convert
+			}
+			serverUseSsl = types.Bool{Value: val}
+		//case "StorePassword":
+		//	storePassword = types.String{Value: v.(string)} //TODO: Command doesn't seem to return anything for this as of 10.x
+		default:
+			propElems[k] = types.String{Value: v.(string)}
+		}
+	}
+
+	return types.Map{ElemType: types.StringType, Elems: propElems}, serverUsername, serverPassword, serverUseSsl, diags
+}
+
+func parseStorePassword(sPassword *api.StorePasswordConfig) types.String {
+	if sPassword == nil {
+		return types.String{Value: ""}
+	} else {
+		if sPassword.Value != nil {
+			return types.String{Value: *sPassword.Value}
+		} else {
+			return types.String{Value: ""}
+		}
+	}
 }

@@ -108,8 +108,11 @@ type CertificateStore struct {
 	Approved              types.Bool   `tfsdk:"approved"`
 	CreateIfMissing       types.Bool   `tfsdk:"create_if_missing"`
 	Properties            types.Map    `tfsdk:"properties"`
-	Password              types.String `tfsdk:"password"`
 	SetNewPasswordAllowed types.Bool   `tfsdk:"set_new_password_allowed"`
+	ServerUsername        types.String `tfsdk:"server_username"`
+	ServerPassword        types.String `tfsdk:"server_password"`
+	ServerUseSsl          types.Bool   `tfsdk:"server_use_ssl"`
+	StorePassword         types.String `tfsdk:"store_password"`
 	InventorySchedule     types.String `tfsdk:"inventory_schedule"`
 }
 

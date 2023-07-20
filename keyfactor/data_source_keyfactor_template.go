@@ -3,13 +3,10 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/v2/api"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"strconv"
 )
 
 type dataSourceCertificateTemplateType struct{}
@@ -189,60 +186,4 @@ func (r dataSourceCertificateTemplate) Read(ctx context.Context, request tfsdk.R
 	if response.Diagnostics.HasError() {
 		return
 	}
-}
-
-func flattenEnrollmentFields(efs []api.TemplateEnrollmentFields) types.List {
-
-	result := types.List{
-		ElemType: types.MapType{},
-		Elems:    []attr.Value{},
-	}
-	for _, ef := range efs {
-		var options []attr.Value
-		for _, op := range ef.Options {
-			options = append(options, types.String{
-				Value: op,
-			})
-		}
-		result.Elems = append(result.Elems, types.Map{
-			ElemType: types.StringType,
-			Elems: map[string]attr.Value{
-				"id":   types.Int64{Value: int64(ef.Id)},
-				"name": types.String{Value: ef.Name},
-				"type": types.String{Value: strconv.Itoa(ef.DataType)},
-				"options": types.List{
-					Elems:    options,
-					ElemType: types.StringType,
-				},
-			},
-		})
-	}
-
-	return result
-}
-
-func flattenTemplateRegexes(regexes []api.TemplateRegex) types.List {
-	result := types.List{
-		ElemType: types.StringType,
-		Elems:    []attr.Value{},
-	}
-	for _, regex := range regexes {
-		result.Elems = append(result.Elems, types.String{Value: regex.RegEx})
-	}
-	return result
-}
-
-func flattenAllowedRequesters(requesters []string) types.List {
-	result := types.List{
-		ElemType: types.StringType,
-		Elems:    []attr.Value{},
-	}
-
-	if len(requesters) > 0 {
-		for _, requester := range requesters {
-			result.Elems = append(result.Elems, types.String{Value: requester})
-		}
-	}
-
-	return result
 }

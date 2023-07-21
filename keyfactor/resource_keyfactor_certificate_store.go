@@ -384,7 +384,7 @@ func (r resourceCertificateStore) Read(ctx context.Context, request tfsdk.ReadRe
 		AgentId:               types.String{Value: sResp.AgentId},
 		AgentIdentifier:       state.AgentIdentifier,
 		AgentAssigned:         types.Bool{Value: sResp.AgentAssigned},
-		ContainerName:         types.String{Value: sResp.ContainerName},
+		ContainerName:         types.String{Value: sResp.ContainerName, Null: isNullString(sResp.ContainerName)},
 		InventorySchedule:     state.InventorySchedule, // TODO: Parse this from sResp.InventorySchedule
 		SetNewPasswordAllowed: types.Bool{Value: sResp.SetNewPasswordAllowed},
 		StorePassword:         state.StorePassword,  //TODO: Currently command doesn't return this as of 10.x
@@ -676,7 +676,7 @@ func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk
 		//Properties:            plan.Properties,
 		AgentId:       types.String{Value: readResponse.AgentId},
 		AgentAssigned: types.Bool{Value: readResponse.AgentAssigned},
-		ContainerName: types.String{Value: readResponse.ContainerName},
+		ContainerName: types.String{Value: readResponse.ContainerName, Null: isNullString(readResponse.ContainerName)},
 		InventorySchedule: types.String{
 			Unknown: false,
 			Null:    true,

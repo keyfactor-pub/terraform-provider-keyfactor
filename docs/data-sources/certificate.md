@@ -34,16 +34,19 @@ data "keyfactor_certificate" "cert_w_pass_and_pkey_id" {
   key_password = "this is required to return a private key" # This is bad practice. Use TF_VAR_<variable_name> instead.
 }
 
-data "keyfactor_certificate" "cert_wo_pkey_cn" { # This will returns a certificate without a private key
-  identifier   = "my-ca-cert" # Using certificate common name (CN)
+data "keyfactor_certificate" "cert_wo_pkey_cn" {
+  # This will returns a certificate without a private key
+  identifier = "my-ca-cert" # Using certificate common name (CN)
 }
 
-data "keyfactor_certificate" "cert_wo_pkey_tp" { # This will returns a certificate without a private key
-  identifier   = "FF41F242C323712E8C17DECF4E6AEBFB3646F966" # Using certificate thumbprint
+data "keyfactor_certificate" "cert_wo_pkey_tp" {
+  # This will returns a certificate without a private key
+  identifier = "FF41F242C323712E8C17DECF4E6AEBFB3646F966" # Using certificate thumbprint
 }
 
-data "keyfactor_certificate" "cert_wo_pkey_id" { # This will returns a certificate without a private key
-  identifier   = "1" # Using Keyfactor Command certificate ID
+data "keyfactor_certificate" "cert_wo_pkey_id" {
+  # This will returns a certificate without a private key
+  identifier = "1" # Using Keyfactor Command certificate ID
 }
 ```
 
@@ -64,15 +67,16 @@ data "keyfactor_certificate" "cert_wo_pkey_id" { # This will returns a certifica
 
 - `certificate_authority` (String) Name of certificate authority (CA) to deploy certificate with Ex: Example Company CA 1
 - `certificate_chain` (String) PEM formatted certificate chain
+- `certificate_id` (Number) Keyfactor Command certificate ID.
 - `certificate_pem` (String) PEM formatted certificate
 - `certificate_template` (String) Short name of certificate template to be used. Ex: Server Authentication
+- `command_request_id` (Number) Keyfactor Command request ID.
 - `common_name` (String) Subject common name (CN) of the certificate.
 - `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
 - `dns_sans` (List of String) List of DNS subject alternative names (DNS SANs) of the certificate. Ex: www.example.com
 - `ip_sans` (List of String) List of IP subject alternative names (IP SANs) of the certificate. Ex: 192.168.0.200
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
-- `keyfactor_request_id` (Number) Keyfactor request ID necessary for deploying certificate
 - `locality` (String) Subject locality (L) of the certificate
 - `organization` (String) Subject organization (O) of the certificate
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate

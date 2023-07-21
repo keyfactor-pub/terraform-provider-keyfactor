@@ -20,23 +20,23 @@ provider "keyfactor" {
   domain   = "mydomain.com"
 }
 
-## PFX Enrollment
-resource "keyfactor_certificate" "pfx_cert" {
-  subject = {
-    subject_common_name = "ShortlivedTest7622-test"
-  }
-  dns_sans = ["ShortlivedTest7622-test"]
-
-  key_password          = "don't put secrets in code!" // Please don't use this password in production pass in an environmental variable or something
-  certificate_authority = "<test_domain>\\<test_ca>"
-  certificate_template  = "<my_template>"
+# Lookup existing cert store using the client machine's name and the store path
+data "keyfactor_certificate_store" "my_cert_store" {
+  client_machine = "192.168.0.9"
+  store_path     = "/home/azureuser/certs"
 }
 
-# Deploy the created PFX certificate to all created cert stores
-resource "keyfactor_certificate_deployment" "pfx_cert" {
-  certificate_id       = keyfactor_certificate.pfx_cert.id # ID of the certificate to deploy
-  certificate_store_id = "<my_certstore_id>"               # ID of the certificate store to deploy to
-  certificate_alias    = "<my_cert_alias>"                 # Alias to use for the certificate in the store
+# Lookup existing certificate using the client machine's name and the certificate path
+data "keyfactor_certificate" "ca_cert" {
+  identifier   = "CommandCA1" #Certificate CN
+  key_password = "" # This is bad practice. Use TF_VAR_<variable_name> instead.
+}
+
+# Deploy the CA certificate to the certificate store
+resource "keyfactor_certificate_deployment" "ca_cert_deployment" {
+  certificate_id       = data.keyfactor_certificate.ca_cert.certificate_id # The Keyfactor Command internal certificate ID
+  certificate_store_id = data.keyfactor_certificate_store.my_cert_store.id # The Keyfactor Command certificate store ID
+  certificate_alias    = data.keyfactor_certificate.ca_cert.thumbprint # Alias to use for the certificate in the store
 }
 ```
 

@@ -19,16 +19,10 @@ provider "keyfactor" {
   hostname = "mykfinstance.kfdelivery.com"
 }
 
-data "keyfactor_certificate_store" "iis_personal" {
-  id       = "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
-  password = "your_personal_store_password"
-}
-
-output "iis_personal_metadata" {
-  value = {
-    id           = data.keyfactor_certificate_store.iis_personal.id
-    container_id = data.keyfactor_certificate_store.iis_personal.container_id
-  }
+# Both client_machine and store_path are required to do a lookup
+data "keyfactor_certificate_store" "k8s_cluster_store_lookup" {
+  client_machine = "192.168.0.4"
+  store_path     = "/home/azureuser/certs"
 }
 ```
 
@@ -37,7 +31,8 @@ output "iis_personal_metadata" {
 
 ### Required
 
-- `id` (String) Keyfactor certificate store GUID.
+- `client_machine` (String) Client machine name; value depends on certificate store type. See API reference guide
+- `store_path` (String) Path to the new certificate store on a target. Format varies depending on type.
 
 ### Optional
 
@@ -46,16 +41,20 @@ output "iis_personal_metadata" {
 - `container_name` (String) Name of certificate store's associated container, if applicable.
 - `create_if_missing` (Boolean) Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure.
 - `inventory_schedule` (String) Inventory schedule for new certificate store.
-- `password` (String, Sensitive) Sets password for certificate store.
-- `properties` (Map of String) Certificate properties specific to certificate store type configured as key-value pairs.
+- `properties` (Map of String) Properties specific to certificate store type configured as key-value pairs.
 - `set_new_password_allowed` (Boolean) Indicates whether the store password can be changed.
 
 ### Read-Only
 
 - `agent_id` (String) String indicating the Keyfactor Command GUID of the orchestrator for the created store.
-- `client_machine` (String) Client machine name; value depends on certificate store type. See API reference guide
+- `agent_identifier` (String) Can be either ClientMachine or the Keyfactor Command GUID of the orchestrator to use for managing the certificate store. The agent must support the certificate store type and be approved.
 - `container_id` (Number) Container identifier of the store's associated certificate store container.
-- `store_path` (String) Path to the new certificate store on a target. Format varies depending on type.
+- `display_name` (String) Display name of the certificate store.
+- `id` (String) Keyfactor certificate store GUID.
+- `server_password` (String, Sensitive) The password to access the host of the certificate store. In Keyfactor Command this is the 'ServerUsername' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.
+- `server_use_ssl` (Boolean) Indicates whether the certificate store host requires SSL. In Keyfactor Command this is the 'ServerUseSsl' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.
+- `server_username` (String) The username to access the host of the certificate store. In Keyfactor Command this is the 'ServerUsername' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.
+- `store_password` (String, Sensitive) The password to access the contents of the certificate store. In Keyfactor Command this is the 'StorePassword' field. field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.
 - `store_type` (String) Short name of certificate store type. See API reference guide
 
 

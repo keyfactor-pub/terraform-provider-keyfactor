@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"math/rand"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -436,4 +437,10 @@ func parseStorePassword(sPassword *api.StorePasswordConfig) types.String {
 			return types.String{Value: ""}
 		}
 	}
+}
+
+func isGUID(input string) bool {
+	guidPattern := `^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$`
+	match, _ := regexp.MatchString(guidPattern, input)
+	return match
 }

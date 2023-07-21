@@ -25,8 +25,9 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				Description: "Keyfactor Command certificate store GUID.",
 			},
 			"container_id": {
-				Type:        types.Int64Type,
-				Optional:    true,
+				Type: types.Int64Type,
+				//Optional: true,
+				Computed:    true,
 				Description: "Container identifier of the store's associated certificate store container.",
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
@@ -90,7 +91,7 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 			},
 			"agent_assigned": {
 				Type:     types.BoolType,
-				Optional: true,
+				Computed: true,
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -100,9 +101,10 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"container_name": {
-				Type:        types.StringType,
-				Optional:    true,
-				Description: "Name of certificate store's associated container, if applicable.",
+				Type:     types.StringType,
+				Optional: true,
+				//Computed:    true,
+				Description: "Name of the container you want to associate the certificate store with. NOTE: The container must already exist and be of the same certificate store type.",
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"inventory_schedule": {
@@ -117,8 +119,9 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"set_new_password_allowed": {
-				Type:        types.BoolType,
-				Optional:    true,
+				Type: types.BoolType,
+				//Optional:    true,
+				Computed:    true,
 				Description: "Indicates whether the store password can be changed.",
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
@@ -193,16 +196,34 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		return
 	}
 
-	var containerId int
-	if !plan.ContainerID.Null {
-		containerId = int(plan.ContainerID.Value)
+	containerId := 0
+	if !plan.ContainerName.IsNull() {
+		storeContainer, containerErr := r.p.client.GetStoreContainer(plan.ContainerName.Value)
+		if containerErr != nil || storeContainer == nil {
+			response.Diagnostics.AddError(
+				"Invalid container name.",
+				fmt.Sprintf("Could not retrieve container '%s' from Keyfactor"+containerErr.Error(), plan.ContainerName.Value),
+			)
+			return
+		}
+		containerId = *storeContainer.Id
 	}
 
 	var properties map[string]string
 	if plan.Properties.Elems != nil {
 		diags = plan.Properties.ElementsAs(ctx, &properties, false)
-
 	}
+	//Add Special Properties to properties map
+	if !plan.ServerUsername.IsNull() {
+		properties["ServerUsername"] = plan.ServerUsername.Value
+	}
+	if !plan.ServerPassword.IsNull() {
+		properties["ServerPassword"] = plan.ServerPassword.Value
+	}
+	if !plan.ServerUseSsl.IsNull() {
+		properties["ServerUseSsl"] = strconv.FormatBool(plan.ServerUseSsl.Value)
+	}
+
 	schedule, err := createInventorySchedule(plan.InventorySchedule.Value) // TODO: Implement inventory schedule
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -212,13 +233,6 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		return
 	}
 
-	var containerIdP *int
-	if containerId <= 0 {
-		containerIdP = nil
-	} else {
-		containerIdP = &containerId
-	}
-
 	var storePassFormatted *api.StorePasswordConfig
 	if plan.StorePassword.Null {
 		storePassFormatted = nil
@@ -226,15 +240,63 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		storePassFormatted = createPasswordConfig(plan.StorePassword.Value)
 	}
 
+	//Lookup agent by AgentIdentifier
+	agents, agentErr := kfClient.GetAgent(plan.AgentIdentifier.Value)
+	agentId := ""
+	//TODO: Make this a function
+	if agentErr != nil {
+		response.Diagnostics.AddError(
+			"Invalid agent identifier.",
+			fmt.Sprintf("Agent could not be found on Keyfactor Command using identifier '%s'. %s", plan.AgentIdentifier.Value, agentErr.Error()),
+		)
+		return
+	} else if len(agents) == 0 {
+		response.Diagnostics.AddError(
+			"Agent Not Found.",
+			fmt.Sprintf("Agent could not be found on Keyfactor Command using identifier '%s'. %s", plan.AgentIdentifier.Value, agentErr.Error()),
+		)
+		return
+	} else {
+		if len(agents) > 1 {
+			response.Diagnostics.AddWarning(
+				"Agent Not Found.",
+				fmt.Sprintf("Multiple agents found with identifier '%s' returned from Keyfactor Command. Using first approved agent", plan.AgentIdentifier.Value),
+			)
+		}
+
+		//iterate over agents and find the first approved agent
+		for _, agent := range agents {
+			if agent.Status != 2 {
+				continue
+			}
+			agentId = agent.AgentId
+			break
+		}
+
+		if agentId == "" {
+			response.Diagnostics.AddError(
+				"Approved Agent Not Found.",
+				fmt.Sprintf("No approved agents with identifier '%s' were found on Keyfactor Command. Please review your agents on the Keyfactor Command Portal by going to Orchestrators > Management, and ensure the one you're looking for is approved.", plan.AgentIdentifier.Value),
+			)
+			return
+		}
+
+		tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
+	}
+
+	//if plan.CreateIfMissing.IsNull() {
+	//	plan.CreateIfMissing = types.Bool{Value: false}
+	//}
+
 	newStoreArgs := &api.CreateStoreFctArgs{
-		ContainerId:           containerIdP,
+		ContainerId:           intToPointer(containerId),
 		ClientMachine:         plan.ClientMachine.Value,
 		StorePath:             plan.StorePath.Value,
 		CertStoreType:         csType.StoreType,
 		Approved:              &plan.Approved.Value,
 		CreateIfMissing:       &plan.CreateIfMissing.Value,
 		Properties:            properties,
-		AgentId:               plan.AgentId.Value,
+		AgentId:               agentId,
 		AgentAssigned:         &plan.AgentAssigned.Value,
 		ContainerName:         &plan.ContainerName.Value,
 		InventorySchedule:     schedule,
@@ -260,16 +322,20 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		},
 		ClientMachine:         types.String{Value: createStoreResponse.ClientMachine},
 		StorePath:             types.String{Value: createStoreResponse.Storepath},
-		StoreType:             types.String{Value: plan.StoreType.Value},
-		Approved:              plan.Approved,
+		StoreType:             plan.StoreType,
+		Approved:              types.Bool{Value: createStoreResponse.Approved},
 		CreateIfMissing:       plan.CreateIfMissing,
 		Properties:            plan.Properties,
 		AgentId:               types.String{Value: createStoreResponse.AgentId},
-		AgentAssigned:         plan.AgentAssigned,
+		AgentIdentifier:       plan.AgentIdentifier,
+		AgentAssigned:         types.Bool{Value: createStoreResponse.AgentAssigned},
 		ContainerName:         plan.ContainerName,
 		InventorySchedule:     plan.InventorySchedule,
-		SetNewPasswordAllowed: plan.SetNewPasswordAllowed,
+		SetNewPasswordAllowed: types.Bool{Value: createStoreResponse.SetNewPasswordAllowed},
 		StorePassword:         plan.StorePassword,
+		ServerUsername:        plan.ServerUsername,
+		ServerPassword:        plan.ServerPassword,
+		ServerUseSsl:          plan.ServerUseSsl,
 		//Certificates:          types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
 	}
 
@@ -294,20 +360,42 @@ func (r resourceCertificateStore) Read(ctx context.Context, request tfsdk.ReadRe
 
 	tflog.SetField(ctx, "id", certificateStoreId)
 
-	_, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
+	sResp, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error reading certificate store",
-			"Error reading certificate store: %s"+err.Error(),
+			fmt.Sprintf("Error reading certificate store: '%s'. %s", certificateStoreId, err.Error()),
 		)
 		return
 	}
 
-	//password := state.Password.Value
-	//tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", certificateStoreId, password))
+	var result = CertificateStore{
+		ID: types.String{Value: sResp.Id},
+		ContainerID: types.Int64{
+			Null:  state.ContainerID.Null,
+			Value: int64(sResp.ContainerId),
+		},
+		ClientMachine:         types.String{Value: sResp.ClientMachine},
+		StorePath:             types.String{Value: sResp.StorePath},
+		StoreType:             state.StoreType,
+		Approved:              types.Bool{Value: sResp.Approved},
+		CreateIfMissing:       state.CreateIfMissing,
+		Properties:            state.Properties, //TODO: Parse this w/o special properties included
+		AgentId:               types.String{Value: sResp.AgentId},
+		AgentIdentifier:       state.AgentIdentifier,
+		AgentAssigned:         types.Bool{Value: sResp.AgentAssigned},
+		ContainerName:         types.String{Value: sResp.ContainerName},
+		InventorySchedule:     state.InventorySchedule, // TODO: Parse this from sResp.InventorySchedule
+		SetNewPasswordAllowed: types.Bool{Value: sResp.SetNewPasswordAllowed},
+		StorePassword:         state.StorePassword,  //TODO: Currently command doesn't return this as of 10.x
+		ServerUsername:        state.ServerUsername, //TODO: Parse this from sResp.Properties
+		ServerPassword:        state.ServerPassword, //TODO: Parse this from sResp.Properties
+		ServerUseSsl:          state.ServerUseSsl,   //TODO: Parse this from sResp.Properties
+		//Certificates:          types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
+	}
 
 	// Set state
-	diags = response.State.Set(ctx, &state)
+	diags = response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -331,15 +419,7 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 		return
 	}
 
-	var properties map[string]string
-	if plan.Properties.Elems != nil {
-		diags = plan.Properties.ElementsAs(ctx, &properties, false)
-	}
-
-	propertiesInterface := buildPropertiesInterface(&properties)
-
 	// Generate API request body from plan
-	containerId := int(plan.ContainerID.Value)
 	csType, csTypeErr := r.p.client.GetCertificateStoreTypeByName(plan.StoreType.Value)
 	if csTypeErr != nil {
 		response.Diagnostics.AddError(
@@ -357,16 +437,82 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 		return
 	}
 
-	var containerIdP *int
-	if plan.ContainerID.Null {
-		containerIdP = nil
-	} else {
-		containerIdP = &containerId
+	containerId := 0
+	if !plan.ContainerName.IsNull() {
+		storeContainer, containerErr := r.p.client.GetStoreContainer(plan.ContainerName.Value)
+		if containerErr != nil || storeContainer == nil {
+			response.Diagnostics.AddError(
+				"Invalid container name.",
+				fmt.Sprintf("Could not retrieve container '%s' from Keyfactor"+containerErr.Error(), plan.ContainerName.Value),
+			)
+			return
+		}
+		containerId = *storeContainer.Id
 	}
 
 	storePassFormatted := createPasswordConfig(plan.StorePassword.Value)
 
-	propertiesStr, psErr := mapToEscapedJSONString(propertiesInterface)
+	agents, agentErr := r.p.client.GetAgent(plan.AgentIdentifier.Value)
+	agentId := ""
+	//TODO: Make this a function
+	if agentErr != nil {
+		response.Diagnostics.AddError(
+			"Invalid agent identifier.",
+			fmt.Sprintf("Agent could not be found on Keyfactor Command using identifier '%s'. %s", plan.AgentIdentifier.Value, agentErr.Error()),
+		)
+		return
+	} else if len(agents) == 0 {
+		response.Diagnostics.AddError(
+			"Agent Not Found.",
+			fmt.Sprintf("Agent could not be found on Keyfactor Command using identifier '%s'. %s", plan.AgentIdentifier.Value, agentErr.Error()),
+		)
+		return
+	} else {
+		if len(agents) > 1 {
+			response.Diagnostics.AddWarning(
+				"Agent Not Found.",
+				fmt.Sprintf("Multiple agents found with identifier '%s' returned from Keyfactor Command. Using first approved agent", plan.AgentIdentifier.Value),
+			)
+		}
+
+		//iterate over agents and find the first approved agent
+		for _, agent := range agents {
+			if agent.Status != 2 {
+				continue
+			}
+			agentId = agent.AgentId
+			break
+		}
+
+		if agentId == "" {
+			response.Diagnostics.AddError(
+				"Approved Agent Not Found.",
+				fmt.Sprintf("No approved agents with identifier '%s' were found on Keyfactor Command. Please review your agents on the Keyfactor Command Portal by going to Orchestrators > Management, and ensure the one you're looking for is approved.", plan.AgentIdentifier.Value),
+			)
+			return
+		}
+
+		tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
+	}
+
+	var properties map[string]interface{}
+	if plan.Properties.Elems != nil {
+		diags = plan.Properties.ElementsAs(ctx, &properties, false)
+	}
+	//Add Special Properties to properties map
+	if !plan.ServerUsername.IsNull() {
+		formattedUsername := api.SecretParamValue{SecretValue: plan.ServerUsername.Value}
+		properties["ServerUsername"] = api.SpecialPropertiesSecretValue{Value: formattedUsername}
+	}
+	if !plan.ServerPassword.IsNull() {
+		formattedPassword := api.SecretParamValue{SecretValue: plan.ServerPassword.Value}
+		properties["ServerPassword"] = api.SpecialPropertiesSecretValue{Value: formattedPassword}
+	}
+	if !plan.ServerUseSsl.IsNull() {
+		properties["ServerUseSsl"] = api.SpecialPropertiesValue{Value: plan.ServerUseSsl.Value}
+	}
+
+	propertiesStr, psErr := mapToEscapedJSONString(properties)
 	if psErr != nil {
 		response.Diagnostics.AddError(
 			"Invalid properties error.",
@@ -377,15 +523,15 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 
 	updateStoreArgs := &api.UpdateStoreFctArgs{
 		Id:                    state.ID.Value,
-		ContainerId:           containerIdP,
+		ContainerId:           intToPointer(containerId),
 		ClientMachine:         plan.ClientMachine.Value,
 		StorePath:             plan.StorePath.Value,
 		CertStoreType:         csType.StoreType,
 		Approved:              &plan.Approved.Value,
 		CreateIfMissing:       &plan.CreateIfMissing.Value,
-		Properties:            propertiesInterface,
+		Properties:            properties,
 		PropertiesString:      propertiesStr,
-		AgentId:               plan.AgentId.Value,
+		AgentId:               agentId,
 		AgentAssigned:         &plan.AgentAssigned.Value,
 		ContainerName:         &plan.ContainerName.Value,
 		InventorySchedule:     schedule,
@@ -419,24 +565,27 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 	tflog.Trace(ctx, fmt.Sprintf("UpdateStoreResponse: %s", updateResponse))
 
 	result := CertificateStore{
-		ID: types.String{Value: state.ID.Value},
+		ID: types.String{Value: updateResponse.Id},
 		ContainerID: types.Int64{
-			Null:  state.ContainerID.Null,
-			Value: plan.ContainerID.Value,
+			Null:  plan.ContainerID.Null,
+			Value: int64(updateResponse.ContainerId),
 		},
-		//ClientMachine:   types.String{Value: updateResponse.ClientMachine},
-		ClientMachine:         plan.ClientMachine,
-		StorePath:             plan.StorePath,
+		ClientMachine:         types.String{Value: updateResponse.ClientMachine},
+		StorePath:             types.String{Value: updateResponse.Storepath},
 		StoreType:             plan.StoreType,
-		Approved:              plan.Approved,
+		Approved:              types.Bool{Value: updateResponse.Approved},
 		CreateIfMissing:       plan.CreateIfMissing,
 		Properties:            plan.Properties,
-		AgentId:               plan.AgentId,
-		AgentAssigned:         plan.AgentAssigned,
+		AgentId:               types.String{Value: updateResponse.AgentId},
+		AgentIdentifier:       plan.AgentIdentifier,
+		AgentAssigned:         types.Bool{Value: updateResponse.AgentAssigned},
 		ContainerName:         plan.ContainerName,
 		InventorySchedule:     plan.InventorySchedule,
-		SetNewPasswordAllowed: plan.SetNewPasswordAllowed,
+		SetNewPasswordAllowed: types.Bool{Value: updateResponse.SetNewPasswordAllowed},
 		StorePassword:         plan.StorePassword,
+		ServerUsername:        plan.ServerUsername,
+		ServerPassword:        plan.ServerPassword,
+		ServerUseSsl:          plan.ServerUseSsl,
 	}
 
 	// Set state

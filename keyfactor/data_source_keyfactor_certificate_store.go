@@ -19,6 +19,11 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Computed:    true,
 				Description: "Container identifier of the store's associated certificate store container.",
 			},
+			"display_name": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Display name of the certificate store.",
+			},
 			"client_machine": {
 				Type: types.StringType,
 				//Computed:    true,
@@ -60,6 +65,11 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type:        types.StringType,
 				Computed:    true,
 				Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store.",
+			},
+			"agent_identifier": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Can be either ClientMachine or the Keyfactor Command GUID of the orchestrator to use for managing the certificate store. The agent must support the certificate store type and be approved.",
 			},
 			"agent_assigned": {
 				Type:     types.BoolType,
@@ -197,6 +207,7 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 		ContainerID:           types.Int64{Value: int64(sResp.ContainerId)},
 		ContainerName:         types.String{Value: sResp.ContainerName},
 		AgentId:               types.String{Value: sResp.AgentId},
+		AgentIdentifier:       types.String{Value: sResp.AgentId},
 		AgentAssigned:         types.Bool{Value: sResp.AgentAssigned},
 		ClientMachine:         state.ClientMachine,
 		StorePath:             state.StorePath,
@@ -210,6 +221,7 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 		ServerPassword:        serverPassword,
 		ServerUseSsl:          serverUseSsl,
 		StorePassword:         storePassword,
+		DisplayName:           types.String{Value: sResp.DisplayName},
 	}
 
 	// Set state

@@ -101,8 +101,10 @@ type CertificateStore struct {
 	ContainerID           types.Int64  `tfsdk:"container_id"`
 	ContainerName         types.String `tfsdk:"container_name"`
 	AgentId               types.String `tfsdk:"agent_id"`
+	AgentIdentifier       types.String `tfsdk:"agent_identifier"`
 	AgentAssigned         types.Bool   `tfsdk:"agent_assigned"`
 	ClientMachine         types.String `tfsdk:"client_machine"`
+	DisplayName           types.String `tfsdk:"display_name"`
 	StorePath             types.String `tfsdk:"store_path"`
 	StoreType             types.String `tfsdk:"store_type"`
 	Approved              types.Bool   `tfsdk:"approved"`

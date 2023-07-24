@@ -145,7 +145,17 @@ resource "github_actions_secret" "test_template_role_binding_template_name3" {
   plaintext_value = var.test_template_role_binding_template_name3
 }
 
+resource "github_actions_secret" "test_server_username" {
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_SERVER_USERNAME"
+  plaintext_value = var.test_server_username
+}
 
+resource "github_actions_secret" "test_server_username" {
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_SERVER_PASSWORD"
+  plaintext_value = var.test_server_password
+}
 
 
 

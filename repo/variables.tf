@@ -17,6 +17,8 @@ variable "command_hostname" {
   type        = string
 }
 
+
+
 variable "test_username" {
   description = "The username to use for testing. The user must exist in Keyfactor Command and have the appropriate permissions."
   type        = string
@@ -135,4 +137,14 @@ variable "test_deploy_cert_storeid2" {
 variable "test_certificate_template_name" {
   type        = string
   description = "Name of an existing template to use for testing. Note: the template must exist in Keyfactor, be usable by the CA specificed in `test_certificate_ca_name` and the user specified in `test_username`. "
+}
+
+variable "test_server_username" {
+  type        = string
+  description = "ServerUsername store property"
+}
+
+variable "test_server_password" {
+  type        = string
+  description = "ServerPassword store property"
 }

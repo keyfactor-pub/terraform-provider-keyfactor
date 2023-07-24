@@ -22,20 +22,20 @@ provider "keyfactor" {
 
 ## PFX Enrollment
 resource "keyfactor_certificate" "pkcs12_enrollment" {
-  common_name           = "My PKCS12 Certificate"
-  country               = "US"
-  state                 = "Ohio"
-  locality              = "Cleveland"
-  organization          = "Keyfactor"
-  organizational_unit   = "Engineering"
-  ip_sans               = ["192.168.123.2", "172.51.2.4"]
-  dns_sans              = ["My PKCS12 Certificate"]
-  uri_sans              = ["my.pkcs12.io"]
-  key_password          = "Don't put this in your production code!"
+  common_name         = "My PKCS12 Certificate"
+  country             = "US"
+  state               = "Ohio"
+  locality            = "Cleveland"
+  organization        = "Keyfactor"
+  organizational_unit = "Engineering"
+  ip_sans             = ["192.168.123.2", "172.51.2.4"]
+  dns_sans            = ["My PKCS12 Certificate"]
+  uri_sans            = ["my.pkcs12.io"]
+  key_password        = "Don't put this in your production code!"
   // Please don't use this password in production pass in an environmental or TF_VAR_ variable.
   certificate_authority = "COMMAND\\MY_CA_01"
   certificate_template  = "2yrWebServer"
-  metadata              = {
+  metadata = {
     "Email-Contact" = "kfadmin@keyfactor.com"
   }
 }

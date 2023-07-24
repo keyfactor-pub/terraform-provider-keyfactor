@@ -540,7 +540,7 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 	}
 
 	// log updatestore args as json
-	tflog.Debug(ctx, fmt.Sprintf("UpdateStoreFctArgs: %s", updateStoreArgs))
+	tflog.Debug(ctx, fmt.Sprintf("UpdateStoreFctArgs: %v", *updateStoreArgs))
 	// convert updatestore args to json string
 	updateStoreArgsJson, err := json.Marshal(updateStoreArgs)
 	if err != nil {
@@ -562,7 +562,7 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 	}
 
 	// Log response
-	tflog.Trace(ctx, fmt.Sprintf("UpdateStoreResponse: %s", updateResponse))
+	tflog.Trace(ctx, fmt.Sprintf("UpdateStoreResponse: %v", *updateResponse))
 
 	result := CertificateStore{
 		ID: types.String{Value: updateResponse.Id},

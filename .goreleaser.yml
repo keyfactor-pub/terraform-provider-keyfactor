@@ -55,7 +55,7 @@ release:
   draft: true
   replace_existing_draft: true
   github:
-    owner: keyfactor
+    owner: keyfactor-pub
     name: terraform-provider-keyfactor
 
   extra_files:

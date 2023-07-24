@@ -21,7 +21,7 @@ data "keyfactor_certificate" "cert_w_pass_and_pkey_id" {
 
 data "keyfactor_certificate" "cert_wo_pkey_cn" {
   # This will returns a certificate without a private key
-  identifier = "my-ca-cert"                      # Using certificate common name (CN)
+  identifier = "my-ca-cert" # Using certificate common name (CN)
 }
 
 data "keyfactor_certificate" "cert_wo_pkey_tp" {
@@ -31,6 +31,6 @@ data "keyfactor_certificate" "cert_wo_pkey_tp" {
 
 data "keyfactor_certificate" "cert_wo_pkey_id" {
   # This will returns a certificate without a private key
-  identifier = "1"                               # Using Keyfactor Command certificate ID
+  identifier = "1" # Using Keyfactor Command certificate ID
 }
 

@@ -51,6 +51,13 @@ signs:
       - "--detach-sign"
       - "${artifact}"
 release:
+  prerelease: auto
+  draft: true
+  replace_existing_draft: true
+  github:
+    owner: keyfactor
+    name: terraform-provider-keyfactor
+
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'

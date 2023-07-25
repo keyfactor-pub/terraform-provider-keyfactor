@@ -4,6 +4,25 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
+type KeyfactorAgent struct {
+	AgentId                     types.String `tfsdk:"agent_id"`
+	AgentIdentifier             types.String `tfsdk:"agent_identifier"`
+	ClientMachine               types.String `tfsdk:"client_machine"`
+	Username                    types.String `tfsdk:"username"`
+	AgentPlatform               types.Int64  `tfsdk:"agent_platform"`
+	Status                      types.Int64  `tfsdk:"status"`
+	Version                     types.String `tfsdk:"version"`
+	LastSeen                    types.String `tfsdk:"last_seen"`
+	Capabilities                types.List   `tfsdk:"capabilities"`
+	Blueprint                   types.String `tfsdk:"blueprint"`
+	Thumbprint                  types.String `tfsdk:"thumbprint"`
+	LegacyThumbprint            types.String `tfsdk:"legacy_thumbprint"`
+	AuthCertificateReenrollment types.String `tfsdk:"auth_certificate_reenrollment"`
+	LastThumbprintUsed          types.String `tfsdk:"last_thumbprint_used"`
+	LastErrorCode               types.Int64  `tfsdk:"last_error_code"`
+	LastErrorMessage            types.String `tfsdk:"last_error_message"`
+}
+
 // Security Identity -
 type SecurityIdentity struct {
 	ID           types.Int64  `tfsdk:"id"`

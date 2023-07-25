@@ -2,16 +2,26 @@
 
 ### Breaking Changes
 
+#### Certificates
+* `keyfactor_certificate` resources data structure flattened, subject attributes are now part of main object.
+* `keyfactor_certificate` data and resource types `certificate_chain` now returns a full chain, including the leaf
+  certificate.
+
+#### Certificate Stores
 * `keyfactor_certificate_store` resource definitions can now look up agent via GUID or `ClientMachine` via new
   attribute `agent_identifier`.
 * `keyfactor_certificate_store` data sources can no longer be looked up by GUID. Instead, a combination
   of `ClientMachine` and `StorePath` will be used.
-* `keyfactor_certificate` resources data structure flattened, subject attributes are now part of main object.
 * `keyfactor_certificate_store` resource `properties` now supports special properties `ServerUseSsl`, `ServerUsername`
   and `ServerPassword`.
 * `keyfactor_certificate_store` resource `store_password` can now be set to a non-empty value.
 
-### Cert stores
+### Agents
+
+#### Features
+* feat(agents): Agent data source implemented for Keyfactor Command 10.x.
+
+### Certificate stores
 
 #### Features
 
@@ -34,12 +44,6 @@
   GUID or ClientMachine name.
 * 6b1df0a fix(stores): Data source added `DisplayName`
 
-### Models
-
-#### Fixes
-
-* 140ea4e fix(models): `CertificateId` field added to track the Keyfactor Command certificate integer ID.
-
 ### Deployments
 
 #### Fixes
@@ -50,8 +54,14 @@
 * 140ea4e fix(deployments): Create now checks that both alias and cert ID are deployed as opposed to just checking
   alias.
 
-#### Certificates
+### Certificates
 
+### Features
+* 11c8209 feat(certificate): Certificate lookups can now be done using `cn`, `thumbprint` or `id`. BREAKING CHANGE:
+  certificate model has been flattened, subject attributes are now part of main object.
+* d69ce77 feat(certificates): `ca_certificate` attribute added to both data and resource types. #45
+#### Fixes
+* 140ea4e fix(certificate): `CertificateId` field added to track the Keyfactor Command certificate integer ID.
 * a884694 fix(certificate): `keyfactor_certificate` metadata is correctly added on cert creation
 * a884694 fix(certificate): `keyfactor_certificate` CustomFriendlyName set to CN fix(
   certificate): `keyfactor_certificate` Command returns IssuerDN on POST a string with spaces, on GET returns a string
@@ -59,8 +69,7 @@
 * a884694 fix(certificate): `keyfactor_certificate` Optional string and int params now evaluate to null correctly on
   READ and UPDATE.
 * a884694 fix(certificate): `keyfactor_certificate` IMPORT downloads cert and chain in correct order now.
-* 11c8209 feat(certificate): Certificate lookups can now be done using `cn`, `thumbprint` or `id`. BREAKING CHANGE:
-  certificate model has been flattened, subject attributes are now part of main object.
+
 
 # v1.0.3
 - 

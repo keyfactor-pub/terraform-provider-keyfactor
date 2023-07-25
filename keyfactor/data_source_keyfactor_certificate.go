@@ -170,10 +170,15 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Computed:    true,
 				Description: "PEM formatted certificate",
 			},
+			"ca_certificate": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "PEM formatted CA certificate",
+			},
 			"certificate_chain": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "PEM formatted certificate chain",
+				Description: "PEM formatted full certificate chain",
 			},
 			"private_key": {
 				Type:        types.StringType,
@@ -397,7 +402,8 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		},
 		Thumbprint:  types.String{Value: cResp.Thumbprint},
 		PEM:         types.String{Value: leaf},
-		PEMChain:    types.String{Value: chain},
+		PEMCACert:   types.String{Value: chain},
+		PEMChain:    types.String{Value: fmt.Sprintf("%s%s", leaf, chain)},
 		PrivateKey:  types.String{Value: pKey},
 		KeyPassword: types.String{Value: state.KeyPassword.Value},
 		CertificateAuthority: types.String{

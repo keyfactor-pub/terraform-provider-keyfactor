@@ -62,7 +62,8 @@ type resourceKeyfactorCertificateDeployment struct {
 	p provider
 }
 
-func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, request tfsdk.CreateResourceRequest,
+	response *tfsdk.CreateResourceResponse) {
 	if !r.p.configured {
 		response.Diagnostics.AddError(
 			"Provider not configured",

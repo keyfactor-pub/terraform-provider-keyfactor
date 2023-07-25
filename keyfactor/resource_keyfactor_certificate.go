@@ -180,10 +180,15 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Computed:    true,
 				Description: "PEM formatted certificate",
 			},
+			"ca_certificate": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "PEM formatted CA certificate",
+			},
 			"certificate_chain": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "PEM formatted certificate chain",
+				Description: "PEM formatted full certificate chain",
 			},
 			"private_key": {
 				Type:        types.StringType,
@@ -291,6 +296,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 
 		//Collection
 
+		fullChain := enrollResponse.CertificateInformation.Certificates[0] + enrollResponse.CertificateInformation.Certificates[1]
 		// Set state
 		var result = KeyfactorCertificate{
 			ID:                   types.String{Value: fmt.Sprintf("%v", enrollResponse.CertificateInformation.KeyfactorID)},
@@ -308,7 +314,8 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
 			Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
 			PEM:                  types.String{Value: enrollResponse.CertificateInformation.Certificates[0]},
-			PEMChain:             types.String{Value: enrollResponse.CertificateInformation.Certificates[1]},
+			PEMCACert:            types.String{Value: enrollResponse.CertificateInformation.Certificates[1]},
+			PEMChain:             types.String{Value: fullChain},
 			PrivateKey:           types.String{Value: plan.PrivateKey.Value},
 			KeyPassword:          plan.KeyPassword,
 			CertificateAuthority: plan.CertificateAuthority,
@@ -368,6 +375,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			)
 		}
 
+		fullChain := leaf + chain
 		// Set state
 		var result = KeyfactorCertificate{
 			ID:                   types.String{Value: fmt.Sprintf("%v", enrolledId)},
@@ -385,7 +393,8 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
 			Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
 			PEM:                  types.String{Value: leaf},
-			PEMChain:             types.String{Value: chain},
+			PEMCACert:            types.String{Value: chain},
+			PEMChain:             types.String{Value: fullChain},
 			PrivateKey:           types.String{Value: pKey},
 			KeyPassword:          plan.KeyPassword,
 			CertificateAuthority: plan.CertificateAuthority,
@@ -596,6 +605,7 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 
 	issuerDN := strings.Replace(cResp.IssuerDN, ",", ", ", -1)
 
+	fullChain := leaf + chain
 	var result = KeyfactorCertificate{
 		ID:                 types.String{Value: fmt.Sprintf("%v", cResp.Id)},
 		CSR:                types.String{Value: csr, Null: isNullString(csr)},
@@ -612,7 +622,8 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 		IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
 		Thumbprint:         types.String{Value: cResp.Thumbprint, Null: isNullString(cResp.Thumbprint)},
 		PEM:                types.String{Value: leaf, Null: isNullString(leaf)},
-		PEMChain:           types.String{Value: chain, Null: isNullString(chain)},
+		PEMCACert:          types.String{Value: leaf, Null: isNullString(chain)},
+		PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
 		PrivateKey:         types.String{Value: pKey, Null: isNullString(pKey)},
 		KeyPassword:        types.String{Value: state.KeyPassword.Value, Null: isNullString(state.KeyPassword.Value)},
 		//PEM:                  state.PEM,
@@ -729,7 +740,8 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 			IssuerDN:             plan.IssuerDN,
 			Thumbprint:           plan.Thumbprint,
 			PEM:                  plan.PEM,
-			PEMChain:             plan.PEMChain,
+			PEMCACert:            plan.PEMChain,
+			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
 			PrivateKey:           plan.PrivateKey,
 			KeyPassword:          plan.KeyPassword,
 			CertificateAuthority: plan.CertificateAuthority,
@@ -786,7 +798,8 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 			IssuerDN:             state.IssuerDN,
 			Thumbprint:           state.Thumbprint,
 			PEM:                  state.PEM,
-			PEMChain:             state.PEMChain,
+			PEMCACert:            plan.PEMChain,
+			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
 			PrivateKey:           state.PrivateKey,
 			KeyPassword:          state.KeyPassword,
 			CertificateAuthority: state.CertificateAuthority,

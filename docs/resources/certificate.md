@@ -85,11 +85,11 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 
 - `certificate_authority` (String) Name of certificate authority to deploy certificate with Ex: Example Company CA 1
 - `certificate_template` (String) Short name of certificate template to be deployed
-- `common_name` (String) Subject common name (CN) of the certificate.
 
 ### Optional
 
 - `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
+- `common_name` (String) Subject common name (CN) of the certificate.
 - `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
 - `dns_sans` (List of String) List of DNS names to use as subjects of the certificate
@@ -104,7 +104,8 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 
 ### Read-Only
 
-- `certificate_chain` (String) PEM formatted certificate chain
+- `ca_certificate` (String) PEM formatted CA certificate
+- `certificate_chain` (String) PEM formatted full certificate chain
 - `certificate_id` (Number) Keyfactor Command certificate ID.
 - `certificate_pem` (String) PEM formatted certificate
 - `command_request_id` (Number) Keyfactor request ID.

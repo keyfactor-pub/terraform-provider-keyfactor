@@ -65,8 +65,9 @@ data "keyfactor_certificate" "cert_wo_pkey_id" {
 
 ### Read-Only
 
+- `ca_certificate` (String) PEM formatted CA certificate
 - `certificate_authority` (String) Name of certificate authority (CA) to deploy certificate with Ex: Example Company CA 1
-- `certificate_chain` (String) PEM formatted certificate chain
+- `certificate_chain` (String) PEM formatted full certificate chain
 - `certificate_id` (Number) Keyfactor Command certificate ID.
 - `certificate_pem` (String) PEM formatted certificate
 - `certificate_template` (String) Short name of certificate template to be used. Ex: Server Authentication

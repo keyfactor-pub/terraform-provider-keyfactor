@@ -37,9 +37,10 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Description:   "Password to protect certificate and private key with",
 			},
 			"common_name": {
-				Type:          types.StringType,
-				Computed:      false,
-				Required:      true,
+				Type:     types.StringType,
+				Computed: false,
+				//Required:      true,
+				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 				Description:   "Subject common name (CN) of the certificate.",
 			},
@@ -653,6 +654,15 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 	}
 
 	csr := plan.CSR.Value
+
+	if (plan.CSR.IsNull() && plan.CommonName.IsNull()) || (!plan.CSR.IsNull() && !plan.CommonName.IsNull()) || (csr == "" && plan.CommonName.IsNull()) {
+		response.Diagnostics.AddError(
+			"Invalid certificate resource definition.",
+			"You must provide either a CSR or a CN to create a certificate.",
+		)
+		return
+	}
+
 	if csr != "" {
 		tflog.Debug(ctx, "Creating certificate from CSR.")
 
@@ -733,28 +743,54 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 			return
 		}
 	} else {
+		//check if metadata is updated
+		var planMetadata map[string]string
+		var stateMetadata map[string]string
+		diags = plan.Metadata.ElementsAs(ctx, &planMetadata, false)
+		diags = state.Metadata.ElementsAs(ctx, &stateMetadata, false)
+
+		if !plan.Metadata.Equal(state.Metadata) {
+			tflog.Debug(ctx, "Metadata is updated. Attempting to update metadata on Keyfactor.")
+
+			// Convert map[string]string to map[string]interface{}
+			planMetadataInterface := make(map[string]interface{})
+			for k, v := range planMetadata {
+				planMetadataInterface[k] = v
+			}
+			err := r.p.client.UpdateMetadata(
+				&api.UpdateMetadataArgs{
+					CertID:   int(state.CertificateId.Value),
+					Metadata: planMetadataInterface,
+				})
+			if err != nil {
+				response.Diagnostics.AddError("Certificate metadata update error.", fmt.Sprintf("Could not update cert '%s''s metadata on Keyfactor: "+err.Error(), state.ID.Value))
+				return
+			}
+
+		}
+
 		// Set state
 		var result = KeyfactorCertificate{
 			ID:                   types.String{Value: state.ID.Value},
-			CSR:                  plan.CSR,
-			CommonName:           plan.CommonName,
-			Locality:             plan.Locality,
-			State:                plan.State,
-			Country:              plan.Country,
-			Organization:         plan.Organization,
-			OrganizationalUnit:   plan.OrganizationalUnit,
-			DNSSANs:              plan.DNSSANs,
-			IPSANs:               plan.IPSANs,
-			URISANs:              plan.URISANs,
-			SerialNumber:         plan.SerialNumber,
-			IssuerDN:             plan.IssuerDN,
-			Thumbprint:           plan.Thumbprint,
-			PEM:                  plan.PEM,
-			PEMChain:             plan.PEMChain,
-			PrivateKey:           plan.PrivateKey,
-			KeyPassword:          plan.KeyPassword,
-			CertificateAuthority: plan.CertificateAuthority,
-			CertificateTemplate:  plan.CertificateTemplate,
+			CSR:                  state.CSR,
+			CommonName:           state.CommonName,
+			Locality:             state.Locality,
+			State:                state.State,
+			Country:              state.Country,
+			Organization:         state.Organization,
+			OrganizationalUnit:   state.OrganizationalUnit,
+			DNSSANs:              state.DNSSANs,
+			IPSANs:               state.IPSANs,
+			URISANs:              state.URISANs,
+			SerialNumber:         state.SerialNumber,
+			IssuerDN:             state.IssuerDN,
+			Thumbprint:           state.Thumbprint,
+			PEM:                  state.PEM,
+			PEMChain:             state.PEMChain,
+			PrivateKey:           state.PrivateKey,
+			KeyPassword:          state.KeyPassword,
+			CertificateAuthority: state.CertificateAuthority,
+			CertificateTemplate:  state.CertificateTemplate,
 			Metadata:             plan.Metadata,
 		}
 

@@ -14,10 +14,7 @@ Keyfactor Terraform Provider is open source and there is **no SLA** for this too
 issues as resources become available. Keyfactor customers may request escalation by opening up a support ticket through
 their Keyfactor representative.
 
-###### To report a problem or suggest a new feature, use the **[Issues](../../issues)
-** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)
-** tab.
-
+###### To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
 ___
 
 ## Usage

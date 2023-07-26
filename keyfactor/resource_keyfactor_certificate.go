@@ -5,15 +5,17 @@ import (
 	"crypto/ecdsa"
 	rsa2 "crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"log"
 	"strconv"
+	"strings"
 )
 
 type resourceKeyfactorCertificateType struct{}
@@ -34,48 +36,48 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Sensitive:     true,
 				Description:   "Password to protect certificate and private key with",
 			},
-			"subject": {
+			"common_name": {
+				Type:     types.StringType,
+				Computed: false,
+				//Required:      true,
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "KeyfactorCertificate subject",
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"subject_common_name": {
-						Type:          types.StringType,
-						Optional:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject common name for new certificate",
-					},
-					"subject_locality": {
-						Type:          types.StringType,
-						Optional:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject locality for new certificate",
-					},
-					"subject_organization": {
-						Type:          types.StringType,
-						Optional:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject organization for new certificate",
-					},
-					"subject_state": {
-						Type:          types.StringType,
-						Optional:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject state for new certificate",
-					},
-					"subject_country": {
-						Type:          types.StringType,
-						Optional:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject country for new certificate",
-					},
-					"subject_organizational_unit": {
-						Type:          types.StringType,
-						Optional:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject organizational unit for new certificate",
-					},
-				}),
+				Description:   "Subject common name (CN) of the certificate.",
+			},
+			"locality": {
+				Type:          types.StringType,
+				Computed:      false,
+				Optional:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Subject locality (L) of the certificate",
+			},
+			"organization": {
+				Type:          types.StringType,
+				Computed:      false,
+				Optional:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Subject organization (O) of the certificate",
+			},
+			"state": {
+				Type:          types.StringType,
+				Computed:      false,
+				Optional:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Subject state (ST) of the certificate",
+			},
+			"country": {
+				Type:          types.StringType,
+				Computed:      false,
+				Optional:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Subject country of the certificate",
+			},
+			"organizational_unit": {
+				Type:          types.StringType,
+				Computed:      false,
+				Optional:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Subject organizational unit (OU) of the certificate",
 			},
 			"certificate_authority": {
 				Type:          types.StringType,
@@ -147,31 +149,46 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Computed:    true,
 				Description: "Thumbprint of newly enrolled certificate",
 			},
-			"id": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Keyfactor certificate ID",
+			"identifier": {
+				Type:     types.StringType,
+				Required: false,
+				Computed: true,
+				Description: "Keyfactor certificate identifier. This can be any of the following values: thumbprint, CN, " +
+					"or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must " +
+					"be an exact match and if multiple certificates are returned the certificate that was most recently " +
+					"issued will be returned. ",
 			},
 			"collection_id": {
 				Type:        types.Int64Type,
 				Required:    false,
 				Optional:    true,
+				Computed:    true,
 				Description: "Optional certificate collection identifier used to ensure user access to the certificate.",
 			},
-			"keyfactor_request_id": {
+			"certificate_id": {
 				Type:        types.Int64Type,
 				Computed:    true,
-				Description: "Keyfactor request ID necessary for deploying certificate",
+				Description: "Keyfactor Command certificate ID.",
+			},
+			"command_request_id": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Keyfactor request ID.",
 			},
 			"certificate_pem": {
 				Type:        types.StringType,
 				Computed:    true,
 				Description: "PEM formatted certificate",
 			},
+			"ca_certificate": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "PEM formatted CA certificate",
+			},
 			"certificate_chain": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "PEM formatted certificate chain",
+				Description: "PEM formatted full certificate chain",
 			},
 			"private_key": {
 				Type:        types.StringType,
@@ -221,10 +238,11 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 	//sans := plan.SANs
 	//metadata := plan.Metadata.Elems
 	csr := plan.CSR.Value
-	if (plan.CSR.IsNull() && plan.Subject.IsNull()) || (!plan.CSR.IsNull() && !plan.Subject.IsNull()) || (csr == "" && plan.Subject.IsNull()) {
+	// If CSR and CommonName are both set, or neither are set, error
+	if (plan.CSR.IsNull() && plan.CommonName.IsNull()) || (!plan.CSR.IsNull() && !plan.CommonName.IsNull()) || (csr == "" && plan.CommonName.IsNull()) {
 		response.Diagnostics.AddError(
 			"Invalid certificate resource definition.",
-			"You must provide either a CSR or a Subject to create a certificate.",
+			"You must provide either a CSR or a CN to create a certificate.",
 		)
 		return
 	}
@@ -236,12 +254,17 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 	diags = plan.DNSSANs.ElementsAs(ctx, &dnsSANs, true)
 	diags = plan.IPSANs.ElementsAs(ctx, &ipSANs, true)
 	diags = plan.URISANs.ElementsAs(ctx, &uriSANs, true)
-	diags = plan.Metadata.ElementsAs(ctx, &metadata, true)
+	// iterate over metadata map and convert to map[string]interface{}
+	metaDataElms := plan.Metadata.Elems
+	metadata = make(map[string]interface{})
+	for k, elm := range metaDataElms {
+		metadata[k] = strings.Replace(elm.String(), "\"", "", -1)
+	}
 
 	sans := append(dnsSANs, ipSANs...)
 	sans = append(sans, uriSANs...)
 
-	if !plan.CSR.IsNull() && csr != "" {
+	if !plan.CSR.IsNull() && csr != "" { //Enroll CSR
 		tflog.Debug(ctx, "Creating certificate from CSR.")
 
 		tflog.Debug(ctx, fmt.Sprintf("Creating certificate with SANs: %s", sans))
@@ -271,11 +294,19 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			return
 		}
 
+		//Collection
+
+		fullChain := enrollResponse.CertificateInformation.Certificates[0] + enrollResponse.CertificateInformation.Certificates[1]
 		// Set state
 		var result = KeyfactorCertificate{
-			ID:                   types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
+			ID:                   types.String{Value: fmt.Sprintf("%v", enrollResponse.CertificateInformation.KeyfactorID)},
 			CSR:                  types.String{Value: csr},
-			Subject:              plan.Subject,
+			CommonName:           plan.CommonName,
+			Organization:         plan.Organization,
+			OrganizationalUnit:   plan.OrganizationalUnit,
+			Locality:             plan.Locality,
+			State:                plan.State,
+			Country:              plan.Country,
 			DNSSANs:              plan.DNSSANs,
 			IPSANs:               plan.IPSANs,
 			URISANs:              plan.URISANs,
@@ -283,14 +314,15 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
 			Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
 			PEM:                  types.String{Value: enrollResponse.CertificateInformation.Certificates[0]},
-			PEMChain:             types.String{Value: enrollResponse.CertificateInformation.Certificates[1]},
+			PEMCACert:            types.String{Value: enrollResponse.CertificateInformation.Certificates[1]},
+			PEMChain:             types.String{Value: fullChain},
 			PrivateKey:           types.String{Value: plan.PrivateKey.Value},
 			KeyPassword:          plan.KeyPassword,
 			CertificateAuthority: plan.CertificateAuthority,
+			CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
 			CertificateTemplate:  plan.CertificateTemplate,
-			RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
 			Metadata:             plan.Metadata,
-			CollectionId:         plan.CollectionId,
+			CollectionId:         types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)}, //TODO: Make this collection ID
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -298,14 +330,9 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		if response.Diagnostics.HasError() {
 			return
 		}
-	} else {
-		subject := make(map[string]interface{})
-		subjectObj := plan.Subject.Attrs
-		for k, v := range subjectObj {
-			subject[k] = v.String()
-		}
+	} else { //Enroll PFX
 		PFXArgs := &api.EnrollPFXFctArgs{
-			CustomFriendlyName:          "Terraform",
+			CustomFriendlyName:          plan.CommonName.Value,
 			Password:                    plan.KeyPassword.Value,
 			PopulateMissingValuesFromAD: false, //TODO: Add support for this
 			CertificateAuthority:        plan.CertificateAuthority.Value,
@@ -320,12 +347,12 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			},
 			Metadata: metadata,
 			Subject: &api.CertificateSubject{
-				SubjectCommonName:         subject["subject_common_name"].(string),
-				SubjectLocality:           subject["subject_locality"].(string),
-				SubjectOrganization:       subject["subject_organization"].(string),
-				SubjectCountry:            subject["subject_country"].(string),
-				SubjectOrganizationalUnit: subject["subject_organizational_unit"].(string),
-				SubjectState:              subject["subject_state"].(string),
+				SubjectCommonName:         plan.CommonName.Value,
+				SubjectLocality:           plan.Locality.Value,
+				SubjectOrganization:       plan.Organization.Value,
+				SubjectCountry:            plan.Country.Value,
+				SubjectOrganizationalUnit: plan.OrganizationalUnit.Value,
+				SubjectState:              plan.State.Value,
 			},
 		}
 		tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))
@@ -348,11 +375,17 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			)
 		}
 
+		fullChain := leaf + chain
 		// Set state
 		var result = KeyfactorCertificate{
-			ID:                   types.Int64{Value: int64(enrolledId)},
+			ID:                   types.String{Value: fmt.Sprintf("%v", enrolledId)},
 			CSR:                  plan.CSR,
-			Subject:              plan.Subject,
+			CommonName:           plan.CommonName,
+			Organization:         plan.Organization,
+			OrganizationalUnit:   plan.OrganizationalUnit,
+			Locality:             plan.Locality,
+			State:                plan.State,
+			Country:              plan.Country,
 			DNSSANs:              plan.DNSSANs,
 			IPSANs:               plan.IPSANs,
 			URISANs:              plan.URISANs,
@@ -360,14 +393,16 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
 			Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
 			PEM:                  types.String{Value: leaf},
-			PEMChain:             types.String{Value: chain},
+			PEMCACert:            types.String{Value: chain},
+			PEMChain:             types.String{Value: fullChain},
 			PrivateKey:           types.String{Value: pKey},
 			KeyPassword:          plan.KeyPassword,
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
+			CertificateId:        types.Int64{Value: int64(enrolledId)},
 			RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
 			Metadata:             plan.Metadata,
-			CollectionId:         plan.CollectionId,
+			CollectionId:         types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)}, //TODO: Make this collection ID
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -387,24 +422,58 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 		return
 	}
 
-	tflog.Info(ctx, "Read called on certificate resource")
-	certificateId := state.ID.Value
-	certificateIdInt := int(certificateId)
+	//tflog.Info(ctx, "Read called on certificate resource")
+	//certificateId := state.ID.Value
+	//certificateIdInt := int(certificateId)
+	//
+	//tflog.SetField(ctx, "certificate_id", certificateId)
+	// determine if certificateID is an int or string
+	// if int, then it is a Keyfactor Command Certificate ID
+	// if string, then it is a certificate thumbprint or CN
+	certificateIdInt, cIdErr := strconv.Atoi(state.ID.Value)
+	if cIdErr != nil {
+		certificateIdInt = -1
+	}
+	var (
+		certificateCN         string
+		certificateThumbprint string
+	)
+	// Check if certificateID is a thumbprint or CN
+	if certificateIdInt == -1 {
+		if len(state.ID.Value) == 40 {
+			tflog.Info(ctx, fmt.Sprintf("Certificate ID '%v' is a thumbprint.", state.ID.Value))
+			certificateThumbprint = state.ID.Value
+		} else {
+			tflog.Info(ctx, fmt.Sprintf("Certificate ID '%v' is a CN.", state.ID.Value))
+			certificateCN = state.ID.Value
+		}
+	}
 
-	tflog.SetField(ctx, "certificate_id", certificateId)
+	collectionID := state.CollectionId.Value
+	collectionIdInt := int(collectionID)
 
-	// Get certificate context
+	tflog.SetField(ctx, "collection_id", collectionID)
+	tflog.SetField(ctx, "certificate_id", certificateIdInt)
+	tflog.SetField(ctx, "certificate_cn", certificateCN)
+	tflog.SetField(ctx, "certificate_thumbprint", certificateThumbprint)
+
+	tflog.Info(ctx, fmt.Sprintf("Attempting to lookup certificate '%v' in Keyfactor.", state.ID.Value))
+	tflog.Debug(ctx, "Calling Keyfactor GO Client GetCertificateContext")
 	args := &api.GetCertificateContextArgs{
 		IncludeMetadata:  boolToPointer(true),
 		IncludeLocations: boolToPointer(true),
-		CollectionId:     nil,
+		CollectionId:     intToPointer(collectionIdInt),
 		Id:               certificateIdInt,
+		CommonName:       certificateCN,
+		Thumbprint:       certificateThumbprint,
 	}
-	_, err := r.p.client.GetCertificateContext(args)
+
+	cResp, err := r.p.client.GetCertificateContext(args)
 	if err != nil {
+		tflog.Error(ctx, "Error calling Keyfactor Go Client GetCertificateContext")
 		response.Diagnostics.AddError(
 			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateId),
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), state.ID.Value),
 		)
 		return
 	}
@@ -418,36 +487,160 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 	if dErr != nil {
 		response.Diagnostics.AddError(
 			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), certificateId),
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), state.ID.Value),
 		)
 	}
 
-	//var result = KeyfactorCertificate{
-	//	ID:           types.Int64{Value: state.ID.Value},
-	//	CSR:          types.String{Value: csr},
-	//	Subject:      state.Subject,
-	//	DNSSANs:      state.DNSSANs,
-	//	IPSANs:       state.IPSANs,
-	//	URISANs:      state.URISANs,
-	//	SerialNumber: state.SerialNumber,
-	//	IssuerDN:     state.IssuerDN,
-	//	Thumbprint:   state.Thumbprint,
-	//	PEM:          types.String{Value: leaf},
-	//	PEMChain:     types.String{Value: chain},
-	//	PrivateKey:   types.String{Value: pKey},
-	//	KeyPassword:  types.String{Value: password},
-	//	//PEM:                  state.PEM,
-	//	//PEMChain:             state.PEMChain,
-	//	//PrivateKey:           state.PrivateKey,
-	//	//KeyPassword:          state.KeyPassword,
-	//	CertificateAuthority: state.CertificateAuthority,
-	//	CertificateTemplate:  state.CertificateTemplate,
-	//	RequestId:            state.RequestId,
-	//	Metadata:             state.Metadata,
-	//}
+	cn, ou, o, l, st, c := expandSubject(cResp.IssuedDN)
+	dnsSans, ipSans, uriSans := flattenSANs(cResp.SubjectAltNameElements)
+
+	var (
+		leaf  string
+		chain = ""
+		pKey  = ""
+	)
+
+	if cResp.HasPrivateKey && state.KeyPassword.Value != "" {
+		tflog.Info(ctx, "Requested certificate has a private key attempting to recover from Keyfactor Command.")
+		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", state.KeyPassword.Value)
+		if dErrO != nil {
+			tflog.Error(ctx, fmt.Sprintf("Unable to recover private key for certificate '%v' from Keyfactor Command.", cResp.Id))
+			response.Diagnostics.AddError(
+				"Error recovering private key from Keyfactor Command.",
+				fmt.Sprintf("Could not retrieve private key for certificate '%s' from Keyfactor Command: "+dErrO.Error(), cResp.Id),
+			)
+			return
+		}
+		// Convert string to []byte and then to pem.
+		//leaf = string(pem.EncodeToMemory(&pem.Block{
+		//	Type:  "CERTIFICATE",
+		//	Bytes: leafO.Raw,
+		//}))
+		lBytes, lbErr := base64.StdEncoding.DecodeString(cResp.ContentBytes)
+		if lbErr != nil {
+			response.Diagnostics.AddError(
+				"Error reading Keyfactor certificate.",
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), state.ID.Value),
+			)
+			return
+		}
+		leaf = string(pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: lBytes,
+		}))
+		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
+		tflog.Debug(ctx, leaf)
+		tflog.Debug(ctx, "Recovered certificate chain from Keyfactor Command:")
+		for _, cert := range chainO {
+			chainLink := string(pem.EncodeToMemory(&pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: cert.Raw,
+			}))
+			chain = chain + chainLink
+			tflog.Debug(ctx, chainLink)
+		}
+
+		tflog.Debug(ctx, "Recovered private key from Keyfactor Command:")
+		tflog.Debug(ctx, "Attempting RSA private key recovery")
+		rsa, ok := pKeyO.(*rsa2.PrivateKey)
+		if ok {
+			tflog.Debug(ctx, "Recovered RSA private key from Keyfactor Command:")
+			buf := x509.MarshalPKCS1PrivateKey(rsa)
+			if len(buf) > 0 {
+				pKey = string(pem.EncodeToMemory(&pem.Block{
+					Bytes: buf,
+					Type:  "RSA PRIVATE KEY",
+				}))
+				tflog.Trace(ctx, pKey)
+			} else {
+				tflog.Debug(ctx, "Empty Key Recovered from Keyfactor Command.")
+			}
+		} else {
+			tflog.Debug(ctx, "Attempting ECC private key recovery")
+			ecc, ok := pKeyO.(*ecdsa.PrivateKey)
+			if ok {
+				// We don't really care about the error here. An error just means that the key will be blank which isn't a
+				// reason to fail
+				tflog.Debug(ctx, "Recovered ECC private key from Keyfactor Command:")
+				buf, _ := x509.MarshalECPrivateKey(ecc)
+				if len(buf) > 0 {
+					pKey = string(pem.EncodeToMemory(&pem.Block{
+						Bytes: buf,
+						Type:  "EC PRIVATE KEY",
+					}))
+					tflog.Trace(ctx, pKey)
+				}
+			}
+		}
+	} else {
+		// Convert string to []byte and then to pem.
+		tflog.Debug(ctx, "Requested certificate does not have a private key in Keyfactor Command.")
+		lBytes, lbErr := base64.StdEncoding.DecodeString(cResp.ContentBytes)
+		if lbErr != nil {
+			tflog.Error(ctx, "Error decoding certificate content bytes.")
+			tflog.Error(ctx, lbErr.Error())
+			response.Diagnostics.AddError(
+				"Error reading Keyfactor certificate.",
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), state.ID.Value),
+			)
+			return
+		}
+
+		tflog.Debug(ctx, "Decoding leaf cert.")
+		leaf = string(pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: lBytes,
+		}))
+		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
+		tflog.Debug(ctx, leaf)
+	}
+
+	metadata := flattenMetadata(cResp.Metadata)
+
+	/*
+		fix issuer_dn to match create response:
+		For some reason Command returns w/ spaces on create and w/o spaces on get.
+		It's safer to add spaces between commas rather than trim all spaces as CNs can have spaces.
+	*/
+
+	issuerDN := strings.Replace(cResp.IssuerDN, ",", ", ", -1)
+
+	fullChain := leaf + chain
+	var result = KeyfactorCertificate{
+		ID:                 types.String{Value: fmt.Sprintf("%v", cResp.Id)},
+		CSR:                types.String{Value: csr, Null: isNullString(csr)},
+		CommonName:         cn,
+		Locality:           types.String{Value: l.Value, Null: isNullString(l.Value)},
+		State:              types.String{Value: st.Value, Null: isNullString(st.Value)},
+		Country:            types.String{Value: c.Value, Null: isNullString(c.Value)},
+		Organization:       types.String{Value: o.Value, Null: isNullString(o.Value)},
+		OrganizationalUnit: types.String{Value: ou.Value, Null: isNullString(ou.Value)},
+		DNSSANs:            dnsSans,
+		IPSANs:             ipSans,
+		URISANs:            uriSans,
+		SerialNumber:       types.String{Value: cResp.SerialNumber, Null: isNullString(cResp.SerialNumber)},
+		IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
+		Thumbprint:         types.String{Value: cResp.Thumbprint, Null: isNullString(cResp.Thumbprint)},
+		PEM:                types.String{Value: leaf, Null: isNullString(leaf)},
+		PEMCACert:          types.String{Value: leaf, Null: isNullString(chain)},
+		PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
+		PrivateKey:         types.String{Value: pKey, Null: isNullString(pKey)},
+		KeyPassword:        types.String{Value: state.KeyPassword.Value, Null: isNullString(state.KeyPassword.Value)},
+		//PEM:                  state.PEM,
+		//PEMChain:             state.PEMChain,
+		//PrivateKey:           state.PrivateKey,
+		//KeyPassword:          state.KeyPassword,
+		CertificateAuthority: types.String{
+			Value: cResp.CertificateAuthorityName,
+			Null:  isNullString(cResp.CertificateAuthorityName),
+		},
+		CertificateTemplate: types.String{Value: cResp.TemplateName, Null: isNullString(cResp.TemplateName)},
+		Metadata:            metadata,
+		CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
+	}
 
 	// Set state
-	diags = response.State.Set(ctx, &state)
+	diags = response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -472,6 +665,15 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 	}
 
 	csr := plan.CSR.Value
+
+	if (plan.CSR.IsNull() && plan.CommonName.IsNull()) || (!plan.CSR.IsNull() && !plan.CommonName.IsNull()) || (csr == "" && plan.CommonName.IsNull()) {
+		response.Diagnostics.AddError(
+			"Invalid certificate resource definition.",
+			"You must provide either a CSR or a CN to create a certificate.",
+		)
+		return
+	}
+
 	if csr != "" {
 		tflog.Debug(ctx, "Creating certificate from CSR.")
 
@@ -493,6 +695,11 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 			return
 		}
 
+		certificateIdInt, cIdErr := strconv.Atoi(plan.ID.Value)
+		if cIdErr != nil {
+			certificateIdInt = -1
+		}
+
 		sans := append(dnsSANs, ipSANs...)
 		sans = append(sans, uriSANs...)
 
@@ -506,7 +713,7 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 
 			err := r.p.client.UpdateMetadata(
 				&api.UpdateMetadataArgs{
-					CertID:   int(state.ID.Value),
+					CertID:   certificateIdInt,
 					Metadata: metaInterface,
 				})
 			if err != nil {
@@ -518,22 +725,27 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 
 		// Set state
 		var result = KeyfactorCertificate{
-			ID:                   types.Int64{Value: state.ID.Value},
-			CSR:                  types.String{Value: csr},
-			Subject:              state.Subject,
-			DNSSANs:              state.DNSSANs,
-			IPSANs:               state.IPSANs,
-			URISANs:              state.URISANs,
-			SerialNumber:         state.SerialNumber,
-			IssuerDN:             state.IssuerDN,
-			Thumbprint:           state.Thumbprint,
-			PEM:                  state.PEM,
-			PEMChain:             state.PEMChain,
-			PrivateKey:           state.PrivateKey,
-			KeyPassword:          state.KeyPassword,
-			CertificateAuthority: state.CertificateAuthority,
-			CertificateTemplate:  state.CertificateTemplate,
-			RequestId:            state.RequestId,
+			ID:                   types.String{Value: state.ID.Value},
+			CSR:                  plan.CSR,
+			CommonName:           plan.CommonName,
+			Locality:             plan.Locality,
+			State:                plan.State,
+			Country:              plan.Country,
+			Organization:         plan.Organization,
+			OrganizationalUnit:   plan.OrganizationalUnit,
+			DNSSANs:              plan.DNSSANs,
+			IPSANs:               plan.IPSANs,
+			URISANs:              plan.URISANs,
+			SerialNumber:         plan.SerialNumber,
+			IssuerDN:             plan.IssuerDN,
+			Thumbprint:           plan.Thumbprint,
+			PEM:                  plan.PEM,
+			PEMCACert:            plan.PEMChain,
+			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
+			PrivateKey:           plan.PrivateKey,
+			KeyPassword:          plan.KeyPassword,
+			CertificateAuthority: plan.CertificateAuthority,
+			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             plan.Metadata,
 		}
 
@@ -543,11 +755,42 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 			return
 		}
 	} else {
+		//check if metadata is updated
+		var planMetadata map[string]string
+		var stateMetadata map[string]string
+		diags = plan.Metadata.ElementsAs(ctx, &planMetadata, false)
+		diags = state.Metadata.ElementsAs(ctx, &stateMetadata, false)
+
+		if !plan.Metadata.Equal(state.Metadata) {
+			tflog.Debug(ctx, "Metadata is updated. Attempting to update metadata on Keyfactor.")
+
+			// Convert map[string]string to map[string]interface{}
+			planMetadataInterface := make(map[string]interface{})
+			for k, v := range planMetadata {
+				planMetadataInterface[k] = v
+			}
+			err := r.p.client.UpdateMetadata(
+				&api.UpdateMetadataArgs{
+					CertID:   int(state.CertificateId.Value),
+					Metadata: planMetadataInterface,
+				})
+			if err != nil {
+				response.Diagnostics.AddError("Certificate metadata update error.", fmt.Sprintf("Could not update cert '%s''s metadata on Keyfactor: "+err.Error(), state.ID.Value))
+				return
+			}
+
+		}
+
 		// Set state
 		var result = KeyfactorCertificate{
-			ID:                   types.Int64{Value: state.ID.Value},
+			ID:                   types.String{Value: state.ID.Value},
 			CSR:                  state.CSR,
-			Subject:              state.Subject,
+			CommonName:           state.CommonName,
+			Locality:             state.Locality,
+			State:                state.State,
+			Country:              state.Country,
+			Organization:         state.Organization,
+			OrganizationalUnit:   state.OrganizationalUnit,
 			DNSSANs:              state.DNSSANs,
 			IPSANs:               state.IPSANs,
 			URISANs:              state.URISANs,
@@ -555,12 +798,12 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 			IssuerDN:             state.IssuerDN,
 			Thumbprint:           state.Thumbprint,
 			PEM:                  state.PEM,
-			PEMChain:             state.PEMChain,
+			PEMCACert:            plan.PEMChain,
+			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
 			PrivateKey:           state.PrivateKey,
 			KeyPassword:          state.KeyPassword,
 			CertificateAuthority: state.CertificateAuthority,
 			CertificateTemplate:  state.CertificateTemplate,
-			RequestId:            state.RequestId,
 			Metadata:             plan.Metadata,
 		}
 
@@ -586,6 +829,11 @@ func (r resourceKeyfactorCertificate) Delete(ctx context.Context, request tfsdk.
 	certificateId := state.ID.Value
 	tflog.SetField(ctx, "certificate_id", certificateId)
 
+	certificateIdInt, cIdErr := strconv.Atoi(state.ID.Value)
+	if cIdErr != nil {
+		certificateIdInt = -1
+	}
+
 	// Delete order by calling API
 	log.Println("[INFO] Deleting certificate resource")
 
@@ -594,8 +842,8 @@ func (r resourceKeyfactorCertificate) Delete(ctx context.Context, request tfsdk.
 	tflog.Info(ctx, fmt.Sprintf("Revoking certificate %v in Keyfactor", certificateId))
 
 	revokeArgs := &api.RevokeCertArgs{
-		CertificateIds: []int{int(certificateId)}, // Certificate ID expects array of integers
-		Reason:         5,                         // reason = 5 means Cessation of Operation
+		CertificateIds: []int{certificateIdInt}, // Certificate ID expects array of integers
+		Reason:         5,                       // reason = 5 means Cessation of Operation
 		Comment:        "Terraform destroy called on provider with associated cert ID",
 	}
 
@@ -646,7 +894,7 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	csr := ""
 
 	// Download and assign certificates to proper location
-	priv, leaf, chain, dErr := downloadCertificate(certificateData.Id, r.p.client, password, csr != "")
+	leaf, chain, priv, dErr := downloadCertificate(certificateData.Id, r.p.client, password, csr != "")
 	if dErr != nil {
 		response.Diagnostics.AddError(
 			"Error reading Keyfactor certificate.",
@@ -656,9 +904,14 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	}
 
 	var result = KeyfactorCertificate{
-		ID:                   types.Int64{Value: state.ID.Value},
+		ID:                   types.String{Value: state.ID.Value},
 		CSR:                  types.String{Value: csr},
-		Subject:              state.Subject,
+		CommonName:           state.CommonName,
+		Locality:             state.Locality,
+		State:                state.State,
+		Country:              state.Country,
+		Organization:         state.Organization,
+		OrganizationalUnit:   state.OrganizationalUnit,
 		DNSSANs:              state.DNSSANs,
 		IPSANs:               state.IPSANs,
 		URISANs:              state.URISANs,
@@ -671,7 +924,6 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 		KeyPassword:          types.String{Value: password},
 		CertificateAuthority: state.CertificateAuthority,
 		CertificateTemplate:  state.CertificateTemplate,
-		RequestId:            state.RequestId,
 		Metadata:             state.Metadata,
 	}
 
@@ -681,77 +933,4 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	if response.Diagnostics.HasError() {
 		return
 	}
-}
-
-func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrollment bool) (string, string, string, error) {
-	certificateContext, err := kfClient.GetCertificateContext(&api.GetCertificateContextArgs{Id: id})
-	if err != nil {
-		return "", "", "", err
-	}
-
-	template, err := kfClient.GetTemplate(certificateContext.TemplateId)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	recoverable := false
-
-	if template.KeyRetention != "None" {
-		recoverable = true
-	}
-
-	var privPem []byte
-	var leafPem []byte
-	var chainPem []byte
-
-	if !recoverable || csrEnrollment {
-
-		leaf, chain, err := kfClient.DownloadCertificate(id, "", "", "")
-		if err != nil {
-			return "", "", "", err
-		}
-
-		// Encode DER to PEM
-		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
-		for _, i := range chain {
-			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
-		}
-
-	} else {
-
-		priv, leaf, chain, err := kfClient.RecoverCertificate(id, "", "", "", password)
-		if err != nil {
-			return "", "", "", err
-		}
-		if err != nil {
-			return "", "", "", err
-		}
-
-		// Encode DER to PEM
-		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
-		for _, i := range chain {
-			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
-		}
-
-		// Figure out the format of the private key, then encode it to PEM
-		rsa, ok := priv.(*rsa2.PrivateKey)
-		if ok {
-			buf := x509.MarshalPKCS1PrivateKey(rsa)
-			if len(buf) > 0 {
-				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "RSA PRIVATE KEY"})
-			}
-		}
-
-		ecc, ok := priv.(*ecdsa.PrivateKey)
-		if ok {
-			// We don't really care about the error here. An error just means that the key will be blank which isn't a
-			// reason to fail
-			buf, _ := x509.MarshalECPrivateKey(ecc)
-			if len(buf) > 0 {
-				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "EC PRIVATE KEY"})
-			}
-		}
-	}
-
-	return string(leafPem), string(chainPem), string(privPem), nil
 }

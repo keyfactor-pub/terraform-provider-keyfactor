@@ -21,24 +21,23 @@ provider "keyfactor" {
 }
 
 ## PFX Enrollment
-resource "keyfactor_certificate" "PFXCertificate" {
-  subject = {
-    # Certificate subject metadata
-    subject_common_name         = "mypfx.kfdelivery.com"
-    subject_organization        = "Keyfactor"
-    subject_locality            = "Cleveland"
-    subject_country             = "US"
-    subject_organizational_unit = "Software Development"
-    subject_state               = "OH"
+resource "keyfactor_certificate" "pkcs12_enrollment" {
+  common_name         = "My PKCS12 Certificate"
+  country             = "US"
+  state               = "Ohio"
+  locality            = "Cleveland"
+  organization        = "Keyfactor"
+  organizational_unit = "Engineering"
+  ip_sans             = ["192.168.123.2", "172.51.2.4"]
+  dns_sans            = ["My PKCS12 Certificate"]
+  uri_sans            = ["my.pkcs12.io"]
+  key_password        = "Don't put this in your production code!"
+  // Please don't use this password in production pass in an environmental or TF_VAR_ variable.
+  certificate_authority = "COMMAND\\MY_CA_01"
+  certificate_template  = "2yrWebServer"
+  metadata = {
+    "Email-Contact" = "kfadmin@keyfactor.com"
   }
-
-  # Optional SANs
-  ip_sans      = ["192.168.123.2", "172.51.2.4"] # Optional IP SANs
-  dns_sans     = ["meow.example.com", "meow2"]   # Optional DNS SANs
-  key_password = "my certificate password!"
-  # The password for the certificate. Note: This is bad practice, use TF_VAR_<variable_name> instead.
-  certificate_authority = "COMMAND\\MY_CA_01" # Keyfactor CA to use to handle the certificate request.
-  certificate_template  = "2yrWebServer"      # The template shortname to use for the certificate.
 }
 
 ## CSR Enrollment
@@ -90,36 +89,31 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 ### Optional
 
 - `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
+- `common_name` (String) Subject common name (CN) of the certificate.
+- `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
 - `dns_sans` (List of String) List of DNS names to use as subjects of the certificate
 - `ip_sans` (List of String) List of DNS names to use as subjects of the certificate
 - `key_password` (String, Sensitive) Password to protect certificate and private key with
+- `locality` (String) Subject locality (L) of the certificate
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
-- `subject` (Attributes) KeyfactorCertificate subject (see [below for nested schema](#nestedatt--subject))
+- `organization` (String) Subject organization (O) of the certificate
+- `organizational_unit` (String) Subject organizational unit (OU) of the certificate
+- `state` (String) Subject state (ST) of the certificate
 - `uri_sans` (List of String) List of URIs to use as subjects of the certificate
 
 ### Read-Only
 
-- `certificate_chain` (String) PEM formatted certificate chain
+- `ca_certificate` (String) PEM formatted CA certificate
+- `certificate_chain` (String) PEM formatted full certificate chain
+- `certificate_id` (Number) Keyfactor Command certificate ID.
 - `certificate_pem` (String) PEM formatted certificate
-- `id` (Number) Keyfactor certificate ID
+- `command_request_id` (Number) Keyfactor request ID.
+- `identifier` (String) Keyfactor certificate identifier. This can be any of the following values: thumbprint, CN, or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must be an exact match and if multiple certificates are returned the certificate that was most recently issued will be returned.
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
-- `keyfactor_request_id` (Number) Keyfactor request ID necessary for deploying certificate
 - `private_key` (String, Sensitive) PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
 - `serial_number` (String) Serial number of newly enrolled certificate
 - `thumbprint` (String) Thumbprint of newly enrolled certificate
-
-<a id="nestedatt--subject"></a>
-### Nested Schema for `subject`
-
-Optional:
-
-- `subject_common_name` (String) Subject common name for new certificate
-- `subject_country` (String) Subject country for new certificate
-- `subject_locality` (String) Subject locality for new certificate
-- `subject_organization` (String) Subject organization for new certificate
-- `subject_organizational_unit` (String) Subject organizational unit for new certificate
-- `subject_state` (String) Subject state for new certificate
 
 ## Import
 

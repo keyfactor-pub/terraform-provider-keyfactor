@@ -3,7 +3,6 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -20,14 +19,21 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Computed:    true,
 				Description: "Container identifier of the store's associated certificate store container.",
 			},
-			"client_machine": {
+			"display_name": {
 				Type:        types.StringType,
 				Computed:    true,
+				Description: "Display name of the certificate store.",
+			},
+			"client_machine": {
+				Type: types.StringType,
+				//Computed:    true,
+				Required:    true,
 				Description: "Client machine name; value depends on certificate store type. See API reference guide",
 			},
 			"store_path": {
-				Type:        types.StringType,
-				Computed:    true,
+				Type: types.StringType,
+				//Computed:    true,
+				Required:    true,
 				Description: "Path to the new certificate store on a target. Format varies depending on type.",
 			},
 			"store_type": {
@@ -53,12 +59,17 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 			"properties": {
 				Type:        types.MapType{ElemType: types.StringType},
 				Optional:    true,
-				Description: "Certificate properties specific to certificate store type configured as key-value pairs.",
+				Description: "Properties specific to certificate store type configured as key-value pairs.",
 			},
 			"agent_id": {
 				Type:        types.StringType,
 				Computed:    true,
 				Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store.",
+			},
+			"agent_identifier": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Can be either ClientMachine or the Keyfactor Command GUID of the orchestrator to use for managing the certificate store. The agent must support the certificate store type and be approved.",
 			},
 			"agent_assigned": {
 				Type:     types.BoolType,
@@ -85,16 +96,34 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Optional:    true,
 				Description: "Indicates whether the store password can be changed.",
 			},
-			"password": {
-				Type:        types.StringType,
-				Optional:    true,
-				Sensitive:   true,
-				Description: "Sets password for certificate store.",
-			},
 			"id": {
-				Type:        types.StringType,
-				Required:    true,
+				Type: types.StringType,
+				//Required:    true,
+				Computed:    true,
 				Description: "Keyfactor certificate store GUID.",
+			},
+			"store_password": {
+				Type:        types.StringType,
+				Computed:    true,
+				Sensitive:   true,
+				Description: "The password to access the contents of the certificate store. In Keyfactor Command this is the 'StorePassword' field. field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+			},
+			"server_username": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "The username to access the host of the certificate store. In Keyfactor Command this is the 'ServerUsername' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
+			},
+			"server_password": {
+				Type:        types.StringType,
+				Computed:    true,
+				Sensitive:   true,
+				Description: "The password to access the host of the certificate store. In Keyfactor Command this is the 'ServerUsername' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
+			},
+			"server_use_ssl": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Indicates whether the certificate store host requires SSL. In Keyfactor Command this is the 'ServerUseSsl' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
 			},
 		},
 	}, nil
@@ -121,11 +150,17 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 	}
 
 	tflog.Info(ctx, "Read called on certificate store resource")
-	certificateStoreId := state.ID.Value
+	//certificateStoreID := state.ID.Value
+	clientMachine := state.ClientMachine.Value
+	storePath := state.StorePath.Value
+	containerID := state.ContainerID.Value
 
-	tflog.SetField(ctx, "certificate_id", certificateStoreId)
+	//tflog.SetField(ctx, "certificate_id", certificateStoreID)
+	tflog.SetField(ctx, "client_machine", clientMachine)
+	tflog.SetField(ctx, "store_path", storePath)
 
-	sResp, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
+	//sResp, err := r.p.client.GetCertificateStoreByID(certificateStoreID)
+	sRespList, err := r.p.client.GetCertificateStoreByClientAndStorePath(clientMachine, storePath, containerID)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error reading certificate store",
@@ -134,36 +169,59 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 		return
 	}
 
-	password := state.Password.Value
-	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", certificateStoreId, password))
+	if len(*sRespList) == 0 {
+		response.Diagnostics.AddError(
+			"Error reading certificate store",
+			"Error reading certificate store: %s"+err.Error(),
+		)
+		return
+	}
+	sRespRef := *sRespList
+	//Because we're looking up by client machine and store path, there should only be one result as that's what Command uses for uniqueness as of KF 9.x
+	sResp := sRespRef[0]
+
+	password := state.StorePassword.Value
+	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", sResp.Id, password))
 
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateStoreId),
+			"Certificate store not found",
+			fmt.Sprintf("Unable to locate certificate store using client machine '%s' and storepath '%s' %s", clientMachine, storePath, err.Error()),
 		)
 		return
 	}
 
-	propElems := make(map[string]attr.Value)
-	for k, v := range sResp.Properties {
-		propElems[k] = types.String{Value: v}
+	// parse inventory schedule
+	invSchedule := parseInventorySchedule(&sResp.InventorySchedule)
+	// parse store password
+	storePassword := parseStorePassword(&sResp.Password)
+	// parse properties
+	properties, serverUsername, serverPassword, serverUseSsl, propDiags := parseProperties(sResp.PropertiesString)
+	if propDiags.HasError() {
+		response.Diagnostics.Append(propDiags...)
+		return
 	}
+
 	var result = CertificateStore{
-		ID:                    state.ID,
+		ID:                    types.String{Value: sResp.Id},
 		ContainerID:           types.Int64{Value: int64(sResp.ContainerId)},
 		ContainerName:         types.String{Value: sResp.ContainerName},
 		AgentId:               types.String{Value: sResp.AgentId},
+		AgentIdentifier:       types.String{Value: sResp.AgentId},
 		AgentAssigned:         types.Bool{Value: sResp.AgentAssigned},
-		ClientMachine:         types.String{Value: sResp.ClientMachine},
-		StorePath:             types.String{Value: sResp.StorePath},
+		ClientMachine:         state.ClientMachine,
+		StorePath:             state.StorePath,
 		StoreType:             types.String{Value: fmt.Sprintf("%v", sResp.CertStoreType)},
 		Approved:              types.Bool{Value: sResp.Approved},
 		CreateIfMissing:       types.Bool{Value: sResp.CreateIfMissing},
-		Properties:            types.Map{ElemType: types.StringType, Elems: propElems},
-		Password:              state.Password,
+		Properties:            properties,
 		SetNewPasswordAllowed: types.Bool{Value: sResp.SetNewPasswordAllowed},
-		InventorySchedule:     state.InventorySchedule,
+		InventorySchedule:     types.String{Value: invSchedule},
+		ServerUsername:        serverUsername,
+		ServerPassword:        serverPassword,
+		ServerUseSsl:          serverUseSsl,
+		StorePassword:         storePassword,
+		DisplayName:           types.String{Value: sResp.DisplayName},
 	}
 
 	// Set state

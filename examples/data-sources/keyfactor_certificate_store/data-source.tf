@@ -4,14 +4,8 @@ provider "keyfactor" {
   hostname = "mykfinstance.kfdelivery.com"
 }
 
-data "keyfactor_certificate_store" "iis_personal" {
-  id       = "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
-  password = "your_personal_store_password"
-}
-
-output "iis_personal_metadata" {
-  value = {
-    id           = data.keyfactor_certificate_store.iis_personal.id
-    container_id = data.keyfactor_certificate_store.iis_personal.container_id
-  }
+# Both client_machine and store_path are required to do a lookup
+data "keyfactor_certificate_store" "k8s_cluster_store_lookup" {
+  client_machine = "192.168.0.4"
+  store_path     = "/home/azureuser/certs"
 }

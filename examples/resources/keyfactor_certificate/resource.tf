@@ -6,24 +6,23 @@ provider "keyfactor" {
 }
 
 ## PFX Enrollment
-resource "keyfactor_certificate" "PFXCertificate" {
-  subject = {
-    # Certificate subject metadata
-    subject_common_name         = "mypfx.kfdelivery.com"
-    subject_organization        = "Keyfactor"
-    subject_locality            = "Cleveland"
-    subject_country             = "US"
-    subject_organizational_unit = "Software Development"
-    subject_state               = "OH"
+resource "keyfactor_certificate" "pkcs12_enrollment" {
+  common_name         = "My PKCS12 Certificate"
+  country             = "US"
+  state               = "Ohio"
+  locality            = "Cleveland"
+  organization        = "Keyfactor"
+  organizational_unit = "Engineering"
+  ip_sans             = ["192.168.123.2", "172.51.2.4"]
+  dns_sans            = ["My PKCS12 Certificate"]
+  uri_sans            = ["my.pkcs12.io"]
+  key_password        = "Don't put this in your production code!"
+  // Please don't use this password in production pass in an environmental or TF_VAR_ variable.
+  certificate_authority = "COMMAND\\MY_CA_01"
+  certificate_template  = "2yrWebServer"
+  metadata = {
+    "Email-Contact" = "kfadmin@keyfactor.com"
   }
-
-  # Optional SANs
-  ip_sans      = ["192.168.123.2", "172.51.2.4"] # Optional IP SANs
-  dns_sans     = ["san1.example.com", "san2"]   # Optional DNS SANs
-  key_password = "my certificate password!"
-  # The password for the certificate. Note: This is bad practice, use TF_VAR_<variable_name> instead.
-  certificate_authority = "COMMAND\\MY_CA_01" # Keyfactor CA to use to handle the certificate request.
-  certificate_template  = "2yrWebServer"      # The template shortname to use for the certificate.
 }
 
 ## CSR Enrollment

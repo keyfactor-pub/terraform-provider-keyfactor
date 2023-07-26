@@ -4,6 +4,25 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
+type KeyfactorAgent struct {
+	AgentId                     types.String `tfsdk:"agent_id"`
+	AgentIdentifier             types.String `tfsdk:"agent_identifier"`
+	ClientMachine               types.String `tfsdk:"client_machine"`
+	Username                    types.String `tfsdk:"username"`
+	AgentPlatform               types.Int64  `tfsdk:"agent_platform"`
+	Status                      types.Int64  `tfsdk:"status"`
+	Version                     types.String `tfsdk:"version"`
+	LastSeen                    types.String `tfsdk:"last_seen"`
+	Capabilities                types.List   `tfsdk:"capabilities"`
+	Blueprint                   types.String `tfsdk:"blueprint"`
+	Thumbprint                  types.String `tfsdk:"thumbprint"`
+	LegacyThumbprint            types.String `tfsdk:"legacy_thumbprint"`
+	AuthCertificateReenrollment types.String `tfsdk:"auth_certificate_reenrollment"`
+	LastThumbprintUsed          types.String `tfsdk:"last_thumbprint_used"`
+	LastErrorCode               types.Int64  `tfsdk:"last_error_code"`
+	LastErrorMessage            types.String `tfsdk:"last_error_message"`
+}
+
 // Security Identity -
 type SecurityIdentity struct {
 	ID           types.Int64  `tfsdk:"id"`
@@ -22,25 +41,35 @@ type SecurityRole struct {
 }
 
 type KeyfactorCertificate struct {
-	ID types.Int64 `tfsdk:"id"`
+	ID types.String `tfsdk:"identifier"`
 	// CSR Request Fields
 	CSR types.String `tfsdk:"csr"`
-	// PFX KfCertificate Fields
-	Subject      types.Object `tfsdk:"subject"`
-	DNSSANs      types.List   `tfsdk:"dns_sans"`
-	IPSANs       types.List   `tfsdk:"ip_sans"`
-	URISANs      types.List   `tfsdk:"uri_sans"`
+	// Subject Fields
+	CommonName         types.String `tfsdk:"common_name"`
+	Locality           types.String `tfsdk:"locality"`
+	State              types.String `tfsdk:"state"`
+	Country            types.String `tfsdk:"country"`
+	Organization       types.String `tfsdk:"organization"`
+	OrganizationalUnit types.String `tfsdk:"organizational_unit"`
+	// SAN Fields
+	DNSSANs types.List `tfsdk:"dns_sans"`
+	IPSANs  types.List `tfsdk:"ip_sans"`
+	URISANs types.List `tfsdk:"uri_sans"`
+	// Certificate Identity Fields
 	SerialNumber types.String `tfsdk:"serial_number"`
 	IssuerDN     types.String `tfsdk:"issuer_dn"`
 	Thumbprint   types.String `tfsdk:"thumbprint"`
-	PEM          types.String `tfsdk:"certificate_pem"`
-	PEMChain     types.String `tfsdk:"certificate_chain"`
-	PrivateKey   types.String `tfsdk:"private_key"`
-	KeyPassword  types.String `tfsdk:"key_password"`
+	// Certificate Data Fields
+	PEM         types.String `tfsdk:"certificate_pem"`
+	PEMCACert   types.String `tfsdk:"ca_certificate"`
+	PEMChain    types.String `tfsdk:"certificate_chain"`
+	PrivateKey  types.String `tfsdk:"private_key"`
+	KeyPassword types.String `tfsdk:"key_password"`
 	// Keyfactor Fields
 	CertificateAuthority types.String `tfsdk:"certificate_authority"`
 	CertificateTemplate  types.String `tfsdk:"certificate_template"`
-	RequestId            types.Int64  `tfsdk:"keyfactor_request_id"`
+	RequestId            types.Int64  `tfsdk:"command_request_id"`
+	CertificateId        types.Int64  `tfsdk:"certificate_id"`
 	Metadata             types.Map    `tfsdk:"metadata"`
 	CollectionId         types.Int64  `tfsdk:"collection_id"`
 }
@@ -69,7 +98,7 @@ type CSRCertificate struct {
 	// Keyfactor Fields
 	CertificateAuthority types.String `tfsdk:"certificate_authority"`
 	CertificateTemplate  types.String `tfsdk:"certificate_template"`
-	RequestId            types.Int64  `tfsdk:"keyfactor_request_id"`
+	RequestId            types.Int64  `tfsdk:"command_request_id"`
 	Metadata             types.Map    `tfsdk:"metadata"`
 }
 
@@ -92,16 +121,37 @@ type CertificateStore struct {
 	ContainerID           types.Int64  `tfsdk:"container_id"`
 	ContainerName         types.String `tfsdk:"container_name"`
 	AgentId               types.String `tfsdk:"agent_id"`
+	AgentIdentifier       types.String `tfsdk:"agent_identifier"`
 	AgentAssigned         types.Bool   `tfsdk:"agent_assigned"`
 	ClientMachine         types.String `tfsdk:"client_machine"`
+	DisplayName           types.String `tfsdk:"display_name"`
 	StorePath             types.String `tfsdk:"store_path"`
 	StoreType             types.String `tfsdk:"store_type"`
 	Approved              types.Bool   `tfsdk:"approved"`
 	CreateIfMissing       types.Bool   `tfsdk:"create_if_missing"`
 	Properties            types.Map    `tfsdk:"properties"`
-	Password              types.String `tfsdk:"password"`
 	SetNewPasswordAllowed types.Bool   `tfsdk:"set_new_password_allowed"`
+	ServerUsername        types.String `tfsdk:"server_username"`
+	ServerPassword        types.String `tfsdk:"server_password"`
+	ServerUseSsl          types.Bool   `tfsdk:"server_use_ssl"`
+	StorePassword         types.String `tfsdk:"store_password"`
 	InventorySchedule     types.String `tfsdk:"inventory_schedule"`
+}
+
+type CertificateStoreCredential struct {
+	ServerUsername struct {
+		Value struct {
+			SecretValue string `json:"SecretValue"`
+		} `json:"value"`
+	} `json:"ServerUsername"`
+	ServerPassword struct {
+		Value struct {
+			SecretValue string `json:"SecretValue"`
+		} `json:"value"`
+	} `json:"ServerPassword"`
+	ServerUseSsl struct {
+		Value string `json:"value"`
+	} `json:"ServerUseSsl"`
 }
 
 type CertificateTemplate struct {

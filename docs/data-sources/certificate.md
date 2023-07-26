@@ -19,9 +19,34 @@ provider "keyfactor" {
   hostname = "mykfinstance.kfdelivery.com"
 }
 
-data "keyfactor_certificate" "protected_cert" {
-  id           = "26"                       #Internal ID of the certificate
-  key_password = "my certificate password!" # This is bad practice. Use TF_VAR_<variable_name> instead.
+data "keyfactor_certificate" "cert_w_pass_and_pkey_cn" {
+  identifier   = "k8s-ingress"                              # Using certificate common name (CN)
+  key_password = "this is required to return a private key" # This is bad practice. Use TF_VAR_<variable_name> instead.
+}
+
+data "keyfactor_certificate" "cert_w_pass_and_pkey_tp" {
+  identifier   = "FF41F242C323712E8C17DECF4E6AEBFB3646F966" # Using certificate thumbprint
+  key_password = "this is required to return a private key" # This is bad practice. Use TF_VAR_<variable_name> instead.
+}
+
+data "keyfactor_certificate" "cert_w_pass_and_pkey_id" {
+  identifier   = "1"                                        # Using Keyfactor Command certificate ID
+  key_password = "this is required to return a private key" # This is bad practice. Use TF_VAR_<variable_name> instead.
+}
+
+data "keyfactor_certificate" "cert_wo_pkey_cn" {
+  # This will returns a certificate without a private key
+  identifier = "my-ca-cert" # Using certificate common name (CN)
+}
+
+data "keyfactor_certificate" "cert_wo_pkey_tp" {
+  # This will returns a certificate without a private key
+  identifier = "FF41F242C323712E8C17DECF4E6AEBFB3646F966" # Using certificate thumbprint
+}
+
+data "keyfactor_certificate" "cert_wo_pkey_id" {
+  # This will returns a certificate without a private key
+  identifier = "1" # Using Keyfactor Command certificate ID
 }
 ```
 
@@ -30,41 +55,36 @@ data "keyfactor_certificate" "protected_cert" {
 
 ### Required
 
-- `id` (Number) Keyfactor certificate identifier.
+- `identifier` (String) Keyfactor certificate identifier. This can be any of the following values: thumbprint, CN, or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must be an exact match and if multiple certificates are returned the certificate that was most recently issued will be returned.
 
 ### Optional
 
 - `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
-- `key_password` (String, Sensitive) Optional, used to read the private key if it is password protected.
+- `key_password` (String, Sensitive) Optional, this is used to fetch the private key from Keyfactor Command, iff Command was used to generate the certificate.
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
 
 ### Read-Only
 
-- `certificate_authority` (String) Name of certificate authority to deploy certificate with Ex: Example Company CA 1
-- `certificate_chain` (String) PEM formatted certificate chain
+- `ca_certificate` (String) PEM formatted CA certificate
+- `certificate_authority` (String) Name of certificate authority (CA) to deploy certificate with Ex: Example Company CA 1
+- `certificate_chain` (String) PEM formatted full certificate chain
+- `certificate_id` (Number) Keyfactor Command certificate ID.
 - `certificate_pem` (String) PEM formatted certificate
-- `certificate_template` (String) Short name of certificate template to be deployed
+- `certificate_template` (String) Short name of certificate template to be used. Ex: Server Authentication
+- `command_request_id` (Number) Keyfactor Command request ID.
+- `common_name` (String) Subject common name (CN) of the certificate.
+- `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
-- `dns_sans` (List of String) List of DNS names to use as subjects of the certificate
-- `ip_sans` (List of String) List of IPs to use as subjects of the certificate
+- `dns_sans` (List of String) List of DNS subject alternative names (DNS SANs) of the certificate. Ex: www.example.com
+- `ip_sans` (List of String) List of IP subject alternative names (IP SANs) of the certificate. Ex: 192.168.0.200
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
-- `keyfactor_request_id` (Number) Keyfactor request ID necessary for deploying certificate
+- `locality` (String) Subject locality (L) of the certificate
+- `organization` (String) Subject organization (O) of the certificate
+- `organizational_unit` (String) Subject organizational unit (OU) of the certificate
 - `private_key` (String, Sensitive) PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
 - `serial_number` (String) Serial number of newly enrolled certificate
-- `subject` (Attributes) KeyfactorCertificate subject (see [below for nested schema](#nestedatt--subject))
+- `state` (String) Subject state (ST) of the certificate
 - `thumbprint` (String) Thumbprint of newly enrolled certificate
-- `uri_sans` (List of String) List of URIs to use as subjects of the certificate
-
-<a id="nestedatt--subject"></a>
-### Nested Schema for `subject`
-
-Read-Only:
-
-- `subject_common_name` (String) Subject common name for new certificate
-- `subject_country` (String) Subject country for new certificate
-- `subject_locality` (String) Subject locality for new certificate
-- `subject_organization` (String) Subject organization for new certificate
-- `subject_organizational_unit` (String) Subject organizational unit for new certificate
-- `subject_state` (String) Subject state for new certificate
+- `uri_sans` (List of String) List of URI subject alternative names (URI SANs) of the certificate. Ex: https://www.example.com
 
 

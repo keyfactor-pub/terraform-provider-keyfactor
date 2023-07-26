@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -62,7 +62,8 @@ type resourceKeyfactorCertificateDeployment struct {
 	p provider
 }
 
-func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, request tfsdk.CreateResourceRequest,
+	response *tfsdk.CreateResourceResponse) {
 	if !r.p.configured {
 		response.Diagnostics.AddError(
 			"Provider not configured",
@@ -95,9 +96,23 @@ func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, requ
 	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
 	tflog.Info(ctx, "Create called on certificate deployment resource")
 
+	//Read cert from Keyfactor Command
+	args := &api.GetCertificateContextArgs{
+		IncludeLocations: boolToPointer(true),
+		Id:               certificateIdInt,
+	}
+	certificateData, err := kfClient.GetCertificateContext(args)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Deployment read error.",
+			fmt.Sprintf("Unknown error during read status of deployment of certificate '%s' to store '%s (%s)': "+err.Error(), certificateId, storeId, certificateAlias),
+		)
+	}
+
 	//sans := plan.SANs
 	//metadata := plan.Metadata.Elems
-	vErr := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 1)
+	//vErr := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 1) // Initial check to see if the cert is already deployed
+	vErr := validateDeployment(ctx, kfClient, storeId, certificateAlias, certificateData, 1) // Initial check to see if the cert is already deployed
 	if vErr == nil {
 		response.Diagnostics.AddWarning(
 			"Duplicate deployment.",
@@ -115,7 +130,8 @@ func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, requ
 			return
 		}
 
-		vErr2 := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 5)
+		//vErr2 := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 100000)
+		vErr2 := validateDeployment(ctx, kfClient, storeId, certificateAlias, certificateData, 1000000) // Initial check to see if the cert is already deployed
 		if vErr2 != nil {
 			response.Diagnostics.AddError(
 				"Deployment validation error.",
@@ -261,7 +277,7 @@ func (r resourceKeyfactorCertificateDeployment) Delete(ctx context.Context, requ
 			response.State.RemoveResource(ctx)
 			return
 		}
-		certificateAlias = lookupCertResp.Thumbprint
+		certificateAlias = lookupCertResp.Thumbprint // TODO: This is not always valid alias can be non-thumbprint
 	}
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
 	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
@@ -277,7 +293,10 @@ func (r resourceKeyfactorCertificateDeployment) Delete(ctx context.Context, requ
 	diff = append(diff, certStoreRequest)
 
 	// Remove resource from state
-	err := removeCertificateAliasFromStore(ctx, kfClient, &diff)
+	//convert int64 to int
+	certId := int(certificateId)
+
+	err := removeCertificateAliasFromStore(ctx, kfClient, &diff, certId, certificateAlias)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			response.Diagnostics.AddWarning(
@@ -309,70 +328,6 @@ func (r resourceKeyfactorCertificateDeployment) ImportState(ctx context.Context,
 		return
 	}
 }
-
-//func setCertificatesInStore(ctx context.Context, conn *api.Client, certificateId int, keyPassword string, storeId int, storeAlias string) error {
-//
-//	tflog.Debug(ctx, fmt.Sprintf("Setting certificate %v in Keyfactor store %v", certificateId, storeId))
-//	// First, blindly add the certificate to each of the certificate storeId found in storeList.
-//	err := addCertificateToStore(conn, certificateId, keyPassword, storeId, storeAlias)
-//	if err != nil {
-//		return err
-//	}
-//
-//	// Then, compile a list of storeId that the certificate is found in, and figure out the delta
-//	args := &api.GetCertificateContextArgs{
-//		IncludeLocations: boolToPointer(true),
-//		Id:               certificateId,
-//	}
-//	certificateData, err := conn.GetCertificateContext(args)
-//	if err != nil {
-//		return err
-//	}
-//	locations := certificateData.Locations
-//	expectedStores := make([]string, len(storeId))
-//
-//	// Want to find the elements in locations that are not in storeId
-//	// We also want to retain the alias
-//	list := make(map[string]struct{}, len(storeId))
-//	for i, x := range storeId {
-//		j := x.(map[string]interface{})
-//
-//		storeId := j["certificate_store_id"].(string)
-//		list[storeId] = struct{}{}
-//
-//		// Since we're already looping through the store IDs, place them in a more readable data structre for later use
-//		expectedStores[i] = storeId
-//	}
-//
-//	// The elements of diff should be removed
-//	// Also, removing a certificate from a certificate store implies that the certificate is currently in the store.
-//	var diff []api.CertificateStore
-//	for _, x := range locations {
-//		if _, found := list[x.CertStoreId]; !found {
-//			temp := api.CertificateStore{
-//				CertificateStoreId: x.CertStoreId,
-//				Alias:              x.Alias,
-//			}
-//			diff = append(diff, temp)
-//		}
-//	}
-//
-//	if len(diff) > 0 {
-//		err = removeCertificateAliasFromStore(conn, &diff)
-//		if err != nil {
-//			return err
-//		}
-//	}
-//
-//	// Finally, Keyfactor tends to take a hot second to enact these changes despite being told to make them immediately.
-//	// Block for a long time until the changes are validated.
-//	err = validateCertificatesInStore(conn, expectedStores, certificateId)
-//	if err != nil {
-//		return err
-//	}
-//
-//	return nil
-//}
 
 // addCertificateToStore adds certificate certId to each of the stores configured by stores. Note that stores is a list of
 // map[string]interface{} and contains the required configuration for api.AddCertificateToStores().
@@ -407,6 +362,92 @@ func addCertificateToStore(ctx context.Context, conn *api.Client, certificateId 
 		return err
 	}
 	tflog.Debug(ctx, fmt.Sprintf("Successfully added certificate %v to Keyfactor store %v", certificateId, storeId))
+	return nil
+}
+
+func validateUndeployment(ctx context.Context, conn *api.Client, storeId string, certificateId int, certAlias string, certObj *api.GetCertificateResponse, maxIterations int) error {
+	deployed := false
+	tflog.Debug(ctx, fmt.Sprintf("Validating Keyfactor Command store %v inventory has removed %s", storeId, certAlias))
+	retryDelay := 2
+	for i := 0; i < maxIterations; i++ {
+		inv, invErr := conn.GetCertStoreInventory(storeId)
+		if invErr != nil {
+			return invErr
+		}
+		// check if inv is empty or nil
+		if inv == nil || len(*inv) == 0 {
+			deployed = false
+			break
+		}
+		for _, cert := range *inv {
+			if cert.Name == certAlias {
+				// Iterate through Certificates in the store and check if the certificate we're looking for is there
+				for _, iCert := range cert.Certificates {
+					if iCert.Id == certObj.Id {
+						deployed = true
+						break
+					}
+				}
+			}
+			if deployed {
+				break
+			}
+		}
+		if deployed {
+			tflog.Debug(ctx, fmt.Sprintf("Certificate '%s'(%v) found in Keyfactor Command store '%s'(%v). Retrying in %v seconds", certObj.Thumbprint, certObj.Id, certAlias, storeId, retryDelay))
+			time.Sleep(time.Duration(retryDelay) * time.Second)
+			retryDelay = retryDelay * 2
+			if retryDelay > 60 {
+				retryDelay = 60
+			}
+			deployed = false
+		} else {
+			break
+		}
+	}
+	if deployed {
+		return fmt.Errorf("unable to remove certificate '%s'(%s) from Keyfactor Command store %v", certObj.Thumbprint, certAlias, storeId)
+	}
+	return nil
+}
+
+func validateDeployment(ctx context.Context, conn *api.Client, storeId string, certAlias string, certObj *api.GetCertificateResponse, maxIterations int) error {
+	valid := false
+	tflog.Debug(ctx, fmt.Sprintf("Validating Keyfactor Command store %v inventory has been updated with %s", storeId, certAlias))
+	retryDelay := 2
+	for i := 0; i < maxIterations; i++ {
+		inv, invErr := conn.GetCertStoreInventory(storeId)
+		if invErr != nil {
+			return invErr
+		}
+		for _, cert := range *inv {
+			if cert.Name == certAlias {
+				// Iterate through Certificates in the store and check if the certificate we're looking for is there
+				for _, iCert := range cert.Certificates {
+					if iCert.Id == certObj.Id {
+						valid = true
+						break
+					}
+				}
+			}
+			if valid {
+				break
+			}
+		}
+		if !valid {
+			tflog.Debug(ctx, fmt.Sprintf("Certificate %s not found in Keyfactor store %v. Retrying in %v seconds", certAlias, storeId, retryDelay))
+			time.Sleep(time.Duration(retryDelay) * time.Second)
+			retryDelay = retryDelay * 2
+			if retryDelay > 60 {
+				retryDelay = 60
+			}
+		} else {
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("certificate %s not found in Keyfactor store %v", certAlias, storeId)
+	}
 	return nil
 }
 
@@ -452,7 +493,7 @@ func validateCertificatesInStore(ctx context.Context, conn *api.Client, certific
 	return nil
 }
 
-func removeCertificateAliasFromStore(ctx context.Context, conn *api.Client, certificateStores *[]api.CertificateStore) error {
+func removeCertificateAliasFromStore(ctx context.Context, conn *api.Client, certificateStores *[]api.CertificateStore, certId int, certAlias string) error {
 	// We want Keyfactor to immediately apply these changes.
 	schedule := &api.InventorySchedule{
 		Immediate: boolToPointer(true),
@@ -462,9 +503,27 @@ func removeCertificateAliasFromStore(ctx context.Context, conn *api.Client, cert
 		InventorySchedule: schedule,
 	}
 
+	args := &api.GetCertificateContextArgs{
+		IncludeLocations: boolToPointer(true),
+		Id:               certId,
+	}
+	certificateData, cerErr := conn.GetCertificateContext(args)
+	if cerErr != nil {
+		return cerErr
+	}
+
 	_, err := conn.RemoveCertificateFromStores(config)
+
 	if err != nil {
 		return err
+	}
+
+	//iterate through stores and validate that the certificate is no longer in the store
+	for _, store := range *certificateStores {
+		validateErr := validateUndeployment(ctx, conn, store.CertificateStoreId, certId, certAlias, certificateData, 100000)
+		if validateErr != nil {
+			return validateErr
+		}
 	}
 
 	return nil

@@ -2,11 +2,12 @@ package keyfactor
 
 import (
 	"context"
-	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"os"
+	"time"
 )
 
 var stderr = os.Stderr
@@ -207,18 +208,29 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	clientAuth.Domain = config.Domain.Value
 	clientAuth.Hostname = config.Hostname.Value
 
-	c, err := api.NewKeyfactorClient(&clientAuth)
+	connected := false
+	connectionRetries := 0
+	for !connected && connectionRetries < 5 {
+		c, err := api.NewKeyfactorClient(&clientAuth)
 
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to create client",
-			"Unable to create Keyfactor GO client client:\n\n"+err.Error(),
-		)
+		if err != nil {
+			if connectionRetries == 4 {
+				resp.Diagnostics.AddError(
+					"Client error.",
+					"Unable to create client connection to Keyfactor Command:\n\n"+err.Error(),
+				)
+				return
+			}
+			connectionRetries++
+			//Sleep for 5 seconds before retrying
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		connected = true
+		p.client = c
+		p.configured = true
 		return
 	}
-
-	p.client = c
-	p.configured = true
 }
 
 // GetResources - Defines provider resources
@@ -236,6 +248,7 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 // GetDataSources - Defines provider data sources
 func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourceType, diag.Diagnostics) {
 	return map[string]tfsdk.DataSourceType{
+		"keyfactor_agent":                dataSourceAgentType{},
 		"keyfactor_certificate":          dataSourceCertificateType{},
 		"keyfactor_certificate_store":    dataSourceCertificateStoreType{},
 		"keyfactor_certificate_template": dataSourceCertificateTemplateType{},

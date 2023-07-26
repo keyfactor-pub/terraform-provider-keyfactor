@@ -8,11 +8,12 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"strconv"
 )
 
 type dataSourceCertificateType struct{}
@@ -31,50 +32,44 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 				Sensitive:     true,
-				Description:   "Optional, used to read the private key if it is password protected.",
+				Description: "Optional, this is used to fetch the private key from Keyfactor Command, iff Command was " +
+					"used to generate the certificate.",
 			},
-			"subject": {
+			"common_name": {
+				Type:          types.StringType,
 				Computed:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "KeyfactorCertificate subject",
-				Attributes: tfsdk.SingleNestedAttributes(map[string]tfsdk.Attribute{
-					"subject_common_name": {
-						Type:          types.StringType,
-						Computed:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject common name for new certificate",
-					},
-					"subject_locality": {
-						Type:          types.StringType,
-						Computed:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject locality for new certificate",
-					},
-					"subject_organization": {
-						Type:          types.StringType,
-						Computed:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject organization for new certificate",
-					},
-					"subject_state": {
-						Type:          types.StringType,
-						Computed:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject state for new certificate",
-					},
-					"subject_country": {
-						Type:          types.StringType,
-						Computed:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject country for new certificate",
-					},
-					"subject_organizational_unit": {
-						Type:          types.StringType,
-						Computed:      true,
-						PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-						Description:   "Subject organizational unit for new certificate",
-					},
-				}),
+				Description:   "Subject common name (CN) of the certificate.",
+			},
+			"locality": {
+				Type:          types.StringType,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Subject locality (L) of the certificate",
+			},
+			"organization": {
+				Type:          types.StringType,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Subject organization (O) of the certificate",
+			},
+			"state": {
+				Type:          types.StringType,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Subject state (ST) of the certificate",
+			},
+			"country": {
+				Type:          types.StringType,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Subject country of the certificate",
+			},
+			"organizational_unit": {
+				Type:          types.StringType,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Subject organizational unit (OU) of the certificate",
 			},
 			"certificate_authority": {
 				Type:          types.StringType,
@@ -83,19 +78,19 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	return strings.EqualFold(old, new)
 				//},
-				Description: "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
+				Description: "Name of certificate authority (CA) to deploy certificate with Ex: Example Company CA 1",
 			},
 			"certificate_template": {
 				Type:          types.StringType,
 				Computed:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "Short name of certificate template to be deployed",
+				Description:   "Short name of certificate template to be used. Ex: Server Authentication",
 			},
 			"dns_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Computed:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of DNS names to use as subjects of the certificate",
+				Description:   "List of DNS subject alternative names (DNS SANs) of the certificate. Ex: www.example.com",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -106,7 +101,7 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Type:          types.ListType{ElemType: types.StringType},
 				Computed:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of URIs to use as subjects of the certificate",
+				Description:   "List of URI subject alternative names (URI SANs) of the certificate. Ex: https://www.example.com",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -117,7 +112,7 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Type:          types.ListType{ElemType: types.StringType},
 				Computed:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of IPs to use as subjects of the certificate",
+				Description:   "List of IP subject alternative names (IP SANs) of the certificate. Ex: 192.168.0.200",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -146,10 +141,13 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Computed:    true,
 				Description: "Thumbprint of newly enrolled certificate",
 			},
-			"id": {
-				Type:        types.Int64Type,
-				Required:    true,
-				Description: "Keyfactor certificate identifier.",
+			"identifier": {
+				Type:     types.StringType,
+				Required: true,
+				Description: "Keyfactor certificate identifier. This can be any of the following values: thumbprint, CN, " +
+					"or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must " +
+					"be an exact match and if multiple certificates are returned the certificate that was most recently " +
+					"issued will be returned. ",
 			},
 			"collection_id": {
 				Type:        types.Int64Type,
@@ -157,20 +155,30 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Optional:    true,
 				Description: "Optional certificate collection identifier used to ensure user access to the certificate.",
 			},
-			"keyfactor_request_id": {
+			"command_request_id": {
 				Type:        types.Int64Type,
 				Computed:    true,
-				Description: "Keyfactor request ID necessary for deploying certificate",
+				Description: "Keyfactor Command request ID.",
+			},
+			"certificate_id": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Keyfactor Command certificate ID.",
 			},
 			"certificate_pem": {
 				Type:        types.StringType,
 				Computed:    true,
 				Description: "PEM formatted certificate",
 			},
+			"ca_certificate": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "PEM formatted CA certificate",
+			},
 			"certificate_chain": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "PEM formatted certificate chain",
+				Description: "PEM formatted full certificate chain",
 			},
 			"private_key": {
 				Type:        types.StringType,
@@ -201,30 +209,54 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 	if response.Diagnostics.HasError() {
 		return
 	}
-	certificateID := state.ID.Value
-	certificateIDInt := int(certificateID)
+
+	// determine if certificateID is an int or string
+	// if int, then it is a Keyfactor Command Certificate ID
+	// if string, then it is a certificate thumbprint or CN
+	certificateIDInt, cIdErr := strconv.Atoi(state.ID.Value)
+	if cIdErr != nil {
+		certificateIDInt = -1
+	}
+	var (
+		certificateCN         string
+		certificateThumbprint string
+	)
+	// Check if certificateID is a thumbprint or CN
+	if certificateIDInt == -1 {
+		if len(state.ID.Value) == 40 {
+			tflog.Info(ctx, fmt.Sprintf("Certificate ID '%v' is a thumbprint.", state.ID.Value))
+			certificateThumbprint = state.ID.Value
+		} else {
+			tflog.Info(ctx, fmt.Sprintf("Certificate ID '%v' is a CN.", state.ID.Value))
+			certificateCN = state.ID.Value
+		}
+	}
 
 	collectionID := state.CollectionId.Value
 	collectionIdInt := int(collectionID)
 
 	tflog.SetField(ctx, "collection_id", collectionID)
-	tflog.SetField(ctx, "certificate_id", certificateID)
+	tflog.SetField(ctx, "certificate_id", certificateIDInt)
+	tflog.SetField(ctx, "certificate_cn", certificateCN)
+	tflog.SetField(ctx, "certificate_thumbprint", certificateThumbprint)
 
 	// Get certificate context
-	tflog.Info(ctx, fmt.Sprintf("Attempting to lookup certificate '%v' in Keyfactor.", certificateID))
+	tflog.Info(ctx, fmt.Sprintf("Attempting to lookup certificate '%v' in Keyfactor.", state.ID.Value))
 	tflog.Debug(ctx, "Calling Keyfactor GO Client GetCertificateContext")
 	args := &api.GetCertificateContextArgs{
 		IncludeMetadata:  boolToPointer(true),
 		IncludeLocations: boolToPointer(true),
 		CollectionId:     intToPointer(collectionIdInt),
 		Id:               certificateIDInt,
+		CommonName:       certificateCN,
+		Thumbprint:       certificateThumbprint,
 	}
 	cResp, err := r.p.client.GetCertificateContext(args)
 	if err != nil {
 		tflog.Error(ctx, "Error calling Keyfactor Go Client GetCertificateContext")
 		response.Diagnostics.AddError(
 			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateID),
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), state.ID.Value),
 		)
 		return
 	}
@@ -233,11 +265,11 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 	csr := state.CSR.Value
 	password := state.KeyPassword.Value
 
-	if password == "" {
-		tflog.Debug(ctx, "Generating password. This will be stored in the state file, but is only used to download and parse the PFX to PEM fields.")
-		password = generatePassword(32, 1, 1, 1)
-		state.KeyPassword.Value = password
-	}
+	//if password == "" {
+	//	tflog.Debug(ctx, "Generating password. This will be stored in the state file, but is only used to download and parse the PFX to PEM fields.")
+	//	password = generatePassword(32, 1, 1, 1)
+	//	state.KeyPassword.Value = password
+	//}
 
 	var (
 		leaf  string
@@ -246,13 +278,14 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		dErr  = error(nil)
 	)
 
-	if cResp.HasPrivateKey {
+	if cResp.HasPrivateKey || password != "" {
 		tflog.Info(ctx, "Requested certificate has a private key attempting to recover from Keyfactor Command.")
-		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(certificateIDInt, "", "", "", password)
+		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", password)
 		if dErrO != nil {
+			tflog.Error(ctx, fmt.Sprintf("Unable to recover private key for certificate '%v' from Keyfactor Command.", cResp.Id))
 			response.Diagnostics.AddError(
 				"Error reading Keyfactor certificate.",
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErrO.Error(), certificateID),
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErrO.Error(), cResp.Id),
 			)
 			return
 		}
@@ -265,7 +298,7 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		if lbErr != nil {
 			response.Diagnostics.AddError(
 				"Error reading Keyfactor certificate.",
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), certificateID),
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), state.ID.Value),
 			)
 			return
 		}
@@ -326,7 +359,7 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 			tflog.Error(ctx, lbErr.Error())
 			response.Diagnostics.AddError(
 				"Error reading Keyfactor certificate.",
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), certificateID),
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), state.ID.Value),
 			)
 			return
 		}
@@ -343,28 +376,34 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 	if dErr != nil {
 		response.Diagnostics.AddError(
 			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), certificateID),
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), state.ID.Value),
 		)
 	}
 
-	subject := flattenSubject(cResp.IssuedDN)
+	cn, ou, o, l, st, c := expandSubject(cResp.IssuedDN)
 	dnsSans, ipSans, uriSans := flattenSANs(cResp.SubjectAltNameElements)
 	metadata := flattenMetadata(cResp.Metadata)
 
 	var result = KeyfactorCertificate{
-		ID:           types.Int64{Value: state.ID.Value},
-		CSR:          types.String{Value: csr},
-		Subject:      subject,
-		DNSSANs:      dnsSans,
-		IPSANs:       ipSans,
-		URISANs:      uriSans,
-		SerialNumber: types.String{Value: cResp.SerialNumber},
+		ID:                 types.String{Value: state.ID.Value},
+		CSR:                types.String{Value: csr},
+		CommonName:         cn,
+		Country:            c,
+		Locality:           l,
+		Organization:       o,
+		OrganizationalUnit: ou,
+		State:              st,
+		DNSSANs:            dnsSans,
+		IPSANs:             ipSans,
+		URISANs:            uriSans,
+		SerialNumber:       types.String{Value: cResp.SerialNumber},
 		IssuerDN: types.String{
 			Value: cResp.IssuerDN,
 		},
 		Thumbprint:  types.String{Value: cResp.Thumbprint},
 		PEM:         types.String{Value: leaf},
-		PEMChain:    types.String{Value: chain},
+		PEMCACert:   types.String{Value: chain},
+		PEMChain:    types.String{Value: fmt.Sprintf("%s%s", leaf, chain)},
 		PrivateKey:  types.String{Value: pKey},
 		KeyPassword: types.String{Value: state.KeyPassword.Value},
 		CertificateAuthority: types.String{
@@ -372,6 +411,7 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		},
 		CertificateTemplate: types.String{Value: cResp.TemplateName},
 		RequestId:           types.Int64{Value: int64(cResp.CertRequestId)},
+		CertificateId:       types.Int64{Value: int64(cResp.Id)},
 		Metadata:            metadata,
 	}
 

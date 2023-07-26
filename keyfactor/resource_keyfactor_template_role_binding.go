@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/api"
+	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"

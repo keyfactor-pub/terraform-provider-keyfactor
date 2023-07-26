@@ -1,0 +1,78 @@
+# v2.0.0
+
+### Breaking Changes
+
+#### Certificates
+* `keyfactor_certificate` resources data structure flattened, subject attributes are now part of main object.
+* `keyfactor_certificate` data and resource types `certificate_chain` now returns a full chain, including the leaf
+  certificate.
+
+#### Certificate Stores
+* `keyfactor_certificate_store` resource definitions can now look up agent via GUID or `ClientMachine` via new
+  attribute `agent_identifier`.
+* `keyfactor_certificate_store` data sources can no longer be looked up by GUID. Instead, a combination
+  of `ClientMachine` and `StorePath` will be used.
+* `keyfactor_certificate_store` resource `properties` now supports special properties `ServerUseSsl`, `ServerUsername`
+  and `ServerPassword`.
+* `keyfactor_certificate_store` resource `store_password` can now be set to a non-empty value.
+
+### Agents
+
+#### Features
+* feat(agents): Agent data source implemented for Keyfactor Command 10.x.
+
+### Certificate stores
+
+#### Features
+
+* c553510 feat(stores): Store data sources can now be looked up by ClientMachine and StorePath combination as opposed to
+  GUID.
+* 3bef18b feat(stores): Store model now has explicit attributes for Command "special"
+  fields: `ServerUsername`, `ServerPassword`, `StorePassword` and `ServerUseSsl` and will no longer be presented in
+  the `Properties` attribute map on either data or resource definitions.
+* 6b1df0a feat(stores): Allow agent to be specified via ClientMachine name or GUID.
+
+#### Fixes
+
+* c553510 fix(stores): Store data sources now parse and populate properties correctly.
+* 4b6b89d fix(stores): Empty container name now evaluates to null properly on read.
+* e62cd38 fix(stores): Set `StorePassword` to `No Value` when `password` field is not provided.
+* 46f5f01 fix(stores)!: Updating a cert store is now compatible w/ Command 10.x. #49, #48
+* 6b1df0a fix(stores): The following fields are now computed on resource
+  definitions: `agent_id`, `container_id`, `agent_assigned`, `set_new_password_allowed` BREAKING CHANGE: Store resource
+  definitions `agent_id` is not a computed value and is replaced by `agent_identifier` to allow for lookup of agent via
+  GUID or ClientMachine name.
+* 6b1df0a fix(stores): Data source added `DisplayName`
+
+### Deployments
+
+#### Fixes
+
+* 140ea4e fix(deployments): Deployments now do not artificially time out, and will wait indefinitely to verify a
+  certificate has been deployed.
+* 140ea4e fix(deployments): Destroy now waits and verifies if a certificate has been undeployed.
+* 140ea4e fix(deployments): Create now checks that both alias and cert ID are deployed as opposed to just checking
+  alias.
+
+### Certificates
+
+### Features
+* 11c8209 feat(certificate): Certificate lookups can now be done using `cn`, `thumbprint` or `id`. BREAKING CHANGE:
+  certificate model has been flattened, subject attributes are now part of main object.
+* d69ce77 feat(certificates): `ca_certificate` attribute added to both data and resource types. #45
+#### Fixes
+* 140ea4e fix(certificate): `CertificateId` field added to track the Keyfactor Command certificate integer ID.
+* a884694 fix(certificate): `keyfactor_certificate` metadata is correctly added on cert creation
+* a884694 fix(certificate): `keyfactor_certificate` CustomFriendlyName set to CN fix(
+  certificate): `keyfactor_certificate` Command returns IssuerDN on POST a string with spaces, on GET returns a string
+  w/o spaces. READ will now add spaces to prevent inconsistent state.
+* a884694 fix(certificate): `keyfactor_certificate` Optional string and int params now evaluate to null correctly on
+  READ and UPDATE.
+* a884694 fix(certificate): `keyfactor_certificate` IMPORT downloads cert and chain in correct order now.
+
+
+# v1.0.3
+- 
+
+# v1.0.0
+- Initial release of the Keyfactor Terraform Provider

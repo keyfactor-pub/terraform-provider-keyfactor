@@ -6,7 +6,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/keyfactor-pub/terraform-provider-keyfactor/keyfactor"
 	"log"
-	"os"
 )
 
 // Run "go generate" to format example terraform files and generate the docs for the registry/website
@@ -22,11 +21,6 @@ import (
 
 func main() {
 	var debug bool
-
-	version := os.Getenv("GITHUB_REF_NAME")
-	if version == "" {
-		version = keyfactor.VERSION
-	}
 
 	flag.BoolVar(&debug, "debug", false, "set to true to run the provider with support for debuggers like delve")
 	flag.Parse()

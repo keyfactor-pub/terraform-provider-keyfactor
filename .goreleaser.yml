@@ -51,10 +51,21 @@ signs:
       - "--detach-sign"
       - "${artifact}"
 release:
+  prerelease: auto
+  draft: true
+  replace_existing_draft: true
+  github:
+    owner: keyfactor-pub
+    name: terraform-provider-keyfactor
+
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
   # If you want to manually examine the release before its live, uncomment this line:
   # draft: true
 changelog:
-  skip: true
+  skip: false
+  sort: desc
+  filters:
+    exclude:
+      - docs

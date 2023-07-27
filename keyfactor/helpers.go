@@ -158,31 +158,42 @@ func flattenMetadata(metadata interface{}) types.Map {
 	for k, v := range data {
 		result.Elems[k] = types.String{Value: v}
 	}
+
+	//check if elems is empty
+	if len(result.Elems) == 0 {
+		result.Null = true
+	}
 	return result
 }
 
-func flattenSANs(sans []api.SubjectAltNameElements) (types.List, types.List, types.List) {
+func flattenSANs(sans []api.SubjectAltNameElements, tfDNSSANs types.List, tfIPSANs types.List, tfURISANs types.List) (types.List, types.List, types.List) {
 	sanIP4Array := types.List{
 		ElemType: types.StringType,
 		Elems:    []attr.Value{},
+		Null:     tfIPSANs.IsNull(),
 	}
 	sanDNSArray := types.List{
 		ElemType: types.StringType,
 		Elems:    []attr.Value{},
+		Null:     tfDNSSANs.IsNull(),
 	}
 	sanURIArray := types.List{
 		ElemType: types.StringType,
 		Elems:    []attr.Value{},
+		Null:     tfURISANs.IsNull(),
 	}
 	if len(sans) > 0 {
 		for _, san := range sans {
 			sanName := mapSanIDToName(san.Type)
 			if sanName == "IP Address" {
 				sanIP4Array.Elems = append(sanIP4Array.Elems, types.String{Value: san.Value})
+				sanIP4Array.Null = false
 			} else if sanName == "DNS Name" {
 				sanDNSArray.Elems = append(sanDNSArray.Elems, types.String{Value: san.Value})
+				sanDNSArray.Null = false
 			} else if sanName == "Uniform Resource Identifier" {
 				sanURIArray.Elems = append(sanURIArray.Elems, types.String{Value: san.Value})
+				sanURIArray.Null = false
 			}
 		}
 	}
@@ -443,4 +454,18 @@ func isGUID(input string) bool {
 	guidPattern := `^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$`
 	match, _ := regexp.MatchString(guidPattern, input)
 	return match
+}
+
+func isNullList(input types.List) bool {
+	if input.Elems == nil || len(input.Elems) == 0 {
+		return true
+	}
+	return false
+}
+
+func checkListNull(tfList types.List, apiResponseList []interface{}) bool {
+	if tfList.IsNull() && len(apiResponseList) == 0 {
+		return true
+	}
+	return false
 }

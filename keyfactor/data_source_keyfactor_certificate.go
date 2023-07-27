@@ -381,7 +381,7 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 	}
 
 	cn, ou, o, l, st, c := expandSubject(cResp.IssuedDN)
-	dnsSans, ipSans, uriSans := flattenSANs(cResp.SubjectAltNameElements)
+	dnsSans, ipSans, uriSans := flattenSANs(cResp.SubjectAltNameElements, state.DNSSANs, state.IPSANs, state.URISANs)
 	metadata := flattenMetadata(cResp.Metadata)
 
 	var result = KeyfactorCertificate{

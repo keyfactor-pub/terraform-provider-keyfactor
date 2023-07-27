@@ -492,7 +492,7 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 	}
 
 	cn, ou, o, l, st, c := expandSubject(cResp.IssuedDN)
-	dnsSans, ipSans, uriSans := flattenSANs(cResp.SubjectAltNameElements)
+	dnsSans, ipSans, uriSans := flattenSANs(cResp.SubjectAltNameElements, state.DNSSANs, state.IPSANs, state.URISANs)
 
 	var (
 		leaf  string

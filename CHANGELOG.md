@@ -6,6 +6,7 @@
 
 ### Fixes
 - Certificates will now not force replacement if SAN lists are not provided ( #66 )
+- Certificates will now not force replacement if template short name does not match display name ( #67 )
 
 
 # v2.0.0

@@ -36,6 +36,13 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Sensitive:     true,
 				Description:   "Password to protect certificate and private key with",
 			},
+			"auto_password": {
+				Type:          types.StringType,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Sensitive:     true,
+				Description:   "Password to protect certificate and private key with",
+			},
 			"common_name": {
 				Type:     types.StringType,
 				Computed: false,
@@ -605,6 +612,17 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 
 	issuerDN := strings.Replace(cResp.IssuerDN, ",", ", ", -1)
 
+	templateResp, templateErr := r.p.client.GetTemplate(cResp.TemplateId)
+	if templateErr != nil {
+		tflog.Error(ctx, "Error calling Keyfactor Go Client GetTemplate")
+		response.Diagnostics.AddError(
+			"Template read error.",
+			fmt.Sprintf("Could not retrieve template for certificate '%s' from Keyfactor: "+templateErr.Error(), state.ID.Value),
+		)
+		return
+	}
+	templateShortName := templateResp.CommonName
+
 	fullChain := leaf + chain
 	var result = KeyfactorCertificate{
 		ID:                 types.String{Value: fmt.Sprintf("%v", cResp.Id)},
@@ -634,7 +652,7 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 			Value: cResp.CertificateAuthorityName,
 			Null:  isNullString(cResp.CertificateAuthorityName),
 		},
-		CertificateTemplate: types.String{Value: cResp.TemplateName, Null: isNullString(cResp.TemplateName)},
+		CertificateTemplate: types.String{Value: templateShortName, Null: isNullString(templateShortName)},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
 	}

@@ -35,6 +35,13 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Description: "Optional, this is used to fetch the private key from Keyfactor Command, iff Command was " +
 					"used to generate the certificate.",
 			},
+			"auto_password": {
+				Type:     types.StringType,
+				Computed: true,
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Sensitive:   true,
+				Description: "Auto generated key password",
+			},
 			"common_name": {
 				Type:          types.StringType,
 				Computed:      true,

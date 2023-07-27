@@ -290,11 +290,10 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", password)
 		if dErrO != nil {
 			tflog.Error(ctx, fmt.Sprintf("Unable to recover private key for certificate '%v' from Keyfactor Command.", cResp.Id))
-			response.Diagnostics.AddError(
+			response.Diagnostics.AddWarning(
 				"Error reading Keyfactor certificate.",
 				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErrO.Error(), cResp.Id),
 			)
-			return
 		}
 		// Convert string to []byte and then to pem.
 		//leaf = string(pem.EncodeToMemory(&pem.Block{
@@ -378,6 +377,37 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		}))
 		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
 		tflog.Debug(ctx, leaf)
+
+		//attempt to get chain from Keyfactor Command via certificate ID and download
+		tflog.Debug(ctx, "Attempting to download certificate chain from Keyfactor Command.")
+		_, dChain, dChainErr := r.p.client.DownloadCertificate(cResp.Id, "", "", "")
+		if dChainErr != nil {
+			tflog.Error(ctx, "Error downloading certificate chain from Keyfactor Command.")
+			response.Diagnostics.AddWarning(
+				"Certificate Download Error",
+				fmt.Sprintf("Could not dowload certificate '%s' from Keyfactor. Chain will not be included: %s", state.ID.Value, dChainErr.Error()),
+			)
+		}
+		if dChain != nil {
+			tflog.Debug(ctx, "Recovered certificate chain from Keyfactor Command:")
+			for _, cert := range dChain {
+				chainLink := string(pem.EncodeToMemory(&pem.Block{
+					Type:  "CERTIFICATE",
+					Bytes: cert.Raw,
+				}))
+
+				//check if chain is equal to leaf and if it is, skip it
+				if chainLink == leaf {
+					tflog.Debug(ctx, "Skipping leaf certificate in chain.")
+					continue
+				}
+
+				chain = chain + chainLink
+				tflog.Debug(ctx, chainLink)
+			}
+		} else {
+			tflog.Debug(ctx, "No certificate chain recovered from Keyfactor Command.")
+		}
 	}
 
 	if dErr != nil {

@@ -65,6 +65,7 @@ data "keyfactor_certificate" "cert_wo_pkey_id" {
 
 ### Read-Only
 
+- `auto_password` (String, Sensitive) Auto generated key password
 - `ca_certificate` (String) PEM formatted CA certificate
 - `certificate_authority` (String) Name of certificate authority (CA) to deploy certificate with Ex: Example Company CA 1
 - `certificate_chain` (String) PEM formatted full certificate chain

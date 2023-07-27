@@ -37,11 +37,11 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Description:   "Password to protect certificate and private key with",
 			},
 			"auto_password": {
-				Type:          types.StringType,
-				Computed:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Sensitive:     true,
-				Description:   "Password to protect certificate and private key with",
+				Type:     types.StringType,
+				Computed: true,
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Sensitive:   true,
+				Description: "Password to protect certificate and private key with",
 			},
 			"common_name": {
 				Type:     types.StringType,
@@ -167,8 +167,6 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 			},
 			"collection_id": {
 				Type:        types.Int64Type,
-				Required:    false,
-				Optional:    true,
 				Computed:    true,
 				Description: "Optional certificate collection identifier used to ensure user access to the certificate.",
 			},
@@ -271,7 +269,24 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 	sans := append(dnsSANs, ipSANs...)
 	sans = append(sans, uriSANs...)
 
+	var autoPassword string
+	if plan.KeyPassword.Value == "" {
+		autoPassword = generatePassword(31, 3, 3, 3)
+	} else {
+		autoPassword = plan.KeyPassword.Value
+	}
+
 	if !plan.CSR.IsNull() && csr != "" { //Enroll CSR
+
+		//ensure that conflicting values are not set
+		if plan.CommonName.Value != "" || plan.Organization.Value != "" || plan.OrganizationalUnit.Value != "" || plan.Locality.Value != "" || plan.State.Value != "" || plan.Country.Value != "" || plan.PrivateKey.Value != "" || plan.KeyPassword.Value != "" {
+			response.Diagnostics.AddError(
+				"Invalid certificate resource definition.",
+				"You cannot set the private_key, password, common_name, organization, organizational_unit, locality, state, or country when using a CSR.",
+			)
+			return
+		}
+
 		tflog.Debug(ctx, "Creating certificate from CSR.")
 
 		tflog.Debug(ctx, fmt.Sprintf("Creating certificate with SANs: %s", sans))
@@ -303,7 +318,26 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 
 		//Collection
 
-		fullChain := enrollResponse.CertificateInformation.Certificates[0] + enrollResponse.CertificateInformation.Certificates[1]
+		// iterate through CertificateInformation.Certificates and concatenate
+		var fullChain string
+		var caCert string
+		for i, cert := range enrollResponse.CertificateInformation.Certificates {
+			fullChain += cert
+			if i > 0 { //caCert returns full chain minus leaf
+				caCert += cert
+			}
+		}
+
+		//fetch certificate from Keyfactor
+		leaf, chain, _, dErr := downloadCertificate(enrollResponse.CertificateInformation.KeyfactorID, r.p.client, autoPassword, csr != "")
+		if dErr != nil {
+			response.Diagnostics.AddError(
+				"Error reading Keyfactor certificate.",
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), certificateId),
+			)
+			return
+		}
+
 		// Set state
 		var result = KeyfactorCertificate{
 			ID:                   types.String{Value: fmt.Sprintf("%v", enrollResponse.CertificateInformation.KeyfactorID)},
@@ -320,16 +354,17 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			SerialNumber:         types.String{Value: enrollResponse.CertificateInformation.SerialNumber},
 			IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
 			Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
-			PEM:                  types.String{Value: enrollResponse.CertificateInformation.Certificates[0]},
-			PEMCACert:            types.String{Value: enrollResponse.CertificateInformation.Certificates[1]},
-			PEMChain:             types.String{Value: fullChain},
-			PrivateKey:           types.String{Value: plan.PrivateKey.Value},
-			KeyPassword:          plan.KeyPassword,
+			PEM:                  types.String{Value: leaf},
+			PEMCACert:            types.String{Value: chain},
+			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", leaf, chain)},
+			PrivateKey:           types.String{Value: plan.PrivateKey.Value, Null: true},
+			KeyPassword:          types.String{Value: plan.KeyPassword.Value, Null: true},
+			AutoPassword:         types.String{Value: autoPassword, Null: true},
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             plan.Metadata,
-			CollectionId:         types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)}, //TODO: Make this collection ID
+			CollectionId:         types.Int64{Value: int64(0)},
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -338,9 +373,10 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			return
 		}
 	} else { //Enroll PFX
+		// check if password is empty
 		PFXArgs := &api.EnrollPFXFctArgs{
 			CustomFriendlyName:          plan.CommonName.Value,
-			Password:                    plan.KeyPassword.Value,
+			Password:                    autoPassword,
 			PopulateMissingValuesFromAD: false, //TODO: Add support for this
 			CertificateAuthority:        plan.CertificateAuthority.Value,
 			Template:                    plan.CertificateTemplate.Value,
@@ -374,7 +410,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 
 		enrolledId := enrollResponse.CertificateInformation.KeyfactorID
 		// Download and assign certificates to proper location
-		leaf, chain, pKey, dErr := downloadCertificate(enrolledId, r.p.client, plan.KeyPassword.Value, csr != "")
+		leaf, chain, pKey, dErr := downloadCertificate(enrolledId, r.p.client, autoPassword, csr != "")
 		if dErr != nil {
 			response.Diagnostics.AddError(
 				"Error reading Keyfactor certificate.",
@@ -404,6 +440,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			PEMChain:             types.String{Value: fullChain},
 			PrivateKey:           types.String{Value: pKey},
 			KeyPassword:          plan.KeyPassword,
+			AutoPassword:         types.String{Value: autoPassword},
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
 			CertificateId:        types.Int64{Value: int64(enrolledId)},
@@ -490,7 +527,7 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 
 	// Download and assign certificates to proper location
 	//leaf, chain, pKey, dErr := downloadCertificate(certificateIdInt, r.p.client, state.KeyPassword.Value, csr != "")
-	_, _, _, dErr := downloadCertificate(certificateIdInt, r.p.client, state.KeyPassword.Value, csr != "")
+	_, _, _, dErr := downloadCertificate(certificateIdInt, r.p.client, state.AutoPassword.Value, csr != "")
 	if dErr != nil {
 		response.Diagnostics.AddError(
 			"Error reading Keyfactor certificate.",
@@ -507,9 +544,9 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 		pKey  = ""
 	)
 
-	if cResp.HasPrivateKey && state.KeyPassword.Value != "" {
+	if cResp.HasPrivateKey && state.AutoPassword.Value != "" {
 		tflog.Info(ctx, "Requested certificate has a private key attempting to recover from Keyfactor Command.")
-		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", state.KeyPassword.Value)
+		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", state.AutoPassword.Value)
 		if dErrO != nil {
 			tflog.Error(ctx, fmt.Sprintf("Unable to recover private key for certificate '%v' from Keyfactor Command.", cResp.Id))
 			response.Diagnostics.AddError(
@@ -543,7 +580,7 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 				Type:  "CERTIFICATE",
 				Bytes: cert.Raw,
 			}))
-			chain = chain + chainLink
+			chain += chainLink
 			tflog.Debug(ctx, chainLink)
 		}
 
@@ -600,16 +637,50 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 		}))
 		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
 		tflog.Debug(ctx, leaf)
+
+		tflog.Debug(ctx, "Attempting to download certificate chain from Keyfactor Command.")
+		_, dChain, dChainErr := r.p.client.DownloadCertificate(cResp.Id, "", "", "")
+		if dChainErr != nil {
+			tflog.Error(ctx, "Error downloading certificate chain from Keyfactor Command.")
+			response.Diagnostics.AddWarning(
+				"Certificate Download Error",
+				fmt.Sprintf("Could not dowload certificate '%s' from Keyfactor. Chain will not be included: %s", state.ID.Value, dChainErr.Error()),
+			)
+		}
+		if dChain != nil {
+			tflog.Debug(ctx, "Recovered certificate chain from Keyfactor Command:")
+			for _, cert := range dChain {
+				chainLink := string(pem.EncodeToMemory(&pem.Block{
+					Type:  "CERTIFICATE",
+					Bytes: cert.Raw,
+				}))
+
+				//check if chain is equal to leaf and if it is, skip it
+				if chainLink == leaf {
+					tflog.Debug(ctx, "Skipping leaf certificate in chain.")
+					continue
+				}
+
+				chain = chain + chainLink
+				tflog.Debug(ctx, chainLink)
+			}
+		} else {
+			tflog.Debug(ctx, "No certificate chain recovered from Keyfactor Command.")
+		}
 	}
 
 	metadata := flattenMetadata(cResp.Metadata)
+
+	if len(state.Metadata.Elems) == 0 && len(metadata.Elems) == 0 {
+		// If both are empty then use whatever state is telling you about the value being null
+		metadata.Null = state.Metadata.Null
+	}
 
 	/*
 		fix issuer_dn to match create response:
 		For some reason Command returns w/ spaces on create and w/o spaces on get.
 		It's safer to add spaces between commas rather than trim all spaces as CNs can have spaces.
 	*/
-
 	issuerDN := strings.Replace(cResp.IssuerDN, ",", ", ", -1)
 
 	templateResp, templateErr := r.p.client.GetTemplate(cResp.TemplateId)
@@ -624,37 +695,75 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 	templateShortName := templateResp.CommonName
 
 	fullChain := leaf + chain
-	var result = KeyfactorCertificate{
-		ID:                 types.String{Value: fmt.Sprintf("%v", cResp.Id)},
-		CSR:                types.String{Value: csr, Null: isNullString(csr)},
-		CommonName:         cn,
-		Locality:           types.String{Value: l.Value, Null: isNullString(l.Value)},
-		State:              types.String{Value: st.Value, Null: isNullString(st.Value)},
-		Country:            types.String{Value: c.Value, Null: isNullString(c.Value)},
-		Organization:       types.String{Value: o.Value, Null: isNullString(o.Value)},
-		OrganizationalUnit: types.String{Value: ou.Value, Null: isNullString(ou.Value)},
-		DNSSANs:            dnsSans,
-		IPSANs:             ipSans,
-		URISANs:            uriSans,
-		SerialNumber:       types.String{Value: cResp.SerialNumber, Null: isNullString(cResp.SerialNumber)},
-		IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
-		Thumbprint:         types.String{Value: cResp.Thumbprint, Null: isNullString(cResp.Thumbprint)},
-		PEM:                types.String{Value: leaf, Null: isNullString(leaf)},
-		PEMCACert:          types.String{Value: leaf, Null: isNullString(chain)},
-		PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
-		PrivateKey:         types.String{Value: pKey, Null: isNullString(pKey)},
-		KeyPassword:        types.String{Value: state.KeyPassword.Value, Null: isNullString(state.KeyPassword.Value)},
-		//PEM:                  state.PEM,
-		//PEMChain:             state.PEMChain,
-		//PrivateKey:           state.PrivateKey,
-		//KeyPassword:          state.KeyPassword,
-		CertificateAuthority: types.String{
-			Value: cResp.CertificateAuthorityName,
-			Null:  isNullString(cResp.CertificateAuthorityName),
-		},
-		CertificateTemplate: types.String{Value: templateShortName, Null: isNullString(templateShortName)},
-		Metadata:            metadata,
-		CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
+	var result = KeyfactorCertificate{}
+	if state.CSR.Value != "" {
+		result = KeyfactorCertificate{
+			ID:                 types.String{Value: fmt.Sprintf("%v", cResp.Id)},
+			CSR:                types.String{Value: csr, Null: isNullString(csr)},
+			CommonName:         types.String{Value: cn.Value, Null: true},
+			Locality:           types.String{Value: l.Value, Null: true},
+			State:              types.String{Value: st.Value, Null: true},
+			Country:            types.String{Value: c.Value, Null: true},
+			Organization:       types.String{Value: o.Value, Null: true},
+			OrganizationalUnit: types.String{Value: ou.Value, Null: true},
+			DNSSANs:            state.DNSSANs,
+			IPSANs:             state.IPSANs,
+			URISANs:            state.URISANs,
+			SerialNumber:       types.String{Value: cResp.SerialNumber, Null: isNullString(cResp.SerialNumber)},
+			IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
+			Thumbprint:         types.String{Value: cResp.Thumbprint, Null: isNullString(cResp.Thumbprint)},
+			PEM:                types.String{Value: leaf, Null: isNullString(leaf)},
+			PEMCACert:          types.String{Value: chain, Null: isNullString(chain)},
+			PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
+			PrivateKey:         state.PrivateKey,
+			KeyPassword:        state.KeyPassword,
+			AutoPassword:       state.AutoPassword,
+			//PEM:                  state.PEM,
+			//PEMChain:             state.PEMChain,
+			//PrivateKey:           state.PrivateKey,
+			//KeyPassword:          state.KeyPassword,
+			CertificateAuthority: types.String{
+				Value: cResp.CertificateAuthorityName,
+				Null:  isNullString(cResp.CertificateAuthorityName),
+			},
+			CertificateTemplate: types.String{Value: templateShortName, Null: isNullString(templateShortName)},
+			Metadata:            metadata,
+			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
+		}
+	} else {
+		result = KeyfactorCertificate{
+			ID:                 types.String{Value: fmt.Sprintf("%v", cResp.Id)},
+			CSR:                types.String{Value: csr, Null: isNullString(csr)},
+			CommonName:         cn,
+			Locality:           types.String{Value: l.Value, Null: isNullString(l.Value)},
+			State:              types.String{Value: st.Value, Null: isNullString(st.Value)},
+			Country:            types.String{Value: c.Value, Null: isNullString(c.Value)},
+			Organization:       types.String{Value: o.Value, Null: isNullString(o.Value)},
+			OrganizationalUnit: types.String{Value: ou.Value, Null: isNullString(ou.Value)},
+			DNSSANs:            dnsSans,
+			IPSANs:             ipSans,
+			URISANs:            uriSans,
+			SerialNumber:       types.String{Value: cResp.SerialNumber, Null: isNullString(cResp.SerialNumber)},
+			IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
+			Thumbprint:         types.String{Value: cResp.Thumbprint, Null: isNullString(cResp.Thumbprint)},
+			PEM:                types.String{Value: leaf, Null: isNullString(leaf)},
+			PEMCACert:          types.String{Value: chain, Null: isNullString(chain)},
+			PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
+			PrivateKey:         types.String{Value: pKey, Null: isNullString(pKey)},
+			KeyPassword:        types.String{Value: state.KeyPassword.Value},
+			AutoPassword:       types.String{Value: state.AutoPassword.Value},
+			//PEM:                  state.PEM,
+			//PEMChain:             state.PEMChain,
+			//PrivateKey:           state.PrivateKey,
+			//KeyPassword:          state.KeyPassword,
+			CertificateAuthority: types.String{
+				Value: cResp.CertificateAuthorityName,
+				Null:  isNullString(cResp.CertificateAuthorityName),
+			},
+			CertificateTemplate: types.String{Value: templateShortName, Null: isNullString(templateShortName)},
+			Metadata:            metadata,
+			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
+		}
 	}
 
 	// Set state
@@ -762,6 +871,7 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
 			PrivateKey:           plan.PrivateKey,
 			KeyPassword:          plan.KeyPassword,
+			AutoPassword:         plan.AutoPassword,
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             plan.Metadata,
@@ -820,6 +930,7 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
 			PrivateKey:           state.PrivateKey,
 			KeyPassword:          state.KeyPassword,
+			AutoPassword:         state.AutoPassword,
 			CertificateAuthority: state.CertificateAuthority,
 			CertificateTemplate:  state.CertificateTemplate,
 			Metadata:             plan.Metadata,

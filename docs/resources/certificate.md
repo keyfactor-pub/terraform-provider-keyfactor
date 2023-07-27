@@ -88,7 +88,6 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 
 ### Optional
 
-- `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
 - `common_name` (String) Subject common name (CN) of the certificate.
 - `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
@@ -104,10 +103,12 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 
 ### Read-Only
 
+- `auto_password` (String, Sensitive) Password to protect certificate and private key with
 - `ca_certificate` (String) PEM formatted CA certificate
 - `certificate_chain` (String) PEM formatted full certificate chain
 - `certificate_id` (Number) Keyfactor Command certificate ID.
 - `certificate_pem` (String) PEM formatted certificate
+- `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
 - `command_request_id` (Number) Keyfactor request ID.
 - `identifier` (String) Keyfactor certificate identifier. This can be any of the following values: thumbprint, CN, or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must be an exact match and if multiple certificates are returned the certificate that was most recently issued will be returned.
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate

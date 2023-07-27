@@ -330,21 +330,7 @@ func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrol
 	var leafPem []byte
 	var chainPem []byte
 
-	if !recoverable || csrEnrollment {
-
-		leaf, chain, err := kfClient.DownloadCertificate(id, "", "", "")
-		if err != nil {
-			return "", "", "", err
-		}
-
-		// Encode DER to PEM
-		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
-		for _, i := range chain {
-			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
-		}
-
-	} else {
-
+	if recoverable && !csrEnrollment {
 		priv, leaf, chain, err := kfClient.RecoverCertificate(id, "", "", "", password)
 		if err != nil {
 			return "", "", "", err
@@ -376,6 +362,22 @@ func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrol
 			if len(buf) > 0 {
 				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "EC PRIVATE KEY"})
 			}
+		}
+	} else {
+		leaf, chain, dlErr := kfClient.DownloadCertificate(id, "", "", "")
+		if dlErr != nil {
+			return "", "", "", err
+		}
+
+		// Encode DER to PEM
+		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+		// iterate through chain in reverse order
+		for i := len(chain) - 1; i >= 0; i-- {
+			// check if current cert is the leaf cert
+			if chain[i].SerialNumber.Cmp(leaf.SerialNumber) == 0 {
+				continue
+			}
+			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: chain[i].Raw})...)
 		}
 	}
 

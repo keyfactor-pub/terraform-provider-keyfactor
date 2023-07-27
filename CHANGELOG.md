@@ -1,13 +1,15 @@
 # v2.1.0
 ### Certificates
 
-### Features
-- autopass support
-
 ### Fixes
-- Certificates will now not force replacement if SAN lists are not provided ( #66 )
-- Certificates will now not force replacement if template short name does not match display name ( #67 )
+- Certificates will now not force replacement if SAN lists are not provided. ( #66 )
+- Certificates will now not force replacement if template short name does not match display name. ( #67 )
+- Certificate data sources now allow for null and empty `key_password` values. In this case if the cert does have a 
+private stored in Keyfactor Command it will not be returned. ( #65 )
 
+### Features
+- Certificate enrollments now will create a password automatically for PFX enrollments and populate that password in the 
+`auto_password` field. If a `key_password` is provided `auto_password` will be set to the same value. ( #68 )
 
 # v2.0.0
 

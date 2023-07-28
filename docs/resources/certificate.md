@@ -91,15 +91,15 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 - `common_name` (String) Subject common name (CN) of the certificate.
 - `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
-- `dns_sans` (List of String) List of DNS names to use as subjects of the certificate
-- `ip_sans` (List of String) List of DNS names to use as subjects of the certificate
+- `dns_sans` (List of String) List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement use Terraform's `sort()` function to ensure consistent ordering of the list.
+- `ip_sans` (List of String) List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement use Terraform's `sort()` function to ensure consistent ordering of the list.
 - `key_password` (String, Sensitive) Password to protect certificate and private key with
 - `locality` (String) Subject locality (L) of the certificate
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
 - `organization` (String) Subject organization (O) of the certificate
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate
 - `state` (String) Subject state (ST) of the certificate
-- `uri_sans` (List of String) List of URIs to use as subjects of the certificate
+- `uri_sans` (List of String) List of URIs to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement use Terraform's `sort()` function to ensure consistent ordering of the list.
 
 ### Read-Only
 

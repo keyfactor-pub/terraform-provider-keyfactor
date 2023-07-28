@@ -105,7 +105,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement use Terraform's `sort()` function to ensure consistent ordering of the list.",
+				Description:   "List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -116,7 +116,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of URIs to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement use Terraform's `sort()` function to ensure consistent ordering of the list.",
+				Description:   "List of URIs to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -127,7 +127,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement use Terraform's `sort()` function to ensure consistent ordering of the list.",
+				Description:   "List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.

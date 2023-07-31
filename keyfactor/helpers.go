@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"math/rand"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -182,19 +183,42 @@ func flattenSANs(sans []api.SubjectAltNameElements, tfDNSSANs types.List, tfIPSA
 		Elems:    []attr.Value{},
 		Null:     tfURISANs.IsNull(),
 	}
+	dnsSANs := []string{}
+	ipSANs := []string{}
+	uriSANs := []string{}
 	if len(sans) > 0 {
 		for _, san := range sans {
 			sanName := mapSanIDToName(san.Type)
 			if sanName == "IP Address" {
-				sanIP4Array.Elems = append(sanIP4Array.Elems, types.String{Value: san.Value})
-				sanIP4Array.Null = false
+				ipSANs = append(ipSANs, san.Value)
+				//sanIP4Array.Elems = append(sanIP4Array.Elems, types.String{Value: san.Value})
+				//sanIP4Array.Null = false
 			} else if sanName == "DNS Name" {
-				sanDNSArray.Elems = append(sanDNSArray.Elems, types.String{Value: san.Value})
-				sanDNSArray.Null = false
+				dnsSANs = append(dnsSANs, san.Value)
+				//sanDNSArray.Elems = append(sanDNSArray.Elems, types.String{Value: san.Value})
+				//sanDNSArray.Null = false
 			} else if sanName == "Uniform Resource Identifier" {
-				sanURIArray.Elems = append(sanURIArray.Elems, types.String{Value: san.Value})
-				sanURIArray.Null = false
+				uriSANs = append(uriSANs, san.Value)
+				//sanURIArray.Elems = append(sanURIArray.Elems, types.String{Value: san.Value})
+				//sanURIArray.Null = false
 			}
+		}
+		// sort the arrays
+		sort.Strings(dnsSANs)
+		sort.Strings(ipSANs)
+		sort.Strings(uriSANs)
+
+		for _, san := range dnsSANs {
+			sanDNSArray.Elems = append(sanDNSArray.Elems, types.String{Value: san})
+			sanDNSArray.Null = false
+		}
+		for _, san := range ipSANs {
+			sanIP4Array.Elems = append(sanIP4Array.Elems, types.String{Value: san})
+			sanIP4Array.Null = false
+		}
+		for _, san := range uriSANs {
+			sanURIArray.Elems = append(sanURIArray.Elems, types.String{Value: san})
+			sanURIArray.Null = false
 		}
 	}
 

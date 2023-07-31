@@ -1,3 +1,16 @@
+# v2.1.2
+### Certificates
+
+#### Fixes
+* e0f6c7c fix(certificates): Sort SANs when they come back from the Command API. #66
+
+# v2.1.1
+### Certificates
+
+#### Fixes
+* 0f5d1fe fix(certificates): `key_password` now takes correct precedence #72 #75
+* 594677d fix(certificates): Treat deleted certs as needing replacement. #73
+
 # v2.1.0
 ### Certificates
 

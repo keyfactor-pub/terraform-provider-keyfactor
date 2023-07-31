@@ -158,31 +158,42 @@ func flattenMetadata(metadata interface{}) types.Map {
 	for k, v := range data {
 		result.Elems[k] = types.String{Value: v}
 	}
+
+	//check if elems is empty
+	if len(result.Elems) == 0 {
+		result.Null = true
+	}
 	return result
 }
 
-func flattenSANs(sans []api.SubjectAltNameElements) (types.List, types.List, types.List) {
+func flattenSANs(sans []api.SubjectAltNameElements, tfDNSSANs types.List, tfIPSANs types.List, tfURISANs types.List) (types.List, types.List, types.List) {
 	sanIP4Array := types.List{
 		ElemType: types.StringType,
 		Elems:    []attr.Value{},
+		Null:     tfIPSANs.IsNull(),
 	}
 	sanDNSArray := types.List{
 		ElemType: types.StringType,
 		Elems:    []attr.Value{},
+		Null:     tfDNSSANs.IsNull(),
 	}
 	sanURIArray := types.List{
 		ElemType: types.StringType,
 		Elems:    []attr.Value{},
+		Null:     tfURISANs.IsNull(),
 	}
 	if len(sans) > 0 {
 		for _, san := range sans {
 			sanName := mapSanIDToName(san.Type)
 			if sanName == "IP Address" {
 				sanIP4Array.Elems = append(sanIP4Array.Elems, types.String{Value: san.Value})
+				sanIP4Array.Null = false
 			} else if sanName == "DNS Name" {
 				sanDNSArray.Elems = append(sanDNSArray.Elems, types.String{Value: san.Value})
+				sanDNSArray.Null = false
 			} else if sanName == "Uniform Resource Identifier" {
 				sanURIArray.Elems = append(sanURIArray.Elems, types.String{Value: san.Value})
+				sanURIArray.Null = false
 			}
 		}
 	}
@@ -319,21 +330,7 @@ func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrol
 	var leafPem []byte
 	var chainPem []byte
 
-	if !recoverable || csrEnrollment {
-
-		leaf, chain, err := kfClient.DownloadCertificate(id, "", "", "")
-		if err != nil {
-			return "", "", "", err
-		}
-
-		// Encode DER to PEM
-		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
-		for _, i := range chain {
-			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
-		}
-
-	} else {
-
+	if recoverable && !csrEnrollment {
 		priv, leaf, chain, err := kfClient.RecoverCertificate(id, "", "", "", password)
 		if err != nil {
 			return "", "", "", err
@@ -365,6 +362,22 @@ func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrol
 			if len(buf) > 0 {
 				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "EC PRIVATE KEY"})
 			}
+		}
+	} else {
+		leaf, chain, dlErr := kfClient.DownloadCertificate(id, "", "", "")
+		if dlErr != nil {
+			return "", "", "", err
+		}
+
+		// Encode DER to PEM
+		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+		// iterate through chain in reverse order
+		for i := len(chain) - 1; i >= 0; i-- {
+			// check if current cert is the leaf cert
+			if chain[i].SerialNumber.Cmp(leaf.SerialNumber) == 0 {
+				continue
+			}
+			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: chain[i].Raw})...)
 		}
 	}
 
@@ -443,4 +456,18 @@ func isGUID(input string) bool {
 	guidPattern := `^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$`
 	match, _ := regexp.MatchString(guidPattern, input)
 	return match
+}
+
+func isNullList(input types.List) bool {
+	if input.Elems == nil || len(input.Elems) == 0 {
+		return true
+	}
+	return false
+}
+
+func checkListNull(tfList types.List, apiResponseList []interface{}) bool {
+	if tfList.IsNull() && len(apiResponseList) == 0 {
+		return true
+	}
+	return false
 }

@@ -222,7 +222,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 				return
 			}
 			connectionRetries++
-			//Sleep for 5 seconds before retrying
+			// Sleep for 5 seconds before retrying
 			time.Sleep(5 * time.Second)
 			continue
 		}

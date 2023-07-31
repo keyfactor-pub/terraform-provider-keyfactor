@@ -1,3 +1,17 @@
+# v2.1.0
+### Certificates
+
+#### Fixes
+* c619ce4 fix(certificates): Handle template shortname != template display name #67
+* 5c2280f fix(certificates): Empty and null SAN lists #66
+* e9b0de7 fix(certificates): `keyfactor_certificate` data sources now allow for null and empty password. If cert has 
+private key but no password is provided no private key will be returned. #65
+
+#### Features
+- f5eabee feat(certificates): Certificate enrollments now will create a password automatically for PFX enrollments and 
+populate that password in the `auto_password` field. If a `key_password` is provided `auto_password` will be set to the 
+same value. ( #68 )
+
 # v2.0.0
 
 ### Breaking Changes
@@ -21,7 +35,23 @@
 #### Features
 * feat(agents): Agent data source implemented for Keyfactor Command 10.x.
 
-### Certificate stores
+### Certificates
+
+### Features
+* 11c8209 feat(certificate): Certificate lookups can now be done using `cn`, `thumbprint` or `id`. BREAKING CHANGE:
+  certificate model has been flattened, subject attributes are now part of main object.
+* d69ce77 feat(certificates): `ca_certificate` attribute added to both data and resource types. #45
+#### Fixes
+* 140ea4e fix(certificate): `CertificateId` field added to track the Keyfactor Command certificate integer ID.
+* a884694 fix(certificate): `keyfactor_certificate` metadata is correctly added on cert creation
+* a884694 fix(certificate): `keyfactor_certificate` CustomFriendlyName set to CN fix(
+  certificate): `keyfactor_certificate` Command returns IssuerDN on POST a string with spaces, on GET returns a string
+  w/o spaces. READ will now add spaces to prevent inconsistent state.
+* a884694 fix(certificate): `keyfactor_certificate` Optional string and int params now evaluate to null correctly on
+  READ and UPDATE.
+* a884694 fix(certificate): `keyfactor_certificate` IMPORT downloads cert and chain in correct order now.
+
+### Certificate Stores
 
 #### Features
 
@@ -54,22 +84,11 @@
 * 140ea4e fix(deployments): Create now checks that both alias and cert ID are deployed as opposed to just checking
   alias.
 
-### Certificates
+### Provider
 
-### Features
-* 11c8209 feat(certificate): Certificate lookups can now be done using `cn`, `thumbprint` or `id`. BREAKING CHANGE:
-  certificate model has been flattened, subject attributes are now part of main object.
-* d69ce77 feat(certificates): `ca_certificate` attribute added to both data and resource types. #45
 #### Fixes
-* 140ea4e fix(certificate): `CertificateId` field added to track the Keyfactor Command certificate integer ID.
-* a884694 fix(certificate): `keyfactor_certificate` metadata is correctly added on cert creation
-* a884694 fix(certificate): `keyfactor_certificate` CustomFriendlyName set to CN fix(
-  certificate): `keyfactor_certificate` Command returns IssuerDN on POST a string with spaces, on GET returns a string
-  w/o spaces. READ will now add spaces to prevent inconsistent state.
-* a884694 fix(certificate): `keyfactor_certificate` Optional string and int params now evaluate to null correctly on
-  READ and UPDATE.
-* a884694 fix(certificate): `keyfactor_certificate` IMPORT downloads cert and chain in correct order now.
-
+* bd331bf fix(provider): Adding retry logic when connecting to Keyfactor Command to prevent "first connection" timeout 
+error.
 
 # v1.0.3
 - 

@@ -1,3 +1,9 @@
+# v2.1.3
+### Certificates
+
+#### Fixes
+* e0f6c7c fix(certificates): Sort SANs in the same order as state when they come back from the Command API. #66
+
 # v2.1.2
 ### Certificates
 

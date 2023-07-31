@@ -517,10 +517,44 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 	cResp, err := r.p.client.GetCertificateContext(args)
 	if err != nil {
 		tflog.Error(ctx, "Error calling Keyfactor Go Client GetCertificateContext")
-		response.Diagnostics.AddError(
+		response.Diagnostics.AddWarning(
 			"Error reading Keyfactor certificate.",
 			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), state.ID.Value),
 		)
+		nullValue := types.String{Null: true}
+		nullList := types.List{Null: true, ElemType: types.StringType}
+		emptyResult := KeyfactorCertificate{
+			ID:                 nullValue,
+			CSR:                nullValue,
+			CommonName:         nullValue,
+			Locality:           nullValue,
+			State:              nullValue,
+			Country:            nullValue,
+			Organization:       nullValue,
+			OrganizationalUnit: nullValue,
+			DNSSANs:            nullList,
+			IPSANs:             nullList,
+			URISANs:            nullList,
+			SerialNumber:       nullValue,
+			IssuerDN:           nullValue,
+			Thumbprint:         nullValue,
+			PEM:                nullValue,
+			PEMCACert:          nullValue,
+			PEMChain:           nullValue,
+			PrivateKey:         nullValue,
+			KeyPassword:        state.KeyPassword,
+			AutoPassword:       state.AutoPassword,
+			//PEM:                  state.PEM,
+			//PEMChain:             state.PEMChain,
+			//PrivateKey:           state.PrivateKey,
+			//KeyPassword:          state.KeyPassword,
+			CertificateAuthority: nullValue,
+			CertificateTemplate:  nullValue,
+			Metadata:             types.Map{Null: true, ElemType: types.StringType},
+			CertificateId:        types.Int64{Null: true},
+		}
+		diags = response.State.Set(ctx, &emptyResult)
+		response.Diagnostics.Append(diags...)
 		return
 	}
 
@@ -964,6 +998,12 @@ func (r resourceKeyfactorCertificate) Delete(ctx context.Context, request tfsdk.
 	// Get order ID from state
 	certificateId := state.ID.Value
 	tflog.SetField(ctx, "certificate_id", certificateId)
+
+	if certificateId == "" {
+		response.Diagnostics.AddWarning("Certificate ID is empty.", "Certificate ID is empty.")
+		response.State.RemoveResource(ctx)
+		return
+	}
 
 	certificateIdInt, cIdErr := strconv.Atoi(state.ID.Value)
 	if cIdErr != nil {

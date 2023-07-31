@@ -204,9 +204,28 @@ func flattenSANs(sans []api.SubjectAltNameElements, tfDNSSANs types.List, tfIPSA
 			}
 		}
 		// sort the arrays
-		sort.Strings(dnsSANs)
-		sort.Strings(ipSANs)
-		sort.Strings(uriSANs)
+
+		if len(tfDNSSANs.Elems) > 0 {
+			var stateDNSSans []string
+			_ = tfDNSSANs.ElementsAs(nil, &stateDNSSans, true)
+			dnsSANs = sortInSameOrder(dnsSANs, stateDNSSans)
+		} else {
+			sort.Strings(dnsSANs)
+		}
+		if len(tfIPSANs.Elems) > 0 {
+			var stateIPSans []string
+			_ = tfIPSANs.ElementsAs(nil, &stateIPSans, true)
+			ipSANs = sortInSameOrder(ipSANs, stateIPSans)
+		} else {
+			sort.Strings(ipSANs)
+		}
+		if len(tfURISANs.Elems) > 0 {
+			var stateURISans []string
+			_ = tfURISANs.ElementsAs(nil, &stateURISans, true)
+			uriSANs = sortInSameOrder(uriSANs, stateURISans)
+		} else {
+			sort.Strings(uriSANs)
+		}
 
 		for _, san := range dnsSANs {
 			sanDNSArray.Elems = append(sanDNSArray.Elems, types.String{Value: san})
@@ -494,4 +513,19 @@ func checkListNull(tfList types.List, apiResponseList []interface{}) bool {
 		return true
 	}
 	return false
+}
+
+func sortInSameOrder(unsortedList, sortedList []string) []string {
+	// Sort unsortedList in the same order as sortedList
+	// This is needed because the API returns the list in a different order than the order we sent it in
+	// This is needed for the terraform import command to work
+	var sorted []string
+	for _, v := range sortedList {
+		for _, u := range unsortedList {
+			if v == u {
+				sorted = append(sorted, u)
+			}
+		}
+	}
+	return sorted
 }

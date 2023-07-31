@@ -28,9 +28,9 @@ resource "keyfactor_certificate" "pkcs12_enrollment" {
   locality            = "Cleveland"
   organization        = "Keyfactor"
   organizational_unit = "Engineering"
-  ip_sans             = ["192.168.123.2", "172.51.2.4"]
-  dns_sans            = ["My PKCS12 Certificate"]
-  uri_sans            = ["my.pkcs12.io"]
+  ip_sans             = sort(["192.168.123.2", "172.51.2.4"])
+  dns_sans            = sort(["my.pkcs12.io", "My PKCS12 Certificate", "my.pkcs12.co.uk", "Certificate PKCS12 My"])
+  uri_sans            = sort(["my.pkcs12.io"])
   key_password        = "Don't put this in your production code!"
   // Please don't use this password in production pass in an environmental or TF_VAR_ variable.
   certificate_authority = "COMMAND\\MY_CA_01"
@@ -88,26 +88,27 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 
 ### Optional
 
-- `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
 - `common_name` (String) Subject common name (CN) of the certificate.
 - `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
-- `dns_sans` (List of String) List of DNS names to use as subjects of the certificate
-- `ip_sans` (List of String) List of DNS names to use as subjects of the certificate
+- `dns_sans` (List of String) List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.
+- `ip_sans` (List of String) List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.
 - `key_password` (String, Sensitive) Password to protect certificate and private key with
 - `locality` (String) Subject locality (L) of the certificate
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
 - `organization` (String) Subject organization (O) of the certificate
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate
 - `state` (String) Subject state (ST) of the certificate
-- `uri_sans` (List of String) List of URIs to use as subjects of the certificate
+- `uri_sans` (List of String) List of URIs to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.
 
 ### Read-Only
 
+- `auto_password` (String, Sensitive) Password to protect certificate and private key with
 - `ca_certificate` (String) PEM formatted CA certificate
 - `certificate_chain` (String) PEM formatted full certificate chain
 - `certificate_id` (Number) Keyfactor Command certificate ID.
 - `certificate_pem` (String) PEM formatted certificate
+- `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
 - `command_request_id` (Number) Keyfactor request ID.
 - `identifier` (String) Keyfactor certificate identifier. This can be any of the following values: thumbprint, CN, or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must be an exact match and if multiple certificates are returned the certificate that was most recently issued will be returned.
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate

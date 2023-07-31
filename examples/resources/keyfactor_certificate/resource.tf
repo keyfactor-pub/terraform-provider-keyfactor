@@ -13,9 +13,9 @@ resource "keyfactor_certificate" "pkcs12_enrollment" {
   locality            = "Cleveland"
   organization        = "Keyfactor"
   organizational_unit = "Engineering"
-  ip_sans             = ["192.168.123.2", "172.51.2.4"]
-  dns_sans            = ["My PKCS12 Certificate"]
-  uri_sans            = ["my.pkcs12.io"]
+  ip_sans             = sort(["192.168.123.2", "172.51.2.4"])
+  dns_sans            = sort(["my.pkcs12.io", "My PKCS12 Certificate", "my.pkcs12.co.uk", "Certificate PKCS12 My"])
+  uri_sans            = sort(["my.pkcs12.io"])
   key_password        = "Don't put this in your production code!"
   // Please don't use this password in production pass in an environmental or TF_VAR_ variable.
   certificate_authority = "COMMAND\\MY_CA_01"

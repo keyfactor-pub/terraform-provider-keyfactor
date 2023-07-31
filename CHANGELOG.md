@@ -2,7 +2,7 @@
 ### Certificates
 
 #### Fixes
-* e0f6c7c fix(certificates): `key_password` Sort SANs when they come back from the Command API. #66
+* e0f6c7c fix(certificates): Sort SANs when they come back from the Command API. #66
 
 # v2.1.1
 ### Certificates

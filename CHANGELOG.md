@@ -1,3 +1,16 @@
+# v2.1.4
+
+### Certificates
+
+#### Fixes
+* b0d1a49 fix(certificates): `keyfactor_certificate` data and resource types will not store auto password used to recover private key. `auto_password` has been removed from schema and state.
+* b0d1a49 fix(certificates): `keyfactor_certificate` resource type will no longer trigger replacement if `key_password` is changed. #74 #79 #80
+* b0d1a49 fix(certificates): When looking up a certificate by CN, `IncludeHasPrivateKey` is now included in the call to the Command API.
+* b0d1a49 fix(certificates): `keyfactor_certificate` resource updates `ca_cert` use correct field.
+* b0d1a49 fix(certificates): `keyfactor_certificate` resource updates `key_password` will now use plan value.
+* b0d1a49 fix(certificates): `keyfactor_certificate` resource updates `certificate_id` field now included using state value.
+* b0d1a49 fix(certificates): When sorting SAN lists, if length varies don't even try to sort as there is obviously a change and replacement must be triggered.
+
 # v2.1.3
 ### Certificates
 

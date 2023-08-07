@@ -520,6 +520,12 @@ func sortInSameOrder(unsortedList, sortedList []string) []string {
 	// This is needed because the API returns the list in a different order than the order we sent it in
 	// This is needed for the terraform import command to work
 	var sorted []string
+
+	//if lists are not the same length don't waste the effort and return unsortedList
+	if len(unsortedList) != len(sortedList) {
+		return unsortedList
+	}
+
 	for _, v := range sortedList {
 		for _, u := range unsortedList {
 			if v == u {

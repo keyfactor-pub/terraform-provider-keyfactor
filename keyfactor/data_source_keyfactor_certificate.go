@@ -28,19 +28,11 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Description:   "Base-64 encoded certificate signing request (CSR)",
 			},
 			"key_password": {
-				Type:          types.StringType,
-				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Sensitive:     true,
-				Description: "Optional, this is used to fetch the private key from Keyfactor Command, iff Command was " +
-					"used to generate the certificate.",
-			},
-			"auto_password": {
 				Type:     types.StringType,
-				Computed: true,
+				Optional: true,
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 				Sensitive:   true,
-				Description: "Auto generated key password",
+				Description: "Password used to recover the private key from Keyfactor Command. NOTE: If no value is provided a random password will be generated for key recovery. This value is not stored and does not encrypt the private key in Terraform state.",
 			},
 			"common_name": {
 				Type:          types.StringType,
@@ -251,12 +243,13 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 	tflog.Info(ctx, fmt.Sprintf("Attempting to lookup certificate '%v' in Keyfactor.", state.ID.Value))
 	tflog.Debug(ctx, "Calling Keyfactor GO Client GetCertificateContext")
 	args := &api.GetCertificateContextArgs{
-		IncludeMetadata:  boolToPointer(true),
-		IncludeLocations: boolToPointer(true),
-		CollectionId:     intToPointer(collectionIdInt),
-		Id:               certificateIDInt,
-		CommonName:       certificateCN,
-		Thumbprint:       certificateThumbprint,
+		IncludeMetadata:      boolToPointer(true),
+		IncludeLocations:     boolToPointer(true),
+		IncludeHasPrivateKey: boolToPointer(true),
+		CollectionId:         intToPointer(collectionIdInt),
+		Id:                   certificateIDInt,
+		CommonName:           certificateCN,
+		Thumbprint:           certificateThumbprint,
 	}
 	cResp, err := r.p.client.GetCertificateContext(args)
 	if err != nil {
@@ -285,7 +278,10 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		dErr  = error(nil)
 	)
 
-	if cResp.HasPrivateKey || password != "" {
+	if cResp.HasPrivateKey {
+		if password == "" {
+			password = generatePassword(32, 4, 4, 4)
+		}
 		tflog.Info(ctx, "Requested certificate has a private key attempting to recover from Keyfactor Command.")
 		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", password)
 		if dErrO != nil {

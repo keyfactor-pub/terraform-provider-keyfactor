@@ -60,12 +60,11 @@ data "keyfactor_certificate" "cert_wo_pkey_id" {
 ### Optional
 
 - `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
-- `key_password` (String, Sensitive) Optional, this is used to fetch the private key from Keyfactor Command, iff Command was used to generate the certificate.
+- `key_password` (String, Sensitive) Password used to recover the private key from Keyfactor Command. NOTE: If no value is provided a random password will be generated for key recovery. This value is not stored and does not encrypt the private key in Terraform state.
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
 
 ### Read-Only
 
-- `auto_password` (String, Sensitive) Auto generated key password
 - `ca_certificate` (String) PEM formatted CA certificate
 - `certificate_authority` (String) Name of certificate authority (CA) to deploy certificate with Ex: Example Company CA 1
 - `certificate_chain` (String) PEM formatted full certificate chain

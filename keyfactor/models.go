@@ -60,12 +60,11 @@ type KeyfactorCertificate struct {
 	IssuerDN     types.String `tfsdk:"issuer_dn"`
 	Thumbprint   types.String `tfsdk:"thumbprint"`
 	// Certificate Data Fields
-	PEM          types.String `tfsdk:"certificate_pem"`
-	PEMCACert    types.String `tfsdk:"ca_certificate"`
-	PEMChain     types.String `tfsdk:"certificate_chain"`
-	PrivateKey   types.String `tfsdk:"private_key"`
-	KeyPassword  types.String `tfsdk:"key_password"`
-	AutoPassword types.String `tfsdk:"auto_password"`
+	PEM         types.String `tfsdk:"certificate_pem"`
+	PEMCACert   types.String `tfsdk:"ca_certificate"`
+	PEMChain    types.String `tfsdk:"certificate_chain"`
+	PrivateKey  types.String `tfsdk:"private_key"`
+	KeyPassword types.String `tfsdk:"key_password"`
 	// Keyfactor Fields
 	CertificateAuthority types.String `tfsdk:"certificate_authority"`
 	CertificateTemplate  types.String `tfsdk:"certificate_template"`

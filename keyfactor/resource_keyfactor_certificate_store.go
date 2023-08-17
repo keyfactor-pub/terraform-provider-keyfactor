@@ -211,7 +211,16 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 
 	var properties map[string]string
 	if plan.Properties.Elems != nil {
-		diags = plan.Properties.ElementsAs(ctx, &properties, false)
+		propConvErr := plan.Properties.ElementsAs(ctx, &properties, false)
+		if propConvErr != nil {
+			response.Diagnostics.AddError(
+				"Invalid properties error.",
+				fmt.Sprintf("Invalid properties for certificate store creating certificate store: %s", propConvErr),
+			)
+			return
+		}
+	} else {
+		properties = make(map[string]string)
 	}
 	//Add Special Properties to properties map
 	if !plan.ServerUsername.IsNull() {
@@ -495,9 +504,27 @@ func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.Upda
 		tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
 	}
 
-	var properties map[string]interface{}
+	properties := make(map[string]interface{})
+	var existingProperties map[string]string
 	if plan.Properties.Elems != nil {
-		diags = plan.Properties.ElementsAs(ctx, &properties, false)
+		propConvErr := plan.Properties.ElementsAs(ctx, &existingProperties, false)
+		if propConvErr != nil {
+			response.Diagnostics.AddError(
+				"Invalid properties error.",
+				fmt.Sprintf("Invalid properties for certificate store updating certificate store: %s", propConvErr),
+			)
+			return
+		}
+	}
+	//add existing properties to properties map
+	for k, v := range existingProperties {
+		if k == "ServerUsername" || k == "ServerPassword" {
+			properties[k] = api.SpecialPropertiesSecretValue{Value: api.SecretParamValue{SecretValue: v}}
+		} else if k == "ServerUseSsl" {
+			properties[k] = api.SpecialPropertiesValue{Value: strings.ToLower(v) == "true"}
+		} else {
+			properties[k] = v
+		}
 	}
 	//Add Special Properties to properties map
 	if !plan.ServerUsername.IsNull() {

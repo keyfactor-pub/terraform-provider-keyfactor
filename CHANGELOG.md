@@ -1,59 +1,88 @@
+# v2.1.5
+
+### Certificate Stores
+
+#### Fixes
+
+* 47f4d9c fix(stores): `keyfactor_certificate_store` resources allow for empty and null 'properties'.
+* 47f4d9c fix(stores): `keyfactor_certificate_store` resources allow for 'ServerUsername', 'ServerPassword' and '
+  ServerUseSsl', special properties to also be defined in the 'properties' field for legacy provider support. The
+  explicit fields 'server_username', 'server_password' and 'server_use_ssl' will take precedence.
+
 # v2.1.4
 
 ### Certificates
 
 #### Fixes
-* b0d1a49 fix(certificates): `keyfactor_certificate` data and resource types will not store auto password used to recover private key. `auto_password` has been removed from schema and state.
-* b0d1a49 fix(certificates): `keyfactor_certificate` resource type will no longer trigger replacement if `key_password` is changed. #74 #79 #80
-* b0d1a49 fix(certificates): When looking up a certificate by CN, `IncludeHasPrivateKey` is now included in the call to the Command API.
+
+* b0d1a49 fix(certificates): `keyfactor_certificate` data and resource types will not store auto password used to
+  recover private key. `auto_password` has been removed from schema and state.
+* b0d1a49 fix(certificates): `keyfactor_certificate` resource type will no longer trigger replacement if `key_password`
+  is changed. #74 #79 #80
+* b0d1a49 fix(certificates): When looking up a certificate by CN, `IncludeHasPrivateKey` is now included in the call to
+  the Command API.
 * b0d1a49 fix(certificates): `keyfactor_certificate` resource updates `ca_cert` use correct field.
 * b0d1a49 fix(certificates): `keyfactor_certificate` resource updates `key_password` will now use plan value.
-* b0d1a49 fix(certificates): `keyfactor_certificate` resource updates `certificate_id` field now included using state value.
-* b0d1a49 fix(certificates): When sorting SAN lists, if length varies don't even try to sort as there is obviously a change and replacement must be triggered.
+* b0d1a49 fix(certificates): `keyfactor_certificate` resource updates `certificate_id` field now included using state
+  value.
+* b0d1a49 fix(certificates): When sorting SAN lists, if length varies don't even try to sort as there is obviously a
+  change and replacement must be triggered.
 
 # v2.1.3
+
 ### Certificates
 
 #### Fixes
+
 * bb5498d fix(certificates): Sort SANs in the same order as state when they come back from the Command API. #66
 
 # v2.1.2
+
 ### Certificates
 
 #### Fixes
+
 * e0f6c7c fix(certificates): Sort SANs when they come back from the Command API. #66
 
 # v2.1.1
+
 ### Certificates
 
 #### Fixes
+
 * 0f5d1fe fix(certificates): `key_password` now takes correct precedence #72 #75
 * 594677d fix(certificates): Treat deleted certs as needing replacement. #73
 
 # v2.1.0
+
 ### Certificates
 
 #### Fixes
+
 * c619ce4 fix(certificates): Handle template shortname != template display name #67
 * 5c2280f fix(certificates): Empty and null SAN lists #66
-* e9b0de7 fix(certificates): `keyfactor_certificate` data sources now allow for null and empty password. If cert has 
-private key but no password is provided no private key will be returned. #65
+* e9b0de7 fix(certificates): `keyfactor_certificate` data sources now allow for null and empty password. If cert has
+  private key but no password is provided no private key will be returned. #65
 
 #### Features
-- f5eabee feat(certificates): Certificate enrollments now will create a password automatically for PFX enrollments and 
-populate that password in the `auto_password` field. If a `key_password` is provided `auto_password` will be set to the 
-same value. ( #68 )
+
+- f5eabee feat(certificates): Certificate enrollments now will create a password automatically for PFX enrollments and
+  populate that password in the `auto_password` field. If a `key_password` is provided `auto_password` will be set to
+  the
+  same value. ( #68 )
 
 # v2.0.0
 
 ### Breaking Changes
 
 #### Certificates
+
 * `keyfactor_certificate` resources data structure flattened, subject attributes are now part of main object.
 * `keyfactor_certificate` data and resource types `certificate_chain` now returns a full chain, including the leaf
   certificate.
 
 #### Certificate Stores
+
 * `keyfactor_certificate_store` resource definitions can now look up agent via GUID or `ClientMachine` via new
   attribute `agent_identifier`.
 * `keyfactor_certificate_store` data sources can no longer be looked up by GUID. Instead, a combination
@@ -65,15 +94,19 @@ same value. ( #68 )
 ### Agents
 
 #### Features
+
 * feat(agents): Agent data source implemented for Keyfactor Command 10.x.
 
 ### Certificates
 
 ### Features
+
 * 11c8209 feat(certificate): Certificate lookups can now be done using `cn`, `thumbprint` or `id`. BREAKING CHANGE:
   certificate model has been flattened, subject attributes are now part of main object.
 * d69ce77 feat(certificates): `ca_certificate` attribute added to both data and resource types. #45
+
 #### Fixes
+
 * 140ea4e fix(certificate): `CertificateId` field added to track the Keyfactor Command certificate integer ID.
 * a884694 fix(certificate): `keyfactor_certificate` metadata is correctly added on cert creation
 * a884694 fix(certificate): `keyfactor_certificate` CustomFriendlyName set to CN fix(
@@ -119,11 +152,13 @@ same value. ( #68 )
 ### Provider
 
 #### Fixes
-* bd331bf fix(provider): Adding retry logic when connecting to Keyfactor Command to prevent "first connection" timeout 
-error.
+
+* bd331bf fix(provider): Adding retry logic when connecting to Keyfactor Command to prevent "first connection" timeout
+  error.
 
 # v1.0.3
 - 
 
 # v1.0.0
+
 - Initial release of the Keyfactor Terraform Provider

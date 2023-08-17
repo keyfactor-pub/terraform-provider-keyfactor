@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"math/rand"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -182,19 +183,61 @@ func flattenSANs(sans []api.SubjectAltNameElements, tfDNSSANs types.List, tfIPSA
 		Elems:    []attr.Value{},
 		Null:     tfURISANs.IsNull(),
 	}
+	dnsSANs := []string{}
+	ipSANs := []string{}
+	uriSANs := []string{}
 	if len(sans) > 0 {
 		for _, san := range sans {
 			sanName := mapSanIDToName(san.Type)
 			if sanName == "IP Address" {
-				sanIP4Array.Elems = append(sanIP4Array.Elems, types.String{Value: san.Value})
-				sanIP4Array.Null = false
+				ipSANs = append(ipSANs, san.Value)
+				//sanIP4Array.Elems = append(sanIP4Array.Elems, types.String{Value: san.Value})
+				//sanIP4Array.Null = false
 			} else if sanName == "DNS Name" {
-				sanDNSArray.Elems = append(sanDNSArray.Elems, types.String{Value: san.Value})
-				sanDNSArray.Null = false
+				dnsSANs = append(dnsSANs, san.Value)
+				//sanDNSArray.Elems = append(sanDNSArray.Elems, types.String{Value: san.Value})
+				//sanDNSArray.Null = false
 			} else if sanName == "Uniform Resource Identifier" {
-				sanURIArray.Elems = append(sanURIArray.Elems, types.String{Value: san.Value})
-				sanURIArray.Null = false
+				uriSANs = append(uriSANs, san.Value)
+				//sanURIArray.Elems = append(sanURIArray.Elems, types.String{Value: san.Value})
+				//sanURIArray.Null = false
 			}
+		}
+		// sort the arrays
+
+		if len(tfDNSSANs.Elems) > 0 {
+			var stateDNSSans []string
+			_ = tfDNSSANs.ElementsAs(nil, &stateDNSSans, true)
+			dnsSANs = sortInSameOrder(dnsSANs, stateDNSSans)
+		} else {
+			sort.Strings(dnsSANs)
+		}
+		if len(tfIPSANs.Elems) > 0 {
+			var stateIPSans []string
+			_ = tfIPSANs.ElementsAs(nil, &stateIPSans, true)
+			ipSANs = sortInSameOrder(ipSANs, stateIPSans)
+		} else {
+			sort.Strings(ipSANs)
+		}
+		if len(tfURISANs.Elems) > 0 {
+			var stateURISans []string
+			_ = tfURISANs.ElementsAs(nil, &stateURISans, true)
+			uriSANs = sortInSameOrder(uriSANs, stateURISans)
+		} else {
+			sort.Strings(uriSANs)
+		}
+
+		for _, san := range dnsSANs {
+			sanDNSArray.Elems = append(sanDNSArray.Elems, types.String{Value: san})
+			sanDNSArray.Null = false
+		}
+		for _, san := range ipSANs {
+			sanIP4Array.Elems = append(sanIP4Array.Elems, types.String{Value: san})
+			sanIP4Array.Null = false
+		}
+		for _, san := range uriSANs {
+			sanURIArray.Elems = append(sanURIArray.Elems, types.String{Value: san})
+			sanURIArray.Null = false
 		}
 	}
 
@@ -470,4 +513,25 @@ func checkListNull(tfList types.List, apiResponseList []interface{}) bool {
 		return true
 	}
 	return false
+}
+
+func sortInSameOrder(unsortedList, sortedList []string) []string {
+	// Sort unsortedList in the same order as sortedList
+	// This is needed because the API returns the list in a different order than the order we sent it in
+	// This is needed for the terraform import command to work
+	var sorted []string
+
+	//if lists are not the same length don't waste the effort and return unsortedList
+	if len(unsortedList) != len(sortedList) {
+		return unsortedList
+	}
+
+	for _, v := range sortedList {
+		for _, u := range unsortedList {
+			if v == u {
+				sorted = append(sorted, u)
+			}
+		}
+	}
+	return sorted
 }

@@ -51,7 +51,7 @@ resource "keyfactor_certificate_deployment" "ca_cert_deployment" {
 ### Optional
 
 - `certificate_alias` (String) A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type. Please ensure that the alias is lowercase, or problems can arise in Terraform Plan. If not provided deployment validation will be done by Command certificate ID.
-- `job_parameters` (Map of String) A map of parameters to be passed to the job. This is only used when the job is created.
+- `job_parameters` (Map of String) A map of entry parameters to be passed to the deployment job. These will only be used if the orchestrator extension supports them.
 - `key_password` (String, Sensitive) Password that protects PFX certificate, if the certificate was enrolled using PFX enrollment, or is password protected in general. This value cannot change, and Terraform will throw an error if a change is attempted.
 
 ### Read-Only

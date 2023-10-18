@@ -52,7 +52,7 @@ func (r resourceKeyfactorCertificateDeploymentType) GetSchema(_ context.Context)
 			"job_parameters": {
 				Type:        types.MapType{ElemType: types.StringType},
 				Optional:    true,
-				Description: "A map of parameters to be passed to the job. This is only used when the job is created.",
+				Description: "A map of entry parameters to be passed to the deployment job. These will only be used if the orchestrator extension supports them.",
 			},
 		},
 	}, nil

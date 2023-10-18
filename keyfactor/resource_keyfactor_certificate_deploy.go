@@ -37,8 +37,9 @@ func (r resourceKeyfactorCertificateDeploymentType) GetSchema(_ context.Context)
 			},
 			"certificate_alias": {
 				Type:          types.StringType,
-				Required:      true,
-				Description:   "A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type. Please ensure that the alias is lowercase, or problems can arise in Terraform Plan.",
+				Required:      false,
+				Optional:      true,
+				Description:   "A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type. Please ensure that the alias is lowercase, or problems can arise in Terraform Plan. If not provided deployment validation will be done by Command certificate ID.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"key_password": {
@@ -47,6 +48,11 @@ func (r resourceKeyfactorCertificateDeploymentType) GetSchema(_ context.Context)
 				Sensitive:     true,
 				Description:   "Password that protects PFX certificate, if the certificate was enrolled using PFX enrollment, or is password protected in general. This value cannot change, and Terraform will throw an error if a change is attempted.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+			},
+			"job_parameters": {
+				Type:        types.MapType{ElemType: types.StringType},
+				Optional:    true,
+				Description: "A map of parameters to be passed to the job. This is only used when the job is created.",
 			},
 		},
 	}, nil
@@ -89,6 +95,8 @@ func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, requ
 	storeId := plan.StoreId.Value
 	certificateAlias := plan.CertificateAlias.Value
 	keyPassword := plan.KeyPassword.Value
+	var jobParams map[string]string
+	_ = plan.JobParameters.ElementsAs(ctx, &jobParams, false)
 	hid := fmt.Sprintf("%v-%s-%s", certificateId, storeId, certificateAlias)
 
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
@@ -119,7 +127,7 @@ func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, requ
 			fmt.Sprintf("Certificate '%v' is already deployed to '%s (%s)'", certificateId, storeId, certificateAlias),
 		)
 	} else {
-		addErr := addCertificateToStore(ctx, kfClient, certificateIdInt, certificateAlias, keyPassword, storeId)
+		addErr := addCertificateToStore(ctx, kfClient, certificateIdInt, certificateAlias, keyPassword, storeId, jobParams)
 		if addErr != nil {
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
@@ -150,6 +158,7 @@ func (r resourceKeyfactorCertificateDeployment) Create(ctx context.Context, requ
 		StoreId:          plan.StoreId,
 		CertificateAlias: plan.CertificateAlias,
 		KeyPassword:      plan.KeyPassword,
+		JobParameters:    plan.JobParameters,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -207,6 +216,7 @@ func (r resourceKeyfactorCertificateDeployment) Read(ctx context.Context, reques
 		StoreId:          state.StoreId,
 		CertificateAlias: state.CertificateAlias,
 		KeyPassword:      state.KeyPassword,
+		JobParameters:    state.JobParameters,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -331,7 +341,7 @@ func (r resourceKeyfactorCertificateDeployment) ImportState(ctx context.Context,
 
 // addCertificateToStore adds certificate certId to each of the stores configured by stores. Note that stores is a list of
 // map[string]interface{} and contains the required configuration for api.AddCertificateToStores().
-func addCertificateToStore(ctx context.Context, conn *api.Client, certificateId int, certificateAlias string, keyPassword string, storeId string) error {
+func addCertificateToStore(ctx context.Context, conn *api.Client, certificateId int, certificateAlias string, keyPassword string, storeId string, jobParams map[string]string) error {
 	var storesStruct []api.CertificateStore
 
 	storeRequest := new(api.CertificateStore)
@@ -342,6 +352,7 @@ func addCertificateToStore(ctx context.Context, conn *api.Client, certificateId 
 	storeRequest.IncludePrivateKey = true //todo: make this configurable
 	storeRequest.Overwrite = true
 	storeRequest.PfxPassword = keyPassword
+	storeRequest.JobParameters = jobParams
 	storesStruct = append(storesStruct, *storeRequest)
 
 	// We want Keyfactor to immediately apply these changes.
@@ -428,6 +439,12 @@ func validateDeployment(ctx context.Context, conn *api.Client, storeId string, c
 						valid = true
 						break
 					}
+				}
+			} else if certAlias == "" {
+				// if not alias is provided then just compare cert ID of the leaf node
+				if len(cert.Ids) > 0 && cert.Ids[0] == certObj.Id { //TODO: This may not be the best way to do this as a cert ID can show up multiple times in a store
+					valid = true
+					break
 				}
 			}
 			if valid {

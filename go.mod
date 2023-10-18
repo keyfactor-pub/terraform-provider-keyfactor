@@ -3,7 +3,7 @@ module github.com/keyfactor-pub/terraform-provider-keyfactor
 go 1.18
 
 require (
-	github.com/Keyfactor/keyfactor-go-client/v2 v2.1.2
+	github.com/Keyfactor/keyfactor-go-client/v2 v2.1.5-rc.1
 	github.com/hashicorp/terraform-plugin-framework v0.10.0
 	github.com/hashicorp/terraform-plugin-go v0.18.0
 	github.com/hashicorp/terraform-plugin-log v0.9.0
@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	github.com/Keyfactor/keyfactor-go-client-sdk v1.0.1 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8 // indirect
 	github.com/agext/levenshtein v1.2.2 // indirect
 	github.com/apparentlymart/go-textseg/v13 v13.0.0 // indirect

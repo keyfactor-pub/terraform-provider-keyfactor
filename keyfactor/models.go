@@ -80,6 +80,7 @@ type KeyfactorCertificateDeployment struct {
 	CertificateAlias types.String `tfsdk:"certificate_alias"`
 	StoreId          types.String `tfsdk:"certificate_store_id"`
 	KeyPassword      types.String `tfsdk:"key_password"`
+	JobParameters    types.Map    `tfsdk:"job_parameters"`
 }
 
 type CSRCertificate struct {

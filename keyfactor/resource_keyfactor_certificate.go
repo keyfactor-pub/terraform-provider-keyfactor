@@ -37,6 +37,38 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Sensitive:   true,
 				Description: "Password used to recover the private key from Keyfactor Command. NOTE: If no value is provided a random password will be generated for key recovery. This value is not stored and does not encrypt the private key in Terraform state. Also note that if a password is provided it must meet any password complexity requirements enforced by the CA template or creation will fail. Auto-generated passwords will be of length 32 and contain a minimum of 4 of the following: uppercase, lowercase, numeric, and special characters.",
 			},
+			"key_size": {
+				Type: types.Int64Type,
+				//Optional: true,
+				Required: true,
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Sensitive: false,
+				Description: `Required*. A string indicating the key size for the requested key. Supported key sizes are:
+	- 255
+	- 256
+	- 384
+	- 448
+	- 521
+	- 2048
+	- 3072
+	- 4096
+	- 8192  
+This value is required only if KeyType = RSA.
+`,
+			},
+			"key_type": {
+				Type: types.StringType,
+				//Optional:      true,
+				Required:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Sensitive:     false,
+				Description: `Required. A string indicating the algorithm for the request. Supported values are:
+	- RSA
+	- ECC
+	- Ed448
+	- Ed25519
+`,
+			},
 			"common_name": {
 				Type:     types.StringType,
 				Computed: false,

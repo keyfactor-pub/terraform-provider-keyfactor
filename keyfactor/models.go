@@ -65,6 +65,8 @@ type KeyfactorCertificate struct {
 	PEMChain    types.String `tfsdk:"certificate_chain"`
 	PrivateKey  types.String `tfsdk:"private_key"`
 	KeyPassword types.String `tfsdk:"key_password"`
+	KeyType     types.String `tfsdk:"key_type"`
+	KeySize     types.Int64  `tfsdk:"key_size"`
 	// Keyfactor Fields
 	CertificateAuthority types.String `tfsdk:"certificate_authority"`
 	CertificateTemplate  types.String `tfsdk:"certificate_template"`

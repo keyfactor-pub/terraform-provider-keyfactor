@@ -64,3 +64,4 @@ KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3="User"
 
 printenv | grep KEYFACTOR > .env
 
+terraform init

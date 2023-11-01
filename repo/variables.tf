@@ -34,6 +34,17 @@ variable "test_cert_id" {
   default     = "1"
 }
 
+variable "test_cert_cn" {
+  description = "The Keyfactor Command ID of a certificate to use for testing. Note: the certificate must exist."
+  type        = string
+  default     = "Terraform Provider Test Certificate"
+}
+
+variable "test_cert_thumbprint" {
+  description = "The Keyfactor Command ID of a certificate to use for testing. Note: the certificate must exist."
+  type        = string
+}
+
 variable "test_cert_password" {
   description = "The password to use when creating test certificate(s)."
   type        = string

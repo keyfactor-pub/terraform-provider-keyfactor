@@ -12,7 +12,7 @@
 ### Mac OS/Linux
 ```bash
 git clone https://github.com/Keyfactor/terraform-provider-keyfactor.git
-cd terraform-provider-keyfactor
+cd terraform-provider-v2
 make install
 ```
 

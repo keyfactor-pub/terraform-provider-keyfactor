@@ -42,3 +42,21 @@ resource "github_actions_secret" "test_store_password" {
   secret_name     = "TEST_CERTIFICATE_STORE_PASS"
   plaintext_value = var.test_store_password
 }
+
+resource "github_actions_secret" "test_certificate_id" {
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_ID"
+  plaintext_value = var.test_cert_id
+}
+
+resource "github_actions_secret" "test_certificate_cn" {
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_CN"
+  plaintext_value = var.test_cert_cn
+}
+
+resource "github_actions_secret" "test_certificate_thumbprint" {
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_THUMBPRINT"
+  plaintext_value = var.test_cert_thumbprint
+}

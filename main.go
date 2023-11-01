@@ -3,8 +3,9 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/getsentry/sentry-go"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
-	"github.com/keyfactor-pub/terraform-provider-keyfactor/keyfactor"
+	v3 "github.com/keyfactor-pub/terraform-provider-keyfactor/internal/provider/v3/command"
 	"log"
 	"os"
 )
@@ -25,25 +26,45 @@ func main() {
 
 	version := os.Getenv("GITHUB_REF_NAME")
 	if version == "" {
-		version = keyfactor.VERSION
+		version = v3.VERSION
 	}
 
 	flag.BoolVar(&debug, "debug", false, "set to true to run the provider with support for debuggers like delve")
 	flag.Parse()
 
-	address := "github.com/keyfactor-pub/keyfactor"
-	if debug {
-		address = "keyfactor.com/keyfactor/keyfactor"
-	}
-	opts := providerserver.ServeOpts{
-		Address:         address,
-		Debug:           debug,
-		ProtocolVersion: 6,
+	if !debug {
+		envDebug := os.Getenv("DEBUG")
+		if envDebug != "" && envDebug != "false" {
+			debug = true
+		}
 	}
 
-	err := providerserver.Serve(context.Background(), keyfactor.New, opts)
+	address := "github.com/keyfactor-pub/keyfactor"
+	if debug {
+		address = "keyfactor.com/command/v3"
+		configSentry()
+	}
+	opts := providerserver.ServeOpts{
+		Address: address,
+		Debug:   debug,
+	}
+
+	err := providerserver.Serve(context.Background(), v3.New(version), opts)
 
 	if err != nil {
 		log.Fatal(err.Error())
+	}
+}
+
+func configSentry() {
+	err := sentry.Init(sentry.ClientOptions{
+		Dsn: "https://814b0846082d547816b62ebab2b59aa0@o4505352704360448.ingest.sentry.io/4506395161067520",
+		// Set TracesSampleRate to 1.0 to capture 100%
+		// of transactions for performance monitoring.
+		// We recommend adjusting this value in production,
+		TracesSampleRate: 1.0,
+	})
+	if err != nil {
+		log.Fatalf("sentry.Init: %s", err)
 	}
 }

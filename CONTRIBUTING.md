@@ -7,11 +7,11 @@ started with the development of Terraform providers is the [Terraform Plugin Doc
 1. Clone the repository
     ```shell
    $ mkdir -p $GOPATH/src/github.com/Keyfactor; cd $GOPATH/src/github.com/Keyfactor
-   $ git clone git@github.com:Keyfactor/terraform-provider-keyfactor.git
+   $ git clone git@github.com:Keyfactor/terraform-provider-v2.git
    ```
 2. Enter the directory and build the provider
     ```shell
-    $ cd $GOPATH/src/github.com/Keyfactor/terraform-provider-keyfactor
+    $ cd $GOPATH/src/github.com/Keyfactor/terraform-provider-v2
     $ make build
     ```
 
@@ -31,7 +31,7 @@ $ make testacc
 ```
 or
 ```bash
-$ go test github.com/Keyfactor/terraform-provider-keyfactor/keyfactor
+$ go test github.com/Keyfactor/terraform-provider-v2/v2
 ```
 Note that the following environment variables must exist regardless of the test case:
 * ```KEYFACTOR_USERNAME```

@@ -402,7 +402,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		}
 
 		PFXArgs := &api.EnrollPFXFctArgsV2{
-			CustomFriendlyName:          plan.CommonName.Value,
+			//CustomFriendlyName:          plan.CommonName.Value,
 			Password:                    lookupPassword,
 			PopulateMissingValuesFromAD: false, //TODO: Add support for this
 			CertificateAuthority:        plan.CertificateAuthority.Value,
@@ -424,6 +424,8 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 				SubjectOrganizationalUnit: plan.OrganizationalUnit.Value,
 				SubjectState:              plan.State.Value,
 			},
+			KeyType:   plan.KeyType.Value,
+			KeyLength: int(plan.KeySize.Value),
 		}
 		tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))
 		enrollResponse, err := r.p.client.EnrollPFXV2(PFXArgs)
@@ -494,6 +496,8 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
 			Metadata:             plan.Metadata,
 			CollectionId:         types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)}, //TODO: Make this collection ID
+			KeyType:              plan.KeyType,
+			KeySize:              plan.KeySize,
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -847,6 +851,8 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 			CertificateTemplate: types.String{Value: templateShortName, Null: isNullString(templateShortName)},
 			Metadata:            metadata,
 			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
+			KeyType:             types.String{Value: cResp.KeyTypeString, Null: isNullString(cResp.KeyTypeString)},
+			KeySize:             types.Int64{Value: int64(cResp.KeySizeInBits), Null: isNullId(cResp.KeySizeInBits)},
 		}
 	}
 

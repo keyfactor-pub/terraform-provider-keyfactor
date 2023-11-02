@@ -1,3 +1,19 @@
+# v2.1.6
+
+### Certificates
+
+#### Fixes
+
+* 4d01ddd fix(certificates): `keyfactor_certificate` resources now handle enrollments requests that require approvals.
+  #90
+
+### Deployments
+
+#### Fixes
+
+* d7c3b46 fix(deployments): `keyfactor_certificate_deployment` resources now handles deployments that require entry
+  parameters. #91
+
 # v2.1.5
 
 ### Certificate Stores

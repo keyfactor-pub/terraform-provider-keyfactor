@@ -8,14 +8,11 @@ The Terraform provider enables management of Keyfactor resources utilizing Hashi
 
 
 
-
-
 ## Support for Keyfactor Terraform Provider
 
 Keyfactor Terraform Provider is open source and there is **no SLA** for this tool/library/client. Keyfactor will address issues as resources become available. Keyfactor customers may request escalation by opening up a support ticket through their Keyfactor representative.
 
 ###### To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
-
 
 
 

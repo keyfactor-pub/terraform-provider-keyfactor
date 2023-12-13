@@ -296,6 +296,11 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 	//if plan.CreateIfMissing.IsNull() {
 	//	plan.CreateIfMissing = types.Bool{Value: false}
 	//}
+	//convert properties to map[string]interface{} for api call
+	propsInterface := make(map[string]interface{})
+	for k, v := range properties {
+		propsInterface[k] = v
+	}
 
 	newStoreArgs := &api.CreateStoreFctArgs{
 		ContainerId:           intToPointer(containerId),
@@ -304,7 +309,7 @@ func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.Crea
 		CertStoreType:         csType.StoreType,
 		Approved:              &plan.Approved.Value,
 		CreateIfMissing:       &plan.CreateIfMissing.Value,
-		Properties:            properties,
+		Properties:            propsInterface,
 		AgentId:               agentId,
 		AgentAssigned:         &plan.AgentAssigned.Value,
 		ContainerName:         &plan.ContainerName.Value,

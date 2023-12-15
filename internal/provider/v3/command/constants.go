@@ -17,6 +17,8 @@ const (
 	CertificateThumbprintLength    = 40
 	APICertStateIsCA               = "CertificateAuthority (6)"
 	TestCAName                     = "DC-CA.Command.local\\CommandCA1"
+	ApprovedAgentStatus            = 2
+	AgentNotFound                  = "unable to find agent in Keyfactor Command"
 )
 
 var ENVIRONMENTAL_VARS = map[string]string{

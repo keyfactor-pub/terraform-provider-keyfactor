@@ -5,11 +5,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"os"
-	"regexp"
 	"testing"
 )
-
-var emptyCertRequestErrRegex = regexp.MustCompile(`.*Unable to find certificate  in Keyfactor Command`)
 
 func TestAccKeyfactorCertificateDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate")

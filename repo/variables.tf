@@ -147,3 +147,13 @@ variable "test_certificate_template_name" {
   type        = string
   description = "Name of an existing template to use for testing. Note: the template must exist in Keyfactor, be usable by the CA specificed in `test_certificate_ca_name` and the user specified in `test_username`. "
 }
+
+variable "test_agent_client_machine_name" {
+  type        = string
+  description = "Name of an existing agent to use for testing. Note: the agent must exist in Keyfactor."
+}
+
+variable "test_agent_id" {
+  type        = string
+  description = "ID of an existing agent to use for testing. Note: the agent must exist in Keyfactor."
+}

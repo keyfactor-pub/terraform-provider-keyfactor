@@ -60,3 +60,15 @@ resource "github_actions_secret" "test_certificate_thumbprint" {
   secret_name     = "TEST_CERTIFICATE_THUMBPRINT"
   plaintext_value = var.test_cert_thumbprint
 }
+
+resource "github_actions_secret" "test_agent_id" {
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_AGENT_ID"
+  plaintext_value = var.test_agent_id
+}
+
+resource "github_actions_secret" "test_agent_name" {
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_AGENT_CLIENT_MACHINE_NAME"
+  plaintext_value = var.test_agent_client_machine_name
+}

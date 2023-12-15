@@ -541,6 +541,7 @@ func (d *CertificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	}
 
 	certIdentifier := data.Identifier.ValueString()
+	collectionId := data.CollectionId.ValueInt64()
 	ctx = tflog.SetField(ctx, "certificate_identifier", certIdentifier)
 
 	// If the `identifier` attribute is an integer, use it to query the certificate
@@ -551,11 +552,11 @@ func (d *CertificateDataSource) Read(ctx context.Context, req datasource.ReadReq
 	)
 
 	if cID, ok := strconv.Atoi(certIdentifier); ok == nil {
-		clientResp, httpResp, respErr = readCertificateById(ctx, cID, d.client)
+		clientResp, httpResp, respErr = readCertificateById(ctx, cID, d.client, collectionId)
 	} else if len(certIdentifier) == CertificateThumbprintLength {
-		clientResp, httpResp, respErr = lookupCertificate(ctx, CertificateThumbprintFieldName, certIdentifier, d.client)
+		clientResp, httpResp, respErr = lookupCertificate(ctx, CertificateThumbprintFieldName, certIdentifier, d.client, collectionId)
 	} else {
-		clientResp, httpResp, respErr = lookupCertificate(ctx, CertificateCNFieldName, certIdentifier, d.client)
+		clientResp, httpResp, respErr = lookupCertificate(ctx, CertificateCNFieldName, certIdentifier, d.client, collectionId)
 	}
 	if clientResp == nil {
 		resp.Diagnostics.AddError("Invalid Certificate Identifier", fmt.Sprintf("Unable to find certificate %s in Keyfactor Command", certIdentifier))

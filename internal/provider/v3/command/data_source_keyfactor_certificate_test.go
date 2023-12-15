@@ -5,12 +5,14 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"os"
+	"strconv"
 	"testing"
 )
 
 func TestAccKeyfactorCertificateDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate")
 	var cID = os.Getenv("TEST_CERTIFICATE_ID")
+	var colID = os.Getenv("TEST_CERTIFICATE_COLLECTION_ID")
 	var cCN = os.Getenv("TEST_CERTIFICATE_CN")
 	var cTP = os.Getenv("TEST_CERTIFICATE_THUMBPRINT")
 	var caID = os.Getenv("TEST_CERTIFICATE_AUTHORITY_CERT_ID")
@@ -30,6 +32,10 @@ func TestAccKeyfactorCertificateDataSource(t *testing.T) {
 	if cTP == "" {
 		t.Log("TEST_CERTIFICATE_THUMBPRINT is not set, skipping TestAccKeyfactorCertificateDataSource")
 	}
+	if colID == "" {
+		colID = "0"
+	}
+	colIDInt, _ := strconv.Atoi(colID)
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -49,6 +55,18 @@ func TestAccKeyfactorCertificateDataSource(t *testing.T) {
 			{
 				// Test lookup by ID w/ short password
 				Config: testAccDataSourceKeyfactorCertificateBasic(t, cID, "hi"),
+				Check:  certTestValidateAll(resourceName),
+			},
+			{
+				// Test lookup containing collection ID
+				// TODO: This needs to have limited access to properly test
+				Config: testAccDataSourceKeyfactorCertificateCollectionId(t, cID, password, colIDInt),
+				Check:  certTestValidateAll(resourceName),
+			},
+			{
+				// Test lookup containing invalid collection ID
+				// TODO: This needs to have limited access to properly test
+				Config: testAccDataSourceKeyfactorCertificateCollectionId(t, cID, password, 9999),
 				Check:  certTestValidateAll(resourceName),
 			},
 			{
@@ -77,6 +95,18 @@ func testAccDataSourceKeyfactorCertificateBasic(t *testing.T, resourceId string,
 		key_password = "%s"
 	}
 	`, resourceId, password)
+	t.Logf("%s", output)
+	return output
+}
+
+func testAccDataSourceKeyfactorCertificateCollectionId(t *testing.T, resourceId string, password string, collectionId int) string {
+	output := fmt.Sprintf(`
+	data "keyfactor_certificate" "test" {
+		identifier = "%s"
+		key_password = "%s"
+		collection_id = "%d"
+	}
+	`, resourceId, password, collectionId)
 	t.Logf("%s", output)
 	return output
 }

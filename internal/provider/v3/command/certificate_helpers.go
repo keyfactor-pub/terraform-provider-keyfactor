@@ -290,18 +290,24 @@ func recoverPrivateKey(ctx context.Context, client *kfc.APIClient, id int64, thu
 	return "", nil, nil, fmt.Errorf("failed to recover private key for certificate")
 }
 
-func readCertificateById(ctx context.Context, cID int, client *kfc.APIClient) (*kfc.ModelsCertificateRetrievalResponse, *http.Response, error) {
+func readCertificateById(ctx context.Context, cID int, client *kfc.APIClient, collectionID int64) (*kfc.ModelsCertificateRetrievalResponse, *http.Response, error) {
 	ctx = tflog.SetField(ctx, "certificate_id", cID)
 	tflog.Debug(ctx, fmt.Sprintf("Calling GET %s/Certificate/%d", client.GetConfig().Host, cID))
-	clientResp, httpResp, respErr := client.CertificateApi.CertificateGetCertificate(ctx, int32(cID)).
+	req := client.CertificateApi.CertificateGetCertificate(ctx, int32(cID)).
 		IncludeMetadata(true).
-		IncludeLocations(true).
-		Execute()
+		IncludeLocations(true)
+
+	if collectionID > 0 {
+		ctx = tflog.SetField(ctx, "collection_id", collectionID)
+		tflog.Debug(ctx, "Adding collection_id to request")
+		req.CollectionId(int32(collectionID))
+	}
+	clientResp, httpResp, respErr := req.Execute()
 	logCommandAPIResponse(ctx, httpResp, respErr)
 
 	if httpResp.StatusCode == http.StatusNotFound {
 		tflog.Warn(ctx, fmt.Sprintf("Unable to find certificate %d using Keyfactor Command certificate Id. Attempting to search as serial number.", cID))
-		clientResp, httpResp, respErr = lookupCertificate(ctx, CertificateSNFieldName, fmt.Sprintf("%d", cID), client)
+		clientResp, httpResp, respErr = lookupCertificate(ctx, CertificateSNFieldName, fmt.Sprintf("%d", cID), client, collectionID)
 	}
 
 	var (
@@ -311,7 +317,7 @@ func readCertificateById(ctx context.Context, cID int, client *kfc.APIClient) (*
 	)
 	tp := clientResp.Thumbprint
 	if tp != nil {
-		detailedClientResp, detailedHttpResp, detailedRespErr = lookupCertificate(ctx, CertificateThumbprintFieldName, tp, client)
+		detailedClientResp, detailedHttpResp, detailedRespErr = lookupCertificate(ctx, CertificateThumbprintFieldName, tp, client, collectionID)
 	} else {
 		tflog.Warn(ctx, fmt.Sprintf("Thumbprint for certificate %d is nil. Attempting to search as serial number.", cID))
 		sn := clientResp.SerialNumber
@@ -319,12 +325,12 @@ func readCertificateById(ctx context.Context, cID int, client *kfc.APIClient) (*
 			tflog.Warn(ctx, fmt.Sprintf("Serial number for certificate %d is nil. Attempting to search as Issuer DN.", cID))
 			dn := clientResp.IssuedDN
 			if dn.IsSet() {
-				detailedClientResp, detailedHttpResp, detailedRespErr = lookupCertificate(ctx, CertificateDNFieldName, dn, client)
+				detailedClientResp, detailedHttpResp, detailedRespErr = lookupCertificate(ctx, CertificateDNFieldName, dn, client, collectionID)
 			} else {
 				tflog.Warn(ctx, fmt.Sprintf("Unable to lookup locations, private key and metadata for %d", cID))
 			}
 		} else {
-			detailedClientResp, detailedHttpResp, detailedRespErr = lookupCertificate(ctx, CertificateSNFieldName, sn, client)
+			detailedClientResp, detailedHttpResp, detailedRespErr = lookupCertificate(ctx, CertificateSNFieldName, sn, client, collectionID)
 		}
 	}
 	if detailedClientResp != nil && detailedRespErr == nil {
@@ -338,11 +344,12 @@ func readCertificateById(ctx context.Context, cID int, client *kfc.APIClient) (*
 	return clientResp, httpResp, respErr
 }
 
-func lookupCertificate(ctx context.Context, fieldName string, fieldValue interface{}, client *kfc.APIClient) (*kfc.ModelsCertificateRetrievalResponse, *http.Response, error) {
+func lookupCertificate(ctx context.Context, fieldName string, fieldValue interface{}, client *kfc.APIClient, collectionId int64) (*kfc.ModelsCertificateRetrievalResponse, *http.Response, error) {
 	var (
 		q           string
 		notFoundErr error
 	)
+
 	switch fieldValue.(type) {
 	case string:
 		q = fmt.Sprintf(`%s -eq "%s"`, fieldName, fieldValue.(string))
@@ -367,12 +374,18 @@ func lookupCertificate(ctx context.Context, fieldName string, fieldValue interfa
 	tflog.Info(ctx, fmt.Sprintf("Looking up cert by '%s'", fieldName))
 	ctx = tflog.SetField(ctx, "query_string", q)
 	tflog.Debug(ctx, fmt.Sprintf("Calling GET %s/Certificate?QueryString=%s", client.GetConfig().Host, q))
-	certsResp, httpResp, respErr := client.CertificateApi.CertificateQueryCertificates(ctx).
+	req := client.CertificateApi.CertificateQueryCertificates(ctx).
 		IncludeMetadata(true).
 		IncludeLocations(true).
 		IncludeHasPrivateKey(true).
-		PqQueryString(q).
-		Execute()
+		PqQueryString(q)
+	if collectionId > 0 {
+		ctx = tflog.SetField(ctx, "collection_id", collectionId)
+		tflog.Debug(ctx, fmt.Sprintf("Adding collection_id to request"))
+		req.CollectionId(int32(collectionId))
+	}
+	certsResp, httpResp, respErr := req.Execute()
+
 	logCommandAPIResponse(ctx, httpResp, respErr)
 
 	if len(certsResp) > 0 {

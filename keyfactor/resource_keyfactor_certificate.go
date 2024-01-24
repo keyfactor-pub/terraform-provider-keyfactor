@@ -1141,20 +1141,25 @@ func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enr
 		}
 
 		if isPending {
-			tflog.Debug(ctx, "Iterating through pending certificates from Keyfactor Command")
-			for _, cert := range pendingCertsResponse {
-				if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
-					tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval for %ss.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn, sleepDuration))
-					time.Sleep(sleepDuration)
-					sleepDuration = sleepDuration * 2
-					if sleepDuration > MAX_WAIT_SECONDS*time.Second {
-						sleepDuration = MAX_WAIT_SECONDS * time.Second
+			tflog.Debug(ctx, "Iterating through pending certificates from Keyfactor Command to check if certificate is still pending")
+			if len(pendingCertsResponse) > 0 || len(pendingExternalResponse) > 0 {
+				for _, cert := range pendingCertsResponse {
+					if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
+						tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval for %ss.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn, sleepDuration))
+						time.Sleep(sleepDuration)
+						sleepDuration = sleepDuration * 2
+						if sleepDuration > MAX_WAIT_SECONDS*time.Second {
+							sleepDuration = MAX_WAIT_SECONDS * time.Second
+						}
+						isPending = true
+						tflog.Debug(ctx, fmt.Sprintf("Certificate %d is still pending approvals, sleeping for %ss", enrollResponse.CertificateInformation.KeyfactorRequestID, sleepDuration))
+						break
 					}
-					isPending = true
-					tflog.Debug(ctx, fmt.Sprintf("Certificate %d is still pending approvals, sleeping for %ss", enrollResponse.CertificateInformation.KeyfactorRequestID, sleepDuration))
-					break
+					tflog.Debug(ctx, fmt.Sprintf("Certificate %d is not pending internal approvals", enrollResponse.CertificateInformation.KeyfactorRequestID))
+					isPending = false
 				}
-				tflog.Debug(ctx, fmt.Sprintf("Certificate %d is not pending internal approvals", enrollResponse.CertificateInformation.KeyfactorRequestID))
+			} else {
+				tflog.Debug(ctx, "No pending certificates from Keyfactor Command so this approval or denial must have occurred.")
 				isPending = false
 			}
 			if !isPending {

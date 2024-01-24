@@ -134,7 +134,7 @@ func (r dataSourceAgent) Read(ctx context.Context, request tfsdk.ReadDataSourceR
 
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Agent Read Error",
+			ERR_SUMMARY_AGENT_READ,
 			fmt.Sprintf("Error querying Keyfactor Command for agent '%s': %s", agentIdentifier, err.Error()),
 		)
 		return

@@ -87,8 +87,8 @@ func (r resourceCertificateTemplateRoleBinding) Create(ctx context.Context, requ
 	kfTemplates, err := kfClient.GetTemplates()
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error getting templates",
-			"There was an error getting templates from Keyfactor: "+err.Error(),
+			ERR_SUMMARY_TEMPLATE_READ,
+			"There was an error getting templates from Keyfactor Command: "+err.Error(),
 		)
 		return
 	}
@@ -248,8 +248,8 @@ func (r resourceCertificateTemplateRoleBinding) Delete(ctx context.Context, requ
 	kfTemplates, err := kfClient.GetTemplates()
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error getting templates",
-			"There was an error getting templates from Keyfactor: "+err.Error(),
+			ERR_SUMMARY_TEMPLATE_READ,
+			"There was an error getting templates from Keyfactor Command: "+err.Error(),
 		)
 		return
 	}

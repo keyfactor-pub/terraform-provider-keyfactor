@@ -2,6 +2,10 @@
 
 ### Client
 
+#### Features
+
+* 9808312 feat(client): `keyfactor_client` now allows for global `request_timeout` to be set. Default is 30 seconds.
+
 #### Fixes
 
 * 9808312 fix(client): `keyfactor_client` now retries any 'Context Deadline Exceeded' errors.

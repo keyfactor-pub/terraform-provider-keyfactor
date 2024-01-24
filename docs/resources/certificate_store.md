@@ -25,7 +25,7 @@ resource "keyfactor_certificate_store" "k8scluster_w_container" {
   store_path       = "test-cluster01" # Varies based on store type
   agent_identifier = "my-orch-10-2"   # Orchestrator GUID or Orchestrator ClientMachine name
   store_type       = "K8SCluster"     # Store type, must exist in KeyFactor Command
-  properties       = {
+  properties = {
     # This block will vary based on certificate store type
     IsRootStore = false
   }

@@ -24,9 +24,9 @@ tfdocs:
 macos_release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64
 	mkdir -p ${HOME}/.terraform.d/plugins/keyfactor.com/keyfactor/keyfactor/${VERSION}/darwin_amd64
+	mkdir -p ${HOME}/.terraform.d/plugins/github.com/keyfactor-pub/keyfactor/${VERSION}/darwin_amd64
 	cp ./bin/${BINARY}_${VERSION}_darwin_amd64 ${HOME}/.terraform.d/plugins/keyfactor.com/keyfactor/keyfactor/${VERSION}/darwin_amd64/${BINARY}
-	mkdir -p ${HOME}/.terraform.d/plugins/keyfactor-pub/keyfactor/${VERSION}/darwin_amd64
-	cp ./bin/${BINARY}_${VERSION}_darwin_amd64 ${HOME}/.terraform.d/plugins/keyfactor-pub/keyfactor/${VERSION}/darwin_amd64/${BINARY}
+	cp ./bin/${BINARY}_${VERSION}_darwin_amd64 ${HOME}/.terraform.d/plugins/github.com/keyfactor-pub/keyfactor/${VERSION}/darwin_amd64/${BINARY}
 	mv ./bin/${BINARY}_${VERSION}_darwin_amd64 ./bin/terraform-provider-keyfactor
 	zip -j ./bin/${BINARY}_${VERSION}_darwin_amd64.zip ./bin/terraform-provider-keyfactor
 release:

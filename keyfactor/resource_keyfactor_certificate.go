@@ -16,6 +16,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type resourceKeyfactorCertificateType struct{}
@@ -368,7 +369,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			lookupPassword = plan.KeyPassword.Value
 		}
 
-		PFXArgs := &api.EnrollPFXFctArgs{
+		PFXArgs := &api.EnrollPFXFctArgsV2{
 			CustomFriendlyName:          plan.CommonName.Value,
 			Password:                    lookupPassword,
 			PopulateMissingValuesFromAD: false, //TODO: Add support for this
@@ -393,7 +394,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			},
 		}
 		tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))
-		enrollResponse, err := kfClient.EnrollPFX(PFXArgs)
+		enrollResponse, err := r.p.client.EnrollPFXV2(PFXArgs)
 		if err != nil {
 			response.Diagnostics.AddError(
 				"Error creating certificate.",
@@ -401,8 +402,29 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			)
 			return
 		}
-
 		enrolledId := enrollResponse.CertificateInformation.KeyfactorID
+		enrolledThumbprint := enrollResponse.CertificateInformation.Thumbprint
+		enrolledSerialNumber := enrollResponse.CertificateInformation.SerialNumber
+		enrolledIssuerDN := enrollResponse.CertificateInformation.IssuerDN
+		// check if request is pending approvals
+		if enrollResponse.CertificateInformation.RequestDisposition == "PENDING" {
+			// call HandlePendingCert
+			tflog.Debug(ctx, fmt.Sprintf("Certificate %s is pending approval.", PFXArgs.Subject.SubjectCommonName))
+			tflog.Debug(ctx, fmt.Sprintf("Calling HandlePendingCert for certificate %s.", PFXArgs.Subject.SubjectCommonName))
+			approvedCert, pErr := r.HandlePendingCert(ctx, enrollResponse, PFXArgs.Subject.SubjectCommonName)
+			if pErr != nil {
+				response.Diagnostics.AddError(
+					"Error creating certificate.",
+					fmt.Sprintf("Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(), PFXArgs.Subject.SubjectCommonName),
+				)
+				return
+			}
+			enrolledId = approvedCert.Id
+			enrolledThumbprint = approvedCert.Thumbprint
+			enrolledSerialNumber = approvedCert.SerialNumber
+			enrolledIssuerDN = approvedCert.IssuerDN
+		}
+
 		// Download and assign certificates to proper location
 		leaf, chain, pKey, dErr := downloadCertificate(enrolledId, r.p.client, lookupPassword, csr != "")
 		if dErr != nil {
@@ -426,9 +448,9 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			DNSSANs:              plan.DNSSANs,
 			IPSANs:               plan.IPSANs,
 			URISANs:              plan.URISANs,
-			SerialNumber:         types.String{Value: enrollResponse.CertificateInformation.SerialNumber},
-			IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
-			Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
+			SerialNumber:         types.String{Value: enrolledSerialNumber},
+			IssuerDN:             types.String{Value: enrolledIssuerDN},
+			Thumbprint:           types.String{Value: enrolledThumbprint},
 			PEM:                  types.String{Value: leaf},
 			PEMCACert:            types.String{Value: chain},
 			PEMChain:             types.String{Value: fullChain},
@@ -1096,4 +1118,98 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	if response.Diagnostics.HasError() {
 		return
 	}
+}
+
+func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enrollResponse *api.EnrollResponseV2, cn string) (*api.GetCertificateResponse, error) {
+	sleepDuration := 1 * time.Second
+	isPending := true
+	for i := 0; i < MAX_ITERATIONS; i++ {
+		tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn))
+
+		tflog.Debug(ctx, "Fetching pending certificates from Keyfactor Command")
+		pendingCertsResponse, lpErr := r.p.client.ListPendingCertificates(nil)
+
+		tflog.Debug(ctx, "Fetching certificates pending external validation from Keyfactor Command")
+		pendingExternalResponse, lpeErr := r.p.client.ListExternalValidationPendingCertificates(nil)
+
+		if lpErr != nil || lpeErr != nil {
+			if lpErr != nil {
+				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor: " + lpErr.Error())
+			} else {
+				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor: " + lpeErr.Error())
+			}
+		}
+
+		if isPending {
+			tflog.Debug(ctx, "Iterating through pending certificates from Keyfactor Command")
+			for _, cert := range pendingCertsResponse {
+				if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
+					tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval for %ss.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn, sleepDuration))
+					time.Sleep(sleepDuration)
+					sleepDuration = sleepDuration * 2
+					if sleepDuration > MAX_WAIT_SECONDS*time.Second {
+						sleepDuration = MAX_WAIT_SECONDS * time.Second
+					}
+					isPending = true
+					tflog.Debug(ctx, fmt.Sprintf("Certificate %d is still pending approvals, sleeping for %ss", enrollResponse.CertificateInformation.KeyfactorRequestID, sleepDuration))
+					break
+				}
+				tflog.Debug(ctx, fmt.Sprintf("Certificate %d is not pending internal approvals", enrollResponse.CertificateInformation.KeyfactorRequestID))
+				isPending = false
+			}
+			if !isPending {
+				tflog.Debug(ctx, "Iterating through certificates pending external validation from Keyfactor Command")
+				for _, cert := range pendingExternalResponse {
+					if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
+						tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval for %ss.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn, sleepDuration))
+						time.Sleep(sleepDuration)
+						sleepDuration = sleepDuration * 2
+						if sleepDuration > MAX_WAIT_SECONDS*time.Second {
+							sleepDuration = MAX_WAIT_SECONDS * time.Second
+						}
+						isPending = true
+						tflog.Debug(ctx, fmt.Sprintf("Certificate %d is still pending approvals, sleeping for %ss", enrollResponse.CertificateInformation.KeyfactorRequestID, sleepDuration))
+						break
+					}
+					tflog.Debug(ctx, fmt.Sprintf("Certificate %d is not pending external approvals", enrollResponse.CertificateInformation.KeyfactorRequestID))
+					isPending = false
+				}
+			}
+		}
+		if !isPending {
+			tflog.Info(ctx, fmt.Sprintf("Certificate %d is not pending approvals, checking if it was denied", enrollResponse.CertificateInformation.KeyfactorRequestID))
+			deniedCertsResponse, _ := r.p.client.ListDeniedCertificates(nil)
+			for _, cert := range deniedCertsResponse {
+				if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
+					errMsg := fmt.Sprintf("Certificate request '%d' for %s was denied ", enrollResponse.CertificateInformation.KeyfactorRequestID, cn)
+					tflog.Error(ctx, errMsg)
+					return nil, fmt.Errorf(errMsg)
+				}
+			}
+			tflog.Info(ctx, fmt.Sprintf("Certificate %d is not pending approvals, checking if it was approved", enrollResponse.CertificateInformation.KeyfactorRequestID))
+			time.Sleep(MAX_WAIT_SECONDS * time.Second) // Allow command to generate cert
+			break
+		}
+	}
+	// Look up certificate by CN and return the most recently issued certificate
+	certArgs := &api.GetCertificateContextArgs{
+		IncludeMetadata:      boolToPointer(true),
+		IncludeLocations:     boolToPointer(true),
+		IncludeHasPrivateKey: boolToPointer(true),
+		CollectionId:         intToPointer(0),
+		Id:                   0,
+		CommonName:           "",
+		Thumbprint:           "",
+		RequestId:            enrollResponse.CertificateInformation.KeyfactorRequestID,
+	}
+	certResponse, gErr := r.p.client.GetCertificateContext(certArgs)
+	if gErr != nil {
+		return nil, gErr
+	}
+	//enrollResponse.CertificateInformation.KeyfactorID = certResponse.Id
+	//enrollResponse.CertificateInformation.SerialNumber = certResponse.SerialNumber
+	//enrollResponse.CertificateInformation.IssuerDN = certResponse.IssuerDN
+	//enrollResponse.CertificateInformation.Thumbprint = certResponse.Thumbprint
+	//enrollResponse.CertificateInformation.KeyfactorRequestID = certResponse.Id
+	return certResponse, nil
 }

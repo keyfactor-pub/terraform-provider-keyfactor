@@ -34,9 +34,17 @@ data "keyfactor_certificate" "ca_cert" {
 
 # Deploy the CA certificate to the certificate store
 resource "keyfactor_certificate_deployment" "ca_cert_deployment" {
-  certificate_id       = data.keyfactor_certificate.ca_cert.certificate_id # The Keyfactor Command internal certificate ID
+  certificate_id       = data.keyfactor_certificate.ca_cert.certificate_id
+  # The Keyfactor Command internal certificate ID
   certificate_store_id = data.keyfactor_certificate_store.my_cert_store.id # The Keyfactor Command certificate store ID
-  certificate_alias    = data.keyfactor_certificate.ca_cert.thumbprint     # Alias to use for the certificate in the store
+  certificate_alias    = data.keyfactor_certificate.ca_cert.thumbprint
+  # Alias to use for the certificate in the store
+  job_parameters       = {
+    #Optional entry parameters to provide to the deployment job. These will only be used if the orchestrator extension supports them.
+    "Region"    = "us-east-1"
+    "Account"   = "1234567890"
+    "Arbitrary" = "Value"
+  }
 }
 ```
 
@@ -45,12 +53,13 @@ resource "keyfactor_certificate_deployment" "ca_cert_deployment" {
 
 ### Required
 
-- `certificate_alias` (String) A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type. Please ensure that the alias is lowercase, or problems can arise in Terraform Plan.
 - `certificate_id` (Number) Keyfactor certificate ID
 - `certificate_store_id` (String) A string containing the GUID for the certificate store to which the certificate should be added.
 
 ### Optional
 
+- `certificate_alias` (String) A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type. Please ensure that the alias is lowercase, or problems can arise in Terraform Plan. If not provided deployment validation will be done by Command certificate ID.
+- `job_parameters` (Map of String) A map of entry parameters to be passed to the deployment job. These will only be used if the orchestrator extension supports them.
 - `key_password` (String, Sensitive) Password that protects PFX certificate, if the certificate was enrolled using PFX enrollment, or is password protected in general. This value cannot change, and Terraform will throw an error if a change is attempted.
 
 ### Read-Only

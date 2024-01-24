@@ -1,11 +1,18 @@
 # v2.1.6
 
+### Client
+
+#### Fixes
+
+* 9808312 fix(client): `keyfactor_client` now retries any 'Context Deadline Exceeded' errors.
+
 ### Certificates
 
 #### Fixes
 
 * 4d01ddd fix(certificates): `keyfactor_certificate` resources now handle enrollments requests that require approvals.
   #90
+
 
 ### Deployments
 

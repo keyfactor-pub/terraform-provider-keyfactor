@@ -26,3 +26,6 @@ jobs:
       APPROVE_README_PUSH: ${{ secrets.APPROVE_README_PUSH}}
       gpg_key: ${{ secrets.GPG_PRIVATE_KEY }}
       gpg_pass: ${{ secrets.PASSPHRASE }}
+    with:
+      release_version_override: ${{ inputs.release_version_override || needs.call-create-github-release-workflow.outputs.release_version }}
+      primary_language_override: ${{ inputs.primary_language_override || needs.call-get-primary-language.outputs.primary_language }}

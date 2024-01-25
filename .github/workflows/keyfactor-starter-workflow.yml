@@ -2,8 +2,17 @@ name: Keyfactor Bootstrap Workflow
 
 on:
   workflow_dispatch:
+    inputs:
+      release_version_override:
+        description: 'Force a specific release version'
+        required: false
+        type: string
+      primary_language_override:
+        description: 'Force a specific primary language.  Valid values are "C#" and "Go"'
+        required: false
+        type: string
   pull_request:
-    types: [opened, closed, synchronize, edited, reopened]
+    types: [ opened, closed, synchronize, edited, reopened ]
   push:
   create:
     branches:

@@ -11,6 +11,11 @@ on:
         description: 'Force a specific primary language.  Valid values are "C#" and "Go"'
         required: false
         type: string
+      force_release:
+        description: Force a release build
+        required: false
+        type: boolean
+        default: false
   pull_request:
     types: [ opened, closed, synchronize, edited, reopened ]
   push:
@@ -29,3 +34,4 @@ jobs:
     with:
       release_version_override: ${{ inputs.release_version_override || needs.call-create-github-release-workflow.outputs.release_version }}
       primary_language_override: ${{ inputs.primary_language_override || needs.call-get-primary-language.outputs.primary_language }}
+      force_release: ${{ github.event_name == 'workflow_dispatch' && inputs.force_release || false }}

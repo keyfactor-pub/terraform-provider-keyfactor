@@ -165,8 +165,8 @@ func (r resourceSecurityRole) Delete(ctx context.Context, request tfsdk.DeleteRe
 	err := kfClient.DeleteSecurityRole(int(identityId))
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error deleting security identity.",
-			"Could not delete "+state.Name.Value+" from Keyfactor: "+err.Error(),
+			ERR_SUMMARY_IDENTITY_DELETE,
+			"Could not delete "+state.Name.Value+" from Keyfactor Command: "+err.Error(),
 		)
 		return
 	}

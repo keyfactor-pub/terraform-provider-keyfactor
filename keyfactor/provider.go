@@ -211,7 +211,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	if config.RequestTimeout.Null {
 		timeout := os.Getenv("KEYFACTOR_TIMEOUT")
 		if timeout == "" {
-			config.RequestTimeout.Value = 30
+			config.RequestTimeout.Value = MAX_WAIT_SECONDS
 		} else {
 			//convert string to int
 			timeoutInt, err := strconv.Atoi(timeout)

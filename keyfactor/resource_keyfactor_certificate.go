@@ -240,7 +240,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 	// If CSR and CommonName are both set, or neither are set, error
 	if (plan.CSR.IsNull() && plan.CommonName.IsNull()) || (!plan.CSR.IsNull() && !plan.CommonName.IsNull()) || (csr == "" && plan.CommonName.IsNull()) {
 		response.Diagnostics.AddError(
-			"Invalid certificate resource definition.",
+			ERR_SUMMARY_INVALID_CERTIFICATE_RESOURCE,
 			"You must provide either a CSR or a CN to create a certificate.",
 		)
 		return
@@ -271,7 +271,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		//ensure that conflicting values are not set
 		if plan.CommonName.Value != "" || plan.Organization.Value != "" || plan.OrganizationalUnit.Value != "" || plan.Locality.Value != "" || plan.State.Value != "" || plan.Country.Value != "" || plan.PrivateKey.Value != "" || plan.KeyPassword.Value != "" {
 			response.Diagnostics.AddError(
-				"Invalid certificate resource definition.",
+				ERR_SUMMARY_INVALID_CERTIFICATE_RESOURCE,
 				"You cannot set the private_key, password, common_name, organization, organizational_unit, locality, state, or country when using a CSR.",
 			)
 			return
@@ -300,7 +300,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		enrollResponse, err := kfClient.EnrollCSR(CSRArgs)
 		if err != nil {
 			response.Diagnostics.AddError(
-				"Error creating certificate.",
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 				"Could not create certificate in Keyfactor: "+err.Error(),
 			)
 			return
@@ -322,8 +322,8 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		leaf, chain, _, dErr := downloadCertificate(enrollResponse.CertificateInformation.KeyfactorID, r.p.client, autoPassword, csr != "")
 		if dErr != nil {
 			response.Diagnostics.AddError(
-				"Error reading Keyfactor certificate.",
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), certificateId),
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
 			)
 			return
 		}
@@ -363,7 +363,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		}
 	} else { //Enroll PFX
 		if plan.KeyPassword.Value == "" {
-			autoPassword = generatePassword(32, 4, 4, 4)
+			autoPassword = generatePassword(DEFAULT_PFX_PASSWORD_LEN, DEFAULT_PFX_PASSWORD_SPECIAL_CHAR_COUNT, DEFAULT_PFX_PASSWORD_NUMBER_COUNT, DEFAULT_PFX_PASSWORD_UPPER_COUNT)
 			lookupPassword = autoPassword
 		} else {
 			lookupPassword = plan.KeyPassword.Value
@@ -397,7 +397,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		enrollResponse, err := r.p.client.EnrollPFXV2(PFXArgs)
 		if err != nil {
 			response.Diagnostics.AddError(
-				"Error creating certificate.",
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 				fmt.Sprintf("Could not create certificate %s on Keyfactor: "+err.Error(), PFXArgs.Subject.SubjectCommonName),
 			)
 			return
@@ -414,7 +414,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			approvedCert, pErr := r.HandlePendingCert(ctx, enrollResponse, PFXArgs.Subject.SubjectCommonName)
 			if pErr != nil {
 				response.Diagnostics.AddError(
-					"Error creating certificate.",
+					ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 					fmt.Sprintf("Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(), PFXArgs.Subject.SubjectCommonName),
 				)
 				return
@@ -429,8 +429,8 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		leaf, chain, pKey, dErr := downloadCertificate(enrolledId, r.p.client, lookupPassword, csr != "")
 		if dErr != nil {
 			response.Diagnostics.AddError(
-				"Error reading Keyfactor certificate.",
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), certificateId),
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
 			)
 		}
 
@@ -532,8 +532,8 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 	if err != nil {
 		tflog.Error(ctx, "Error calling Keyfactor Go Client GetCertificateContext")
 		response.Diagnostics.AddWarning(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), state.ID.Value),
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), state.ID.Value),
 		)
 		nullValue := types.String{Null: true}
 		nullList := types.List{Null: true, ElemType: types.StringType}
@@ -579,13 +579,13 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 	// check if state has an auto password
 	lookupPassword := state.KeyPassword.Value
 	if lookupPassword == "" {
-		lookupPassword = generatePassword(32, 4, 4, 4)
+		lookupPassword = generatePassword(DEFAULT_PFX_PASSWORD_LEN, DEFAULT_PFX_PASSWORD_SPECIAL_CHAR_COUNT, DEFAULT_PFX_PASSWORD_NUMBER_COUNT, DEFAULT_PFX_PASSWORD_UPPER_COUNT)
 	}
 	_, _, _, dErr := downloadCertificate(certificateIdInt, r.p.client, lookupPassword, csr != "")
 	if dErr != nil {
 		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), state.ID.Value),
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), state.ID.Value),
 		)
 	}
 
@@ -617,8 +617,8 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 		lBytes, lbErr := base64.StdEncoding.DecodeString(cResp.ContentBytes)
 		if lbErr != nil {
 			response.Diagnostics.AddError(
-				"Error reading Keyfactor certificate.",
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), state.ID.Value),
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(), state.ID.Value),
 			)
 			return
 		}
@@ -678,8 +678,8 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 			tflog.Error(ctx, "Error decoding certificate content bytes.")
 			tflog.Error(ctx, lbErr.Error())
 			response.Diagnostics.AddError(
-				"Error reading Keyfactor certificate.",
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), state.ID.Value),
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(), state.ID.Value),
 			)
 			return
 		}
@@ -742,7 +742,7 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 		tflog.Error(ctx, "Error calling Keyfactor Go Client GetTemplate")
 		response.Diagnostics.AddError(
 			"Template read error.",
-			fmt.Sprintf("Could not retrieve template for certificate '%s' from Keyfactor: "+templateErr.Error(), state.ID.Value),
+			fmt.Sprintf("Could not retrieve template for certificate '%s' from Keyfactor Command: "+templateErr.Error(), state.ID.Value),
 		)
 		return
 	}
@@ -847,7 +847,7 @@ func (r resourceKeyfactorCertificate) Update(ctx context.Context, request tfsdk.
 
 	if (plan.CSR.IsNull() && plan.CommonName.IsNull()) || (!plan.CSR.IsNull() && !plan.CommonName.IsNull()) || (csr == "" && plan.CommonName.IsNull()) {
 		response.Diagnostics.AddError(
-			"Invalid certificate resource definition.",
+			ERR_SUMMARY_INVALID_CERTIFICATE_RESOURCE,
 			"You must provide either a CSR or a CN to create a certificate.",
 		)
 		return
@@ -1068,8 +1068,8 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	certificateData, err := r.p.client.GetCertificateContext(args)
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateId),
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), certificateId),
 		)
 		return
 	}
@@ -1082,8 +1082,8 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	leaf, chain, priv, dErr := downloadCertificate(certificateData.Id, r.p.client, password, csr != "")
 	if dErr != nil {
 		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), certificateId),
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
 		)
 		return
 	}
@@ -1120,6 +1120,24 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	}
 }
 
+func (r resourceKeyfactorCertificate) CertLookupByRequestID(ctx context.Context, requestID int) (*api.GetCertificateResponse, error) {
+	certArgs := &api.GetCertificateContextArgs{
+		IncludeMetadata:      boolToPointer(true),
+		IncludeLocations:     boolToPointer(true),
+		IncludeHasPrivateKey: boolToPointer(true),
+		CollectionId:         intToPointer(0),
+		Id:                   0,
+		CommonName:           "",
+		Thumbprint:           "",
+		RequestId:            requestID,
+	}
+	certResp, err := r.p.client.GetCertificateContext(certArgs)
+	if err != nil {
+		return nil, err
+	}
+	return certResp, nil
+}
+
 func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enrollResponse *api.EnrollResponseV2, cn string) (*api.GetCertificateResponse, error) {
 	sleepDuration := 1 * time.Second
 	isPending := true
@@ -1134,27 +1152,46 @@ func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enr
 
 		if lpErr != nil || lpeErr != nil {
 			if lpErr != nil {
-				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor: " + lpErr.Error())
+				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: " + lpErr.Error())
 			} else {
-				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor: " + lpeErr.Error())
+				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: " + lpeErr.Error())
 			}
 		}
 
 		if isPending {
-			tflog.Debug(ctx, "Iterating through pending certificates from Keyfactor Command")
-			for _, cert := range pendingCertsResponse {
-				if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
-					tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval for %ss.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn, sleepDuration))
-					time.Sleep(sleepDuration)
-					sleepDuration = sleepDuration * 2
-					if sleepDuration > MAX_WAIT_SECONDS*time.Second {
-						sleepDuration = MAX_WAIT_SECONDS * time.Second
+			tflog.Debug(ctx, "Iterating through pending certificates from Keyfactor Command to check if certificate is still pending")
+			if len(pendingCertsResponse) > 0 || len(pendingExternalResponse) > 0 {
+				for _, cert := range pendingCertsResponse {
+					if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
+						tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval for %ss.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn, sleepDuration))
+						time.Sleep(sleepDuration)
+						sleepDuration *= SLEEP_DURATION_MULTIPLIER
+						if sleepDuration > MAX_WAIT_SECONDS*time.Second {
+							sleepDuration = MAX_WAIT_SECONDS * time.Second
+						}
+						isPending = true
+						tflog.Debug(ctx, fmt.Sprintf("Certificate %d is still pending approvals, sleeping for %ss", enrollResponse.CertificateInformation.KeyfactorRequestID, sleepDuration))
+						break
 					}
-					isPending = true
-					tflog.Debug(ctx, fmt.Sprintf("Certificate %d is still pending approvals, sleeping for %ss", enrollResponse.CertificateInformation.KeyfactorRequestID, sleepDuration))
-					break
+					tflog.Debug(ctx, fmt.Sprintf("Certificate %d is not pending internal approvals", enrollResponse.CertificateInformation.KeyfactorRequestID))
+					isPending = false
 				}
-				tflog.Debug(ctx, fmt.Sprintf("Certificate %d is not pending internal approvals", enrollResponse.CertificateInformation.KeyfactorRequestID))
+			} else {
+				if i < MAX_APPROVAL_WAIT_LOOPS {
+					tflog.Debug(ctx, "No pending certificates from Keyfactor Command checking if approval has occurred.")
+					approveResp, _ := r.CertLookupByRequestID(ctx, enrollResponse.CertificateInformation.KeyfactorRequestID)
+					if approveResp != nil && approveResp.CertRequestId == enrollResponse.CertificateInformation.KeyfactorRequestID {
+						tflog.Debug(ctx, "Certificate found so approval must have occurred.")
+						return approveResp, nil
+					}
+
+					tflog.Debug(ctx, "Allowing time for Keyfactor Command to generate certificate approval.")
+					tflog.Info(ctx, fmt.Sprintf("No pending certificates from Keyfactor Command, will check again in %d seconds.", sleepDuration))
+					time.Sleep(sleepDuration)
+					sleepDuration *= SLEEP_DURATION_MULTIPLIER
+					continue
+				}
+				tflog.Debug(ctx, "No pending certificates from Keyfactor Command so this approval or denial must have occurred.")
 				isPending = false
 			}
 			if !isPending {
@@ -1163,7 +1200,7 @@ func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enr
 					if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
 						tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval for %ss.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn, sleepDuration))
 						time.Sleep(sleepDuration)
-						sleepDuration = sleepDuration * 2
+						sleepDuration *= SLEEP_DURATION_MULTIPLIER
 						if sleepDuration > MAX_WAIT_SECONDS*time.Second {
 							sleepDuration = MAX_WAIT_SECONDS * time.Second
 						}
@@ -1191,25 +1228,10 @@ func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enr
 			break
 		}
 	}
-	// Look up certificate by CN and return the most recently issued certificate
-	certArgs := &api.GetCertificateContextArgs{
-		IncludeMetadata:      boolToPointer(true),
-		IncludeLocations:     boolToPointer(true),
-		IncludeHasPrivateKey: boolToPointer(true),
-		CollectionId:         intToPointer(0),
-		Id:                   0,
-		CommonName:           "",
-		Thumbprint:           "",
-		RequestId:            enrollResponse.CertificateInformation.KeyfactorRequestID,
-	}
-	certResponse, gErr := r.p.client.GetCertificateContext(certArgs)
+	// Look up certificate by certjficate request ID and return the most recently issued certificate
+	certResponse, gErr := r.CertLookupByRequestID(ctx, enrollResponse.CertificateInformation.KeyfactorRequestID)
 	if gErr != nil {
 		return nil, gErr
 	}
-	//enrollResponse.CertificateInformation.KeyfactorID = certResponse.Id
-	//enrollResponse.CertificateInformation.SerialNumber = certResponse.SerialNumber
-	//enrollResponse.CertificateInformation.IssuerDN = certResponse.IssuerDN
-	//enrollResponse.CertificateInformation.Thumbprint = certResponse.Thumbprint
-	//enrollResponse.CertificateInformation.KeyfactorRequestID = certResponse.Id
 	return certResponse, nil
 }

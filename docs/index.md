@@ -26,8 +26,9 @@ provider "keyfactor" {
 
 ### Optional
 
-- `appkey` (String, Sensitive) Application key provisioned by Keyfactor instance. This can also be set via the `KEYFACTOR_APPKEY` environment variable.
-- `domain` (String) Domain that Keyfactor instance is hosted on. This can also be set via the `KEYFACTOR_DOMAIN` environment variable.
-- `hostname` (String) Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com. This can also be set via the `KEYFACTOR_HOSTNAME` environment variable.
-- `password` (String, Sensitive) Password of Keyfactor service account. This can also be set via the `KEYFACTOR_PASSWORD` environment variable.
-- `username` (String) Username of Keyfactor service account. This can also be set via the `KEYFACTOR_USERNAME` environment variable.
+- `appkey` (String, Sensitive) Application key provisioned by Keyfactor Command instance. This can also be set via the `KEYFACTOR_APPKEY` environment variable.
+- `domain` (String) Domain that Keyfactor Command instance is hosted on. This can also be set via the `KEYFACTOR_DOMAIN` environment variable.
+- `hostname` (String) Hostname of Keyfactor Command instance. Ex: keyfactor.examplecompany.com. This can also be set via the `KEYFACTOR_HOSTNAME` environment variable.
+- `password` (String, Sensitive) Password of Keyfactor Command service account. This can also be set via the `KEYFACTOR_PASSWORD` environment variable.
+- `request_timeout` (Number) Global timeout for HTTP requests to Keyfactor Command instance. Default is 30 seconds.
+- `username` (String) Username of Keyfactor Command service account. This can also be set via the `KEYFACTOR_USERNAME` environment variable.

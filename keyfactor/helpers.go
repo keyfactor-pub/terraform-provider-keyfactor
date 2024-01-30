@@ -453,7 +453,7 @@ func parseProperties(properties string) (types.Map, types.String, types.String, 
 		jsonErr := json.Unmarshal(unescapedJSON, &propsObj)
 		if jsonErr != nil {
 			diags.AddError(
-				"Error reading certificate store",
+				ERR_SUMMARY_CERT_STORE_READ,
 				"Error reading certificate store: %s"+jsonErr.Error(),
 			)
 			return types.Map{}, types.String{Value: ""}, types.String{Value: ""}, types.Bool{Value: false}, diags

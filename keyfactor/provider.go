@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -28,33 +29,38 @@ func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics)
 			"hostname": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Hostname of Keyfactor instance. Ex: keyfactor.examplecompany.com. This can also be set via the `KEYFACTOR_HOSTNAME` environment variable.",
+				Description: "Hostname of Keyfactor Command instance. Ex: keyfactor.examplecompany.com. This can also be set via the `KEYFACTOR_HOSTNAME` environment variable.",
 			},
 
 			"username": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Username of Keyfactor service account. This can also be set via the `KEYFACTOR_USERNAME` environment variable.",
+				Description: "Username of Keyfactor Command service account. This can also be set via the `KEYFACTOR_USERNAME` environment variable.",
 			},
 
 			"password": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Password of Keyfactor service account. This can also be set via the `KEYFACTOR_PASSWORD` environment variable.",
+				Description: "Password of Keyfactor Command service account. This can also be set via the `KEYFACTOR_PASSWORD` environment variable.",
 			},
 
 			"appkey": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Application key provisioned by Keyfactor instance. This can also be set via the `KEYFACTOR_APPKEY` environment variable.",
+				Description: "Application key provisioned by Keyfactor Command instance. This can also be set via the `KEYFACTOR_APPKEY` environment variable.",
 			},
 
 			"domain": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Domain that Keyfactor instance is hosted on. This can also be set via the `KEYFACTOR_DOMAIN` environment variable.",
+				Description: "Domain that Keyfactor Command instance is hosted on. This can also be set via the `KEYFACTOR_DOMAIN` environment variable.",
+			},
+			"request_timeout": {
+				Type:        types.Int64Type,
+				Optional:    true,
+				Description: "Global timeout for HTTP requests to Keyfactor Command instance. Default is 30 seconds.",
 			},
 		},
 	}, nil
@@ -62,11 +68,12 @@ func (p *provider) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics)
 
 // Provider schema struct
 type providerData struct {
-	Username types.String `tfsdk:"username"`
-	Hostname types.String `tfsdk:"hostname"`
-	Password types.String `tfsdk:"password"`
-	ApiKey   types.String `tfsdk:"appkey"`
-	Domain   types.String `tfsdk:"domain"`
+	Username       types.String `tfsdk:"username"`
+	Hostname       types.String `tfsdk:"hostname"`
+	Password       types.String `tfsdk:"password"`
+	ApiKey         types.String `tfsdk:"appkey"`
+	Domain         types.String `tfsdk:"domain"`
+	RequestTimeout types.Int64  `tfsdk:"request_timeout"`
 }
 
 func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderRequest, resp *tfsdk.ConfigureProviderResponse) {
@@ -200,6 +207,26 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		return
 	}
 
+	// Set default request timeout
+	if config.RequestTimeout.Null {
+		timeout := os.Getenv("KEYFACTOR_TIMEOUT")
+		if timeout == "" {
+			config.RequestTimeout.Value = MAX_WAIT_SECONDS
+		} else {
+			//convert string to int
+			timeoutInt, err := strconv.Atoi(timeout)
+			if err != nil {
+				resp.Diagnostics.AddError(
+					"Invalid provider `timeout`.",
+					"Provider `timeout` must be an integer.",
+				)
+				return
+			}
+			config.RequestTimeout.Value = int64(timeoutInt)
+		}
+
+	}
+
 	// Create a new Keyfactor client and set it to the provider client
 	var clientAuth api.AuthConfig
 	clientAuth.Username = config.Username.Value
@@ -207,6 +234,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	//clientAuth.ApiKey = config.ApiKey.Value //TODO: Add API key support
 	clientAuth.Domain = config.Domain.Value
 	clientAuth.Hostname = config.Hostname.Value
+	clientAuth.Timeout = int(config.RequestTimeout.Value)
 
 	connected := false
 	connectionRetries := 0
@@ -257,7 +285,7 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 	}, nil
 }
 
-//// Utility functions
+// // Utility functions
 func boolToPointer(b bool) *bool {
 	return &b
 }

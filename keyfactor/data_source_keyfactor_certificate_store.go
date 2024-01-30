@@ -163,16 +163,16 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 	sRespList, err := r.p.client.GetCertificateStoreByClientAndStorePath(clientMachine, storePath, containerID)
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error reading certificate store",
+			ERR_SUMMARY_CERT_STORE_READ,
 			"Error reading certificate store: %s"+err.Error(),
 		)
 		return
 	}
 
-	if len(*sRespList) == 0 {
+	if sRespList != nil && len(*sRespList) == 0 {
 		response.Diagnostics.AddError(
-			"Error reading certificate store",
-			"Error reading certificate store: %s"+err.Error(),
+			ERR_SUMMARY_CERT_STORE_READ,
+			fmt.Sprintf("Error reading certificate store '%s/%s'", clientMachine, storePath),
 		)
 		return
 	}

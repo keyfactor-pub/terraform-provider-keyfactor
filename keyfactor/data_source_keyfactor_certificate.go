@@ -255,8 +255,8 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 	if err != nil {
 		tflog.Error(ctx, "Error calling Keyfactor Go Client GetCertificateContext")
 		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), state.ID.Value),
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), state.ID.Value),
 		)
 		return
 	}
@@ -287,8 +287,8 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		if dErrO != nil {
 			tflog.Error(ctx, fmt.Sprintf("Unable to recover private key for certificate '%v' from Keyfactor Command.", cResp.Id))
 			response.Diagnostics.AddWarning(
-				"Error reading Keyfactor certificate.",
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErrO.Error(), cResp.Id),
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErrO.Error(), cResp.Id),
 			)
 		}
 		// Convert string to []byte and then to pem.
@@ -299,8 +299,8 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		lBytes, lbErr := base64.StdEncoding.DecodeString(cResp.ContentBytes)
 		if lbErr != nil {
 			response.Diagnostics.AddError(
-				"Error reading Keyfactor certificate.",
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), state.ID.Value),
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(), state.ID.Value),
 			)
 			return
 		}
@@ -360,8 +360,8 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 			tflog.Error(ctx, "Error decoding certificate content bytes.")
 			tflog.Error(ctx, lbErr.Error())
 			response.Diagnostics.AddError(
-				"Error reading Keyfactor certificate.",
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+lbErr.Error(), state.ID.Value),
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(), state.ID.Value),
 			)
 			return
 		}
@@ -408,8 +408,8 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 
 	if dErr != nil {
 		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+dErr.Error(), state.ID.Value),
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), state.ID.Value),
 		)
 	}
 

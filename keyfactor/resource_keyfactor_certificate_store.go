@@ -377,7 +377,7 @@ func (r resourceCertificateStore) Read(ctx context.Context, request tfsdk.ReadRe
 	sResp, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error reading certificate store",
+			ERR_SUMMARY_CERT_STORE_READ,
 			fmt.Sprintf("Error reading certificate store: '%s'. %s", certificateStoreId, err.Error()),
 		)
 		return
@@ -671,7 +671,7 @@ func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk
 	readResponse, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error reading certificate store",
+			ERR_SUMMARY_CERT_STORE_READ,
 			"Error reading certificate store: %s"+err.Error(),
 		)
 		return
@@ -682,8 +682,8 @@ func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk
 
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor: "+err.Error(), certificateStoreId),
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), certificateStoreId),
 		)
 		return
 	}
@@ -691,8 +691,8 @@ func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk
 	csType, csTypeErr := r.p.client.GetCertificateStoreType(readResponse.CertStoreType)
 	if csTypeErr != nil {
 		response.Diagnostics.AddError(
-			"Error reading Keyfactor certificate.",
-			fmt.Sprintf("Could not retrieve certificate store type '%s' from Keyfactor: "+err.Error(), readResponse.CertStoreType),
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf("Could not retrieve certificate store type '%s' from Keyfactor Command: "+err.Error(), readResponse.CertStoreType),
 		)
 		return
 	}

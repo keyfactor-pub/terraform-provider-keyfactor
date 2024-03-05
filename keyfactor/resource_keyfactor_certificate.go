@@ -160,10 +160,11 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 					"issued will be returned. ",
 			},
 			"collection_id": {
-				Type:        types.Int64Type,
-				Computed:    false,
-				Optional:    true,
-				Description: "Optional certificate collection identifier used to ensure user access to the certificate.",
+				Type:          types.Int64Type,
+				Computed:      false,
+				Optional:      true,
+				Description:   "Optional certificate collection identifier used to ensure user access to the certificate.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"certificate_id": {
 				Type:        types.Int64Type,

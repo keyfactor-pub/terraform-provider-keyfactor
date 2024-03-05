@@ -96,7 +96,15 @@ setversion:
 	@sed -i '' -e 's/TAG_VERSION=v*.*/TAG_VERSION=v$(VERSION)/' tag.sh
 
 vendor:
+	export PROJECTS_PATH=$$HOME/GolandProjects
+	rm -rf vendor
 	go mod vendor
+	cd vendor/github.com/Keyfactor
+	rm -rf keyfactor-go-client
+	ln -s "$$HOME/GolandProjects/keyfactor-go-client" .
+	rm -rf keyfactor-go-client-sdk
+	ln -s "$$HOME/GolandProjects/keyfactor-go-client-sdk" .
+
 
 tag:
 	git tag -d v$(VERSION) || true

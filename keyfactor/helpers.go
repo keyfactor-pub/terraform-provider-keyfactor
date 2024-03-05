@@ -352,8 +352,14 @@ func isNullId(i int) bool {
 	return false
 }
 
-func downloadCertificate(id int, kfClient *api.Client, password string, csrEnrollment bool) (string, string, string, error) {
-	certificateContext, err := kfClient.GetCertificateContext(&api.GetCertificateContextArgs{Id: id})
+func downloadCertificate(id int, collectionId int, kfClient *api.Client, password string, csrEnrollment bool) (string, string, string, error) {
+	req := api.GetCertificateContextArgs{
+		Id: id,
+	}
+	if collectionId > 0 {
+		req.CollectionId = &collectionId
+	}
+	certificateContext, err := kfClient.GetCertificateContext(&req)
 	if err != nil {
 		return "", "", "", err
 	}

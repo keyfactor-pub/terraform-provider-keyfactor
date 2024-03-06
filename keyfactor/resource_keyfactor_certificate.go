@@ -163,7 +163,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.Int64Type,
 				Computed:      false,
 				Optional:      true,
-				Description:   "Optional certificate collection identifier used to ensure user access to the certificate.",
+				Description:   "Optional certificate collection ID. This is required if enrollment permissions have been granted at the collection level, for more information on collection permissions see the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"certificate_id": {

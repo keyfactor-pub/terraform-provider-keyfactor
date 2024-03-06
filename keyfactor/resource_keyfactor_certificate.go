@@ -25,10 +25,10 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"csr": {
-				Type:     types.StringType,
-				Optional: true,
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description: "Base-64 encoded certificate signing request (CSR)",
+				Type:          types.StringType,
+				Optional:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Base-64 encoded certificate signing request (CSR)",
 			},
 			"key_password": {
 				Type:     types.StringType,

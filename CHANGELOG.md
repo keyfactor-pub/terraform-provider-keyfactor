@@ -1,3 +1,11 @@
+# v2.1.7
+
+### Certificates
+
+#### Fixes
+- 4202a3a fix(certificates): `keyfactor_certificate` resources now allow for passing of `collection_id` to the `enroll` 
+method. 
+
 # v2.1.6
 
 ### Client

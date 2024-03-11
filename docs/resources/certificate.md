@@ -88,19 +88,19 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 
 ### Optional
 
-- `collection_id` (Number) Optional certificate collection ID. This is required if enrollment permissions have been granted at the collection level, for more information on collection permissions see the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions
+- `collection_id` (Number) Optional certificate collection ID. This is required if enrollment permissions have been granted at the collection level. NOTE: This will *not* assign the cert to the specified collection ID; assignment is based the collection's associated query. For more information on collection permissions see the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions
 - `common_name` (String) Subject common name (CN) of the certificate.
 - `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
-- `dns_sans` (List of String) List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.
-- `ip_sans` (List of String) List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.
+- `dns_sans` (List of String) List of DNS names to use as subjects of the certificate.
+- `ip_sans` (List of String) List of DNS names to use as subjects of the certificate.
 - `key_password` (String, Sensitive) Password used to recover the private key from Keyfactor Command. NOTE: If no value is provided a random password will be generated for key recovery. This value is not stored and does not encrypt the private key in Terraform state. Also note that if a password is provided it must meet any password complexity requirements enforced by the CA template or creation will fail. Auto-generated passwords will be of length 32 and contain a minimum of 4 of the following: uppercase, lowercase, numeric, and special characters.
 - `locality` (String) Subject locality (L) of the certificate
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
 - `organization` (String) Subject organization (O) of the certificate
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate
 - `state` (String) Subject state (ST) of the certificate
-- `uri_sans` (List of String) List of URIs to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.
+- `uri_sans` (List of String) List of URIs to use as subjects of the certificate.
 
 ### Read-Only
 

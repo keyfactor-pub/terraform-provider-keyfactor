@@ -52,44 +52,39 @@ resource "github_actions_secret" "test_deploy_cert_storeid2" {
 }
 
 ## Cert Store Test Variables
-//KEYFACTOR_CERTIFICATE_STORE_ID: "ef0b8005-63bf-42e8-aa3f-23bc94dcf611"
-//          KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE: "myorchestrator01"
-//          KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID: "c2b2084f-3d89-4ded-bb8b-b4e0e74d2b59"
-//          KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID1: "2"
-//          KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2: "2"
 resource "github_actions_secret" "test_certificate_store_id" {
-  repository  = data.github_repository.terraform_provider_keyfactor.name
-  secret_name = "TEST_CERTIFICATE_STORE_ID"
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_STORE_ID"
   plaintext_value = var.test_certificate_store_id
 }
 
 resource "github_actions_secret" "test_certificate_store_client_machine" {
-  repository  = data.github_repository.terraform_provider_keyfactor.name
-  secret_name = "TEST_CERTIFICATE_STORE_CLIENT_MACHINE"
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_STORE_CLIENT_MACHINE"
   plaintext_value = var.test_certificate_store_client_machine
 }
 
 resource "github_actions_secret" "test_certificate_store_orchestrator_agent_id" {
-  repository  = data.github_repository.terraform_provider_keyfactor.name
-  secret_name = "TEST_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID"
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID"
   plaintext_value = var.test_certificate_store_orchestrator_agent_id
 }
 
 resource "github_actions_secret" "test_certificate_store_container_id1" {
-  repository  = data.github_repository.terraform_provider_keyfactor.name
-  secret_name = "TEST_CERTIFICATE_STORE_CONTAINER_ID1"
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_STORE_CONTAINER_ID1"
   plaintext_value = var.test_certificate_store_container_id1
 }
 
-#resource "github_actions_secret" "test_certificate_store_password" {
-#  repository  = data.github_repository.terraform_provider_keyfactor.name
-#  secret_name = "TEST_CERTIFICATE_STORE_PASS"
-#  plaintext_value = var.test_store_password
-#}
+resource "github_actions_secret" "test_certificate_store_password" {
+  repository  = data.github_repository.terraform_provider_keyfactor.name
+  secret_name = "TEST_CERTIFICATE_STORE_PASS"
+  plaintext_value = var.test_store_password
+}
 
 resource "github_actions_secret" "test_certificate_store_container_id2" {
-  repository  = data.github_repository.terraform_provider_keyfactor.name
-  secret_name = "TEST_CERTIFICATE_STORE_CONTAINER_ID2"
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_CERTIFICATE_STORE_CONTAINER_ID2"
   plaintext_value = var.test_certificate_store_container_id2
 }
 
@@ -151,14 +146,20 @@ resource "github_actions_secret" "test_server_username" {
   plaintext_value = var.test_server_username
 }
 
-resource "github_actions_secret" "test_server_username" {
+resource "github_actions_secret" "test_server_password" {
   repository      = data.github_repository.terraform_provider_keyfactor.name
   secret_name     = "TEST_SERVER_PASSWORD"
   plaintext_value = var.test_server_password
 }
 
+resource "github_actions_secret" "terraform_username" {
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_TERRAFORM_USERNAME"
+  plaintext_value = var.terraformer_username
+}
 
-
-
-
-
+resource "github_actions_secret" "terraform_password" {
+  repository      = data.github_repository.terraform_provider_keyfactor.name
+  secret_name     = "TEST_TERRAFORM_PASSWORD"
+  plaintext_value = var.terraformer_password
+}

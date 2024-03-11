@@ -99,7 +99,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.",
+				Description:   "List of DNS names to use as subjects of the certificate. ",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -110,7 +110,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of URIs to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.",
+				Description:   "List of URIs to use as subjects of the certificate. ",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -121,7 +121,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.",
+				Description:   "List of DNS names to use as subjects of the certificate. ",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -160,10 +160,13 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 					"issued will be returned. ",
 			},
 			"collection_id": {
-				Type:          types.Int64Type,
-				Computed:      false,
-				Optional:      true,
-				Description:   "Optional certificate collection ID. This is required if enrollment permissions have been granted at the collection level, for more information on collection permissions see the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions",
+				Type:     types.Int64Type,
+				Computed: false,
+				Optional: true,
+				Description: "Optional certificate collection ID. This is required if enrollment permissions have been " +
+					"granted at the collection level. NOTE: This will *not* assign the cert to the specified collection ID; " +
+					"assignment is based the collection's associated query. For more information on collection permissions see " +
+					"the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"certificate_id": {

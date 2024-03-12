@@ -99,7 +99,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.",
+				Description:   "List of DNS names to use as subjects of the certificate. ",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -110,7 +110,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of URIs to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.",
+				Description:   "List of URIs to use as subjects of the certificate. ",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -121,7 +121,7 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of DNS names to use as subjects of the certificate. NOTE: Because changes to this field trigger replacement, use Terraform's `sort()` function to ensure consistent ordering of the list.",
+				Description:   "List of DNS names to use as subjects of the certificate. ",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -160,9 +160,14 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 					"issued will be returned. ",
 			},
 			"collection_id": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Optional certificate collection identifier used to ensure user access to the certificate.",
+				Type:     types.Int64Type,
+				Computed: false,
+				Optional: true,
+				Description: "Optional certificate collection ID. This is required if enrollment permissions have been " +
+					"granted at the collection level. NOTE: This will *not* assign the cert to the specified collection ID; " +
+					"assignment is based the collection's associated query. For more information on collection permissions see " +
+					"the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"certificate_id": {
 				Type:        types.Int64Type,
@@ -231,7 +236,9 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 	kfClient := r.p.client
 
 	certificateId := plan.ID.Value
+	collectionId := plan.CollectionId.Value
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
+	ctx = tflog.SetField(ctx, "collection_id", collectionId)
 	tflog.Info(ctx, "Create called on certificate resource")
 
 	//sans := plan.SANs
@@ -319,7 +326,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		}
 
 		//fetch certificate from Keyfactor
-		leaf, chain, _, dErr := downloadCertificate(enrollResponse.CertificateInformation.KeyfactorID, r.p.client, autoPassword, csr != "")
+		leaf, chain, _, dErr := downloadCertificate(enrollResponse.CertificateInformation.KeyfactorID, int(collectionId), r.p.client, autoPassword, csr != "")
 		if dErr != nil {
 			response.Diagnostics.AddError(
 				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
@@ -426,7 +433,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 		}
 
 		// Download and assign certificates to proper location
-		leaf, chain, pKey, dErr := downloadCertificate(enrolledId, r.p.client, lookupPassword, csr != "")
+		leaf, chain, pKey, dErr := downloadCertificate(enrolledId, int(collectionId), r.p.client, lookupPassword, csr != "")
 		if dErr != nil {
 			response.Diagnostics.AddError(
 				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
@@ -461,7 +468,7 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			CertificateId:        types.Int64{Value: int64(enrolledId)},
 			RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
 			Metadata:             plan.Metadata,
-			CollectionId:         types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)}, //TODO: Make this collection ID
+			CollectionId:         plan.CollectionId,
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -581,7 +588,7 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 	if lookupPassword == "" {
 		lookupPassword = generatePassword(DEFAULT_PFX_PASSWORD_LEN, DEFAULT_PFX_PASSWORD_SPECIAL_CHAR_COUNT, DEFAULT_PFX_PASSWORD_NUMBER_COUNT, DEFAULT_PFX_PASSWORD_UPPER_COUNT)
 	}
-	_, _, _, dErr := downloadCertificate(certificateIdInt, r.p.client, lookupPassword, csr != "")
+	_, _, _, dErr := downloadCertificate(certificateIdInt, collectionIdInt, r.p.client, lookupPassword, csr != "")
 	if dErr != nil {
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
@@ -782,6 +789,7 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 			CertificateTemplate: types.String{Value: templateShortName, Null: isNullString(templateShortName)},
 			Metadata:            metadata,
 			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
+			CollectionId:        state.CollectionId,
 		}
 	} else {
 		result = KeyfactorCertificate{
@@ -815,6 +823,7 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 			CertificateTemplate: types.String{Value: templateShortName, Null: isNullString(templateShortName)},
 			Metadata:            metadata,
 			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
+			CollectionId:        state.CollectionId,
 		}
 	}
 
@@ -1015,9 +1024,22 @@ func (r resourceKeyfactorCertificate) Delete(ctx context.Context, request tfsdk.
 	}
 
 	certificateIdInt, cIdErr := strconv.Atoi(state.ID.Value)
+	certificateCN := state.CommonName.Value
+	certificateThumbprint := state.Thumbprint.Value
 	if cIdErr != nil {
-		certificateIdInt = -1
+		if certificateThumbprint == "" && certificateCN == "" {
+			response.Diagnostics.AddError("Invalid Certificate ID", "Certificate ID is not an integer, unable to call revoke API.")
+		}
+		return
 	}
+
+	collectionID := state.CollectionId.Value
+	collectionIdInt := int(collectionID)
+
+	tflog.SetField(ctx, "collection_id", collectionID)
+	tflog.SetField(ctx, "certificate_id", certificateIdInt)
+	tflog.SetField(ctx, "certificate_cn", certificateCN)
+	tflog.SetField(ctx, "certificate_thumbprint", certificateThumbprint)
 
 	// Delete order by calling API
 	log.Println("[INFO] Deleting certificate resource")
@@ -1030,6 +1052,10 @@ func (r resourceKeyfactorCertificate) Delete(ctx context.Context, request tfsdk.
 		CertificateIds: []int{certificateIdInt}, // Certificate ID expects array of integers
 		Reason:         5,                       // reason = 5 means Cessation of Operation
 		Comment:        "Terraform destroy called on provider with associated cert ID",
+	}
+
+	if collectionIdInt > 0 {
+		revokeArgs.CollectionId = collectionIdInt
 	}
 
 	err := kfClient.RevokeCert(revokeArgs)
@@ -1079,7 +1105,7 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	csr := ""
 
 	// Download and assign certificates to proper location
-	leaf, chain, priv, dErr := downloadCertificate(certificateData.Id, r.p.client, password, csr != "")
+	leaf, chain, priv, dErr := downloadCertificate(certificateData.Id, 0, r.p.client, password, csr != "") // add support for importing with collection ID
 	if dErr != nil {
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,

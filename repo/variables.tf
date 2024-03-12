@@ -17,8 +17,6 @@ variable "command_hostname" {
   type        = string
 }
 
-
-
 variable "test_username" {
   description = "The username to use for testing. The user must exist in Keyfactor Command and have the appropriate permissions."
   type        = string
@@ -26,6 +24,17 @@ variable "test_username" {
 
 variable "test_user_password" {
   description = "The password to user account for testing."
+  type        = string
+  sensitive   = true
+}
+
+variable "terraformer_username" {
+  description = "The username of a user account that is not an admin. The user must exist in Keyfactor Command and have the appropriate permissions."
+  type        = string
+}
+
+variable "terraformer_password" {
+  description = "The password to the account that is not an admin."
   type        = string
   sensitive   = true
 }

@@ -9,8 +9,20 @@ import (
 
 func TestAccKeyfactorCertificateStoreDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate_store")
-	var sID = os.Getenv("KEYFACTOR_CERTIFICATE_STORE_ID")
+	var sID = os.Getenv("TEST_CERTIFICATE_STORE_ID")
+	if sID == "" {
+		sID = os.Getenv("KEYFACTOR_CERTIFICATE_STORE_ID")
+		if sID == "" {
+			sID = "1"
+		}
+	}
 	var sPass = os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PASS")
+	if sPass == "" {
+		sPass = os.Getenv("TEST_CERTIFICATE_STORE_PASS")
+		if sPass == "" {
+			sPass = "password1234!"
+		}
+	}
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },

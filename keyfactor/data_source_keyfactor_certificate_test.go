@@ -8,9 +8,25 @@ import (
 )
 
 func TestAccKeyfactorCertificateDataSource(t *testing.T) {
-	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate")
+	var resourceType = "keyfactor_certificate"
+	var resourceName = fmt.Sprintf("data.%s.test", resourceType)
 	var cID = os.Getenv("KEYFACTOR_CERTIFICATE_ID")
+	if cID == "" {
+		cID = os.Getenv("TEST_CERTIFICATE_ID")
+		if cID == "" {
+			cID = os.Getenv("TEST_CERTIFICATE_CN")
+			if cID == "" {
+				cID = "1"
+			}
+		}
+	}
 	var password = os.Getenv("KEYFACTOR_CERTIFICATE_PASSWORD")
+	if password == "" {
+		password = os.Getenv("TEST_CERTIFICATE_PASSWORD")
+		if password == "" {
+			password = "Password1234!"
+		}
+	}
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -18,7 +34,7 @@ func TestAccKeyfactorCertificateDataSource(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Read testing
 			{
-				Config: testAccDataSourceKeyfactorCertificateBasic(cID, password),
+				Config: testAccDataSourceKeyfactorCertificateBasic(resourceType, cID, password),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "id", cID),
 					resource.TestCheckResourceAttrSet(resourceName, "certificate_authority"),
@@ -41,11 +57,12 @@ func TestAccKeyfactorCertificateDataSource(t *testing.T) {
 	})
 }
 
-func testAccDataSourceKeyfactorCertificateBasic(resourceName string, password string) string {
-	return fmt.Sprintf(`
-	data "keyfactor_certificate" "test" {
-		id = %s
+func testAccDataSourceKeyfactorCertificateBasic(resourceName string, id string, password string) string {
+	output := fmt.Sprintf(`
+	data "%s" "test" {
+		identifier = "%s"
   		key_password = "%s"
 	}
-	`, resourceName, password)
+	`, resourceName, id, password)
+	return output
 }

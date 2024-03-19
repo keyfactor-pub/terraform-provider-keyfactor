@@ -451,17 +451,33 @@ func (r resourceKeyfactorCertificate) Create(ctx context.Context, request tfsdk.
 			// call HandlePendingCert
 			tflog.Debug(ctx, fmt.Sprintf("Certificate %s is pending approval.", PFXArgs.Subject.SubjectCommonName))
 			tflog.Debug(ctx, fmt.Sprintf("Calling HandlePendingCert for certificate %s.", PFXArgs.Subject.SubjectCommonName))
-			approvedCert, pErr := r.HandlePendingCert(ctx, enrollResponse, PFXArgs.Subject.SubjectCommonName)
+			approvedCert, pErr := r.HandlePendingCert(ctx, enrollResponse, PFXArgs.Subject.SubjectCommonName, int(collectionId))
+			ERROR_PENDING_CERTS_PERMISSIONS := "does not have any of the required permissions: Alerts - Read"
 			if pErr != nil {
-				tflog.Error(ctx, fmt.Sprintf("Error handling pending certificate %s.", PFXArgs.Subject.SubjectCommonName))
-				response.Diagnostics.AddError(
-					ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
-					fmt.Sprintf("Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(), PFXArgs.Subject.SubjectCommonName),
-				)
-				return
+				//check if error contains 401
+				if strings.Contains(pErr.Error(), "401") || strings.Contains(pErr.Error(), ERROR_PENDING_CERTS_PERMISSIONS) {
+					tflog.Warn(ctx, "Unauthorized to list pending certificate requests.")
+					waitResp, waitErr := r.WaitForPendingCert(ctx, enrollResponse, plan.CommonName.Value, int(collectionId))
+					if waitErr != nil {
+						tflog.Error(ctx, fmt.Sprintf("Error handling pending certificate %s.", PFXArgs.Subject.SubjectCommonName))
+						response.Diagnostics.AddError(
+							ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+							fmt.Sprintf("Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(), PFXArgs.Subject.SubjectCommonName),
+						)
+						return
+					}
+					approvedCert = waitResp
+				} else {
+					tflog.Error(ctx, fmt.Sprintf("Error handling pending certificate %s.", PFXArgs.Subject.SubjectCommonName))
+					response.Diagnostics.AddError(
+						ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+						fmt.Sprintf("Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(), PFXArgs.Subject.SubjectCommonName),
+					)
+					return
+				}
 			}
 			if approvedCert == nil {
-				tflog.Error(ctx, fmt.Sprintf("Certificate %s is pending approval.", PFXArgs.Subject.SubjectCommonName))
+				tflog.Error(ctx, fmt.Sprintf("Certificate '%s' is pending approval.", PFXArgs.Subject.SubjectCommonName))
 				response.Diagnostics.AddError(
 					ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 					fmt.Sprintf("No response recieved on create certificate '%s' on Keyfactor Command: "+pErr.Error(), PFXArgs.Subject.SubjectCommonName),
@@ -1148,6 +1164,7 @@ func (r resourceKeyfactorCertificate) Delete(ctx context.Context, request tfsdk.
 }
 
 func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
+	tflog.Info(ctx, "ImportState called on certificate resource")
 	var state KeyfactorCertificate
 	if response.Diagnostics.HasError() {
 		return
@@ -1164,14 +1181,19 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	tflog.SetField(ctx, "certificate_id", certificateId)
 
 	// Get certificate context
+	tflog.Debug(ctx, "Creating GetCertificateContextArgs object")
 	args := &api.GetCertificateContextArgs{
 		IncludeMetadata:  boolToPointer(true),
 		IncludeLocations: boolToPointer(true),
 		CollectionId:     nil,
 		Id:               certificateIdInt,
 	}
+	tflog.Info(ctx, fmt.Sprintf("Attempting to retrieve certificate '%s' from Keyfactor Command.", certificateId))
+	//todo: support for collection ID
+	tflog.Debug(ctx, "Calling GetCertificateContext")
 	certificateData, err := r.p.client.GetCertificateContext(args)
 	if err != nil {
+		tflog.Error(ctx, fmt.Sprintf("Error retrieving certificate '%s' from Keyfactor Command: "+err.Error(), certificateId))
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
 			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), certificateId),
@@ -1184,8 +1206,11 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	csr := ""
 
 	// Download and assign certificates to proper location
+	tflog.Info(ctx, fmt.Sprintf("Downloading certificate '%s'(%d) from Keyfactor Command.", certificateData.IssuedCN, certificateData.Id))
+	tflog.Debug(ctx, "Calling downloadCertificate")
 	leaf, chain, priv, dErr := downloadCertificate(certificateData.Id, 0, r.p.client, password, csr != "") // add support for importing with collection ID
 	if dErr != nil {
+		tflog.Error(ctx, fmt.Sprintf("Error downloading certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId))
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
 			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
@@ -1193,6 +1218,7 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 		return
 	}
 
+	tflog.Debug(ctx, "Creating KeyfactorCertificate object")
 	var result = KeyfactorCertificate{
 		ID:                   types.String{Value: state.ID.Value},
 		CSR:                  types.String{Value: csr},
@@ -1218,19 +1244,22 @@ func (r resourceKeyfactorCertificate) ImportState(ctx context.Context, request t
 	}
 
 	// Set state
+	tflog.Debug(ctx, "Setting state")
 	diags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
+		tflog.Error(ctx, "Error setting state")
 		return
 	}
+	tflog.Info(ctx, fmt.Sprintf("Certificate '%s' imported into state.", certificateId))
 }
 
-func (r resourceKeyfactorCertificate) CertLookupByRequestID(ctx context.Context, requestID int) (*api.GetCertificateResponse, error) {
+func (r resourceKeyfactorCertificate) CertLookupByRequestID(ctx context.Context, requestID int, collectionId int) (*api.GetCertificateResponse, error) {
 	certArgs := &api.GetCertificateContextArgs{
 		IncludeMetadata:      boolToPointer(true),
 		IncludeLocations:     boolToPointer(true),
 		IncludeHasPrivateKey: boolToPointer(true),
-		CollectionId:         intToPointer(0),
+		CollectionId:         intToPointer(collectionId),
 		Id:                   0,
 		CommonName:           "",
 		Thumbprint:           "",
@@ -1243,39 +1272,88 @@ func (r resourceKeyfactorCertificate) CertLookupByRequestID(ctx context.Context,
 	return certResp, nil
 }
 
-func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enrollResponse *api.EnrollResponseV2, cn string) (*api.GetCertificateResponse, error) {
+func (r resourceKeyfactorCertificate) WaitForPendingCert(ctx context.Context, enrollResponse *api.EnrollResponseV2, cn string, collectionId int) (*api.GetCertificateResponse, error) {
+	tflog.Debug(ctx, "Enter WaitForPendingCert")
 	sleepDuration := 1 * time.Second
 	isPending := true
+	ctx = tflog.SetField(ctx, "certificate_request_id", enrollResponse.CertificateInformation.KeyfactorRequestID)
+	ctx = tflog.SetField(ctx, "common_name", cn)
+	ctx = tflog.SetField(ctx, "sleep_duration", sleepDuration)
+	ctx = tflog.SetField(ctx, "is_pending", isPending)
+	tflog.Info(ctx, "Waiting for certificate request to be approved.")
+
+	for i := 0; i < MAX_ITERATIONS; i++ {
+		tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn))
+		tflog.Debug(ctx, "Looking for a certificate with request ID on Keyfactor Command")
+		certResp, err := r.CertLookupByRequestID(ctx, enrollResponse.CertificateInformation.KeyfactorRequestID, collectionId)
+		if err != nil {
+			tflog.Error(ctx, fmt.Sprintf("Error looking up certificate with request ID %d on Keyfactor Command: "+err.Error(), enrollResponse.CertificateInformation.KeyfactorRequestID))
+			// increment sleep duration
+			tflog.Debug(ctx, fmt.Sprintf("Sleeping for %v", sleepDuration))
+			time.Sleep(sleepDuration)
+			sleepDuration *= SLEEP_DURATION_MULTIPLIER
+			if sleepDuration > MAX_WAIT_SECONDS*time.Second {
+				sleepDuration = MAX_WAIT_SECONDS * time.Second
+			}
+			continue
+		}
+		if certResp != nil && certResp.CertRequestId == enrollResponse.CertificateInformation.KeyfactorRequestID {
+			tflog.Info(ctx, fmt.Sprintf("Certificate '%s' found with request ID '%d' so approval must have occurred.", cn, enrollResponse.CertificateInformation.KeyfactorRequestID))
+			return certResp, nil
+		}
+		// increment sleep duration
+		tflog.Debug(ctx, fmt.Sprintf("Sleeping for %v", sleepDuration))
+		time.Sleep(sleepDuration)
+		sleepDuration *= SLEEP_DURATION_MULTIPLIER
+		if sleepDuration > MAX_WAIT_SECONDS*time.Second {
+			sleepDuration = MAX_WAIT_SECONDS * time.Second
+		}
+	}
+	tflog.Warn(ctx, fmt.Sprintf("Certificate request '%d' for '%s' is still pending approvals after '%d' iterations", enrollResponse.CertificateInformation.KeyfactorRequestID, cn, MAX_ITERATIONS))
+	return nil, fmt.Errorf("certificate request '%d' for '%s' is still pending approvals, waiting on approval", enrollResponse.CertificateInformation.KeyfactorRequestID, cn)
+}
+
+func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enrollResponse *api.EnrollResponseV2, cn string, collectionId int) (*api.GetCertificateResponse, error) {
+	tflog.Info(ctx, "Certificate is pending approval, waiting on approval.")
+	tflog.Debug(ctx, "Enter HandlePendingCert")
+	sleepDuration := 1 * time.Second
+	isPending := true
+	ctx = tflog.SetField(ctx, "certificate_id", enrollResponse.CertificateInformation.KeyfactorRequestID)
+	ctx = tflog.SetField(ctx, "common_name", cn)
+	ctx = tflog.SetField(ctx, "sleep_duration", sleepDuration)
+	ctx = tflog.SetField(ctx, "is_pending", isPending)
 	for i := 0; i < MAX_ITERATIONS; i++ {
 		tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn))
 
 		tflog.Debug(ctx, "Fetching pending certificates from Keyfactor Command")
-		pendingCertsResponse, lpErr := r.p.client.ListPendingCertificates(nil)
+		pendingCertsResponse, lpErr := r.p.client.ListPendingCertificates(nil) //todo: can I pass collection ID?
 
 		tflog.Debug(ctx, "Fetching certificates pending external validation from Keyfactor Command")
-		pendingExternalResponse, lpeErr := r.p.client.ListExternalValidationPendingCertificates(nil)
+		pendingExternalResponse, lpeErr := r.p.client.ListExternalValidationPendingCertificates(nil) //todo: can I pass collection ID?
 
 		if lpErr != nil || lpeErr != nil {
 			if lpErr != nil {
 				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: " + lpErr.Error())
-			} else {
-				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: " + lpeErr.Error())
 			}
+			return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: " + lpeErr.Error())
 		}
 
 		if isPending {
 			tflog.Debug(ctx, "Iterating through pending certificates from Keyfactor Command to check if certificate is still pending")
 			if len(pendingCertsResponse) > 0 || len(pendingExternalResponse) > 0 {
+				tflog.Debug(ctx, "Iterating through certificates pending internal validation from Keyfactor Command")
 				for _, cert := range pendingCertsResponse {
 					if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
 						tflog.Info(ctx, fmt.Sprintf("Certificate %d for %s is pending approvals, waiting on approval for %ss.", enrollResponse.CertificateInformation.KeyfactorRequestID, cn, sleepDuration))
+						tflog.Debug(ctx, fmt.Sprintf("Sleeping for %v", sleepDuration))
 						time.Sleep(sleepDuration)
 						sleepDuration *= SLEEP_DURATION_MULTIPLIER
+						tflog.Debug(ctx, "Incrementing sleep duration for next loop")
 						if sleepDuration > MAX_WAIT_SECONDS*time.Second {
 							sleepDuration = MAX_WAIT_SECONDS * time.Second
 						}
 						isPending = true
-						tflog.Debug(ctx, fmt.Sprintf("Certificate %d is still pending approvals, sleeping for %ss", enrollResponse.CertificateInformation.KeyfactorRequestID, sleepDuration))
+						tflog.Debug(ctx, fmt.Sprintf("Certificate %d is still pending approvals, sleeping for %v", enrollResponse.CertificateInformation.KeyfactorRequestID, sleepDuration))
 						break
 					}
 					tflog.Debug(ctx, fmt.Sprintf("Certificate %d is not pending internal approvals", enrollResponse.CertificateInformation.KeyfactorRequestID))
@@ -1284,7 +1362,7 @@ func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enr
 			} else {
 				if i < MAX_APPROVAL_WAIT_LOOPS {
 					tflog.Debug(ctx, "No pending certificates from Keyfactor Command checking if approval has occurred.")
-					approveResp, _ := r.CertLookupByRequestID(ctx, enrollResponse.CertificateInformation.KeyfactorRequestID)
+					approveResp, _ := r.CertLookupByRequestID(ctx, enrollResponse.CertificateInformation.KeyfactorRequestID, collectionId) //todo: pass collection ID
 					if approveResp != nil && approveResp.CertRequestId == enrollResponse.CertificateInformation.KeyfactorRequestID {
 						tflog.Debug(ctx, "Certificate found so approval must have occurred.")
 						return approveResp, nil
@@ -1310,7 +1388,7 @@ func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enr
 							sleepDuration = MAX_WAIT_SECONDS * time.Second
 						}
 						isPending = true
-						tflog.Debug(ctx, fmt.Sprintf("Certificate %d is still pending approvals, sleeping for %ss", enrollResponse.CertificateInformation.KeyfactorRequestID, sleepDuration))
+						tflog.Debug(ctx, fmt.Sprintf("Certificate %d is still pending approvals, sleeping for %v", enrollResponse.CertificateInformation.KeyfactorRequestID, sleepDuration))
 						break
 					}
 					tflog.Debug(ctx, fmt.Sprintf("Certificate %d is not pending external approvals", enrollResponse.CertificateInformation.KeyfactorRequestID))
@@ -1334,7 +1412,7 @@ func (r resourceKeyfactorCertificate) HandlePendingCert(ctx context.Context, enr
 		}
 	}
 	// Look up certificate by certjficate request ID and return the most recently issued certificate
-	certResponse, gErr := r.CertLookupByRequestID(ctx, enrollResponse.CertificateInformation.KeyfactorRequestID)
+	certResponse, gErr := r.CertLookupByRequestID(ctx, enrollResponse.CertificateInformation.KeyfactorRequestID, collectionId)
 	if gErr != nil {
 		return nil, gErr
 	}

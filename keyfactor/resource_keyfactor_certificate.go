@@ -686,7 +686,7 @@ func (r resourceKeyfactorCertificate) Read(ctx context.Context, request tfsdk.Re
 	if cResp.HasPrivateKey {
 		tflog.Info(ctx, "Requested certificate has a private key attempting to recover from Keyfactor Command.")
 		tflog.Debug(ctx, "Calling RecoverCertificate")
-		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", lookupPassword)
+		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", lookupPassword, collectionIdInt)
 		if dErrO != nil {
 			tflog.Error(ctx, fmt.Sprintf("Unable to recover private key for certificate '%v' from Keyfactor Command.", cResp.Id))
 			response.Diagnostics.AddError(

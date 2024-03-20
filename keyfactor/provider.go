@@ -2,10 +2,12 @@ package keyfactor
 
 import (
 	"context"
+	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"os"
 	"strconv"
 	"time"
@@ -90,6 +92,7 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	var username string
 	if config.Username.Unknown {
 		// Cannot connect to client with an unknown value
+		tflog.Error(ctx, "Provider username is UNKNOWN")
 		resp.Diagnostics.AddWarning(
 			"Invalid provider username.",
 			"Cannot use unknown value as `username`",
@@ -97,7 +100,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		return
 	}
 	if config.Username.Null {
-		username = os.Getenv("KEYFACTOR_USERNAME")
+		tflog.Debug(ctx, fmt.Sprintf("Provider username is NULL, attempting to source from %s", EnvCommandUsername))
+		username = os.Getenv(EnvCommandUsername)
 		config.Username.Value = username
 	} else {
 		username = config.Username.Value

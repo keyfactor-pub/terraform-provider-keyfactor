@@ -1,3 +1,12 @@
+# v2.1.8
+
+### Certificates
+
+#### Fixes
+- 027e500 fix(certificate): Allow for recovery using `collection_id`.
+- 47a026d fix(certificate): Allow for blind wait on certificate requests that require approval. 
+
+
 # v2.1.7
 
 ### Certificates

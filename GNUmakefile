@@ -1,15 +1,18 @@
 PROVIDER_DIR := $(PWD)
 TEST?=$$(go list ./... | grep -v 'vendor')
-HOSTNAME=keyfactor.com
+HOSTNAME=github.com
 GOFMT_FILES  := $$(find $(PROVIDER_DIR) -name '*.go' |grep -v vendor)
-NAMESPACE=keyfactor
+NAMESPACE=keyfactor-pub
 WEBSITE_REPO=https://github.com/Keyfactor/terraform-provider-keyfactor
 NAME=keyfactor
+VERSION=2.1.8
 BINARY=terraform-provider-${NAME}
-VERSION=2.1.6-rc.5
+BINARYV2=terraform-provider-${NAME}_${VERSION}
 OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 BASEDIR := ~/.terraform.d/plugins
 INSTALLDIR := ${BASEDIR}/${HOSTNAME}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
+INSTALLDIR2 := ${BASEDIR}/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
+INSTALLDIR3 := ${BASEDIR}/keyfactor.com/${NAMESPACE}/${NAME}/${VERSION}/${OS_ARCH}
 
 default: build
 
@@ -68,11 +71,14 @@ release:
 	zip -j ./bin/${BINARY}_${VERSION}_windows_amd64.zip ./bin/terraform-provider-keyfactor.exe
 install:
 	go build -o ${BINARY}
-	rm -rf ${INSTALLDIR}
-	mkdir -p ${INSTALLDIR}
-	mv ${BINARY} ${INSTALLDIR}
-	rm .terraform.lock.hcl || true
-	terraform init -upgrade
+#	rm -rf ${INSTALLDIR}
+#	mkdir -p ${INSTALLDIR}
+#	cp ${BINARY} ${INSTALLDIR}
+#	mkdir -p ${INSTALLDIR2}
+#	cp ${BINARY} ${INSTALLDIR2}
+#	mkdir -p ${INSTALLDIR3}
+#	cp ${BINARY} ${INSTALLDIR3}
+	cp ${BINARY} ${BASEDIR}/${BINARYV2}
 
 test:
 	go test -i $(TEST) || exit 1
@@ -96,6 +102,7 @@ setversion:
 	@sed -i '' -e 's/TAG_VERSION=v*.*/TAG_VERSION=v$(VERSION)/' tag.sh
 
 vendor:
+	rm -rf vendor
 	go mod vendor
 
 tag:

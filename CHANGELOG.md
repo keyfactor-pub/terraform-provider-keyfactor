@@ -1,3 +1,10 @@
+# v2.1.9
+
+### Certificates
+
+#### Fixes
+- fix(certificates): Remove template lookup API call as it's not needed for V2 PFX enrollments.
+
 # v2.1.8
 
 ### Certificates

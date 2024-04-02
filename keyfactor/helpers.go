@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"log"
 	"math/rand"
 	"regexp"
 	"sort"
@@ -353,25 +354,34 @@ func isNullId(i int) bool {
 }
 
 func downloadCertificate(id int, collectionId int, kfClient *api.Client, password string, csrEnrollment bool) (string, string, string, error) {
+	log.Printf("[DEBUG] enter downloadCertificate")
+	log.Printf("[INFO] Downloading certificate with ID: %d", id)
+
 	req := api.GetCertificateContextArgs{
 		Id: id,
 	}
 	if collectionId > 0 {
+		log.Printf("[INFO] Downloading certificate '%d' from Collection ID: %d", id, collectionId)
 		req.CollectionId = &collectionId
 	}
+	log.Printf("[INFO] Downloading certificate from Keyfactor Command")
+	log.Printf("[DEBUG] Request: %+v", req)
 	certificateContext, err := kfClient.GetCertificateContext(&req)
 	if err != nil {
+		log.Printf("[ERROR] Error downloading certificate: %s", err)
 		return "", "", "", err
 	}
 
+	log.Printf("[INFO] Looking up certificate template with ID: %d", certificateContext.TemplateId)
 	template, err := kfClient.GetTemplate(certificateContext.TemplateId)
 	if err != nil {
-		return "", "", "", err
+		log.Printf("[ERROR] Error looking up certificate template: %s returning integer value rater than common name", err)
+		template = nil
 	}
 
 	recoverable := false
 
-	if template.KeyRetention != "None" {
+	if template == nil || template.KeyRetention != "None" {
 		recoverable = true
 	}
 
@@ -380,46 +390,59 @@ func downloadCertificate(id int, collectionId int, kfClient *api.Client, passwor
 	var chainPem []byte
 
 	if recoverable && !csrEnrollment {
-		priv, leaf, chain, err := kfClient.RecoverCertificate(id, "", "", "", password)
-		if err != nil {
-			return "", "", "", err
-		}
-		if err != nil {
-			return "", "", "", err
+		log.Printf("[INFO] Recovering certificate with ID: %d", id)
+		priv, leaf, chain, rErr := kfClient.RecoverCertificate(id, "", "", "", password, collectionId)
+		if rErr != nil {
+			log.Printf("[ERROR] Error recovering certificate: %s", rErr)
+			return "", "", "", rErr
 		}
 
 		// Encode DER to PEM
+		log.Printf("[DEBUG] Encoding certificate to PEM")
 		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+		log.Printf("[DEBUG] Encoding chain to PEM")
 		for _, i := range chain {
 			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
 		}
+		log.Printf("[DEBUG] Chain PEM: %s", chainPem)
 
+		log.Printf("[DEBUG] Encoding private key to PEM")
 		// Figure out the format of the private key, then encode it to PEM
+
+		log.Printf("[DEBUG] Private Key Type: %T", priv)
 		rsa, ok := priv.(*rsa2.PrivateKey)
 		if ok {
+			log.Printf("[INFO] Private Key is RSA for certificate ID: %d", id)
 			buf := x509.MarshalPKCS1PrivateKey(rsa)
 			if len(buf) > 0 {
 				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "RSA PRIVATE KEY"})
 			}
 		}
 
-		ecc, ok := priv.(*ecdsa.PrivateKey)
-		if ok {
-			// We don't really care about the error here. An error just means that the key will be blank which isn't a
-			// reason to fail
-			buf, _ := x509.MarshalECPrivateKey(ecc)
-			if len(buf) > 0 {
-				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "EC PRIVATE KEY"})
+		if privPem == nil {
+			log.Printf("[INFO] Private Key is not RSA for certificate ID: %d attempting to parse ECC key", id)
+			ecc, ok := priv.(*ecdsa.PrivateKey)
+			if ok {
+				log.Printf("[INFO] Private Key is ECDSA for certificate ID: %d", id)
+				buf, _ := x509.MarshalECPrivateKey(ecc)
+				if len(buf) > 0 {
+					privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "EC PRIVATE KEY"})
+				}
 			}
 		}
 	} else {
+		log.Printf("[INFO] Downloading certificate with ID: %d", id)
 		leaf, chain, dlErr := kfClient.DownloadCertificate(id, "", "", "")
 		if dlErr != nil {
+			log.Printf("[ERROR] Error downloading certificate: %s", dlErr)
 			return "", "", "", err
 		}
 
 		// Encode DER to PEM
+		log.Printf("[DEBUG] Encoding certificate to PEM")
 		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+		log.Printf("[DEBUG] Certificate PEM: %s", leafPem)
+		log.Printf("[DEBUG] Encoding chain to PEM")
 		// iterate through chain in reverse order
 		for i := len(chain) - 1; i >= 0; i-- {
 			// check if current cert is the leaf cert
@@ -428,8 +451,10 @@ func downloadCertificate(id int, collectionId int, kfClient *api.Client, passwor
 			}
 			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: chain[i].Raw})...)
 		}
+		log.Printf("[DEBUG] Chain PEM: %s", chainPem)
 	}
 
+	log.Printf("[DEBUG] exit downloadCertificate")
 	return string(leafPem), string(chainPem), string(privPem), nil
 }
 

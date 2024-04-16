@@ -1,19 +1,28 @@
+# v2.1.9
+
+### Certificates
+
+#### Fixes
+
+* fa3aaab fix(certificates): Remove template lookup API call as it's not needed for V2 PFX enrollments.
+
 # v2.1.8
 
 ### Certificates
 
 #### Fixes
-- 027e500 fix(certificate): Allow for recovery using `collection_id`.
-- 47a026d fix(certificate): Allow for blind wait on certificate requests that require approval. 
 
+* 027e500 fix(certificate): Allow for recovery using `collection_id`.
+* 47a026d fix(certificate): Allow for blind wait on certificate requests that require approval.
 
 # v2.1.7
 
 ### Certificates
 
 #### Fixes
-- 4202a3a fix(certificates): `keyfactor_certificate` resources now allow for passing of `collection_id` to the `enroll` 
-method. 
+
+* 4202a3a fix(certificates): `keyfactor_certificate` resources now allow for passing of `collection_id` to the `enroll`
+  method.
 
 # v2.1.6
 
@@ -33,7 +42,6 @@ method.
 
 * 4d01ddd fix(certificates): `keyfactor_certificate` resources now handle enrollments requests that require approvals.
   #90
-
 
 ### Deployments
 
@@ -110,7 +118,7 @@ method.
 
 #### Features
 
-- f5eabee feat(certificates): Certificate enrollments now will create a password automatically for PFX enrollments and
+* f5eabee feat(certificates): Certificate enrollments now will create a password automatically for PFX enrollments and
   populate that password in the `auto_password` field. If a `key_password` is provided `auto_password` will be set to
   the
   same value. ( #68 )
@@ -201,8 +209,14 @@ method.
   error.
 
 # v1.0.3
-- 
+
+### Templates
+
+#### Fixes
+
+* fix(templates): resource `keyfactor_template_binding` ID is not updated during update.
+* fix(templates): resource `keyfactor_template_binding` unbinding of roles to templates diff logic flaw.
 
 # v1.0.0
 
-- Initial release of the Keyfactor Terraform Provider
+* Initial release of the Keyfactor Terraform Provider

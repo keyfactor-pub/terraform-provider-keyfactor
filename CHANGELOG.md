@@ -3,7 +3,7 @@
 ### Certificates
 
 #### Fixes
-* aa794dc fix(certificates):  CSR enrollments now correctly handle `collection_id`.
+* 128827b fix(certificates):  CSR enrollments now correctly handle `collection_id`.
 
 # v2.1.9
 

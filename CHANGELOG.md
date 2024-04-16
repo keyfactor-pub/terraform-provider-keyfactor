@@ -1,3 +1,10 @@
+# v2.1.10
+
+### Certificates
+
+#### Fixes
+* aa794dc fix(certificates):  CSR enrollments now correctly handle `collection_id`.
+
 # v2.1.9
 
 ### Certificates

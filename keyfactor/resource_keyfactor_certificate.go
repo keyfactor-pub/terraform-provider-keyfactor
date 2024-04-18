@@ -389,7 +389,7 @@ func (r resourceKeyfactorCertificate) Create(
 			CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             plan.Metadata,
-			CollectionId:         types.Int64{Value: int64(0)},
+			CollectionId:         plan.CollectionId,
 		}
 
 		diags = response.State.Set(ctx, result)

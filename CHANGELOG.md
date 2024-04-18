@@ -1,3 +1,10 @@
+# v2.1.10
+
+### Certificates
+
+#### Fixes
+* 128827b fix(certificates):  CSR enrollments now correctly handle `collection_id`.
+
 # v2.1.9
 
 ### Certificates

@@ -1,3 +1,11 @@
+# v2.1.11
+
+### Certificates
+
+#### Fixes
+* c6621a5 fix(certificates): CSR enrollments set `certificate_pem` on create.
+* c6621a5 fix(certificates): Fix JSON refs in request model for `certificate/download`.
+
 # v2.1.10
 
 ### Certificates

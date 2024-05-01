@@ -7,16 +7,17 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"github.com/Keyfactor/keyfactor-go-client/v2/api"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
-	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	"log"
 	"math/rand"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/Keyfactor/keyfactor-go-client/v2/api"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var (
@@ -54,13 +55,22 @@ func generatePassword(passwordLength, minSpecialChar, minNum, minUpperCase int) 
 		password.WriteString(string(allCharSet[random]))
 	}
 	inRune := []rune(password.String())
-	rand.Shuffle(len(inRune), func(i, j int) {
-		inRune[i], inRune[j] = inRune[j], inRune[i]
-	})
+	rand.Shuffle(
+		len(inRune), func(i, j int) {
+			inRune[i], inRune[j] = inRune[j], inRune[i]
+		},
+	)
 	return string(inRune)
 }
 
-func expandSubject(subject string) (types.String, types.String, types.String, types.String, types.String, types.String) {
+func expandSubject(subject string) (
+	types.String,
+	types.String,
+	types.String,
+	types.String,
+	types.String,
+	types.String,
+) {
 	var (
 		cn string
 		ou string
@@ -168,7 +178,12 @@ func flattenMetadata(metadata interface{}) types.Map {
 	return result
 }
 
-func flattenSANs(sans []api.SubjectAltNameElements, tfDNSSANs types.List, tfIPSANs types.List, tfURISANs types.List) (types.List, types.List, types.List) {
+func flattenSANs(
+	sans []api.SubjectAltNameElements,
+	tfDNSSANs types.List,
+	tfIPSANs types.List,
+	tfURISANs types.List,
+) (types.List, types.List, types.List) {
 	sanIP4Array := types.List{
 		ElemType: types.StringType,
 		Elems:    []attr.Value{},
@@ -290,22 +305,26 @@ func flattenEnrollmentFields(efs []api.TemplateEnrollmentFields) types.List {
 	for _, ef := range efs {
 		var options []attr.Value
 		for _, op := range ef.Options {
-			options = append(options, types.String{
-				Value: op,
-			})
+			options = append(
+				options, types.String{
+					Value: op,
+				},
+			)
 		}
-		result.Elems = append(result.Elems, types.Map{
-			ElemType: types.StringType,
-			Elems: map[string]attr.Value{
-				"id":   types.Int64{Value: int64(ef.Id)},
-				"name": types.String{Value: ef.Name},
-				"type": types.String{Value: strconv.Itoa(ef.DataType)},
-				"options": types.List{
-					Elems:    options,
-					ElemType: types.StringType,
+		result.Elems = append(
+			result.Elems, types.Map{
+				ElemType: types.StringType,
+				Elems: map[string]attr.Value{
+					"id":   types.Int64{Value: int64(ef.Id)},
+					"name": types.String{Value: ef.Name},
+					"type": types.String{Value: strconv.Itoa(ef.DataType)},
+					"options": types.List{
+						Elems:    options,
+						ElemType: types.StringType,
+					},
 				},
 			},
-		})
+		)
 	}
 
 	return result
@@ -353,7 +372,12 @@ func isNullId(i int) bool {
 	return false
 }
 
-func downloadCertificate(id int, collectionId int, kfClient *api.Client, password string, csrEnrollment bool) (string, string, string, error) {
+func downloadCertificate(id int, collectionId int, kfClient *api.Client, password string, csrEnrollment bool) (
+	string,
+	string,
+	string,
+	error,
+) {
 	log.Printf("[DEBUG] enter downloadCertificate")
 	log.Printf("[INFO] Downloading certificate with ID: %d", id)
 
@@ -375,7 +399,10 @@ func downloadCertificate(id int, collectionId int, kfClient *api.Client, passwor
 	log.Printf("[INFO] Looking up certificate template with ID: %d", certificateContext.TemplateId)
 	template, err := kfClient.GetTemplate(certificateContext.TemplateId)
 	if err != nil {
-		log.Printf("[ERROR] Error looking up certificate template: %s returning integer value rater than common name", err)
+		log.Printf(
+			"[ERROR] Error looking up certificate template: %s returning integer value rater than common name",
+			err,
+		)
 		template = nil
 	}
 
@@ -391,6 +418,7 @@ func downloadCertificate(id int, collectionId int, kfClient *api.Client, passwor
 
 	if recoverable && !csrEnrollment {
 		log.Printf("[INFO] Recovering certificate with ID: %d", id)
+		//priv, leaf, chain, rErr := kfClient.RecoverCertificate(id, "", "", "", password)
 		priv, leaf, chain, rErr := kfClient.RecoverCertificate(id, "", "", "", password, collectionId)
 		if rErr != nil {
 			log.Printf("[ERROR] Error recovering certificate: %s", rErr)

@@ -394,7 +394,7 @@ func (r resourceKeyfactorCertificate) Create(
 			IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
 			Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
 			PEM:                  types.String{Value: leaf},
-			PEMCACert:            types.String{Value: caCert}, //TODO
+			PEMCACert:            types.String{Value: caCert},
 			PEMChain:             types.String{Value: fullChain},
 			PrivateKey:           types.String{Value: plan.PrivateKey.Value, Null: true},
 			KeyPassword:          types.String{Value: plan.KeyPassword.Value, Null: true},

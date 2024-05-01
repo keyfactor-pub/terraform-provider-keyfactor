@@ -334,30 +334,43 @@ func (r resourceKeyfactorCertificate) Create(
 		//Collection
 
 		// iterate through CertificateInformation.Certificates and concatenate
-		var fullChain string
-		var caCert string
+		var (
+			fullChain string
+			caCert    string
+			leaf      string
+		)
+
 		for i, cert := range enrollResponse.CertificateInformation.Certificates {
+			// split by \r\n and remove first line if '#' is present
+			if strings.Contains(cert, "#") {
+				cert = strings.Join(strings.Split(cert, "\r\n")[1:], "\r\n")
+			}
+
 			fullChain += cert
 			if i > 0 { //caCert returns full chain minus leaf
 				caCert += cert
+			} else {
+				// split by \r\n and remove first line
+
+				leaf = cert
 			}
 		}
 
 		//fetch certificate from Keyfactor
-		leaf, chain, _, dErr := downloadCertificate(
-			enrollResponse.CertificateInformation.KeyfactorID,
-			int(collectionId),
-			r.p.client,
-			autoPassword,
-			csr != "",
-		)
-		if dErr != nil {
-			response.Diagnostics.AddError(
-				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
-			)
-			return
-		}
+		//leaf, chain, _, dErr := downloadCertificate(
+		//	enrollResponse.CertificateInformation.KeyfactorID,
+		//	int(collectionId),
+		//	r.p.client,
+		//	autoPassword,
+		//	csr != "",
+		//)
+		//if dErr != nil {
+		//	response.Diagnostics.AddError(
+		//		ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+		//		fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
+		//	)
+		//	return
+		//}
 
 		// Set state
 		var result = KeyfactorCertificate{
@@ -381,8 +394,8 @@ func (r resourceKeyfactorCertificate) Create(
 			IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
 			Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
 			PEM:                  types.String{Value: leaf},
-			PEMCACert:            types.String{Value: chain},
-			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", leaf, chain)},
+			PEMCACert:            types.String{Value: caCert}, //TODO
+			PEMChain:             types.String{Value: fullChain},
 			PrivateKey:           types.String{Value: plan.PrivateKey.Value, Null: true},
 			KeyPassword:          types.String{Value: plan.KeyPassword.Value, Null: true},
 			CertificateAuthority: plan.CertificateAuthority,

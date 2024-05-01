@@ -1,3 +1,10 @@
+# v2.1.11
+
+### Certificates
+
+#### Fixes
+* fix(certificates):  CSR enrollments now properly set `certificate_pem` on create.
+
 # v2.1.10
 
 ### Certificates

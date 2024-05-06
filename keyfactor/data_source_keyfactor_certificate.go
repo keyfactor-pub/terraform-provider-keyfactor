@@ -8,12 +8,13 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"strconv"
+
 	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"strconv"
 )
 
 type dataSourceCertificateType struct{}
@@ -189,7 +190,10 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 	}, nil
 }
 
-func (r dataSourceCertificateType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
+func (r dataSourceCertificateType) NewDataSource(ctx context.Context, p tfsdk.Provider) (
+	tfsdk.DataSource,
+	diag.Diagnostics,
+) {
 	return dataSourceCertificate{
 		p: *(p.(*provider)),
 	}, nil
@@ -199,7 +203,11 @@ type dataSourceCertificate struct {
 	p provider
 }
 
-func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (r dataSourceCertificate) Read(
+	ctx context.Context,
+	request tfsdk.ReadDataSourceRequest,
+	response *tfsdk.ReadDataSourceResponse,
+) {
 	var state KeyfactorCertificate
 
 	tflog.Info(ctx, "Reading terraform data resource 'certificate'.")
@@ -283,9 +291,13 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 			password = generatePassword(32, 4, 4, 4)
 		}
 		tflog.Info(ctx, "Requested certificate has a private key attempting to recover from Keyfactor Command.")
+		//pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", password)
 		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", password, collectionIdInt)
 		if dErrO != nil {
-			tflog.Error(ctx, fmt.Sprintf("Unable to recover private key for certificate '%v' from Keyfactor Command.", cResp.Id))
+			tflog.Error(
+				ctx,
+				fmt.Sprintf("Unable to recover private key for certificate '%v' from Keyfactor Command.", cResp.Id),
+			)
 			response.Diagnostics.AddWarning(
 				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
 				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErrO.Error(), cResp.Id),
@@ -300,22 +312,33 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 		if lbErr != nil {
 			response.Diagnostics.AddError(
 				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(), state.ID.Value),
+				fmt.Sprintf(
+					"Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(),
+					state.ID.Value,
+				),
 			)
 			return
 		}
-		leaf = string(pem.EncodeToMemory(&pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: lBytes,
-		}))
+		leaf = string(
+			pem.EncodeToMemory(
+				&pem.Block{
+					Type:  "CERTIFICATE",
+					Bytes: lBytes,
+				},
+			),
+		)
 		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
 		tflog.Debug(ctx, leaf)
 		tflog.Debug(ctx, "Recovered certificate chain from Keyfactor Command:")
 		for _, cert := range chainO {
-			chainLink := string(pem.EncodeToMemory(&pem.Block{
-				Type:  "CERTIFICATE",
-				Bytes: cert.Raw,
-			}))
+			chainLink := string(
+				pem.EncodeToMemory(
+					&pem.Block{
+						Type:  "CERTIFICATE",
+						Bytes: cert.Raw,
+					},
+				),
+			)
 			chain = chain + chainLink
 			tflog.Debug(ctx, chainLink)
 		}
@@ -327,10 +350,14 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 			tflog.Debug(ctx, "Recovered RSA private key from Keyfactor Command:")
 			buf := x509.MarshalPKCS1PrivateKey(rsa)
 			if len(buf) > 0 {
-				pKey = string(pem.EncodeToMemory(&pem.Block{
-					Bytes: buf,
-					Type:  "RSA PRIVATE KEY",
-				}))
+				pKey = string(
+					pem.EncodeToMemory(
+						&pem.Block{
+							Bytes: buf,
+							Type:  "RSA PRIVATE KEY",
+						},
+					),
+				)
 				tflog.Trace(ctx, pKey)
 			} else {
 				tflog.Debug(ctx, "Empty Key Recovered from Keyfactor Command.")
@@ -344,10 +371,14 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 				tflog.Debug(ctx, "Recovered ECC private key from Keyfactor Command:")
 				buf, _ := x509.MarshalECPrivateKey(ecc)
 				if len(buf) > 0 {
-					pKey = string(pem.EncodeToMemory(&pem.Block{
-						Bytes: buf,
-						Type:  "EC PRIVATE KEY",
-					}))
+					pKey = string(
+						pem.EncodeToMemory(
+							&pem.Block{
+								Bytes: buf,
+								Type:  "EC PRIVATE KEY",
+							},
+						),
+					)
 					tflog.Trace(ctx, pKey)
 				}
 			}
@@ -361,16 +392,23 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 			tflog.Error(ctx, lbErr.Error())
 			response.Diagnostics.AddError(
 				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(), state.ID.Value),
+				fmt.Sprintf(
+					"Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(),
+					state.ID.Value,
+				),
 			)
 			return
 		}
 
 		tflog.Debug(ctx, "Decoding leaf cert.")
-		leaf = string(pem.EncodeToMemory(&pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: lBytes,
-		}))
+		leaf = string(
+			pem.EncodeToMemory(
+				&pem.Block{
+					Type:  "CERTIFICATE",
+					Bytes: lBytes,
+				},
+			),
+		)
 		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
 		tflog.Debug(ctx, leaf)
 
@@ -381,16 +419,24 @@ func (r dataSourceCertificate) Read(ctx context.Context, request tfsdk.ReadDataS
 			tflog.Error(ctx, "Error downloading certificate chain from Keyfactor Command.")
 			response.Diagnostics.AddWarning(
 				"Certificate Download Error",
-				fmt.Sprintf("Could not dowload certificate '%s' from Keyfactor. Chain will not be included: %s", state.ID.Value, dChainErr.Error()),
+				fmt.Sprintf(
+					"Could not dowload certificate '%s' from Keyfactor. Chain will not be included: %s",
+					state.ID.Value,
+					dChainErr.Error(),
+				),
 			)
 		}
 		if dChain != nil {
 			tflog.Debug(ctx, "Recovered certificate chain from Keyfactor Command:")
 			for _, cert := range dChain {
-				chainLink := string(pem.EncodeToMemory(&pem.Block{
-					Type:  "CERTIFICATE",
-					Bytes: cert.Raw,
-				}))
+				chainLink := string(
+					pem.EncodeToMemory(
+						&pem.Block{
+							Type:  "CERTIFICATE",
+							Bytes: cert.Raw,
+						},
+					),
+				)
 
 				//check if chain is equal to leaf and if it is, skip it
 				if chainLink == leaf {

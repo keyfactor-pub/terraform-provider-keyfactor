@@ -201,6 +201,16 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Sensitive:   true,
 				Description: "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
 			},
+			"collection_enrollment_wait": {
+				Type:     types.StringType,
+				Computed: false,
+				Optional: true,
+				Description: "The maximum time to wait for a certificate to be added to a collection, " +
+					"post enrollment. This is useful for certificates that trigger issue handlers and/or workflows" +
+					" post enrollment and will delay the certificate being added to the expected collection. Format" +
+					": 1h, " +
+					"1m, 1s. Default: 0.",
+			},
 		},
 	}, nil
 }
@@ -403,6 +413,10 @@ func (r resourceKeyfactorCertificate) Create(
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             plan.Metadata,
 			CollectionId:         plan.CollectionId,
+			CollectionEnrollmentWait: types.String{
+				Value: plan.CollectionEnrollmentWait.Value,
+				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
+			},
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -589,12 +603,17 @@ func (r resourceKeyfactorCertificate) Create(
 			),
 		)
 		tflog.Debug(ctx, "Calling downloadCertificate")
+		maxColletionWait, wErr := parseDuration(plan.CollectionEnrollmentWait.Value)
+		if wErr != nil {
+			maxColletionWait = 0
+		}
 		leaf, chain, pKey, dErr := downloadCertificate(
 			enrolledId,
 			int(collectionId),
 			r.p.client,
 			lookupPassword,
 			csr != "",
+			maxColletionWait,
 		)
 		if dErr != nil {
 			response.Diagnostics.AddError(
@@ -644,6 +663,10 @@ func (r resourceKeyfactorCertificate) Create(
 			RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
 			Metadata:             plan.Metadata,
 			CollectionId:         plan.CollectionId,
+			CollectionEnrollmentWait: types.String{
+				Value: plan.CollectionEnrollmentWait.Value,
+				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
+			},
 		}
 
 		tflog.Debug(ctx, "Setting state")
@@ -752,6 +775,11 @@ func (r resourceKeyfactorCertificate) Read(
 			CertificateTemplate:  nullValue,
 			Metadata:             types.Map{Null: true, ElemType: types.StringType},
 			CertificateId:        types.Int64{Null: true},
+			CollectionId:         types.Int64{Null: true},
+			CollectionEnrollmentWait: types.String{
+				Value: state.CollectionEnrollmentWait.Value,
+				Null:  isNullString(state.CollectionEnrollmentWait.Value),
+			},
 		}
 		diags = response.State.Set(ctx, &emptyResult)
 		response.Diagnostics.Append(diags...)
@@ -778,7 +806,8 @@ func (r resourceKeyfactorCertificate) Read(
 		ctx,
 		fmt.Sprintf("Downloading certificate '%s'(%d) from Keyfactor Command.", state.ID.Value, certificateIdInt),
 	)
-	_, _, _, dErr := downloadCertificate(certificateIdInt, collectionIdInt, r.p.client, lookupPassword, csr != "")
+
+	_, _, _, dErr := downloadCertificate(certificateIdInt, collectionIdInt, r.p.client, lookupPassword, csr != "", 0)
 	if dErr != nil {
 		tflog.Error(ctx, "Error downloading certificate from Keyfactor Command.")
 		response.Diagnostics.AddError(
@@ -954,6 +983,7 @@ func (r resourceKeyfactorCertificate) Read(
 			r.p.client,
 			lookupPassword,
 			csr != "",
+			0,
 		)
 		//leaf, chain, pKey, dErr := downloadCertificate(enrolledId, int(collectionId), r.p.client, lookupPassword, csr != "")
 		if dChainErr != nil {
@@ -1022,7 +1052,11 @@ func (r resourceKeyfactorCertificate) Read(
 			CertificateTemplate: state.CertificateTemplate,
 			Metadata:            metadata,
 			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
-			CollectionId:        state.CollectionId,
+			CollectionId:        types.Int64{Value: int64(collectionIdInt), Null: isNullId(collectionIdInt)},
+			CollectionEnrollmentWait: types.String{
+				Value: state.CollectionEnrollmentWait.Value,
+				Null:  isNullString(state.CollectionEnrollmentWait.Value),
+			},
 		}
 	} else {
 		tflog.Debug(ctx, "Creating state object for certificate PFX.")
@@ -1058,6 +1092,10 @@ func (r resourceKeyfactorCertificate) Read(
 			Metadata:            metadata,
 			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
 			CollectionId:        state.CollectionId,
+			CollectionEnrollmentWait: types.String{
+				Value: state.CollectionEnrollmentWait.Value,
+				Null:  isNullString(state.CollectionEnrollmentWait.Value),
+			},
 		}
 	}
 
@@ -1146,12 +1184,15 @@ func (r resourceKeyfactorCertificate) Update(
 		}
 		if !plan.Metadata.Equal(state.Metadata) {
 			tflog.Debug(ctx, "Metadata is updated. Attempting to update metadata on Keyfactor.")
-
+			metadataReq := &api.UpdateMetadataArgs{
+				CertID:   certificateIdInt,
+				Metadata: metaInterface,
+			}
+			if plan.CollectionId.Value > 0 {
+				metadataReq.CollectionId = int(plan.CollectionId.Value)
+			}
 			err := r.p.client.UpdateMetadata(
-				&api.UpdateMetadataArgs{
-					CertID:   certificateIdInt,
-					Metadata: metaInterface,
-				},
+				metadataReq,
 			)
 			if err != nil {
 				response.Diagnostics.AddError(
@@ -1165,28 +1206,30 @@ func (r resourceKeyfactorCertificate) Update(
 
 		// Set state
 		var result = KeyfactorCertificate{
-			ID:                   types.String{Value: state.ID.Value},
-			CSR:                  plan.CSR,
-			CommonName:           plan.CommonName,
-			Locality:             plan.Locality,
-			State:                plan.State,
-			Country:              plan.Country,
-			Organization:         plan.Organization,
-			OrganizationalUnit:   plan.OrganizationalUnit,
-			DNSSANs:              plan.DNSSANs,
-			IPSANs:               plan.IPSANs,
-			URISANs:              plan.URISANs,
-			SerialNumber:         plan.SerialNumber,
-			IssuerDN:             plan.IssuerDN,
-			Thumbprint:           plan.Thumbprint,
-			PEM:                  plan.PEM,
-			PEMCACert:            plan.PEMChain,
-			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
-			PrivateKey:           plan.PrivateKey,
-			KeyPassword:          plan.KeyPassword,
-			CertificateAuthority: plan.CertificateAuthority,
-			CertificateTemplate:  plan.CertificateTemplate,
-			Metadata:             plan.Metadata,
+			ID:                       types.String{Value: state.ID.Value},
+			CSR:                      plan.CSR,
+			CommonName:               plan.CommonName,
+			Locality:                 plan.Locality,
+			State:                    plan.State,
+			Country:                  plan.Country,
+			Organization:             plan.Organization,
+			OrganizationalUnit:       plan.OrganizationalUnit,
+			DNSSANs:                  plan.DNSSANs,
+			IPSANs:                   plan.IPSANs,
+			URISANs:                  plan.URISANs,
+			SerialNumber:             plan.SerialNumber,
+			IssuerDN:                 plan.IssuerDN,
+			Thumbprint:               plan.Thumbprint,
+			PEM:                      plan.PEM,
+			PEMCACert:                plan.PEMChain,
+			PEMChain:                 types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
+			PrivateKey:               plan.PrivateKey,
+			KeyPassword:              plan.KeyPassword,
+			CertificateAuthority:     plan.CertificateAuthority,
+			CertificateTemplate:      plan.CertificateTemplate,
+			Metadata:                 plan.Metadata,
+			CollectionId:             plan.CollectionId,
+			CollectionEnrollmentWait: plan.CollectionEnrollmentWait,
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -1213,12 +1256,15 @@ func (r resourceKeyfactorCertificate) Update(
 				planMetadataInterface[k] = v
 			}
 			tflog.Info(ctx, fmt.Sprintf("Updating metadata for certificate '%s' on Keyfactor Command.", state.ID.Value))
-			err := r.p.client.UpdateMetadata(
-				&api.UpdateMetadataArgs{
-					CertID:   int(state.CertificateId.Value),
-					Metadata: planMetadataInterface,
-				},
-			)
+			updateReq := &api.UpdateMetadataArgs{
+				CertID:   int(state.CertificateId.Value),
+				Metadata: planMetadataInterface,
+			}
+			if plan.CollectionId.Value > 0 {
+				tflog.Debug(ctx, "Setting collection ID on API request")
+				updateReq.CollectionId = int(plan.CollectionId.Value)
+			}
+			err := r.p.client.UpdateMetadata(updateReq)
 			if err != nil {
 				response.Diagnostics.AddError(
 					"Certificate metadata update error.",
@@ -1231,29 +1277,31 @@ func (r resourceKeyfactorCertificate) Update(
 		// Set state
 		tflog.Debug(ctx, "Creating KeyfactorCertificate state object")
 		var result = KeyfactorCertificate{
-			ID:                   state.ID,
-			CSR:                  state.CSR,
-			CommonName:           state.CommonName,
-			Locality:             state.Locality,
-			State:                state.State,
-			Country:              state.Country,
-			Organization:         state.Organization,
-			OrganizationalUnit:   state.OrganizationalUnit,
-			DNSSANs:              state.DNSSANs,
-			IPSANs:               state.IPSANs,
-			URISANs:              state.URISANs,
-			SerialNumber:         state.SerialNumber,
-			IssuerDN:             state.IssuerDN,
-			Thumbprint:           state.Thumbprint,
-			PEM:                  state.PEM,
-			PEMCACert:            state.PEMCACert,
-			PEMChain:             state.PEMChain,
-			PrivateKey:           state.PrivateKey,
-			KeyPassword:          plan.KeyPassword,
-			CertificateId:        state.CertificateId,
-			CertificateAuthority: state.CertificateAuthority,
-			CertificateTemplate:  state.CertificateTemplate,
-			Metadata:             plan.Metadata,
+			ID:                       state.ID,
+			CSR:                      state.CSR,
+			CommonName:               state.CommonName,
+			Locality:                 state.Locality,
+			State:                    state.State,
+			Country:                  state.Country,
+			Organization:             state.Organization,
+			OrganizationalUnit:       state.OrganizationalUnit,
+			DNSSANs:                  state.DNSSANs,
+			IPSANs:                   state.IPSANs,
+			URISANs:                  state.URISANs,
+			SerialNumber:             state.SerialNumber,
+			IssuerDN:                 state.IssuerDN,
+			Thumbprint:               state.Thumbprint,
+			PEM:                      state.PEM,
+			PEMCACert:                state.PEMCACert,
+			PEMChain:                 state.PEMChain,
+			PrivateKey:               state.PrivateKey,
+			KeyPassword:              plan.KeyPassword,
+			CertificateId:            state.CertificateId,
+			CertificateAuthority:     state.CertificateAuthority,
+			CertificateTemplate:      state.CertificateTemplate,
+			Metadata:                 plan.Metadata,
+			CollectionId:             state.CollectionId,
+			CollectionEnrollmentWait: plan.CollectionEnrollmentWait,
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -1419,6 +1467,7 @@ func (r resourceKeyfactorCertificate) ImportState(
 		r.p.client,
 		password,
 		csr != "",
+		0,
 	) // add support for importing with collection ID
 	if dErr != nil {
 		tflog.Error(

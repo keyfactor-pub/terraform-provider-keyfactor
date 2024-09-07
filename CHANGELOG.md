@@ -1,3 +1,13 @@
+# v2.2.0
+### Certificates
+
+#### Features
+* feat(certificates): `keyfactor_certificate` resource has a new parameter `collection_enrollment_wait` that allows the user to define an arbitrary wait time for the collection enrollment to complete. The default is 0 seconds.
+
+#### Fixes
+
+* fix(certificates): `keyfactor_certificate` resource `metadata` updates are now correctly scoped by `collection_id` if provided.
+
 # v2.1.11
  
 ### Certificates

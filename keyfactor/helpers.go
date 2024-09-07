@@ -1,6 +1,7 @@
 package keyfactor
 
 import (
+	"context"
 	"crypto/ecdsa"
 	rsa2 "crypto/rsa"
 	"crypto/x509"
@@ -13,11 +14,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 var (
@@ -372,31 +375,131 @@ func isNullId(i int) bool {
 	return false
 }
 
-func downloadCertificate(id int, collectionId int, kfClient *api.Client, password string, csrEnrollment bool) (
+// retryCertCollectionHandler is a helper function to retry downloading a certificate from a collection
+// This is needed because the Keyfactor Command API may return an error if the certificate is not ready to be downloaded
+// The function will retry a set number of times before returning an error.
+func retryCertCollectionHandler(
+	kfClient *api.Client,
+	certID int,
+	collectionID, maxSleep int,
+) (*api.GetCertificateResponse, error) {
+	req := api.GetCertificateContextArgs{
+		Id:           certID,
+		CollectionId: intToPointer(collectionID),
+	}
+
+	totalSleep := 0
+	for i := 0; i <= maxSleep; i++ {
+		tflog.Debug(
+			context.Background(),
+			fmt.Sprintf("Attempting to download certificate with ID: %d from Collection ID: %d", certID, collectionID),
+		)
+		certificateContext, err := kfClient.GetCertificateContext(&req)
+		if err != nil {
+			if totalSleep >= maxSleep {
+				//log.Printf("[WARNING] Max retry attempts reached, returning error: %s", err)
+				tflog.Warn(context.Background(), fmt.Sprintf("Max retry attempts reached, returning error: %s", err))
+				return nil, err
+			}
+			if strings.Contains(strings.ToLower(err.Error()), strings.ToLower(ERR_COLLECTION_WAIT)) {
+				//log.Printf("[WARNING] Error downloading certificate: %s, will attempt to retry ", err)
+				tflog.Warn(
+					context.Background(),
+					fmt.Sprintf("Error downloading certificate: %s, will attempt to retry ", err),
+				)
+
+				delay := time.Duration(i) * time.Second
+				if delay > time.Duration(MAX_WAIT_SECONDS)*time.Second {
+					delay = time.Duration(MAX_WAIT_SECONDS) * time.Second
+				}
+				//log.Printf("[DEBUG] Sleeping for %s seconds before retrying", delay)
+				tflog.Debug(context.Background(), fmt.Sprintf("Sleeping for %s seconds before retrying", delay))
+				time.Sleep(delay)
+				totalSleep += int(delay.Seconds())
+				continue
+			}
+			tflog.Error(context.Background(), fmt.Sprintf("Error downloading certificate: %s", err))
+			return nil, err
+		}
+		tflog.Debug(
+			context.Background(),
+			fmt.Sprintf("Successfully downloaded certificate with ID: %d from Collection ID: %d", certID, collectionID),
+		)
+		return certificateContext, nil
+	}
+
+	tflog.Warn(
+		context.Background(),
+		fmt.Sprintf(
+			"This should be unreachable, attempting one last time to download certificate with ID: %d from Collection ID: %d",
+			certID,
+			collectionID,
+		),
+	)
+	certificateContext, err := kfClient.GetCertificateContext(&req)
+	if err != nil {
+		tflog.Error(context.Background(), fmt.Sprintf("Error downloading certificate: %s", err))
+		return nil, err
+	}
+	tflog.Debug(
+		context.Background(),
+		fmt.Sprintf("Successfully downloaded certificate with ID: %d from Collection ID: %d", certID, collectionID),
+	)
+	return certificateContext, nil
+}
+
+func downloadCertificate(
+	id int,
+	collectionId int,
+	kfClient *api.Client,
+	password string,
+	csrEnrollment bool,
+	maxCollectionEnrollWait int,
+) (
 	string,
 	string,
 	string,
 	error,
 ) {
-	log.Printf("[DEBUG] enter downloadCertificate")
-	log.Printf("[INFO] Downloading certificate with ID: %d", id)
+	//log.Printf("[DEBUG] enter downloadCertificate")
+	//log.Printf("[INFO] Downloading certificate with ID: %d", id)
+	tflog.Debug(context.Background(), fmt.Sprintf("Entered downloadCertificate for certificate ID: %d", id))
 
 	req := api.GetCertificateContextArgs{
 		Id: id,
 	}
+	var (
+		certificateContext *api.GetCertificateResponse
+		err                error
+	)
+
 	if collectionId > 0 {
-		log.Printf("[INFO] Downloading certificate '%d' from Collection ID: %d", id, collectionId)
+		//log.Printf("[DEBUG] Downloading certificate '%d' from Collection ID: %d", id, collectionId)
+		tflog.Debug(
+			context.Background(),
+			fmt.Sprintf("Downloading certificate '%d' from Collection ID: %d", id, collectionId),
+		)
 		req.CollectionId = &collectionId
-	}
-	log.Printf("[INFO] Downloading certificate from Keyfactor Command")
-	log.Printf("[DEBUG] Request: %+v", req)
-	certificateContext, err := kfClient.GetCertificateContext(&req)
-	if err != nil {
-		log.Printf("[ERROR] Error downloading certificate: %s", err)
-		return "", "", "", err
+		tflog.Debug(context.Background(), fmt.Sprintf("Calling retryCertCollectionHandler for certificate ID: %d", id))
+		certificateContext, err = retryCertCollectionHandler(kfClient, id, collectionId, maxCollectionEnrollWait)
+		if err != nil {
+			return "", "", "", err
+		}
+	} else {
+		//log.Printf("[INFO] Downloading certificate from Keyfactor Command")
+		//log.Printf("[DEBUG] Request: %+v", req)
+		tflog.Debug(context.Background(), fmt.Sprintf("Downloading certificate from Keyfactor Command"))
+		certificateContext, err = kfClient.GetCertificateContext(&req)
+		if err != nil {
+			return "", "", "", err
+		}
 	}
 
-	log.Printf("[INFO] Looking up certificate template with ID: %d", certificateContext.TemplateId)
+	//log.Printf("[INFO] Looking up certificate template with ID: %d", certificateContext.TemplateId)
+	tflog.Debug(
+		context.Background(),
+		fmt.Sprintf("Looking up certificate template with ID: %d", certificateContext.TemplateId),
+	)
 	template, err := kfClient.GetTemplate(certificateContext.TemplateId)
 	if err != nil {
 		log.Printf(
@@ -417,60 +520,88 @@ func downloadCertificate(id int, collectionId int, kfClient *api.Client, passwor
 	var chainPem []byte
 
 	if recoverable && !csrEnrollment {
-		log.Printf("[INFO] Recovering certificate with ID: %d", id)
+		//log.Printf("[INFO] Recovering certificate with ID: %d", id)
+		tflog.Info(context.Background(), fmt.Sprintf("Recovering certificate with ID: %d", id))
 		//priv, leaf, chain, rErr := kfClient.RecoverCertificate(id, "", "", "", password)
 		priv, leaf, chain, rErr := kfClient.RecoverCertificate(id, "", "", "", password, collectionId)
 		if rErr != nil {
-			log.Printf("[ERROR] Error recovering certificate: %s", rErr)
 			return "", "", "", rErr
 		}
 
 		// Encode DER to PEM
-		log.Printf("[DEBUG] Encoding certificate to PEM")
+		tflog.Debug(context.Background(), fmt.Sprintf("Encoding certificate to PEM for certificate ID: %d", id))
 		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
-		log.Printf("[DEBUG] Encoding chain to PEM")
+		tflog.Debug(context.Background(), fmt.Sprintf("Encoding chain to PEM for certificate ID: %d", id))
 		for _, i := range chain {
 			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: i.Raw})...)
 		}
-		log.Printf("[DEBUG] Chain PEM: %s", chainPem)
+		//log.Printf("[DEBUG] Chain PEM: %s", chainPem)
+		tflog.Debug(context.Background(), fmt.Sprintf("Encoding private key to PEM for certificate ID: %d", id))
 
-		log.Printf("[DEBUG] Encoding private key to PEM")
-		// Figure out the format of the private key, then encode it to PEM
-
-		log.Printf("[DEBUG] Private Key Type: %T", priv)
+		//log.Printf("[DEBUG] Private Key Type: %T", priv)
+		tflog.Debug(context.Background(), fmt.Sprintf("Private Key Type: %T", priv))
 		rsa, ok := priv.(*rsa2.PrivateKey)
 		if ok {
-			log.Printf("[INFO] Private Key is RSA for certificate ID: %d", id)
+			//log.Printf("[INFO] Private Key is RSA for certificate ID: %d", id)
+			tflog.Debug(context.Background(), fmt.Sprintf("Attempting to parse RSA key for certificate ID: %d", id))
 			buf := x509.MarshalPKCS1PrivateKey(rsa)
 			if len(buf) > 0 {
+				tflog.Debug(
+					context.Background(),
+					fmt.Sprintf("RSA Private Key successfully parsed for certificate ID: %d", id),
+				)
+				tflog.Debug(
+					context.Background(),
+					fmt.Sprintf("Attempting to encode RSA private key to PEM for certificate ID: %d", id),
+				)
 				privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "RSA PRIVATE KEY"})
 			}
 		}
 
 		if privPem == nil {
-			log.Printf("[INFO] Private Key is not RSA for certificate ID: %d attempting to parse ECC key", id)
+			//log.Printf("[INFO] Private Key is not RSA for certificate ID: %d attempting to parse ECC key", id)
+			tflog.Debug(
+				context.Background(),
+				fmt.Sprintf("Private Key is not RSA for certificate ID: %d attempting to parse ECC key", id),
+			)
 			ecc, ok := priv.(*ecdsa.PrivateKey)
 			if ok {
-				log.Printf("[INFO] Private Key is ECDSA for certificate ID: %d", id)
+				tflog.Debug(
+					context.Background(),
+					fmt.Sprintf("Attempting to parse ECDSA key for certificate ID: %d", id),
+				)
 				buf, _ := x509.MarshalECPrivateKey(ecc)
 				if len(buf) > 0 {
+					tflog.Debug(
+						context.Background(),
+						fmt.Sprintf("ECDSA Private Key successfully parsed for certificate ID: %d", id),
+					)
+					tflog.Debug(
+						context.Background(),
+						fmt.Sprintf("Attempting to encode ECDSA private key to PEM for certificate ID: %d", id),
+					)
 					privPem = pem.EncodeToMemory(&pem.Block{Bytes: buf, Type: "EC PRIVATE KEY"})
 				}
 			}
 		}
 	} else {
-		log.Printf("[INFO] Downloading certificate with ID: %d", id)
+		//log.Printf("[INFO] Downloading certificate with ID: %d", id)
+		tflog.Debug(context.Background(), fmt.Sprintf("Calling DownloadCertificate for certificate ID: %d", id))
 		leaf, chain, dlErr := kfClient.DownloadCertificate(id, "", "", "")
 		if dlErr != nil {
-			log.Printf("[ERROR] Error downloading certificate: %s", dlErr)
+			//log.Printf("[ERROR] Error downloading certificate: %s", dlErr)
+			tflog.Error(context.Background(), fmt.Sprintf("Error downloading certificate: %s", dlErr))
 			return "", "", "", err
 		}
 
 		// Encode DER to PEM
-		log.Printf("[DEBUG] Encoding certificate to PEM")
+		//log.Printf("[DEBUG] Encoding certificate to PEM")
+		tflog.Debug(context.Background(), fmt.Sprintf("Encoding certificate to PEM for certificate ID: %d", id))
 		leafPem = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
-		log.Printf("[DEBUG] Certificate PEM: %s", leafPem)
-		log.Printf("[DEBUG] Encoding chain to PEM")
+		tflog.Trace(context.Background(), fmt.Sprintf("Certificate PEM: %s", leafPem))
+		//log.Printf("[DEBUG] Certificate PEM: %s", leafPem)
+		//log.Printf("[DEBUG] Encoding chain to PEM")
+		tflog.Debug(context.Background(), fmt.Sprintf("Encoding chain to PEM for certificate ID: %d", id))
 		// iterate through chain in reverse order
 		for i := len(chain) - 1; i >= 0; i-- {
 			// check if current cert is the leaf cert
@@ -479,10 +610,11 @@ func downloadCertificate(id int, collectionId int, kfClient *api.Client, passwor
 			}
 			chainPem = append(chainPem, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: chain[i].Raw})...)
 		}
-		log.Printf("[DEBUG] Chain PEM: %s", chainPem)
+		//log.Printf("[DEBUG] Chain PEM: %s", chainPem)
+		tflog.Trace(context.Background(), fmt.Sprintf("Chain PEM: %s", chainPem))
 	}
 
-	log.Printf("[DEBUG] exit downloadCertificate")
+	tflog.Debug(context.Background(), fmt.Sprintf("Successfully downloaded certificate with ID: %d", id))
 	return string(leafPem), string(chainPem), string(privPem), nil
 }
 
@@ -593,4 +725,50 @@ func sortInSameOrder(unsortedList, sortedList []string) []string {
 		}
 	}
 	return sorted
+}
+
+func parseDuration(duration string) (int, error) {
+	totalSeconds := 0
+
+	// check if is an integer
+	if i, err := strconv.Atoi(duration); err == nil {
+		return i, nil
+	}
+
+	// Split the original duration string by digits and non-digits
+	durationParts := strings.Split(duration, "h")
+	if len(durationParts) > 1 {
+		// Process hours
+		hoursPart := durationParts[0]
+		hours, err := strconv.Atoi(hoursPart)
+		if err != nil {
+			return 0, err
+		}
+		totalSeconds += hours * 3600
+		duration = durationParts[1]
+	} else {
+		durationParts = strings.Split(duration, "m")
+		if len(durationParts) > 1 {
+			// Process minutes
+			minutesPart := durationParts[0]
+			minutes, err := strconv.Atoi(minutesPart)
+			if err != nil {
+				return 0, err
+			}
+			totalSeconds += minutes * 60
+			duration = durationParts[1]
+		}
+	}
+
+	// Process seconds
+	if strings.Contains(duration, "s") {
+		secondsPart := strings.TrimSuffix(duration, "s")
+		seconds, err := strconv.Atoi(secondsPart)
+		if err != nil {
+			return 0, err
+		}
+		totalSeconds += seconds
+	}
+
+	return totalSeconds, nil
 }

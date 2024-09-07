@@ -18,6 +18,8 @@ const (
 	ERR_SUMMARY_TEMPLATE_READ                = "Unable to read Keyfactor Command template."
 	ERR_SUMMARY_IDENTITY_DELETE              = "Unable to delete security identity."
 
+	ERR_COLLECTION_WAIT = "does not have the required permissions: Certificates - Read"
+
 	//EnvCommandHostname = "KEYFACTOR_HOSTNAME"
 	EnvCommandUsername = "KEYFACTOR_USERNAME"
 	//EnvCommandPassword = "KEYFACTOR_PASSWORD"

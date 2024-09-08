@@ -381,7 +381,7 @@ func isNullId(i int) bool {
 func retryCertCollectionHandler(
 	kfClient *api.Client,
 	certID int,
-	collectionID, maxSleep int,
+	collectionID, maxSleep int, maxRetry int,
 ) (*api.GetCertificateResponse, error) {
 	req := api.GetCertificateContextArgs{
 		Id:           certID,
@@ -396,6 +396,10 @@ func retryCertCollectionHandler(
 		)
 		certificateContext, err := kfClient.GetCertificateContext(&req)
 		if err != nil {
+			if maxRetry > 0 && i >= maxRetry {
+				tflog.Warn(context.Background(), fmt.Sprintf("Max retry attempts reached, returning error: %s", err))
+				return nil, err
+			}
 			if totalSleep >= maxSleep {
 				//log.Printf("[WARNING] Max retry attempts reached, returning error: %s", err)
 				tflog.Warn(context.Background(), fmt.Sprintf("Max retry attempts reached, returning error: %s", err))
@@ -409,6 +413,17 @@ func retryCertCollectionHandler(
 				)
 
 				delay := time.Duration(i) * time.Second
+				if maxRetry > 0 {
+					tflog.Debug(
+						context.Background(),
+						fmt.Sprintf(
+							"Max retry attempts set to %d, defaulting to %ss intervals",
+							maxRetry,
+							MAX_WAIT_SECONDS,
+						),
+					)
+					delay = time.Duration(MAX_WAIT_SECONDS) * time.Second
+				}
 				if delay > time.Duration(MAX_WAIT_SECONDS)*time.Second {
 					delay = time.Duration(MAX_WAIT_SECONDS) * time.Second
 				}
@@ -455,6 +470,7 @@ func downloadCertificate(
 	password string,
 	csrEnrollment bool,
 	maxCollectionEnrollWait int,
+	maxCollectionEnrollWaitRetry int,
 ) (
 	string,
 	string,
@@ -481,7 +497,13 @@ func downloadCertificate(
 		)
 		req.CollectionId = &collectionId
 		tflog.Debug(context.Background(), fmt.Sprintf("Calling retryCertCollectionHandler for certificate ID: %d", id))
-		certificateContext, err = retryCertCollectionHandler(kfClient, id, collectionId, maxCollectionEnrollWait)
+		certificateContext, err = retryCertCollectionHandler(
+			kfClient,
+			id,
+			collectionId,
+			maxCollectionEnrollWait,
+			maxCollectionEnrollWaitRetry,
+		)
 		if err != nil {
 			return "", "", "", err
 		}

@@ -66,13 +66,14 @@ type KeyfactorCertificate struct {
 	PrivateKey  types.String `tfsdk:"private_key"`
 	KeyPassword types.String `tfsdk:"key_password"`
 	// Keyfactor Fields
-	CertificateAuthority     types.String `tfsdk:"certificate_authority"`
-	CertificateTemplate      types.String `tfsdk:"certificate_template"`
-	RequestId                types.Int64  `tfsdk:"command_request_id"`
-	CertificateId            types.Int64  `tfsdk:"certificate_id"`
-	Metadata                 types.Map    `tfsdk:"metadata"`
-	CollectionId             types.Int64  `tfsdk:"collection_id"`
-	CollectionEnrollmentWait types.String `tfsdk:"collection_enrollment_wait"`
+	CertificateAuthority               types.String `tfsdk:"certificate_authority"`
+	CertificateTemplate                types.String `tfsdk:"certificate_template"`
+	RequestId                          types.Int64  `tfsdk:"command_request_id"`
+	CertificateId                      types.Int64  `tfsdk:"certificate_id"`
+	Metadata                           types.Map    `tfsdk:"metadata"`
+	CollectionId                       types.Int64  `tfsdk:"collection_id"`
+	CollectionEnrollmentWait           types.String `tfsdk:"collection_enrollment_wait"`
+	CollectionEnrollmentWaitMaxRetries types.Int64  `tfsdk:"collection_enrollment_wait_max_retries"`
 }
 
 type KeyfactorCertificateDeployment struct {

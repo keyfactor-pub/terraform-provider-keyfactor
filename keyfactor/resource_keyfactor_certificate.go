@@ -211,6 +211,17 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 					": 1h, " +
 					"1m, 1s. Default: 0.",
 			},
+			"collection_enrollment_wait_max_retries": {
+				Type:     types.Int64Type,
+				Computed: false,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"The maximum number of times to retry checking if a certificate has been"+
+						" added to a collection in %d second intervals. "+
+						"This takes precedence over `collection_enrollment_wait`. Default: 0.",
+					MAX_WAIT_SECONDS,
+				),
+			},
 		},
 	}, nil
 }
@@ -417,6 +428,7 @@ func (r resourceKeyfactorCertificate) Create(
 				Value: plan.CollectionEnrollmentWait.Value,
 				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
 			},
+			CollectionEnrollmentWaitMaxRetries: plan.CollectionEnrollmentWaitMaxRetries,
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -604,6 +616,7 @@ func (r resourceKeyfactorCertificate) Create(
 		)
 		tflog.Debug(ctx, "Calling downloadCertificate")
 		maxColletionWait, wErr := parseDuration(plan.CollectionEnrollmentWait.Value)
+		maxRetries := int(plan.CollectionEnrollmentWaitMaxRetries.Value)
 		if wErr != nil {
 			maxColletionWait = 0
 		}
@@ -614,6 +627,7 @@ func (r resourceKeyfactorCertificate) Create(
 			lookupPassword,
 			csr != "",
 			maxColletionWait,
+			maxRetries,
 		)
 		if dErr != nil {
 			response.Diagnostics.AddError(
@@ -667,6 +681,7 @@ func (r resourceKeyfactorCertificate) Create(
 				Value: plan.CollectionEnrollmentWait.Value,
 				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
 			},
+			CollectionEnrollmentWaitMaxRetries: plan.CollectionEnrollmentWaitMaxRetries,
 		}
 
 		tflog.Debug(ctx, "Setting state")
@@ -780,6 +795,7 @@ func (r resourceKeyfactorCertificate) Read(
 				Value: state.CollectionEnrollmentWait.Value,
 				Null:  isNullString(state.CollectionEnrollmentWait.Value),
 			},
+			CollectionEnrollmentWaitMaxRetries: state.CollectionEnrollmentWaitMaxRetries,
 		}
 		diags = response.State.Set(ctx, &emptyResult)
 		response.Diagnostics.Append(diags...)
@@ -807,7 +823,7 @@ func (r resourceKeyfactorCertificate) Read(
 		fmt.Sprintf("Downloading certificate '%s'(%d) from Keyfactor Command.", state.ID.Value, certificateIdInt),
 	)
 
-	_, _, _, dErr := downloadCertificate(certificateIdInt, collectionIdInt, r.p.client, lookupPassword, csr != "", 0)
+	_, _, _, dErr := downloadCertificate(certificateIdInt, collectionIdInt, r.p.client, lookupPassword, csr != "", 0, 0)
 	if dErr != nil {
 		tflog.Error(ctx, "Error downloading certificate from Keyfactor Command.")
 		response.Diagnostics.AddError(
@@ -983,6 +999,7 @@ func (r resourceKeyfactorCertificate) Read(
 			r.p.client,
 			lookupPassword,
 			csr != "",
+			0,
 			0,
 		)
 		//leaf, chain, pKey, dErr := downloadCertificate(enrolledId, int(collectionId), r.p.client, lookupPassword, csr != "")
@@ -1467,6 +1484,7 @@ func (r resourceKeyfactorCertificate) ImportState(
 		r.p.client,
 		password,
 		csr != "",
+		0,
 		0,
 	) // add support for importing with collection ID
 	if dErr != nil {

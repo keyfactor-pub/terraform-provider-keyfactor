@@ -2,7 +2,7 @@
 # behavior.
 version: 2
 before:
-  hook:
+  hooks:
     - go mod tidy
 builds:
   - env:
@@ -28,8 +28,7 @@ builds:
     binary: '{{ .ProjectName }}'
 archives:
   - format: zip
-    files:
-      - name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
 checksum:
   extra_files:
     - glob: 'terraform-registry-manifest.json'
@@ -38,7 +37,6 @@ checksum:
   algorithm: sha256
 signs:
   - artifacts: checksums
-    signature: "${signature}"
     args:
       - "--batch"
       - "--local-user"
@@ -58,8 +56,6 @@ release:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
 changelog:
-  skip: false
-  sort: desc
   filters:
     exclude:
       - docs

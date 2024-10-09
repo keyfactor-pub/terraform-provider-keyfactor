@@ -88,6 +88,8 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 
 ### Optional
 
+- `collection_enrollment_wait` (String) The maximum time to wait for a certificate to be added to a collection, post enrollment. This is useful for certificates that trigger issue handlers and/or workflows post enrollment and will delay the certificate being added to the expected collection. Format: 1h, 1m, 1s. Default: 0.
+- `collection_enrollment_wait_max_retries` (Number) The maximum number of times to retry checking if a certificate has been added to a collection in 30 second intervals. This takes precedence over `collection_enrollment_wait`. Default: 0.
 - `collection_id` (Number) Optional certificate collection ID. This is required if enrollment permissions have been granted at the collection level. NOTE: This will *not* assign the cert to the specified collection ID; assignment is based the collection's associated query. For more information on collection permissions see the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions
 - `common_name` (String) Subject common name (CN) of the certificate.
 - `country` (String) Subject country of the certificate

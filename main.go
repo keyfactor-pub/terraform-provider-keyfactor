@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"flag"
+	"log"
+
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/keyfactor-pub/terraform-provider-keyfactor/keyfactor"
-	"log"
 )
 
 // Run "go generate" to format example terraform files and generate the docs for the registry/website
@@ -35,6 +36,7 @@ func main() {
 		ProtocolVersion: 6,
 	}
 
+	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
 	err := providerserver.Serve(context.Background(), keyfactor.New, opts)
 
 	if err != nil {

@@ -201,6 +201,27 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Sensitive:   true,
 				Description: "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
 			},
+			"collection_enrollment_wait": {
+				Type:     types.StringType,
+				Computed: false,
+				Optional: true,
+				Description: "The maximum time to wait for a certificate to be added to a collection, " +
+					"post enrollment. This is useful for certificates that trigger issue handlers and/or workflows" +
+					" post enrollment and will delay the certificate being added to the expected collection. Format" +
+					": 1h, " +
+					"1m, 1s. Default: 0.",
+			},
+			"collection_enrollment_wait_max_retries": {
+				Type:     types.Int64Type,
+				Computed: false,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"The maximum number of times to retry checking if a certificate has been"+
+						" added to a collection in %d second intervals. "+
+						"This takes precedence over `collection_enrollment_wait`. Default: 0.",
+					MAX_WAIT_SECONDS,
+				),
+			},
 		},
 	}, nil
 }
@@ -244,6 +265,8 @@ func (r resourceKeyfactorCertificate) Create(
 	// Generate API request body from plan
 
 	kfClient := r.p.client
+	ctx = tflog.SetField(ctx, "command_hostname", r.p.client.Hostname)
+	ctx = tflog.SetField(ctx, "command_api_path", r.p.client.ApiPath)
 
 	certificateId := plan.ID.Value
 	collectionId := plan.CollectionId.Value
@@ -403,6 +426,14 @@ func (r resourceKeyfactorCertificate) Create(
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             plan.Metadata,
 			CollectionId:         plan.CollectionId,
+			CollectionEnrollmentWait: types.String{
+				Value: plan.CollectionEnrollmentWait.Value,
+				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
+			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: plan.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(plan.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -468,13 +499,13 @@ func (r resourceKeyfactorCertificate) Create(
 		tflog.Debug(ctx, fmt.Sprintf("PFXArgs: %s", string(jsonData)))
 		tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))
 		tflog.Debug(ctx, "Calling EnrollPFXV2.")
-		enrollResponse, err := r.p.client.EnrollPFXV2(PFXArgs)
-		if err != nil {
-			tflog.Error(ctx, "No response from Keyfactor Command after PFX enrollment.")
+		enrollResponse, eErr := r.p.client.EnrollPFXV2(PFXArgs)
+		if eErr != nil {
+			tflog.Error(ctx, "Error response from Keyfactor Command after PFX enrollment.")
 			response.Diagnostics.AddError(
 				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 				fmt.Sprintf(
-					"Could not create certificate %s on Keyfactor: "+err.Error(),
+					"Could not create certificate %s on Keyfactor Command: "+eErr.Error(),
 					PFXArgs.Subject.SubjectCommonName,
 				),
 			)
@@ -589,12 +620,19 @@ func (r resourceKeyfactorCertificate) Create(
 			),
 		)
 		tflog.Debug(ctx, "Calling downloadCertificate")
+		maxColletionWait, wErr := parseDuration(plan.CollectionEnrollmentWait.Value)
+		maxRetries := int(plan.CollectionEnrollmentWaitMaxRetries.Value)
+		if wErr != nil {
+			maxColletionWait = 0
+		}
 		leaf, chain, pKey, dErr := downloadCertificate(
 			enrolledId,
 			int(collectionId),
 			r.p.client,
 			lookupPassword,
 			csr != "",
+			maxColletionWait,
+			maxRetries,
 		)
 		if dErr != nil {
 			response.Diagnostics.AddError(
@@ -644,6 +682,14 @@ func (r resourceKeyfactorCertificate) Create(
 			RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
 			Metadata:             plan.Metadata,
 			CollectionId:         plan.CollectionId,
+			CollectionEnrollmentWait: types.String{
+				Value: plan.CollectionEnrollmentWait.Value,
+				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
+			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: plan.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(plan.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 
 		tflog.Debug(ctx, "Setting state")
@@ -654,6 +700,14 @@ func (r resourceKeyfactorCertificate) Create(
 			return
 		}
 	}
+
+}
+
+func isNullInt64(value int64) bool {
+	if value == 0 {
+		return true
+	}
+	return false
 
 }
 
@@ -752,6 +806,15 @@ func (r resourceKeyfactorCertificate) Read(
 			CertificateTemplate:  nullValue,
 			Metadata:             types.Map{Null: true, ElemType: types.StringType},
 			CertificateId:        types.Int64{Null: true},
+			CollectionId:         types.Int64{Null: true},
+			CollectionEnrollmentWait: types.String{
+				Value: state.CollectionEnrollmentWait.Value,
+				Null:  isNullString(state.CollectionEnrollmentWait.Value),
+			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: state.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(state.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 		diags = response.State.Set(ctx, &emptyResult)
 		response.Diagnostics.Append(diags...)
@@ -778,7 +841,8 @@ func (r resourceKeyfactorCertificate) Read(
 		ctx,
 		fmt.Sprintf("Downloading certificate '%s'(%d) from Keyfactor Command.", state.ID.Value, certificateIdInt),
 	)
-	_, _, _, dErr := downloadCertificate(certificateIdInt, collectionIdInt, r.p.client, lookupPassword, csr != "")
+
+	_, _, _, dErr := downloadCertificate(certificateIdInt, collectionIdInt, r.p.client, lookupPassword, csr != "", 0, 0)
 	if dErr != nil {
 		tflog.Error(ctx, "Error downloading certificate from Keyfactor Command.")
 		response.Diagnostics.AddError(
@@ -954,6 +1018,8 @@ func (r resourceKeyfactorCertificate) Read(
 			r.p.client,
 			lookupPassword,
 			csr != "",
+			0,
+			0,
 		)
 		//leaf, chain, pKey, dErr := downloadCertificate(enrolledId, int(collectionId), r.p.client, lookupPassword, csr != "")
 		if dChainErr != nil {
@@ -1022,7 +1088,15 @@ func (r resourceKeyfactorCertificate) Read(
 			CertificateTemplate: state.CertificateTemplate,
 			Metadata:            metadata,
 			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
-			CollectionId:        state.CollectionId,
+			CollectionId:        types.Int64{Value: int64(collectionIdInt), Null: isNullId(collectionIdInt)},
+			CollectionEnrollmentWait: types.String{
+				Value: state.CollectionEnrollmentWait.Value,
+				Null:  isNullString(state.CollectionEnrollmentWait.Value),
+			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: state.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(state.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 	} else {
 		tflog.Debug(ctx, "Creating state object for certificate PFX.")
@@ -1058,6 +1132,14 @@ func (r resourceKeyfactorCertificate) Read(
 			Metadata:            metadata,
 			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
 			CollectionId:        state.CollectionId,
+			CollectionEnrollmentWait: types.String{
+				Value: state.CollectionEnrollmentWait.Value,
+				Null:  isNullString(state.CollectionEnrollmentWait.Value),
+			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: state.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(state.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 	}
 
@@ -1146,12 +1228,15 @@ func (r resourceKeyfactorCertificate) Update(
 		}
 		if !plan.Metadata.Equal(state.Metadata) {
 			tflog.Debug(ctx, "Metadata is updated. Attempting to update metadata on Keyfactor.")
-
+			metadataReq := &api.UpdateMetadataArgs{
+				CertID:   certificateIdInt,
+				Metadata: metaInterface,
+			}
+			if plan.CollectionId.Value > 0 {
+				metadataReq.CollectionId = int(plan.CollectionId.Value)
+			}
 			err := r.p.client.UpdateMetadata(
-				&api.UpdateMetadataArgs{
-					CertID:   certificateIdInt,
-					Metadata: metaInterface,
-				},
+				metadataReq,
 			)
 			if err != nil {
 				response.Diagnostics.AddError(
@@ -1187,6 +1272,15 @@ func (r resourceKeyfactorCertificate) Update(
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             plan.Metadata,
+			CollectionId:         plan.CollectionId,
+			CollectionEnrollmentWait: types.String{
+				Value: plan.CollectionEnrollmentWait.Value,
+				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
+			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: plan.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullId(int(plan.CollectionEnrollmentWaitMaxRetries.Value)),
+			},
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -1213,12 +1307,15 @@ func (r resourceKeyfactorCertificate) Update(
 				planMetadataInterface[k] = v
 			}
 			tflog.Info(ctx, fmt.Sprintf("Updating metadata for certificate '%s' on Keyfactor Command.", state.ID.Value))
-			err := r.p.client.UpdateMetadata(
-				&api.UpdateMetadataArgs{
-					CertID:   int(state.CertificateId.Value),
-					Metadata: planMetadataInterface,
-				},
-			)
+			updateReq := &api.UpdateMetadataArgs{
+				CertID:   int(state.CertificateId.Value),
+				Metadata: planMetadataInterface,
+			}
+			if plan.CollectionId.Value > 0 {
+				tflog.Debug(ctx, "Setting collection ID on API request")
+				updateReq.CollectionId = int(plan.CollectionId.Value)
+			}
+			err := r.p.client.UpdateMetadata(updateReq)
 			if err != nil {
 				response.Diagnostics.AddError(
 					"Certificate metadata update error.",
@@ -1254,6 +1351,15 @@ func (r resourceKeyfactorCertificate) Update(
 			CertificateAuthority: state.CertificateAuthority,
 			CertificateTemplate:  state.CertificateTemplate,
 			Metadata:             plan.Metadata,
+			CollectionId:         state.CollectionId,
+			CollectionEnrollmentWait: types.String{
+				Value: plan.CollectionEnrollmentWait.Value,
+				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
+			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: plan.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(plan.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -1419,6 +1525,8 @@ func (r resourceKeyfactorCertificate) ImportState(
 		r.p.client,
 		password,
 		csr != "",
+		0,
+		0,
 	) // add support for importing with collection ID
 	if dErr != nil {
 		tflog.Error(

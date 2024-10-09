@@ -265,6 +265,8 @@ func (r resourceKeyfactorCertificate) Create(
 	// Generate API request body from plan
 
 	kfClient := r.p.client
+	ctx = tflog.SetField(ctx, "command_hostname", r.p.client.Hostname)
+	ctx = tflog.SetField(ctx, "command_api_path", r.p.client.ApiPath)
 
 	certificateId := plan.ID.Value
 	collectionId := plan.CollectionId.Value
@@ -428,7 +430,10 @@ func (r resourceKeyfactorCertificate) Create(
 				Value: plan.CollectionEnrollmentWait.Value,
 				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
 			},
-			CollectionEnrollmentWaitMaxRetries: plan.CollectionEnrollmentWaitMaxRetries,
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: plan.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(plan.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -494,13 +499,13 @@ func (r resourceKeyfactorCertificate) Create(
 		tflog.Debug(ctx, fmt.Sprintf("PFXArgs: %s", string(jsonData)))
 		tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))
 		tflog.Debug(ctx, "Calling EnrollPFXV2.")
-		enrollResponse, err := r.p.client.EnrollPFXV2(PFXArgs)
-		if err != nil {
-			tflog.Error(ctx, "No response from Keyfactor Command after PFX enrollment.")
+		enrollResponse, eErr := r.p.client.EnrollPFXV2(PFXArgs)
+		if eErr != nil {
+			tflog.Error(ctx, "Error response from Keyfactor Command after PFX enrollment.")
 			response.Diagnostics.AddError(
 				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 				fmt.Sprintf(
-					"Could not create certificate %s on Keyfactor: "+err.Error(),
+					"Could not create certificate %s on Keyfactor Command: "+eErr.Error(),
 					PFXArgs.Subject.SubjectCommonName,
 				),
 			)
@@ -681,7 +686,10 @@ func (r resourceKeyfactorCertificate) Create(
 				Value: plan.CollectionEnrollmentWait.Value,
 				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
 			},
-			CollectionEnrollmentWaitMaxRetries: plan.CollectionEnrollmentWaitMaxRetries,
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: plan.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(plan.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 
 		tflog.Debug(ctx, "Setting state")
@@ -692,6 +700,14 @@ func (r resourceKeyfactorCertificate) Create(
 			return
 		}
 	}
+
+}
+
+func isNullInt64(value int64) bool {
+	if value == 0 {
+		return true
+	}
+	return false
 
 }
 
@@ -795,7 +811,10 @@ func (r resourceKeyfactorCertificate) Read(
 				Value: state.CollectionEnrollmentWait.Value,
 				Null:  isNullString(state.CollectionEnrollmentWait.Value),
 			},
-			CollectionEnrollmentWaitMaxRetries: state.CollectionEnrollmentWaitMaxRetries,
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: state.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(state.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 		diags = response.State.Set(ctx, &emptyResult)
 		response.Diagnostics.Append(diags...)
@@ -1074,6 +1093,10 @@ func (r resourceKeyfactorCertificate) Read(
 				Value: state.CollectionEnrollmentWait.Value,
 				Null:  isNullString(state.CollectionEnrollmentWait.Value),
 			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: state.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(state.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 	} else {
 		tflog.Debug(ctx, "Creating state object for certificate PFX.")
@@ -1112,6 +1135,10 @@ func (r resourceKeyfactorCertificate) Read(
 			CollectionEnrollmentWait: types.String{
 				Value: state.CollectionEnrollmentWait.Value,
 				Null:  isNullString(state.CollectionEnrollmentWait.Value),
+			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: state.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(state.CollectionEnrollmentWaitMaxRetries.Value),
 			},
 		}
 	}
@@ -1223,30 +1250,37 @@ func (r resourceKeyfactorCertificate) Update(
 
 		// Set state
 		var result = KeyfactorCertificate{
-			ID:                       types.String{Value: state.ID.Value},
-			CSR:                      plan.CSR,
-			CommonName:               plan.CommonName,
-			Locality:                 plan.Locality,
-			State:                    plan.State,
-			Country:                  plan.Country,
-			Organization:             plan.Organization,
-			OrganizationalUnit:       plan.OrganizationalUnit,
-			DNSSANs:                  plan.DNSSANs,
-			IPSANs:                   plan.IPSANs,
-			URISANs:                  plan.URISANs,
-			SerialNumber:             plan.SerialNumber,
-			IssuerDN:                 plan.IssuerDN,
-			Thumbprint:               plan.Thumbprint,
-			PEM:                      plan.PEM,
-			PEMCACert:                plan.PEMChain,
-			PEMChain:                 types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
-			PrivateKey:               plan.PrivateKey,
-			KeyPassword:              plan.KeyPassword,
-			CertificateAuthority:     plan.CertificateAuthority,
-			CertificateTemplate:      plan.CertificateTemplate,
-			Metadata:                 plan.Metadata,
-			CollectionId:             plan.CollectionId,
-			CollectionEnrollmentWait: plan.CollectionEnrollmentWait,
+			ID:                   types.String{Value: state.ID.Value},
+			CSR:                  plan.CSR,
+			CommonName:           plan.CommonName,
+			Locality:             plan.Locality,
+			State:                plan.State,
+			Country:              plan.Country,
+			Organization:         plan.Organization,
+			OrganizationalUnit:   plan.OrganizationalUnit,
+			DNSSANs:              plan.DNSSANs,
+			IPSANs:               plan.IPSANs,
+			URISANs:              plan.URISANs,
+			SerialNumber:         plan.SerialNumber,
+			IssuerDN:             plan.IssuerDN,
+			Thumbprint:           plan.Thumbprint,
+			PEM:                  plan.PEM,
+			PEMCACert:            plan.PEMChain,
+			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
+			PrivateKey:           plan.PrivateKey,
+			KeyPassword:          plan.KeyPassword,
+			CertificateAuthority: plan.CertificateAuthority,
+			CertificateTemplate:  plan.CertificateTemplate,
+			Metadata:             plan.Metadata,
+			CollectionId:         plan.CollectionId,
+			CollectionEnrollmentWait: types.String{
+				Value: plan.CollectionEnrollmentWait.Value,
+				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
+			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: plan.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullId(int(plan.CollectionEnrollmentWaitMaxRetries.Value)),
+			},
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -1294,31 +1328,38 @@ func (r resourceKeyfactorCertificate) Update(
 		// Set state
 		tflog.Debug(ctx, "Creating KeyfactorCertificate state object")
 		var result = KeyfactorCertificate{
-			ID:                       state.ID,
-			CSR:                      state.CSR,
-			CommonName:               state.CommonName,
-			Locality:                 state.Locality,
-			State:                    state.State,
-			Country:                  state.Country,
-			Organization:             state.Organization,
-			OrganizationalUnit:       state.OrganizationalUnit,
-			DNSSANs:                  state.DNSSANs,
-			IPSANs:                   state.IPSANs,
-			URISANs:                  state.URISANs,
-			SerialNumber:             state.SerialNumber,
-			IssuerDN:                 state.IssuerDN,
-			Thumbprint:               state.Thumbprint,
-			PEM:                      state.PEM,
-			PEMCACert:                state.PEMCACert,
-			PEMChain:                 state.PEMChain,
-			PrivateKey:               state.PrivateKey,
-			KeyPassword:              plan.KeyPassword,
-			CertificateId:            state.CertificateId,
-			CertificateAuthority:     state.CertificateAuthority,
-			CertificateTemplate:      state.CertificateTemplate,
-			Metadata:                 plan.Metadata,
-			CollectionId:             state.CollectionId,
-			CollectionEnrollmentWait: plan.CollectionEnrollmentWait,
+			ID:                   state.ID,
+			CSR:                  state.CSR,
+			CommonName:           state.CommonName,
+			Locality:             state.Locality,
+			State:                state.State,
+			Country:              state.Country,
+			Organization:         state.Organization,
+			OrganizationalUnit:   state.OrganizationalUnit,
+			DNSSANs:              state.DNSSANs,
+			IPSANs:               state.IPSANs,
+			URISANs:              state.URISANs,
+			SerialNumber:         state.SerialNumber,
+			IssuerDN:             state.IssuerDN,
+			Thumbprint:           state.Thumbprint,
+			PEM:                  state.PEM,
+			PEMCACert:            state.PEMCACert,
+			PEMChain:             state.PEMChain,
+			PrivateKey:           state.PrivateKey,
+			KeyPassword:          plan.KeyPassword,
+			CertificateId:        state.CertificateId,
+			CertificateAuthority: state.CertificateAuthority,
+			CertificateTemplate:  state.CertificateTemplate,
+			Metadata:             plan.Metadata,
+			CollectionId:         state.CollectionId,
+			CollectionEnrollmentWait: types.String{
+				Value: plan.CollectionEnrollmentWait.Value,
+				Null:  isNullString(plan.CollectionEnrollmentWait.Value),
+			},
+			CollectionEnrollmentWaitMaxRetries: types.Int64{
+				Value: plan.CollectionEnrollmentWaitMaxRetries.Value,
+				Null:  isNullInt64(plan.CollectionEnrollmentWaitMaxRetries.Value),
+			},
 		}
 
 		diags = response.State.Set(ctx, result)

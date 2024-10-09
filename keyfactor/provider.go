@@ -3,17 +3,19 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
+	"time"
+
 	"github.com/Keyfactor/keyfactor-go-client/v2/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"os"
-	"strconv"
-	"time"
 )
 
 var stderr = os.Stderr
+var LOG_INSECURE = false //todo: WARNING Do not set to true for a public release
 
 func New() tfsdk.Provider {
 	return &provider{}
@@ -78,15 +80,39 @@ type providerData struct {
 	RequestTimeout types.Int64  `tfsdk:"request_timeout"`
 }
 
-func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderRequest, resp *tfsdk.ConfigureProviderResponse) {
+func loggingInsecure() bool {
+	if os.Getenv("KEYFACTOR_LOG_INSECURE") == "true" || os.Getenv("TF_LOG_INSECURE") == "true" {
+		LOG_INSECURE = true
+	} //TODO: WARNING: THIS IS NOT A GOOD IDEA and should not be included in a public release
+	return LOG_INSECURE
+}
+
+func (p *provider) Configure(
+	ctx context.Context,
+	req tfsdk.ConfigureProviderRequest,
+	resp *tfsdk.ConfigureProviderResponse,
+) {
 	// Retrieve provider data from configuration
 	var config providerData
-
+	loggingInsecure()
+	tflog.Debug(ctx, "Configuring Keyfactor provider")
 	diags := req.Config.Get(ctx, &config)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
+		tflog.Error(ctx, "Error configuring Keyfactor provider")
 		return
 	}
+
+	ctx = tflog.SetField(ctx, "hostname", config.Hostname.Value)
+	ctx = tflog.SetField(ctx, "username", config.Username.Value)
+	ctx = tflog.SetField(ctx, "domain", config.Domain.Value)
+	ctx = tflog.SetField(ctx, "appkey", config.ApiKey.Value)
+	ctx = tflog.SetField(ctx, "password", config.Password.Value)
+	if config.Password.Value != "" && !LOG_INSECURE {
+		ctx = tflog.MaskLogStrings(ctx, config.Password.Value)
+	}
+	ctx = tflog.SetField(ctx, "request_timeout", config.RequestTimeout.Value)
+	tflog.Debug(ctx, "Provider configuration complete")
 
 	// User must provide a user to the provider
 	var username string
@@ -100,11 +126,15 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		return
 	}
 	if config.Username.Null {
-		tflog.Debug(ctx, fmt.Sprintf("Provider username is NULL, attempting to source from %s", EnvCommandUsername))
+		tflog.Debug(ctx, fmt.Sprintf("Provider username is NULL, attempting to source from '%s'", EnvCommandUsername))
 		username = os.Getenv(EnvCommandUsername)
 		config.Username.Value = username
+		ctx = tflog.SetField(ctx, "username", username)
+		tflog.Debug(ctx, fmt.Sprintf("Provider username sourced from environmental variable '%s'", EnvCommandUsername))
 	} else {
 		username = config.Username.Value
+		ctx = tflog.SetField(ctx, "username", username)
+		tflog.Debug(ctx, "Provider username sourced provider config 'username'")
 	}
 	if username == "" {
 		// Error vs warning - empty value must stop execution
@@ -125,10 +155,15 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 		return
 	}
 	if config.Domain.Null {
-		domain = os.Getenv("KEYFACTOR_DOMAIN")
+		tflog.Debug(ctx, fmt.Sprintf("Provider 'domain' is NULL, attempting to source from '%s'", EnvCommandDomain))
+		domain = os.Getenv(EnvCommandDomain)
 		config.Domain.Value = domain
+		ctx = tflog.SetField(ctx, "domain", domain)
+		tflog.Debug(ctx, fmt.Sprintf("Provider 'domain' sourced from environmental variable '%s'", EnvCommandDomain))
 	} else {
 		domain = config.Domain.Value
+		ctx = tflog.SetField(ctx, "domain", domain)
+		tflog.Debug(ctx, "Provider 'domain' sourced provider config 'domain'")
 	}
 	if domain == "" {
 		// Error vs warning - empty value must stop execution
@@ -151,10 +186,18 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	}
 
 	if config.ApiKey.Null {
-		apiKey = os.Getenv("KEYFACTOR_APPKEY")
+		tflog.Debug(ctx, fmt.Sprintf("Provider 'appkey' is NULL, attempting to source from '%s'", EnvCommandAppKey))
+		apiKey = os.Getenv(EnvCommandAppKey)
 		config.ApiKey.Value = apiKey
+		ctx = tflog.SetField(ctx, "appkey", apiKey)
+		if apiKey != "" && !LOG_INSECURE {
+			ctx = tflog.MaskLogStrings(ctx, apiKey)
+		}
+		tflog.Debug(ctx, fmt.Sprintf("Provider 'appkey' sourced from environmental variable '%s'", EnvCommandAppKey))
 	} else {
 		apiKey = config.ApiKey.Value
+		ctx = tflog.SetField(ctx, "appkey", apiKey)
+		tflog.Debug(ctx, "Provider 'appkey' sourced provider config 'appkey'")
 	}
 
 	// User must provide a password to the provider
@@ -169,16 +212,30 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	}
 
 	if config.Password.Null {
-		password = os.Getenv("KEYFACTOR_PASSWORD")
+		tflog.Debug(ctx, fmt.Sprintf("Provider 'password' is NULL, attempting to source from '%s'", EnvCommandPassword))
+		password = os.Getenv(EnvCommandPassword)
 		config.Password.Value = password
+		ctx = tflog.SetField(ctx, "password", password)
+		if password != "" && !LOG_INSECURE {
+			ctx = tflog.MaskLogStrings(ctx, password)
+		}
+		tflog.Debug(
+			ctx,
+			fmt.Sprintf("Provider 'password' sourced from environmental variable '%s'", EnvCommandPassword),
+		)
 	} else {
 		password = config.Password.Value
+		ctx = tflog.SetField(ctx, "password", password)
+		if password != "" && !LOG_INSECURE {
+			ctx = tflog.MaskLogStrings(ctx, password)
+		}
+		tflog.Debug(ctx, "Provider 'password' sourced provider config 'password'")
 	}
 
 	if password == "" && apiKey == "" {
 		// Error vs warning - empty value must stop execution
 		resp.Diagnostics.AddError(
-			"Invlaid provider credentials. ",
+			"Invalid provider credentials. ",
 			"`password` and `appkey` cannot both be empty string.",
 		)
 		return
@@ -196,10 +253,18 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	}
 
 	if config.Hostname.Null {
-		host = os.Getenv("KEYFACTOR_HOSTNAME")
+		tflog.Debug(ctx, fmt.Sprintf("Provider 'hostname' is NULL, attempting to source from '%s'", EnvCommandHostname))
+		host = os.Getenv(EnvCommandHostname)
 		config.Hostname.Value = host
+		ctx = tflog.SetField(ctx, "hostname", host)
+		tflog.Debug(
+			ctx,
+			fmt.Sprintf("Provider 'hostname' sourced from environmental variable '%s'", EnvCommandHostname),
+		)
 	} else {
 		host = config.Hostname.Value
+		ctx = tflog.SetField(ctx, "hostname", host)
+		tflog.Debug(ctx, "Provider 'hostname' sourced provider config 'hostname'")
 	}
 
 	if host == "" {
@@ -213,11 +278,21 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 
 	// Set default request timeout
 	if config.RequestTimeout.Null {
-		timeout := os.Getenv("KEYFACTOR_TIMEOUT")
+		tflog.Debug(ctx, "Provider 'request_timeout' is NULL, attempting to source from 'KEYFACTOR_TIMEOUT'")
+		timeout := os.Getenv(EnvCommandTimeout)
 		if timeout == "" {
+			tflog.Debug(
+				ctx,
+				fmt.Sprintf("Provider 'request_timeout' not set, using default value of %d", MAX_WAIT_SECONDS),
+			)
+			ctx = tflog.SetField(ctx, "request_timeout", MAX_WAIT_SECONDS)
 			config.RequestTimeout.Value = MAX_WAIT_SECONDS
 		} else {
 			//convert string to int
+			tflog.Debug(
+				ctx,
+				fmt.Sprintf("Provider 'request_timeout' sourced from environmental variable '%s'", EnvCommandTimeout),
+			)
 			timeoutInt, err := strconv.Atoi(timeout)
 			if err != nil {
 				resp.Diagnostics.AddError(
@@ -227,11 +302,12 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 				return
 			}
 			config.RequestTimeout.Value = int64(timeoutInt)
+			ctx = tflog.SetField(ctx, "request_timeout", timeoutInt)
 		}
-
 	}
 
 	// Create a new Keyfactor client and set it to the provider client
+	tflog.Debug(ctx, "Creating Keyfactor Command API client")
 	var clientAuth api.AuthConfig
 	clientAuth.Username = config.Username.Value
 	clientAuth.Password = config.Password.Value
@@ -243,7 +319,8 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 	connected := false
 	connectionRetries := 0
 	for !connected && connectionRetries < 5 {
-		c, err := api.NewKeyfactorClient(&clientAuth)
+		tflog.Debug(ctx, "Attempting to create client connection to Keyfactor Command")
+		c, err := api.NewKeyfactorClient(&clientAuth, &ctx)
 
 		if err != nil {
 			if connectionRetries == 4 {
@@ -255,12 +332,14 @@ func (p *provider) Configure(ctx context.Context, req tfsdk.ConfigureProviderReq
 			}
 			connectionRetries++
 			// Sleep for 5 seconds before retrying
+			tflog.Debug(ctx, "Failed to create client connection to Keyfactor Command. Retrying in 5 seconds.")
 			time.Sleep(5 * time.Second)
 			continue
 		}
 		connected = true
 		p.client = c
 		p.configured = true
+		tflog.Debug(ctx, "Client connection to Keyfactor Command established successfully")
 		return
 	}
 }

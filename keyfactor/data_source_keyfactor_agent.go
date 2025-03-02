@@ -3,12 +3,13 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"time"
 )
 
 type dataSourceAgentType struct{}
@@ -110,8 +111,12 @@ type dataSourceAgent struct {
 	p provider
 }
 
-func (r dataSourceAgent) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
-	var state KeyfactorAgent
+func (r dataSourceAgent) Read(
+	ctx context.Context,
+	request tfsdk.ReadDataSourceRequest,
+	response *tfsdk.ReadDataSourceResponse,
+) {
+	var state CommandAgent
 	diags := request.Config.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -150,7 +155,10 @@ func (r dataSourceAgent) Read(ctx context.Context, request tfsdk.ReadDataSourceR
 	} else if len(agents) > 1 {
 		response.Diagnostics.AddWarning(
 			"Multiple Agents Found",
-			fmt.Sprintf("Multiple agents found with identifier '%s'. Returning the most recently seen agent.", agentIdentifier),
+			fmt.Sprintf(
+				"Multiple agents found with identifier '%s'. Returning the most recently seen agent.",
+				agentIdentifier,
+			),
 		)
 		//iterate through agents and find the most recently seen
 		for _, a := range agents {
@@ -185,23 +193,38 @@ func (r dataSourceAgent) Read(ctx context.Context, request tfsdk.ReadDataSourceR
 		cababilityValues = append(cababilityValues, types.String{Value: perm})
 	}
 
-	var result = KeyfactorAgent{
-		AgentId:                     types.String{Value: agent.AgentId, Null: isNullString(agent.AgentId)},
-		AgentIdentifier:             types.String{Value: state.AgentIdentifier.Value, Null: isNullString(state.AgentIdentifier.Value)},
-		ClientMachine:               types.String{Value: agent.ClientMachine, Null: isNullString(agent.ClientMachine)},
-		Username:                    types.String{Value: agent.Username, Null: isNullString(agent.Username)},
-		AgentPlatform:               types.Int64{Value: int64(agent.AgentPlatform)},
-		Status:                      types.Int64{Value: int64(agent.Status)},
-		Version:                     types.String{Value: agent.Version, Null: isNullString(agent.Version)},
-		LastSeen:                    types.String{Value: agent.LastSeen, Null: isNullString(agent.LastSeen)},
-		Capabilities:                types.List{ElemType: types.StringType, Elems: cababilityValues},
-		Blueprint:                   types.String{Value: agent.Blueprint, Null: isNullString(agent.Blueprint)},
-		Thumbprint:                  types.String{Value: agent.Thumbprint, Null: isNullString(agent.Thumbprint)},
-		LegacyThumbprint:            types.String{Value: agent.LegacyThumbprint, Null: isNullString(agent.LegacyThumbprint)},
-		AuthCertificateReenrollment: types.String{Value: agent.AuthCertificateReenrollment, Null: isNullString(agent.AuthCertificateReenrollment)},
-		LastThumbprintUsed:          types.String{Value: agent.LastThumbprintUsed, Null: isNullString(agent.LastThumbprintUsed)},
-		LastErrorCode:               types.Int64{Value: int64(agent.LastErrorCode)},
-		LastErrorMessage:            types.String{Value: agent.LastErrorMessage, Null: isNullString(agent.LastErrorMessage)},
+	var result = CommandAgent{
+		AgentId: types.String{Value: agent.AgentId, Null: isNullString(agent.AgentId)},
+		AgentIdentifier: types.String{
+			Value: state.AgentIdentifier.Value,
+			Null:  isNullString(state.AgentIdentifier.Value),
+		},
+		ClientMachine: types.String{Value: agent.ClientMachine, Null: isNullString(agent.ClientMachine)},
+		Username:      types.String{Value: agent.Username, Null: isNullString(agent.Username)},
+		AgentPlatform: types.Int64{Value: int64(agent.AgentPlatform)},
+		Status:        types.Int64{Value: int64(agent.Status)},
+		Version:       types.String{Value: agent.Version, Null: isNullString(agent.Version)},
+		LastSeen:      types.String{Value: agent.LastSeen, Null: isNullString(agent.LastSeen)},
+		Capabilities:  types.List{ElemType: types.StringType, Elems: cababilityValues},
+		Blueprint:     types.String{Value: agent.Blueprint, Null: isNullString(agent.Blueprint)},
+		Thumbprint:    types.String{Value: agent.Thumbprint, Null: isNullString(agent.Thumbprint)},
+		LegacyThumbprint: types.String{
+			Value: agent.LegacyThumbprint,
+			Null:  isNullString(agent.LegacyThumbprint),
+		},
+		AuthCertificateReenrollment: types.String{
+			Value: agent.AuthCertificateReenrollment,
+			Null:  isNullString(agent.AuthCertificateReenrollment),
+		},
+		LastThumbprintUsed: types.String{
+			Value: agent.LastThumbprintUsed,
+			Null:  isNullString(agent.LastThumbprintUsed),
+		},
+		LastErrorCode: types.Int64{Value: int64(agent.LastErrorCode)},
+		LastErrorMessage: types.String{
+			Value: agent.LastErrorMessage,
+			Null:  isNullString(agent.LastErrorMessage),
+		},
 	}
 
 	diags = response.State.Set(ctx, &result)

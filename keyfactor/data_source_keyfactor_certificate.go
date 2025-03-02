@@ -1,24 +1,48 @@
+// Package keyfactor provides Terraform provider functionality for interacting with Keyfactor Command
+// for certificate lifecycle management.
 package keyfactor
 
 import (
 	"context"
-	"crypto/ecdsa"
-	rsa2 "crypto/rsa"
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/pem"
 	"fmt"
 	"strconv"
+	"strings"
 
-	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
+// dataSourceCertificateType defines a data source for retrieving certificate-related
+// information from Keyfactor Command.
+//
+// This data source allows users to query and inspect certificate attributes such
+// as the subject name, locality, organization, state, country, and more.
 type dataSourceCertificateType struct{}
 
+// GetSchema defines the schema for the data source. It specifies the attributes
+// available for use within the data source, their types, and metadata.
+//
+// Attributes:
+//   - csr: Base-64 encoded certificate signing request (CSR).
+//   - key_password: Password used to recover a private key from Keyfactor Command. If no value
+//     is provided, a random password will be generated for key recovery.
+//   - common_name: Subject common name (CN) of the certificate.
+//   - locality: Subject locality (L) of the certificate.
+//   - organization: Subject organization (O) of the certificate.
+//   - state: Subject state (ST) of the certificate.
+//   - country: Subject country (C) of the certificate.
+//   - organizational_unit: Subject organizational unit (OU) of the certificate.
+//   - certificate_authority: Name of the certificate authority (CA) to deploy the certificate with.
+//   - certificate_template: Short name of the certificate template to be used.
+//   - dns_sans: List of DNS subject alternative names (DNS SANs) associated with the certificate.
+//   - uri_sans: List of URI subject alternative names (URI SANs) associated with the certificate.
+//
+// Returns:
+//   - tfsdk.Schema: The defined schema for the data source.
+//   - diag.Diagnostics: Any diagnostics encountered in the schema generation process.
 func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
@@ -187,9 +211,11 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Description: "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
 			},
 		},
+		Description: "This is a meow",
 	}, nil
 }
 
+// NewDataSource initializes and returns a new instance of the `dataSourceCertificate` with the provided provider.
 func (r dataSourceCertificateType) NewDataSource(ctx context.Context, p tfsdk.Provider) (
 	tfsdk.DataSource,
 	diag.Diagnostics,
@@ -199,310 +225,174 @@ func (r dataSourceCertificateType) NewDataSource(ctx context.Context, p tfsdk.Pr
 	}, nil
 }
 
+// dataSourceCertificate represents a data source for retrieving certificate-related information from the provider.
 type dataSourceCertificate struct {
 	p provider
 }
 
+// Read executes the "read" operation for the data source. This method is called
+// to query for data from Keyfactor Command and populate the attributes defined in the schema.
+//
+// Inputs:
+// - ctx (context.Context): The context for the read operation, used for logging or other context-sensitive tasks.
+// - req (tfsdk.ReadDataSourceRequest): The request object containing input data for the read operation.
+// - resp (tfsdk.ReadDataSourceResponse): The response object used to send data back to Terraform.
+//
+// Behavior:
+//   - The Read method retrieves the certificate data from the Keyfactor Command API
+//     based on input criteria and sets the results into the response object as resource attributes.
 func (r dataSourceCertificate) Read(
 	ctx context.Context,
 	request tfsdk.ReadDataSourceRequest,
 	response *tfsdk.ReadDataSourceResponse,
 ) {
-	var state KeyfactorCertificate
-
+	var state CommandCertificate
 	tflog.Info(ctx, "Reading terraform data resource 'certificate'.")
-	diags := request.Config.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
+
+	// Extract initial config into state and append errors if necessary
+	response.Diagnostics.Append(request.Config.Get(ctx, &state)...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	// determine if certificateID is an int or string
-	// if int, then it is a Keyfactor Command Certificate ID
-	// if string, then it is a certificate thumbprint or CN
-	certificateIDInt, cIdErr := strconv.Atoi(state.ID.Value)
-	if cIdErr != nil {
-		certificateIDInt = -1
+	// Determine certificate ID type and resolve CN or thumbprint
+	certificateID, idTypeErr := strconv.Atoi(state.ID.Value)
+	if idTypeErr != nil {
+		certificateID = UNKNOWN_CERTIFICATE_ID
 	}
-	var (
-		certificateCN         string
-		certificateThumbprint string
+	collectionIdInt := int(state.CollectionId.Value)
+
+	thumbprint, commonName := determineCertificateIdType(state.ID.Value)
+	logInitialCertificateFields(ctx, certificateID, commonName, thumbprint, collectionIdInt)
+
+	// Prepare args for API call
+	apiArgs := prepareCertificateContextArgs(certificateID, collectionIdInt, thumbprint, commonName)
+
+	// Fetch certificate context
+	certGetResp, apiErr := r.p.client.GetCertificateContext(apiArgs)
+	if hasAPIErrors(ctx, apiErr, state.ID.Value, &response.Diagnostics) {
+		tflog.Warn(ctx, fmt.Sprintf("Failed to retrieve certificate from GET /Certificates/%d", certificateID))
+	}
+
+	// Attempt to recover or download certificate from Command
+	leafPEM, chainPEM, pKeyPEM, rDiags := recoverOrDownloadCertificate(
+		ctx,
+		certificateID,
+		collectionIdInt,
+		state.KeyPassword.Value,
+		r.p.client,
 	)
-	// Check if certificateID is a thumbprint or CN
-	if certificateIDInt == -1 {
-		if len(state.ID.Value) == 40 {
-			tflog.Info(ctx, fmt.Sprintf("Certificate ID '%v' is a thumbprint.", state.ID.Value))
-			certificateThumbprint = state.ID.Value
-		} else {
-			tflog.Info(ctx, fmt.Sprintf("Certificate ID '%v' is a CN.", state.ID.Value))
-			certificateCN = state.ID.Value
-		}
+
+	// Handle leaf PEM encoding for certificates without private keys
+	if certGetResp != nil && leafPEM == "" {
+		leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certificateID)
 	}
 
-	collectionID := state.CollectionId.Value
-	collectionIdInt := int(collectionID)
-
-	tflog.SetField(ctx, "collection_id", collectionID)
-	tflog.SetField(ctx, "certificate_id", certificateIDInt)
-	tflog.SetField(ctx, "certificate_cn", certificateCN)
-	tflog.SetField(ctx, "certificate_thumbprint", certificateThumbprint)
-
-	// Get certificate context
-	tflog.Info(ctx, fmt.Sprintf("Attempting to lookup certificate '%v' in Keyfactor.", state.ID.Value))
-	tflog.Debug(ctx, "Calling Keyfactor GO Client GetCertificateContext")
-	args := &api.GetCertificateContextArgs{
-		IncludeMetadata:      boolToPointer(true),
-		IncludeLocations:     boolToPointer(true),
-		IncludeHasPrivateKey: boolToPointer(true),
-		CollectionId:         intToPointer(collectionIdInt),
-		Id:                   certificateIDInt,
-		CommonName:           certificateCN,
-		Thumbprint:           certificateThumbprint,
-	}
-	cResp, err := r.p.client.GetCertificateContext(args)
-	if err != nil {
-		tflog.Error(ctx, "Error calling Keyfactor Go Client GetCertificateContext")
+	if leafPEM == "" {
+		response.Diagnostics.Append(rDiags...)
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), state.ID.Value),
+			fmt.Sprintf(
+				"Failed to retrieve certificate '%s' from Keyfactor Command. "+
+					"Please check the certificate ID and try again.", state.ID.Value,
+			),
 		)
 		return
 	}
 
-	// Get the password out of current schema
-	csr := state.CSR.Value
-	password := state.KeyPassword.Value
-
-	//if password == "" {
-	//	tflog.Debug(ctx, "Generating password. This will be stored in the state file, but is only used to download and parse the PFX to PEM fields.")
-	//	password = generatePassword(32, 1, 1, 1)
-	//	state.KeyPassword.Value = password
-	//}
-
-	var (
-		leaf  string
-		chain = ""
-		pKey  = ""
-		dErr  = error(nil)
-	)
-
-	if cResp.HasPrivateKey {
-		if password == "" {
-			password = generatePassword(
-				PFXPasswordLength,
-				PFXPasswordSpecialChars,
-				PFXPasswordDigits,
-				PFXPasswordUpperCases,
-			)
-		}
-		tflog.Info(ctx, "Requested certificate has a private key attempting to recover from Keyfactor Command.")
-		//pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", password)
-		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", password, collectionIdInt)
-		if dErrO != nil {
-			tflog.Error(
-				ctx,
-				fmt.Sprintf("Unable to recover private key for certificate '%v' from Keyfactor Command.", cResp.Id),
-			)
-			response.Diagnostics.AddWarning(
-				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErrO.Error(), cResp.Id),
-			)
-		}
-		// Convert string to []byte and then to pem.
-		//leaf = string(pem.EncodeToMemory(&pem.Block{
-		//	Type:  "CERTIFICATE",
-		//	Bytes: leafO.Raw,
-		//}))
-		lBytes, lbErr := base64.StdEncoding.DecodeString(cResp.ContentBytes)
-		if lbErr != nil {
-			response.Diagnostics.AddError(
-				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-				fmt.Sprintf(
-					"Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(),
-					state.ID.Value,
-				),
-			)
-			return
-		}
-		leaf = string(
-			pem.EncodeToMemory(
-				&pem.Block{
-					Type:  "CERTIFICATE",
-					Bytes: lBytes,
-				},
-			),
-		)
-		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
-		tflog.Debug(ctx, leaf)
-		tflog.Debug(ctx, "Recovered certificate chain from Keyfactor Command:")
-		for _, cert := range chainO {
-			chainLink := string(
-				pem.EncodeToMemory(
-					&pem.Block{
-						Type:  "CERTIFICATE",
-						Bytes: cert.Raw,
-					},
-				),
-			)
-			chain = chain + chainLink
-			tflog.Debug(ctx, chainLink)
-		}
-
-		tflog.Debug(ctx, "Recovered private key from Keyfactor Command:")
-		tflog.Debug(ctx, "Attempting RSA private key recovery")
-		rsa, ok := pKeyO.(*rsa2.PrivateKey)
-		if ok {
-			tflog.Debug(ctx, "Recovered RSA private key from Keyfactor Command:")
-			buf := x509.MarshalPKCS1PrivateKey(rsa)
-			if len(buf) > 0 {
-				pKey = string(
-					pem.EncodeToMemory(
-						&pem.Block{
-							Bytes: buf,
-							Type:  "RSA PRIVATE KEY",
-						},
-					),
-				)
-				tflog.Trace(ctx, pKey)
-			} else {
-				tflog.Debug(ctx, "Empty Key Recovered from Keyfactor Command.")
-			}
-		} else {
-			tflog.Debug(ctx, "Attempting ECC private key recovery")
-			ecc, ok := pKeyO.(*ecdsa.PrivateKey)
-			if ok {
-				// We don't really care about the error here. An error just means that the key will be blank which isn't a
-				// reason to fail
-				tflog.Debug(ctx, "Recovered ECC private key from Keyfactor Command:")
-				buf, _ := x509.MarshalECPrivateKey(ecc)
-				if len(buf) > 0 {
-					pKey = string(
-						pem.EncodeToMemory(
-							&pem.Block{
-								Bytes: buf,
-								Type:  "EC PRIVATE KEY",
-							},
-						),
-					)
-					tflog.Trace(ctx, pKey)
-				}
-			}
-		}
-	} else {
-		// Convert string to []byte and then to pem.
-		tflog.Debug(ctx, "Requested certificate does not have a private key in Keyfactor Command.")
-		lBytes, lbErr := base64.StdEncoding.DecodeString(cResp.ContentBytes)
-		if lbErr != nil {
-			tflog.Error(ctx, "Error decoding certificate content bytes.")
-			tflog.Error(ctx, lbErr.Error())
-			response.Diagnostics.AddError(
-				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-				fmt.Sprintf(
-					"Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(),
-					state.ID.Value,
-				),
-			)
-			return
-		}
-
-		tflog.Debug(ctx, "Decoding leaf cert.")
-		leaf = string(
-			pem.EncodeToMemory(
-				&pem.Block{
-					Type:  "CERTIFICATE",
-					Bytes: lBytes,
-				},
-			),
-		)
-		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
-		tflog.Debug(ctx, leaf)
-
-		//attempt to get chain from Keyfactor Command via certificate ID and download
-		tflog.Debug(ctx, "Attempting to download certificate chain from Keyfactor Command.")
-		_, dChain, dChainErr := r.p.client.DownloadCertificate(cResp.Id, "", "", "")
-		if dChainErr != nil {
-			tflog.Error(ctx, "Error downloading certificate chain from Keyfactor Command.")
-			response.Diagnostics.AddWarning(
-				"Certificate Download Error",
-				fmt.Sprintf(
-					"Could not dowload certificate '%s' from Keyfactor. Chain will not be included: %s",
-					state.ID.Value,
-					dChainErr.Error(),
-				),
-			)
-		}
-		if dChain != nil {
-			tflog.Debug(ctx, "Recovered certificate chain from Keyfactor Command:")
-			for _, cert := range dChain {
-				chainLink := string(
-					pem.EncodeToMemory(
-						&pem.Block{
-							Type:  "CERTIFICATE",
-							Bytes: cert.Raw,
-						},
-					),
-				)
-
-				//check if chain is equal to leaf and if it is, skip it
-				if chainLink == leaf {
-					tflog.Debug(ctx, "Skipping leaf certificate in chain.")
-					continue
-				}
-
-				chain = chain + chainLink
-				tflog.Debug(ctx, chainLink)
-			}
-		} else {
-			tflog.Debug(ctx, "No certificate chain recovered from Keyfactor Command.")
-		}
+	leaf := x509.Certificate{
+		Raw: []byte(leafPEM),
+	}
+	sn := leaf.SerialNumber.String()
+	issuerDN := leaf.Issuer.String()
+	tp, _ := GetCertificateThumbprint(&leaf)
+	fullChain := chainPEM
+	if !strings.Contains(fullChain, leafPEM) {
+		fullChain = leafPEM + "\n" + chainPEM
 	}
 
-	if dErr != nil {
-		response.Diagnostics.AddError(
-			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), state.ID.Value),
-		)
+	caName := state.CertificateAuthority.Value
+	templateName := state.CertificateTemplate.Value
+	metadata := state.Metadata
+	if certGetResp != nil {
+		caName = certGetResp.CertificateAuthorityName
+		certificateID = certGetResp.Id
+		templateName = certGetResp.TemplateName
+		metadata = flattenMetadata(certGetResp.Metadata)
+		response.Diagnostics.Append(checkCertDiags(ctx, certGetResp, DEFAULT_EXPIRY_WARNING_DAYS)...)
 	}
 
-	cn, ou, o, l, st, c := expandSubject(cResp.IssuedDN)
-	dnsSans, ipSans, uriSans := flattenSANs(cResp.SubjectAltNameElements, state.DNSSANs, state.IPSANs, state.URISANs)
-	metadata := flattenMetadata(cResp.Metadata)
-
-	var result = KeyfactorCertificate{
-		ID:                 types.String{Value: state.ID.Value},
-		CSR:                types.String{Value: csr},
-		CommonName:         cn,
-		Country:            c,
-		Locality:           l,
-		Organization:       o,
-		OrganizationalUnit: ou,
-		State:              st,
-		DNSSANs:            dnsSans,
-		IPSANs:             ipSans,
-		URISANs:            uriSans,
-		SerialNumber:       types.String{Value: cResp.SerialNumber},
-		IssuerDN: types.String{
-			Value: cResp.IssuerDN,
+	tflog.Debug(ctx, "Creating state object for certificate.")
+	result := CommandCertificate{
+		ID:           state.ID,
+		CSR:          state.CSR,
+		CommonName:   types.String{Value: leaf.Subject.CommonName, Null: false},
+		Locality:     types.String{Value: strings.Join(leaf.Subject.Locality, ","), Null: false},
+		State:        types.String{Value: strings.Join(leaf.Subject.Province, ","), Null: false},
+		Country:      types.String{Value: strings.Join(leaf.Subject.Country, ","), Null: false},
+		Organization: types.String{Value: strings.Join(leaf.Subject.Organization, ","), Null: false},
+		OrganizationalUnit: types.String{
+			Value: strings.Join(leaf.Subject.OrganizationalUnit, ","),
+			Null:  false,
 		},
-		Thumbprint:  types.String{Value: cResp.Thumbprint},
-		PEM:         types.String{Value: leaf},
-		PEMCACert:   types.String{Value: chain},
-		PEMChain:    types.String{Value: fmt.Sprintf("%s%s", leaf, chain)},
-		PrivateKey:  types.String{Value: pKey},
-		KeyPassword: types.String{Value: state.KeyPassword.Value},
+		DNSSANs:      DNSSANStoTerraform(leaf.DNSNames, false),
+		IPSANs:       IPSANStoTerraform(leaf.IPAddresses, false),
+		URISANs:      URISANStoTerraform(leaf.URIs, false),
+		SerialNumber: types.String{Value: sn, Null: isNullString(sn)},
+		IssuerDN:     types.String{Value: issuerDN, Null: isNullString(issuerDN)},
+		Thumbprint:   types.String{Value: tp, Null: isNullString(tp)},
+		PEM:          types.String{Value: leafPEM, Null: isNullString(leafPEM)},
+		PEMCACert:    types.String{Value: chainPEM, Null: isNullString(chainPEM)},
+		PEMChain:     types.String{Value: fullChain, Null: isNullString(fullChain)},
+		PrivateKey:   types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
+		KeyPassword:  state.KeyPassword,
 		CertificateAuthority: types.String{
-			Value: cResp.CertificateAuthorityName,
+			Value: caName,
+			Null:  isNullString(caName),
 		},
-		CertificateTemplate: types.String{Value: cResp.TemplateName},
-		RequestId:           types.Int64{Value: int64(cResp.CertRequestId)},
-		CertificateId:       types.Int64{Value: int64(cResp.Id)},
+		CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
 		Metadata:            metadata,
+		CertificateId:       types.Int64{Value: int64(certificateID), Null: isNullId(certificateID)},
+		CollectionId:        state.CollectionId,
+		FriendlyName:        state.FriendlyName,
+		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
 	}
 
 	// Set state
-	diags = response.State.Set(ctx, &result)
+	tflog.Debug(ctx, "Setting state")
+	diags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
+
 }
+
+//// processCertificate handles the main logic for recovering or downloading certificates.
+//func processCertificate(
+//	ctx context.Context,
+//	context *api.GetCertificateContext,
+//	id, collectionID int,
+//	password string,
+//	client *api.Client,
+//) (leaf x509.Certificate, leafPEM, chainPEM, pKeyPEM string, metadata types.Map, diagnostics diag.Diagnostics) {
+//	if context == nil && id > UNKNOWN_CERTIFICATE_ID {
+//		leafPEM, chainPEM, pKeyPEM, metadata = recoverOrDownloadCertificate(
+//			ctx,
+//			id,
+//			collectionID,
+//			password,
+//			client,
+//			diags,
+//		)
+//	} else if context != nil {
+//		// Process certificate from context
+//		certBytes, decodeErr := base64.StdEncoding.DecodeString(context.ContentBytes)
+//		if diags.HasError() {
+//			return
+//		}
+//		leaf = x509.Certificate{Raw: certBytes}
+//		metadata = flattenMetadata(context.Metadata)
+//	}
+//	return
+//}

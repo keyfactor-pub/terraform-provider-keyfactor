@@ -535,9 +535,9 @@ func (p *provider) Configure(
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
 		"keyfactor_identity":               resourceSecurityIdentityType{},
-		"keyfactor_certificate":            resourceKeyfactorCertificateType{},
+		"keyfactor_certificate":            resourceCommandCertificateType{},
 		"keyfactor_certificate_store":      resourceCertificateStoreType{},
-		"keyfactor_certificate_deployment": resourceKeyfactorCertificateDeploymentType{},
+		"keyfactor_certificate_deployment": resourceCommandCertificateDeploymentType{},
 		"keyfactor_role":                   resourceSecurityRoleType{},
 		"keyfactor_template_role_binding":  resourceCertificateTemplateRoleBindingType{},
 	}, nil

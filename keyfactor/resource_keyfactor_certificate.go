@@ -4,14 +4,15 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -217,7 +218,111 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
+			"is_expired": {
+				Type:          types.BoolType,
+				Computed:      true,
+				Description:   "Whether the certificate is expired",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+			},
+			"is_revoked": {
+				Type:          types.BoolType,
+				Computed:      true,
+				Description:   "Whether the certificate is revoked",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+			},
+			"is_pending_revocation": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether the certificate is pending revocation",
+			},
+			"expiry_warn_days": {
+				Type:     types.Int64Type,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"Number of days before expiry to warn about the certificate. "+
+						"Defaults to %d days.", DEFAULT_EXPIRY_WARNING_DAYS,
+				),
+			},
+			"renewal_config": {
+				Attributes: tfsdk.SingleNestedAttributes(
+					map[string]tfsdk.Attribute{
+						"force_renewal": {
+							Type:        types.BoolType,
+							Description: "Will force certificate to be renewed",
+							Optional:    true,
+							PlanModifiers: []tfsdk.AttributePlanModifier{
+								tfsdk.RequiresReplaceIf(
+									// The conditional function
+									func(ctx context.Context, state attr.Value, config attr.Value, path path.Path) (
+										bool,
+										diag.Diagnostics,
+									) {
+										var diags diag.Diagnostics
+
+										// Check if the planned value (config) is valid and known
+										//plannedValue, _ := config.ToTerraformValue(ctx)
+										//var stateValue bool
+										//pErr := plannedValue.As(&stateValue)
+										//if pErr != nil {
+										//	diags.AddError(
+										//		"Value conversion error",
+										//		"Unable to convert value to bool",
+										//	)
+										//	return false, diags
+										//}
+										planVal, err := config.ToTerraformValue(ctx)
+										if err != nil {
+											diags.AddError(
+												"Value conversion error",
+												"Unable to convert value to bool",
+											)
+										}
+
+										var forceRenewal bool
+										convErr := planVal.As(&forceRenewal)
+										if convErr != nil {
+											diags.AddError(
+												"Value conversion error",
+												"Unable to convert value to bool",
+											)
+											return false, diags
+										}
+
+										if forceRenewal {
+											return true, diags
+										}
+
+										return false, diags
+									},
+									"Triggers resource replacement when force_renewal is set to true.",     // Description
+									"Triggers resource replacement when `force_renewal` is set to `true`.", // Markdown Description
+								),
+							},
+						},
+						"renew_days": {
+							Type:        types.Int64Type,
+							Required:    true,
+							Description: "The number of days before the certificate expires to renew.",
+						},
+						"renew_eligible": {
+							Type:          types.BoolType,
+							Computed:      true,
+							PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+							Description:   "Whether the certificate is eligible for renewal.",
+						},
+						"revoke_on_renew": {
+							Type:        types.BoolType,
+							Optional:    true,
+							Description: "Whether the existing certificate should be revoked on renewal.",
+						},
+					},
+				),
+				Optional:    true,
+				Computed:    false,
+				Description: "Configuration for certificate auto renewal. Includes whether auto-renewal is enabled and the number of days before expiry.",
+			},
 		},
+		Description: "Manages a certificate in Keyfactor Command using the `/Enrollment` and `/Certificates` APIs",
 	}, nil
 }
 
@@ -383,32 +488,21 @@ func (r resourceCommandCertificate) Read(
 		return
 	}
 
-	block, extra := pem.Decode([]byte(leafPEM))
-	if block == nil && extra == nil {
-		response.Diagnostics.AddError(
-			"PEM Decoding Failed",
-			"Failed to decode the PEM-encoded certificate.",
-		)
-		return
-	} else if block == nil {
-		tflog.Warn(
-			ctx,
-			"Certificate PEM is missing a block header, and contains extra data. Attempting to decode the extra data.",
-		)
-		block, _ = pem.Decode(extra)
-	}
-
-	leaf, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Certificate Parsing Failed",
-			fmt.Sprintf("Failed to parse the certificate: %s", err.Error()),
-		)
+	leaf, lDiags := parseLeafCert(
+		ctx,
+		leafPEM,
+	)
+	response.Diagnostics.Append(lDiags...)
+	if response.Diagnostics.HasError() {
+		tflog.Error(ctx, "Error parsing certificate")
 		return
 	} else if leaf == nil {
 		response.Diagnostics.AddError(
-			"Certificate Parsing Failed",
-			fmt.Sprintf("Failed to parse the certificate %s", state.ID.Value),
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf(
+				"Failed to parse certificate '%s' from Keyfactor Command. "+
+					"Please check the certificate ID and try again.", state.ID.Value,
+			),
 		)
 		return
 	}
@@ -424,15 +518,55 @@ func (r resourceCommandCertificate) Read(
 	caName := state.CertificateAuthority.Value
 	templateName := state.CertificateTemplate.Value
 	metadata := state.Metadata
+
+	cn, l, s, c, o, ou := parseSubjectToTfState(*leaf)
+	var warningDays int
+	if state.ExpiryWarningDays.Null || state.ExpiryWarningDays.Unknown || state.ExpiryWarningDays.Value <= 0 {
+		warningDays = DEFAULT_EXPIRY_WARNING_DAYS
+	} else {
+		warningDays = int(state.ExpiryWarningDays.Value)
+	}
+
+	var (
+		revoked bool
+		expired bool
+		//expiring bool
+		cDiags diag.Diagnostics
+	)
+	tflog.Debug(ctx, "Calling checkCertDiags()")
+	revoked, _, expired, cDiags = checkCertDiags(ctx, certGetResp, warningDays, leaf)
+	response.Diagnostics.Append(cDiags...)
 	if certGetResp != nil {
 		caName = certGetResp.CertificateAuthorityName
 		certificateID = certGetResp.Id
 		//templateName = certGetResp.TemplateName
 		metadata = flattenMetadata(certGetResp.Metadata)
-		response.Diagnostics.Append(checkCertDiags(ctx, certGetResp, DEFAULT_EXPIRY_WARNING_DAYS)...)
 	}
 
-	cn, l, s, c, o, ou := parseSubjectToTfState(*leaf)
+	renewalConfig := state.RenewalConfig
+	if state.RenewalConfig != nil {
+		renewalConfig = &CertificateAutoRenewConfig{
+			ForceRenewal: state.RenewalConfig.ForceRenewal,
+			RenewDays:    state.RenewalConfig.RenewDays,
+			//RenewEligible: types.Bool{
+			//	Value: renewEligible,
+			//},
+			RevokeOnRenew: state.RenewalConfig.RevokeOnRenew,
+		}
+		if state.RenewalConfig.RenewDays.Value != 0 {
+			ctx = tflog.SetField(ctx, "renew_days", state.RenewalConfig.RenewDays.Value)
+			tflog.Info(ctx, "Checking if certificate is eligible for renewal.")
+			renewDays := int(state.RenewalConfig.RenewDays.Value)
+			renewEligible, _, _ := isExpiring(ctx, leaf, renewDays)
+			if renewEligible {
+				renewalConfig.RenewEligible = types.Bool{
+					Unknown: false,
+					Null:    false,
+					Value:   renewEligible,
+				}
+			}
+		}
+	}
 
 	tflog.Debug(ctx, "Creating state object for certificate.")
 	result := CommandCertificate{
@@ -465,6 +599,17 @@ func (r resourceCommandCertificate) Read(
 		CollectionId:        state.CollectionId,
 		FriendlyName:        state.FriendlyName,
 		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
+		ExpiryWarningDays:   state.ExpiryWarningDays,
+		IsExpired: types.Bool{
+			Value: expired,
+		},
+		IsRevoked: types.Bool{
+			Value: revoked,
+		},
+		IsPendingRevocation: types.Bool{
+			Null: true,
+		},
+		RenewalConfig: renewalConfig,
 	}
 
 	// Set state
@@ -514,6 +659,80 @@ func (r resourceCommandCertificate) Update(
 			"You must provide either a CSR or a CN to create a certificate.",
 		)
 		return
+	}
+
+	collectionIdInt := int(state.CollectionId.Value)
+
+	thumbprint, commonName := determineCertificateIdType(state.ID.Value)
+	certificateID := int(state.CertificateId.Value)
+	logInitialCertificateFields(ctx, certificateID, commonName, thumbprint, collectionIdInt)
+
+	// Prepare args for API call
+	apiArgs := prepareCertificateContextArgs(certificateID, collectionIdInt, thumbprint, commonName)
+
+	var (
+		revoked bool
+		expired bool
+		//expiring bool
+		cDiags diag.Diagnostics
+	)
+
+	var warningDays int
+	if plan.ExpiryWarningDays.Null || plan.ExpiryWarningDays.Unknown || plan.ExpiryWarningDays.Value <= 0 {
+		warningDays = DEFAULT_EXPIRY_WARNING_DAYS
+	} else {
+		warningDays = int(plan.ExpiryWarningDays.Value)
+	}
+
+	// Fetch certificate context
+	certGetResp, apiErr := r.p.client.GetCertificateContext(apiArgs)
+	if hasAPIErrors(ctx, apiErr, state.ID.Value, &response.Diagnostics) {
+		tflog.Warn(ctx, fmt.Sprintf("Failed to retrieve certificate from GET /Certificates/%d", certificateID))
+	}
+
+	leaf, lDiags := parseLeafCert(
+		ctx,
+		state.PEM.Value,
+	)
+	if lDiags.HasError() {
+		//this should never happen unless state has been manually manipulated
+		response.Diagnostics.Append(lDiags...)
+		return
+	}
+
+	tflog.Debug(ctx, "Calling checkCertDiags()")
+	revoked, _, expired, cDiags = checkCertDiags(ctx, certGetResp, warningDays, leaf)
+	response.Diagnostics.Append(cDiags...)
+	//if certGetResp != nil {
+	//	caName = certGetResp.CertificateAuthorityName
+	//	certificateID = certGetResp.Id
+	//	//templateName = certGetResp.TemplateName
+	//	metadata = flattenMetadata(certGetResp.Metadata)
+	//}
+
+	renewalConfig := state.RenewalConfig
+	if plan.RenewalConfig != nil {
+		renewalConfig = &CertificateAutoRenewConfig{
+			ForceRenewal: plan.RenewalConfig.ForceRenewal,
+			RenewDays:    plan.RenewalConfig.RenewDays,
+			//RenewEligible: types.Bool{
+			//	Value: renewEligible,
+			//},
+			RevokeOnRenew: plan.RenewalConfig.RevokeOnRenew,
+		}
+		if plan.RenewalConfig.RenewDays.Value != 0 {
+			ctx = tflog.SetField(ctx, "renew_days", plan.RenewalConfig.RenewDays.Value)
+			tflog.Info(ctx, "Checking if certificate is eligible for renewal.")
+			renewDays := int(plan.RenewalConfig.RenewDays.Value)
+			renewEligible, _, _ := isExpiring(ctx, leaf, renewDays)
+			if renewEligible {
+				renewalConfig.RenewEligible = types.Bool{
+					Unknown: false,
+					Null:    false,
+					Value:   renewEligible,
+				}
+			}
+		}
 	}
 
 	if csr != "" {
@@ -596,6 +815,17 @@ func (r resourceCommandCertificate) Update(
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
 			CollectionId:         state.CollectionId,
+			ExpiryWarningDays:    plan.ExpiryWarningDays,
+			IsExpired: types.Bool{
+				Value: expired,
+			},
+			IsRevoked: types.Bool{
+				Value: revoked,
+			},
+			IsPendingRevocation: types.Bool{
+				Null: true,
+			},
+			RenewalConfig: renewalConfig,
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -669,6 +899,17 @@ func (r resourceCommandCertificate) Update(
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
 			CollectionId:         state.CollectionId,
+			ExpiryWarningDays:    plan.ExpiryWarningDays,
+			IsExpired: types.Bool{
+				Value: expired,
+			},
+			IsRevoked: types.Bool{
+				Value: revoked,
+			},
+			IsPendingRevocation: types.Bool{
+				Null: true,
+			},
+			RenewalConfig: renewalConfig,
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -735,6 +976,14 @@ func (r resourceCommandCertificate) Delete(
 	ctx = tflog.SetField(ctx, "certificate_id", certificateIdInt)
 	ctx = tflog.SetField(ctx, "certificate_cn", certificateCN)
 	ctx = tflog.SetField(ctx, "certificate_thumbprint", certificateThumbprint)
+
+	if state.RenewalConfig != nil && !state.RenewalConfig.RevokeOnRenew.Value {
+		// Remove resource from state without revocation
+		tflog.Debug(ctx, "RevokeOnRenew is false, skipping revocation for certificate.")
+		response.State.RemoveResource(ctx)
+		tflog.Info(ctx, fmt.Sprintf("Certificate '%s' removed from state.", certificateId))
+		return
+	}
 
 	tflog.Info(ctx, fmt.Sprintf("Revoking certificate %v on Keyfactor Command", certificateId))
 

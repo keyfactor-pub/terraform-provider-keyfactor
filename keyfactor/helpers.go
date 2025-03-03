@@ -763,7 +763,7 @@ func downloadCertificateFromKeyfactorCommand(
 	}
 
 	tflog.Debug(ctx, "Downloading certificate and chain from Keyfactor Command.")
-	leaf, chain, dErr := client.DownloadCertificate(certId, "", "", "") // TODO: Add collection ID support
+	leaf, chain, dErr := client.DownloadCertificate(certId, "", "", "", collectionId) // TODO: Add collection ID support
 	if dErr != nil {
 		errMsg := "Error downloading certificate from Keyfactor Command: " + dErr.Error()
 		if leaf == nil && chain == nil {
@@ -1141,6 +1141,7 @@ func recoverOrDownloadCertificate(
 			PFXPasswordUpperCases,
 		)
 	}
+	tflog.Debug(ctx, "Calling recoverPrivateKeyFromKeyfactorCommand()")
 	pKeyPEM, leafPEM, chainPEM, diags = recoverPrivateKeyFromKeyfactorCommand(
 		ctx,
 		id,
@@ -1150,6 +1151,7 @@ func recoverOrDownloadCertificate(
 	)
 	if leafPEM == "" || diags.HasError() {
 		// Attempt to download certificate as a fallback
+		tflog.Debug(ctx, "Unable to recover private key. Attempting to download certificate from Keyfactor Command.")
 		leafPEM, chainPEM, diags = downloadCertificateFromKeyfactorCommand(ctx, id, collectionID, client)
 	}
 	return leafPEM, chainPEM, pKeyPEM, diags
@@ -1283,11 +1285,12 @@ func isRevoked(c *api.GetCertificateResponse) bool {
 		return false
 	}
 
-	if c.RevocationComment != "" {
+	switch {
+	case c.RevocationComment != "":
 		return true
-	} else if c.RevocationEffDate != "" {
+	case c.RevocationEffDate != "":
 		return true
-	} else if c.RevocationReason > 0 {
+	case c.RevocationReason > 0:
 		return true
 	}
 
@@ -1295,62 +1298,78 @@ func isRevoked(c *api.GetCertificateResponse) bool {
 
 }
 
-func isExpired(ctx context.Context, c *api.GetCertificateResponse) (bool, *string) {
-	if c != nil && c.NotAfter != "" {
+func isExpired(ctx context.Context, c *x509.Certificate) (bool, *string) {
+	if c != nil {
 		// convert string to date and compare to now
-		t, err := time.Parse(time.RFC3339, c.NotAfter)
-		if err != nil {
-			tflog.Warn(ctx, fmt.Sprintf("Error parsing certificate expiration date: %s", err))
-			return false, nil
-		}
-		if t.Before(time.Now()) {
-			expDateStr := t.String()
+		if c.NotAfter.Before(time.Now()) {
+			expDateStr := c.NotAfter.String()
 			return true, &expDateStr
 		}
 	}
 	return false, nil
 }
 
-func isExpiring(ctx context.Context, c *api.GetCertificateResponse, numDays int) (bool, *string, *int) {
-	if c != nil && c.NotAfter != "" {
-		// convert string to date and compare to numDays
-		t, err := time.Parse(time.RFC3339, c.NotAfter)
-		if err != nil {
-			return false, nil, nil
-		}
-		if t.Before(time.Now().AddDate(0, 0, numDays)) {
-			numDaysRemaining := numDays - int(time.Now().Sub(t).Hours()/24)
+func isExpiring(ctx context.Context, c *x509.Certificate, numDays int) (bool, *string, *int) {
+	if c != nil {
+		// Determine the expiration threshold date
+		expirationThreshold := time.Now().AddDate(0, 0, numDays)
+
+		// Check if the certificate expiration date is before the threshold
+		if c.NotAfter.Before(expirationThreshold) {
+			// Calculate the number of days remaining until expiration
+			numDaysRemaining := int(c.NotAfter.Sub(time.Now()).Hours() / 24)
+
+			// Set context fields for logging
 			ctx = tflog.SetField(ctx, "certificate_expiration_date", c.NotAfter)
 			ctx = tflog.SetField(ctx, "certificate_expiration_days", numDays)
 			ctx = tflog.SetField(ctx, "certificate_expiration_days_remaining", numDaysRemaining)
-			expDateStr := t.String()
+
+			// Prepare the expiration date string
+			expDateStr := c.NotAfter.String()
 			return true, &expDateStr, &numDaysRemaining
 		}
 	}
 	return false, nil, nil
 }
 
-func checkCertDiags(ctx context.Context, cert *api.GetCertificateResponse, expWithinDays int) diag.Diagnostics {
-	diags := diag.Diagnostics{}
-	ctx = tflog.SetField(ctx, "certificate_id", cert.Id)
-	ctx = tflog.SetField(ctx, "certificate_cn", cert.IssuedCN)
-	ctx = tflog.SetField(ctx, "certificate_dn", cert.IssuedDN)
-	ctx = tflog.SetField(ctx, "certificate_thumbprint", cert.Thumbprint)
-	ctx = tflog.SetField(ctx, "certificate_revocation_comment", cert.RevocationComment)
-	ctx = tflog.SetField(ctx, "certificate_revocation_date", cert.RevocationEffDate)
-	ctx = tflog.SetField(ctx, "certificate_revocation_reason", cert.RevocationReason)
-	if isRevoked(cert) {
-		tflog.Warn(ctx, "Certificate is revoked")
-		diags.AddWarning(
-			"Certificate Revoked",
-			fmt.Sprintf(
-				"Certificate '%s' is revoked. Please renew the certificate.", cert.Thumbprint,
-			),
-		)
-		return diags
+func checkCertDiags(
+	ctx context.Context, cert *api.GetCertificateResponse, expWithinDays int,
+	leaf *x509.Certificate,
+) (revoked bool, expiring bool, expired bool, diags diag.Diagnostics) {
+	diags = diag.Diagnostics{}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
-	expired, expDate := isExpired(ctx, cert)
+	tflog.Debug(ctx, "Entered checkCertDiags()")
+	if cert == nil {
+		diags.AddWarning(
+			"Revocation Check Warning",
+			"Unable to check if certificate is revoked.",
+		)
+	} else {
+		ctx = tflog.SetField(ctx, "certificate_id", cert.Id)
+		ctx = tflog.SetField(ctx, "certificate_cn", cert.IssuedCN)
+		ctx = tflog.SetField(ctx, "certificate_dn", cert.IssuedDN)
+		ctx = tflog.SetField(ctx, "certificate_thumbprint", cert.Thumbprint)
+		ctx = tflog.SetField(ctx, "certificate_revocation_comment", cert.RevocationComment)
+		ctx = tflog.SetField(ctx, "certificate_revocation_date", cert.RevocationEffDate)
+		ctx = tflog.SetField(ctx, "certificate_revocation_reason", cert.RevocationReason)
+		revoked = isRevoked(cert)
+		if revoked {
+			tflog.Warn(ctx, "Certificate is revoked")
+			diags.AddWarning(
+				"Certificate Revoked",
+				fmt.Sprintf(
+					"Certificate '%s' is revoked. Please renew the certificate.", cert.Thumbprint,
+				),
+			)
+			return revoked, expiring, expired, diags
+		}
+	}
+
+	var expDate *string
+	expired, expDate = isExpired(ctx, leaf)
 	if expired {
 		tflog.Warn(ctx, "Certificate is expired")
 		diags.AddWarning(
@@ -1359,17 +1378,18 @@ func checkCertDiags(ctx context.Context, cert *api.GetCertificateResponse, expWi
 				"Certificate '%s' is expired as of %s. Please renew the certificate.", cert.Thumbprint, *expDate,
 			),
 		)
-		return diags
+		return revoked, expiring, expired, diags
 	}
 
-	soonToExpire, expDate, remDays := isExpiring(ctx, cert, expWithinDays)
-	if soonToExpire {
+	var remDays *int
+	expiring, expDate, remDays = isExpiring(ctx, leaf, expWithinDays)
+	if expiring {
 		ctx = tflog.SetField(ctx, "expiring_date", *expDate)
 		tflog.Warn(ctx, fmt.Sprintf("Certificate is expiring in %d days", *remDays))
 		diags.AddWarning(
 			"Certificate Expiring Soon",
 			fmt.Sprintf(
-				"Certificate '%s' is expiring soon on %s in %d days. Please renew the certificate.",
+				"Certificate '%s' is expiring soon on `%s` in `%d` days. Please renew the certificate.",
 				cert.Thumbprint,
 				*expDate,
 				*remDays,
@@ -1377,5 +1397,39 @@ func checkCertDiags(ctx context.Context, cert *api.GetCertificateResponse, expWi
 		)
 	}
 
-	return diags
+	return revoked, expiring, expired, diags
+}
+
+func parseLeafCert(ctx context.Context, leafPEM string) (*x509.Certificate, diag.Diagnostics) {
+	diags := diag.Diagnostics{}
+	block, extra := pem.Decode([]byte(leafPEM))
+	if block == nil && extra == nil {
+		diags.AddError(
+			"PEM Decoding Failed",
+			"Failed to decode the PEM-encoded certificate.",
+		)
+		return nil, diags
+	} else if block == nil {
+		tflog.Warn(
+			ctx,
+			"Certificate PEM is missing a block header, and contains extra data. Attempting to decode the extra data.",
+		)
+		block, _ = pem.Decode(extra)
+	}
+
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		diags.AddError(
+			"Certificate Parsing Failed",
+			fmt.Sprintf("Failed to parse the certificate: %s", err.Error()),
+		)
+		return nil, diags
+	} else if leaf == nil {
+		diags.AddError(
+			"Certificate Parsing Error",
+			"Failed to parse the certificate",
+		)
+		return nil, diags
+	}
+	return leaf, diags
 }

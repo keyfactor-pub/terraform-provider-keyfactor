@@ -3,12 +3,54 @@
 page_title: "keyfactor Provider"
 subcategory: ""
 description: |-
-  
+  Overview
+  The Terraform provider for Keyfactor Command enables management of Keyfactor Command resources with HashiCorp Terraform.
+  Below are currently supported resources:
+  | Command Resource  | Keyfactor Command Doc                                                                                                              | Terraform Resource                                                                                                                               |
+  |-------------------|------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+  | Certificate       | Certificate https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Certificates.htm                     | keyfactor_certificate https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate                       |
+  | Certificate Store | Certificate Store https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/CertificateStores.htm          | keyfactorcertificatestore https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_store           |
+  | Orchestration Job | Orchestration Job https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/OrchestratorJobsPOSTCustom.htm | keyfactorcertificatedeployment https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_deployment |
+  Support
+  In the Keyfactor Community https://www.keyfactor.com/community/, we welcome contributions. Keyfactor Community
+  software is open-source and community-supported, meaning that no SLA is applicable. Keyfactor will address issues as
+  resources become available.
+  Compatibility
+  | Keyfactor Command Version | Terraform Provider Version |
+  |---------------------------|----------------------------|
+  | 12.x                      | 2.2.x                      |
+  | 11.x                      | 2.2.x                      |
+  | 10.x                      | 2.0.x                      |
+  | 9.x                       | 1.0.x                      |
 ---
 
 # keyfactor Provider
 
+## Overview
 
+The Terraform provider for Keyfactor Command enables management of Keyfactor Command resources with HashiCorp Terraform.
+Below are currently supported resources:
+
+| Command Resource  | Keyfactor Command Doc                                                                                                              | Terraform Resource                                                                                                                               |
+|-------------------|------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| Certificate       | [Certificate](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Certificates.htm)                     | [keyfactor_certificate](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate)                       |
+| Certificate Store | [Certificate Store](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/CertificateStores.htm)          | [keyfactor_certificate_store](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_store)           |
+| Orchestration Job | [Orchestration Job](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/OrchestratorJobsPOSTCustom.htm) | [keyfactor_certificate_deployment](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_deployment) |
+
+## Support
+
+In the [Keyfactor Community](https://www.keyfactor.com/community/), we welcome contributions. Keyfactor Community
+software is open-source and community-supported, meaning that **no SLA** is applicable. Keyfactor will address issues as
+resources become available.
+
+## Compatibility
+
+| Keyfactor Command Version | Terraform Provider Version |
+|---------------------------|----------------------------|
+| 12.x                      | 2.2.x                      |
+| 11.x                      | 2.2.x                      |
+| 10.x                      | 2.0.x                      |
+| 9.x                       | 1.0.x                      |
 
 ## Example Usage
 

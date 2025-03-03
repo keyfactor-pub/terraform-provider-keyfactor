@@ -3,12 +3,12 @@
 page_title: "keyfactor_certificate Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Reads an existing certificate from Keyfactor Command using the "/Certificates" API.
 ---
 
 # keyfactor_certificate (Data Source)
 
-
+Reads an existing certificate from Keyfactor Command using the "/Certificates" API.
 
 ## Example Usage
 
@@ -60,8 +60,12 @@ data "keyfactor_certificate" "cert_wo_pkey_id" {
 ### Optional
 
 - `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
+- `expiry_warn_days` (Number) Number of days before expiry to warn about the certificate. Defaults to 30 days.
+- `friendly_name` (String) Only applicable for PFX enrollments. A friendly name for the certificate. If not provided, the common name will be used unless `use_cn_as_friendly_name` is set to `false`.
 - `key_password` (String, Sensitive) Password used to recover the private key from Keyfactor Command. NOTE: If no value is provided a random password will be generated for key recovery. This value is not stored and does not encrypt the private key in Terraform state.
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
+- `renewal_config` (Attributes) Configuration for certificate auto renewal. Includes whether auto-renewal is enabled and the number of days before expiry. (see [below for nested schema](#nestedatt--renewal_config))
+- `use_cn_as_friendly_name` (Boolean) Only applicable for PFX enrollments. Use the common name as the friendly name for the certificate. Defaults to `true`. NOTE: Keyfactor Command must be configured to `allow custom friendly name` for this to work under `Application Settings > Enrollment > PFX`.
 
 ### Read-Only
 
@@ -77,6 +81,9 @@ data "keyfactor_certificate" "cert_wo_pkey_id" {
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
 - `dns_sans` (List of String) List of DNS subject alternative names (DNS SANs) of the certificate. Ex: www.example.com
 - `ip_sans` (List of String) List of IP subject alternative names (IP SANs) of the certificate. Ex: 192.168.0.200
+- `is_expired` (Boolean) Whether the certificate is expired
+- `is_pending_revocation` (Boolean) Whether the certificate is pending revocation
+- `is_revoked` (Boolean) Whether the certificate is revoked
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
 - `locality` (String) Subject locality (L) of the certificate
 - `organization` (String) Subject organization (O) of the certificate
@@ -86,5 +93,21 @@ data "keyfactor_certificate" "cert_wo_pkey_id" {
 - `state` (String) Subject state (ST) of the certificate
 - `thumbprint` (String) Thumbprint of newly enrolled certificate
 - `uri_sans` (List of String) List of URI subject alternative names (URI SANs) of the certificate. Ex: https://www.example.com
+
+<a id="nestedatt--renewal_config"></a>
+### Nested Schema for `renewal_config`
+
+Required:
+
+- `renew_days` (Number) The number of days before the certificate expires to renew.
+
+Optional:
+
+- `force_renewal` (Boolean) Will force certificate to be renewed
+- `revoke_on_renew` (Boolean) Whether the existing certificate should be revoked on renewal.
+
+Read-Only:
+
+- `renew_eligible` (Boolean) Whether the certificate is eligible for renewal.
 
 

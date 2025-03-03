@@ -78,12 +78,29 @@ type CommandCertificate struct {
 	KeyPassword types.String `tfsdk:"key_password"`      // Password for the private key.
 
 	// Keyfactor Fields
-	CertificateAuthority types.String `tfsdk:"certificate_authority"` // Issuing Certificate Authority.
-	CertificateTemplate  types.String `tfsdk:"certificate_template"`  // Template associated with the certificate.
-	RequestId            types.Int64  `tfsdk:"command_request_id"`    // Request ID associated with the certificate.
-	CertificateId        types.Int64  `tfsdk:"certificate_id"`        // Unique ID of the certificate in Keyfactor.
-	Metadata             types.Map    `tfsdk:"metadata"`              // Metadata associated with the certificate.
-	CollectionId         types.Int64  `tfsdk:"collection_id"`         // Collection ID where the certificate is stored.
+	CertificateAuthority types.String                `tfsdk:"certificate_authority"` // CertificateAuthority defines the CA name used for certificate issuance in Keyfactor Command
+	CertificateTemplate  types.String                `tfsdk:"certificate_template"`  // CertificateTemplate defines the template to be used for certificate issuance in Keyfactor Command
+	RequestId            types.Int64                 `tfsdk:"command_request_id"`    // RequestId represents the unique identifier for the certificate command request in Keyfactor Command.
+	CertificateId        types.Int64                 `tfsdk:"certificate_id"`        // CertificateId represents the unique identifier for the certificate in Keyfactor Command
+	Metadata             types.Map                   `tfsdk:"metadata"`              // Metadata associated with the certificate.
+	CollectionId         types.Int64                 `tfsdk:"collection_id"`         // CollectionId represents the ID for the Keyfactor Command collection associated with the certificate.
+	ExpiryWarningDays    types.Int64                 `tfsdk:"expiry_warn_days"`      // ExpiryWarningDays specifies the number of days before expiration to trigger a warning.
+	IsExpired            types.Bool                  `tfsdk:"is_expired"`            // IsExpired indicates whether the certificate is expired.
+	IsRevoked            types.Bool                  `tfsdk:"is_revoked"`            // IsRevoked indicates whether the certificate has been revoked.
+	IsPendingRevocation  types.Bool                  `tfsdk:"is_pending_revocation"` // IsPendingRevocation indicates whether the certificate is waiting to be revoked.
+	RenewalConfig        *CertificateAutoRenewConfig `tfsdk:"renewal_config"`
+
+	// automatically renewing certificates.
+}
+
+type CertificateAutoRenewConfig struct {
+	ForceRenewal types.Bool  `tfsdk:"force_renewal"` // ForceRenewal indicates if the certificate should be forcefully renewed, regardless of its current state.
+	RenewDays    types.Int64 `tfsdk:"renew_days"`    // RenewDays specifies the number of days before expiration
+	// to attempt automatic renewal of the certificate. If not set, automatic renewal is disabled
+	RenewEligible types.Bool `tfsdk:"renew_eligible"` // RenewEligible indicates whether the certificate is
+	// eligible for renewal, based on RenewDays
+	RevokeOnRenew types.Bool `tfsdk:"revoke_on_renew"` // RevokeOnRenew indicates whether the certificate should
+	// be revoked upon renewal. Default is `false`
 }
 
 // CommandCertificateDeployment represents a deployment of a certificate to a store.

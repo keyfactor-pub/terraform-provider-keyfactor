@@ -4,13 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"strings"
-	"time"
 )
 
 type resourceCommandCertificateDeploymentType struct{}
@@ -55,6 +56,10 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 				Description: "A map of entry parameters to be passed to the deployment job. These will only be used if the orchestrator extension supports them.",
 			},
 		},
+		Description: "Used to schedule a certificate deployment(" +
+			"/management) job on Keyfactor Command using the `/OrchestratorJobs/Custom` API to deploy certificates to" +
+			" `keyfactor_certificate_store` resources. " +
+			"*NOTE:* The jobs are run asynchronously, and depend on orchestrator agent check in schedules. The provider will wait for the job to complete successfully and may run for a long time.",
 	}, nil
 }
 

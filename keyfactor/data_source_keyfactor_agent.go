@@ -98,6 +98,7 @@ func (r dataSourceAgentType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Di
 				Description: "A string indicating the last error message, if any, reported from the orchestrator when trying to register a session. This message is cleared on successful session registration.",
 			},
 		},
+		Description: "Reads an existing agent (/orchestrator) from Keyfactor Command using the `/Agents` API. This can be used for `keyfactor_certificate_store` resources.",
 	}, nil
 }
 

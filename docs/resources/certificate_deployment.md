@@ -3,12 +3,12 @@
 page_title: "keyfactor_certificate_deployment Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Used to schedule a certificate deployment(/management) job on Keyfactor Command using the /OrchestratorJobs/Custom API to deploy certificates to keyfactor_certificate_store resources. NOTE: The jobs are run asynchronously, and depend on orchestrator agent check in schedules. The provider will wait for the job to complete successfully and may run for a long time.
 ---
 
 # keyfactor_certificate_deployment (Resource)
 
-
+Used to schedule a certificate deployment(/management) job on Keyfactor Command using the `/OrchestratorJobs/Custom` API to deploy certificates to `keyfactor_certificate_store` resources. *NOTE:* The jobs are run asynchronously, and depend on orchestrator agent check in schedules. The provider will wait for the job to complete successfully and may run for a long time.
 
 ## Example Usage
 

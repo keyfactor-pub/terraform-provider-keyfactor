@@ -1,3 +1,23 @@
+# v2.3.0
+
+### Certificates
+
+#### Features
+
+* 74e58f7 feat(certificates): Add checks for `expired` and `expiring` certificates. The provider will now warn when a
+  cert is going to expire within `30` days. *NOTE* In order for this check to happen a `plan` must be run.
+* 74e58f7 feat(certificates): Add check for `revoked` certificates. The provider will warn if during a `plan` it
+  discovers the certificate is revoked. *NOTE* In order for this check to work a user must have `Certificates - Read`
+  permissions either at the global or collection level.
+* 74e58f7 feat(certificates): Add `renewal_config` block that allows for specifying renewal behavior. *NOTE* for
+  renewals to work on existing certificate resources an `apply` must be run to apply the configuration first and then a
+  subsequent `plan` operation.
+
+#### Fixes
+
+* 74e58f7 fix(certificates): Use `collection_id` when invoking `/Certificates/{id}/Download`
+* 74e58f7 fix(certificates): Escape certificate subject parameters that include `,`
+
 # v2.2.0
 
 ### Provider

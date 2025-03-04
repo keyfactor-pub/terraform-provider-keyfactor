@@ -28,15 +28,26 @@ resource "keyfactor_certificate" "pkcs12_enrollment" {
   locality              = "Cleveland"
   organization          = "Keyfactor"
   organizational_unit   = "Engineering"
-  ip_sans               = sort(["192.168.123.2", "172.51.2.4"])
-  dns_sans              = sort(["my.pkcs12.io", "My PKCS12 Certificate", "my.pkcs12.co.uk", "Certificate PKCS12 My"])
-  uri_sans              = sort(["my.pkcs12.io"])
+  ip_sans = sort(["192.168.123.2", "172.51.2.4"])
+  dns_sans = sort(["my.pkcs12.io", "My PKCS12 Certificate", "my.pkcs12.co.uk", "Certificate PKCS12 My"])
+  uri_sans = sort(["my.pkcs12.io"])
   key_password          = "Don't put this in your production code!"
   certificate_authority = "COMMAND\\MY_CA_01"
   certificate_template  = "2yrWebServer"
   metadata = {
     "Email-Contact" = "kfadmin@keyfactor.com"
     "Owner"         = "integrations@keyfactor.com"
+  }
+
+  friendly_name = "friend"
+  collection_id = 6
+
+  expiry_warn_days = 90
+
+  renewal_config = {
+    renew_days      = 30
+    revoke_on_renew = true
+    force_renewal   = false
   }
 }
 
@@ -59,7 +70,7 @@ resource "tls_cert_request" "csr" {
     organizational_unit = "DevOps Enablement"
     postal_code         = "12345"
     province            = "WA"
-    street_address      = ["123 Main St", "Suite 1", "Second Floor", "Downtown"]
+    street_address = ["123 Main St", "Suite 1", "Second Floor", "Downtown"]
   }
 }
 
@@ -69,11 +80,21 @@ resource "keyfactor_certificate" "kf_csr_cert" {
   certificate_template  = "2yrWebServer"
 
   dns_sans = ["mycsr.kfdelivery.com"]         # Optional DNS SANs
-  ip_sans  = ["172.16.0.2", "192.168.0.2"]    # Optional IP SANs
+  ip_sans = ["172.16.0.2", "192.168.0.2"]    # Optional IP SANs
   uri_sans = ["https://mycsr.kfdelivery.com"] # Optional URI SANs
   metadata = {
     "Email-Contact" = "my_username@mydomain.com"
     # Note: metadata keys must be defined in Keyfactor and cannot just be arbitrarily added
+  }
+
+  collection_id = 2
+
+  expiry_warn_days = 90
+
+  renewal_config = {
+    renew_days      = 30
+    revoke_on_renew = true
+    force_renewal   = false
   }
 }
 ```

@@ -221,8 +221,12 @@ Below are currently supported resources:
 ## Support
 
 In the [Keyfactor Community](https://www.keyfactor.com/community/), we welcome contributions. Keyfactor Community
-software is open-source and community-supported, meaning that **no SLA** is applicable. Keyfactor will address issues as
-resources become available.
+software is open-source and community-supported, meaning that **no SLA** is applicable. 
+This means customers can report Bugs, Feature Requests, 
+Documentation amendment or questions as well as requests for customer
+information required for setup that needs Keyfactor access to obtain. Such requests do not follow normal SLA commitments
+for response or resolution. If you have a support issue, please open a support ticket via the Keyfactor Support Portal
+at https://support.keyfactor.com/ and Keyfactor will address issues as resources become available.
 
 ## Compatibility
 

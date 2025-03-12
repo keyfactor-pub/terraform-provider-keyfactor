@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -126,10 +127,14 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Description: "Indicates whether the certificate store host requires SSL. In Keyfactor Command this is the 'ServerUseSsl' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
 			},
 		},
+		Description: "Reads an existing Keyfactor Command certificate store using the the `/CertificateStores` API, which can be used for `keyfactor_certificate_deployment` resources.",
 	}, nil
 }
 
-func (r dataSourceCertificateStoreType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
+func (r dataSourceCertificateStoreType) NewDataSource(ctx context.Context, p tfsdk.Provider) (
+	tfsdk.DataSource,
+	diag.Diagnostics,
+) {
 	return dataSourceCertificateStore{
 		p: *(p.(*provider)),
 	}, nil
@@ -139,7 +144,11 @@ type dataSourceCertificateStore struct {
 	p provider
 }
 
-func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+func (r dataSourceCertificateStore) Read(
+	ctx context.Context,
+	request tfsdk.ReadDataSourceRequest,
+	response *tfsdk.ReadDataSourceResponse,
+) {
 	var state CertificateStore
 
 	tflog.Info(ctx, "Read called on certificate resource")
@@ -186,7 +195,12 @@ func (r dataSourceCertificateStore) Read(ctx context.Context, request tfsdk.Read
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Certificate store not found",
-			fmt.Sprintf("Unable to locate certificate store using client machine '%s' and storepath '%s' %s", clientMachine, storePath, err.Error()),
+			fmt.Sprintf(
+				"Unable to locate certificate store using client machine '%s' and storepath '%s' %s",
+				clientMachine,
+				storePath,
+				err.Error(),
+			),
 		)
 		return
 	}

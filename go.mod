@@ -5,12 +5,13 @@ go 1.23
 toolchain go1.23.4
 
 require (
-	github.com/Keyfactor/keyfactor-auth-client-go v1.2.0-rc.9
-	github.com/Keyfactor/keyfactor-go-client/v3 v3.1.0
+	github.com/Keyfactor/keyfactor-auth-client-go v1.2.0
+	github.com/Keyfactor/keyfactor-go-client/v3 v3.2.0-rc.1
 	github.com/hashicorp/terraform-plugin-framework v0.10.0
 	github.com/hashicorp/terraform-plugin-go v0.18.0
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.27.0
+	github.com/spbsoluble/go-pkcs12 v0.3.3
 )
 
 require (
@@ -57,7 +58,6 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/oklog/run v1.0.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
-	github.com/spbsoluble/go-pkcs12 v0.3.3 // indirect
 	github.com/vmihailenco/msgpack v4.0.4+incompatible // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect

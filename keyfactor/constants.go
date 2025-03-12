@@ -1,6 +1,7 @@
 package keyfactor
 
 const (
+	CERTIFICATE_THUMBPRINT_LENGTH            = 40
 	MAX_ITERATIONS                           = 100000
 	MAX_WAIT_SECONDS                         = 30
 	MAX_APPROVAL_WAIT_LOOPS                  = 5
@@ -17,6 +18,9 @@ const (
 	ERR_SUMMARY_AGENT_READ                   = "Unable to read Keyfactor Command agent."
 	ERR_SUMMARY_TEMPLATE_READ                = "Unable to read Keyfactor Command template."
 	ERR_SUMMARY_IDENTITY_DELETE              = "Unable to delete security identity."
+	ERR_SUMMARY_CERTIFICATE_DOWNLOAD         = "Certificate download error"
+	UNKNOWN_CERTIFICATE_ID                   = 0
+	DEFAULT_EXPIRY_WARNING_DAYS              = 30
 
 	//EnvCommandHostname = "KEYFACTOR_HOSTNAME"
 	EnvCommandUsername = "KEYFACTOR_USERNAME"

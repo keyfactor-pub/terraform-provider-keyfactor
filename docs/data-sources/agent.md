@@ -3,12 +3,12 @@
 page_title: "keyfactor_agent Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Reads an existing agent (/orchestrator) from Keyfactor Command using the /Agents API. This can be used for keyfactor_certificate_store resources.
 ---
 
 # keyfactor_agent (Data Source)
 
-
+Reads an existing agent (/orchestrator) from Keyfactor Command using the `/Agents` API. This can be used for `keyfactor_certificate_store` resources.
 
 ## Example Usage
 

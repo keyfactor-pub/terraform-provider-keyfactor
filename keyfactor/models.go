@@ -4,120 +4,137 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-type KeyfactorAgent struct {
-	AgentId                     types.String `tfsdk:"agent_id"`
-	AgentIdentifier             types.String `tfsdk:"agent_identifier"`
-	ClientMachine               types.String `tfsdk:"client_machine"`
-	Username                    types.String `tfsdk:"username"`
-	AgentPlatform               types.Int64  `tfsdk:"agent_platform"`
-	Status                      types.Int64  `tfsdk:"status"`
-	Version                     types.String `tfsdk:"version"`
-	LastSeen                    types.String `tfsdk:"last_seen"`
-	Capabilities                types.List   `tfsdk:"capabilities"`
-	Blueprint                   types.String `tfsdk:"blueprint"`
-	Thumbprint                  types.String `tfsdk:"thumbprint"`
-	LegacyThumbprint            types.String `tfsdk:"legacy_thumbprint"`
-	AuthCertificateReenrollment types.String `tfsdk:"auth_certificate_reenrollment"`
-	LastThumbprintUsed          types.String `tfsdk:"last_thumbprint_used"`
-	LastErrorCode               types.Int64  `tfsdk:"last_error_code"`
-	LastErrorMessage            types.String `tfsdk:"last_error_message"`
+// CommandAgent represents an agent in the Keyfactor system.
+type CommandAgent struct {
+	AgentId                     types.String `tfsdk:"agent_id"`                      // Unique identifier for the agent.
+	AgentIdentifier             types.String `tfsdk:"agent_identifier"`              // Identifier for the agent in Keyfactor.
+	ClientMachine               types.String `tfsdk:"client_machine"`                // Machine name where the agent is running.
+	Username                    types.String `tfsdk:"username"`                      // Username associated with the agent.
+	AgentPlatform               types.Int64  `tfsdk:"agent_platform"`                // Platform type of the agent (e.g., Windows, Linux).
+	Status                      types.Int64  `tfsdk:"status"`                        // Current status of the agent.
+	Version                     types.String `tfsdk:"version"`                       // Version of the agent.
+	LastSeen                    types.String `tfsdk:"last_seen"`                     // Timestamp of the agent's last activity.
+	Capabilities                types.List   `tfsdk:"capabilities"`                  // Capabilities supported by the agent.
+	Blueprint                   types.String `tfsdk:"blueprint"`                     // Associated blueprint for the agent.
+	Thumbprint                  types.String `tfsdk:"thumbprint"`                    // Certificate thumbprint used by the agent.
+	LegacyThumbprint            types.String `tfsdk:"legacy_thumbprint"`             // Legacy certificate thumbprint used by the agent.
+	AuthCertificateReenrollment types.String `tfsdk:"auth_certificate_reenrollment"` // Flag indicating if reenrollment is required.
+	LastThumbprintUsed          types.String `tfsdk:"last_thumbprint_used"`          // Last thumbprint used by the agent for authentication.
+	LastErrorCode               types.Int64  `tfsdk:"last_error_code"`               // Last error code reported by the agent.
+	LastErrorMessage            types.String `tfsdk:"last_error_message"`            // Last error message reported by the agent.
 }
 
-// Security Identity -
+// SecurityIdentity represents an identity with security roles in Keyfactor.
 type SecurityIdentity struct {
-	ID           types.Int64  `tfsdk:"id"`
-	AccountName  types.String `tfsdk:"account_name"`
-	Roles        types.List   `tfsdk:"roles"`
-	IdentityType types.String `tfsdk:"identity_type"`
-	Valid        types.Bool   `tfsdk:"valid"`
+	ID           types.Int64  `tfsdk:"id"`            // Unique ID of the security identity.
+	AccountName  types.String `tfsdk:"account_name"`  // Account name associated with the identity.
+	Roles        types.List   `tfsdk:"roles"`         // List of roles assigned to this identity.
+	IdentityType types.String `tfsdk:"identity_type"` // Type of the identity (e.g., user, application).
+	Valid        types.Bool   `tfsdk:"valid"`         // Indicates if the identity is valid.
 }
 
-// Security Role -
+// SecurityRole represents a security role in Keyfactor.
 type SecurityRole struct {
-	ID          types.Int64  `tfsdk:"id"`
-	Name        types.String `tfsdk:"name"`
-	Description types.String `tfsdk:"description"`
-	Permissions types.List   `tfsdk:"permissions"`
+	ID          types.Int64  `tfsdk:"id"`          // Unique ID of the security role.
+	Name        types.String `tfsdk:"name"`        // Name of the security role.
+	Description types.String `tfsdk:"description"` // Description of the role.
+	Permissions types.List   `tfsdk:"permissions"` // List of permissions assigned to the role.
 }
 
-type KeyfactorCertificate struct {
-	ID types.String `tfsdk:"identifier"`
+// CommandCertificate represents a certificate entity in Keyfactor.
+type CommandCertificate struct {
+	ID types.String `tfsdk:"identifier"` // Unique identifier of the certificate.
+
 	// CSR Request Fields
-	CSR types.String `tfsdk:"csr"`
+	CSR types.String `tfsdk:"csr"` // Certificate Signing Request (CSR) content.
+
 	// PFX Fields
-	FriendlyName        types.String `tfsdk:"friendly_name"`
-	UseCNAsFriendlyName types.Bool   `tfsdk:"use_cn_as_friendly_name"`
+	FriendlyName        types.String `tfsdk:"friendly_name"`           // Friendly name for the certificate in Keyfactor.
+	UseCNAsFriendlyName types.Bool   `tfsdk:"use_cn_as_friendly_name"` // Indicates whether Common Name should be used as the friendly name.
+
 	// Subject Fields
-	CommonName         types.String `tfsdk:"common_name"`
-	Locality           types.String `tfsdk:"locality"`
-	State              types.String `tfsdk:"state"`
-	Country            types.String `tfsdk:"country"`
-	Organization       types.String `tfsdk:"organization"`
-	OrganizationalUnit types.String `tfsdk:"organizational_unit"`
+	CommonName         types.String `tfsdk:"common_name"`         // Common Name (CN) field of the certificate.
+	Locality           types.String `tfsdk:"locality"`            // Locality (L) field of the certificate.
+	State              types.String `tfsdk:"state"`               // State (ST) field of the certificate.
+	Country            types.String `tfsdk:"country"`             // Country (C) field of the certificate.
+	Organization       types.String `tfsdk:"organization"`        // Organization (O) field of the certificate.
+	OrganizationalUnit types.String `tfsdk:"organizational_unit"` // Organizational Unit (OU) field of the certificate.
+
 	// SAN Fields
-	DNSSANs types.List `tfsdk:"dns_sans"`
-	IPSANs  types.List `tfsdk:"ip_sans"`
-	URISANs types.List `tfsdk:"uri_sans"`
+	DNSSANs types.List `tfsdk:"dns_sans"` // List of DNS Subject Alternative Names (SAN).
+	IPSANs  types.List `tfsdk:"ip_sans"`  // List of IP Address Subject Alternative Names (SAN).
+	URISANs types.List `tfsdk:"uri_sans"` // List of URI Subject Alternative Names (SAN).
+
 	// Certificate Identity Fields
-	SerialNumber types.String `tfsdk:"serial_number"`
-	IssuerDN     types.String `tfsdk:"issuer_dn"`
-	Thumbprint   types.String `tfsdk:"thumbprint"`
+	SerialNumber types.String `tfsdk:"serial_number"` // Serial number of the certificate.
+	IssuerDN     types.String `tfsdk:"issuer_dn"`     // Issuer Distinguished Name (DN) of the certificate.
+	Thumbprint   types.String `tfsdk:"thumbprint"`    // Thumbprint of the certificate.
+
 	// Certificate Data Fields
-	PEM         types.String `tfsdk:"certificate_pem"`
-	PEMCACert   types.String `tfsdk:"ca_certificate"`
-	PEMChain    types.String `tfsdk:"certificate_chain"`
-	PrivateKey  types.String `tfsdk:"private_key"`
-	KeyPassword types.String `tfsdk:"key_password"`
+	PEM         types.String `tfsdk:"certificate_pem"`   // Certificate data in PEM format.
+	PEMCACert   types.String `tfsdk:"ca_certificate"`    // CA Certificate in PEM format.
+	PEMChain    types.String `tfsdk:"certificate_chain"` // Certificate chain in PEM format.
+	PrivateKey  types.String `tfsdk:"private_key"`       // Private key in PEM format.
+	KeyPassword types.String `tfsdk:"key_password"`      // Password for the private key.
+
 	// Keyfactor Fields
-	CertificateAuthority types.String `tfsdk:"certificate_authority"`
-	CertificateTemplate  types.String `tfsdk:"certificate_template"`
-	RequestId            types.Int64  `tfsdk:"command_request_id"`
-	CertificateId        types.Int64  `tfsdk:"certificate_id"`
-	Metadata             types.Map    `tfsdk:"metadata"`
-	CollectionId         types.Int64  `tfsdk:"collection_id"`
+	CertificateAuthority types.String                `tfsdk:"certificate_authority"` // CertificateAuthority defines the CA name used for certificate issuance in Keyfactor Command
+	CertificateTemplate  types.String                `tfsdk:"certificate_template"`  // CertificateTemplate defines the template to be used for certificate issuance in Keyfactor Command
+	RequestId            types.Int64                 `tfsdk:"command_request_id"`    // RequestId represents the unique identifier for the certificate command request in Keyfactor Command.
+	CertificateId        types.Int64                 `tfsdk:"certificate_id"`        // CertificateId represents the unique identifier for the certificate in Keyfactor Command
+	Metadata             types.Map                   `tfsdk:"metadata"`              // Metadata associated with the certificate.
+	CollectionId         types.Int64                 `tfsdk:"collection_id"`         // CollectionId represents the ID for the Keyfactor Command collection associated with the certificate.
+	ExpiryWarningDays    types.Int64                 `tfsdk:"expiry_warn_days"`      // ExpiryWarningDays specifies the number of days before expiration to trigger a warning.
+	IsExpired            types.Bool                  `tfsdk:"is_expired"`            // IsExpired indicates whether the certificate is expired.
+	IsRevoked            types.Bool                  `tfsdk:"is_revoked"`            // IsRevoked indicates whether the certificate has been revoked.
+	IsPendingRevocation  types.Bool                  `tfsdk:"is_pending_revocation"` // IsPendingRevocation indicates whether the certificate is waiting to be revoked.
+	RenewalConfig        *CertificateAutoRenewConfig `tfsdk:"renewal_config"`
+
+	// automatically renewing certificates.
 }
 
-type KeyfactorCertificateDeployment struct {
-	ID               types.String `tfsdk:"id"`
-	CertificateId    types.Int64  `tfsdk:"certificate_id"`
-	CertificateAlias types.String `tfsdk:"certificate_alias"`
-	StoreId          types.String `tfsdk:"certificate_store_id"`
-	KeyPassword      types.String `tfsdk:"key_password"`
-	JobParameters    types.Map    `tfsdk:"job_parameters"`
+type CertificateAutoRenewConfig struct {
+	ForceRenewal types.Bool  `tfsdk:"force_renewal"` // ForceRenewal indicates if the certificate should be forcefully renewed, regardless of its current state.
+	RenewDays    types.Int64 `tfsdk:"renew_days"`    // RenewDays specifies the number of days before expiration
+	// to attempt automatic renewal of the certificate. If not set, automatic renewal is disabled
+	RenewEligible types.Bool `tfsdk:"renew_eligible"` // RenewEligible indicates whether the certificate is
+	// eligible for renewal, based on RenewDays
+	RevokeOnRenew types.Bool `tfsdk:"revoke_on_renew"` // RevokeOnRenew indicates whether the certificate should
+	// be revoked upon renewal. Default is `false`
 }
 
+// CommandCertificateDeployment represents a deployment of a certificate to a store.
+type CommandCertificateDeployment struct {
+	ID               types.String `tfsdk:"id"`                   // Unique identifier for the deployment.
+	CertificateId    types.Int64  `tfsdk:"certificate_id"`       // ID of the certificate being deployed.
+	CertificateAlias types.String `tfsdk:"certificate_alias"`    // Alias for the certificate in the deployment.
+	StoreId          types.String `tfsdk:"certificate_store_id"` // ID of the store where the certificate is deployed.
+	KeyPassword      types.String `tfsdk:"key_password"`         // Password for the key associated with the deployment.
+	JobParameters    types.Map    `tfsdk:"job_parameters"`       // Additional parameters for the deployment job.
+}
+
+// CSRCertificate represents a certificate provisioned via a CSR in Keyfactor.
 type CSRCertificate struct {
-	ID types.Int64 `tfsdk:"keyfactor_id"`
-	// CSR Request Fields
-	CSR types.String `tfsdk:"csr"`
-	// PFX KfCertificate Fields
-	DNSSANs      types.List   `tfsdk:"dns_sans"`
-	IPSANs       types.List   `tfsdk:"ip_sans"`
-	URISANs      types.List   `tfsdk:"uri_sans"`
-	SerialNumber types.String `tfsdk:"serial_number"`
-	IssuerDN     types.String `tfsdk:"issuer_dn"`
-	Thumbprint   types.String `tfsdk:"thumbprint"`
-	PEM          types.String `tfsdk:"certificate_pem"`
-	PEMChain     types.String `tfsdk:"certificate_chain"`
-	// Keyfactor Fields
-	CertificateAuthority types.String `tfsdk:"certificate_authority"`
-	CertificateTemplate  types.String `tfsdk:"certificate_template"`
-	RequestId            types.Int64  `tfsdk:"command_request_id"`
-	Metadata             types.Map    `tfsdk:"metadata"`
+	ID           types.Int64  `tfsdk:"keyfactor_id"`  // Unique ID of the CSR certificate.
+	CSR          types.String `tfsdk:"csr"`           // Certificate Signing Request (CSR) content.
+	DNSSANs      types.List   `tfsdk:"dns_sans"`      // List of DNS Subject Alternative Names (SAN).
+	IPSANs       types.List   `tfsdk:"ip_sans"`       // List of IP Address Subject Alternative Names (SAN).
+	URISANs      types.List   `tfsdk:"uri_sans"`      // List of URI Subject Alternative Names (SAN).
+	SerialNumber types.String `tfsdk:"serial_number"` // Serial number of the certificate.
 }
 
 type CertificateRequest struct {
-	Certificate KeyfactorCertificate `tfsdk:"certificate"`
-	CN          types.String         `tfsdk:"subject_common_name"`
-	L           types.String         `tfsdk:"subject_locality"`
-	O           types.String         `tfsdk:"subject_organization"`
-	OU          types.String         `tfsdk:"subject_organizational_unit"`
-	ST          types.String         `tfsdk:"subject_state"`
-	C           types.String         `tfsdk:"subject_country"`
-	Email       types.String         `tfsdk:"subject_email"`
-	DNSSANs     types.List           `tfsdk:"dns_subject_alternative_names"`
-	IPSANs      types.List           `tfsdk:"ip_subject_alternative_names"`
-	URISANs     types.List           `tfsdk:"uri_subject_alternative_names"`
+	Certificate CommandCertificate `tfsdk:"certificate"`
+	CN          types.String       `tfsdk:"subject_common_name"`
+	L           types.String       `tfsdk:"subject_locality"`
+	O           types.String       `tfsdk:"subject_organization"`
+	OU          types.String       `tfsdk:"subject_organizational_unit"`
+	ST          types.String       `tfsdk:"subject_state"`
+	C           types.String       `tfsdk:"subject_country"`
+	Email       types.String       `tfsdk:"subject_email"`
+	DNSSANs     types.List         `tfsdk:"dns_subject_alternative_names"`
+	IPSANs      types.List         `tfsdk:"ip_subject_alternative_names"`
+	URISANs     types.List         `tfsdk:"uri_subject_alternative_names"`
 }
 
 type CertificateStore struct {

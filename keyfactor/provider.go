@@ -206,6 +206,39 @@ func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostic
 				),
 			},
 		},
+		MarkdownDescription: `
+## Overview
+
+The Terraform provider for Keyfactor Command enables management of Keyfactor Command resources with HashiCorp Terraform.
+Below are currently supported resources:
+
+| Command Resource  | Keyfactor Command Doc                                                                                                              | Terraform Resource                                                                                                                               |
+|-------------------|------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| Certificate       | [Certificate](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Certificates.htm)                     | [keyfactor_certificate](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate)                       |
+| Certificate Store | [Certificate Store](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/CertificateStores.htm)          | [keyfactor_certificate_store](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_store)           |
+| Orchestration Job | [Orchestration Job](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/OrchestratorJobsPOSTCustom.htm) | [keyfactor_certificate_deployment](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_deployment) |
+
+## Support
+
+In the [Keyfactor Community](https://www.keyfactor.com/community/), we welcome contributions. Keyfactor Community
+software is open-source and community-supported, meaning that **no SLA** is applicable. 
+This means customers can report Bugs, Feature Requests, 
+Documentation amendment or questions as well as requests for customer
+information required for setup that needs Keyfactor access to obtain. Such requests do not follow normal SLA commitments
+for response or resolution. If you have a support issue, please open a support ticket via the Keyfactor Support Portal
+at https://support.keyfactor.com/ and Keyfactor will address issues as resources become available.
+
+## Compatibility
+
+| Keyfactor Command Version | Terraform Provider Version |
+|---------------------------|----------------------------|
+| 12.x                      | 2.2.x                      |
+| 11.x                      | 2.2.x                      |
+| 10.x                      | 2.0.x                      |
+| 9.x                       | 1.0.x                      |
+`,
+		Description: "The Keyfactor Command provider allows you to authenticate to Keyfactor Command using a username" +
+			" and password, or an OAuth credentials.",
 	}, nil
 }
 
@@ -535,9 +568,9 @@ func (p *provider) Configure(
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
 		"keyfactor_identity":               resourceSecurityIdentityType{},
-		"keyfactor_certificate":            resourceKeyfactorCertificateType{},
+		"keyfactor_certificate":            resourceCommandCertificateType{},
 		"keyfactor_certificate_store":      resourceCertificateStoreType{},
-		"keyfactor_certificate_deployment": resourceKeyfactorCertificateDeploymentType{},
+		"keyfactor_certificate_deployment": resourceCommandCertificateDeploymentType{},
 		"keyfactor_role":                   resourceSecurityRoleType{},
 		"keyfactor_template_role_binding":  resourceCertificateTemplateRoleBindingType{},
 	}, nil

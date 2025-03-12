@@ -3,12 +3,12 @@
 page_title: "keyfactor_certificate Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Manages a certificate in Keyfactor Command using the /Enrollment and /Certificates APIs
 ---
 
 # keyfactor_certificate (Resource)
 
-
+Manages a certificate in Keyfactor Command using the `/Enrollment` and `/Certificates` APIs
 
 ## Example Usage
 
@@ -37,6 +37,17 @@ resource "keyfactor_certificate" "pkcs12_enrollment" {
   metadata = {
     "Email-Contact" = "kfadmin@keyfactor.com"
     "Owner"         = "integrations@keyfactor.com"
+  }
+
+  friendly_name = "friend"
+  collection_id = 6
+
+  expiry_warn_days = 90
+
+  renewal_config = {
+    renew_days      = 30
+    revoke_on_renew = true
+    force_renewal   = false
   }
 }
 
@@ -75,6 +86,16 @@ resource "keyfactor_certificate" "kf_csr_cert" {
     "Email-Contact" = "my_username@mydomain.com"
     # Note: metadata keys must be defined in Keyfactor and cannot just be arbitrarily added
   }
+
+  collection_id = 2
+
+  expiry_warn_days = 90
+
+  renewal_config = {
+    renew_days      = 30
+    revoke_on_renew = true
+    force_renewal   = false
+  }
 }
 ```
 
@@ -93,6 +114,7 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 - `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
 - `dns_sans` (List of String) List of DNS names to use as subjects of the certificate.
+- `expiry_warn_days` (Number) Number of days before expiry to warn about the certificate. Defaults to 30 days.
 - `friendly_name` (String) Only applicable for PFX enrollments. A friendly name for the certificate. If not provided, the common name will be used unless `use_cn_as_friendly_name` is set to `false`.
 - `ip_sans` (List of String) List of DNS names to use as subjects of the certificate.
 - `key_password` (String, Sensitive) Password used to recover the private key from Keyfactor Command. NOTE: If no value is provided a random password will be generated for key recovery. This value is not stored and does not encrypt the private key in Terraform state. Also note that if a password is provided it must meet any password complexity requirements enforced by the CA template or creation will fail. Auto-generated passwords will be of length 32 and contain a minimum of 4 of the following: uppercase, lowercase, numeric, and special characters.
@@ -100,6 +122,7 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
 - `organization` (String) Subject organization (O) of the certificate
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate
+- `renewal_config` (Attributes) Configuration for certificate auto renewal. Includes whether auto-renewal is enabled and the number of days before expiry. (see [below for nested schema](#nestedatt--renewal_config))
 - `state` (String) Subject state (ST) of the certificate
 - `uri_sans` (List of String) List of URIs to use as subjects of the certificate.
 - `use_cn_as_friendly_name` (Boolean) Only applicable for PFX enrollments. Use the common name as the friendly name for the certificate. Defaults to `true`. NOTE: Keyfactor Command must be configured to `allow custom friendly name` for this to work under `Application Settings > Enrollment > PFX`.
@@ -112,10 +135,29 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 - `certificate_pem` (String) PEM formatted certificate
 - `command_request_id` (Number) Keyfactor request ID.
 - `identifier` (String) Keyfactor certificate identifier. This can be any of the following values: thumbprint, CN, or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must be an exact match and if multiple certificates are returned the certificate that was most recently issued will be returned.
+- `is_expired` (Boolean) Whether the certificate is expired
+- `is_pending_revocation` (Boolean) Whether the certificate is pending revocation
+- `is_revoked` (Boolean) Whether the certificate is revoked
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
 - `private_key` (String, Sensitive) PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
 - `serial_number` (String) Serial number of newly enrolled certificate
 - `thumbprint` (String) Thumbprint of newly enrolled certificate
+
+<a id="nestedatt--renewal_config"></a>
+### Nested Schema for `renewal_config`
+
+Required:
+
+- `renew_days` (Number) The number of days before the certificate expires to renew.
+
+Optional:
+
+- `force_renewal` (Boolean) Will force certificate to be renewed
+- `revoke_on_renew` (Boolean) Whether the existing certificate should be revoked on renewal.
+
+Read-Only:
+
+- `renew_eligible` (Boolean) Whether the certificate is eligible for renewal.
 
 ## Import
 

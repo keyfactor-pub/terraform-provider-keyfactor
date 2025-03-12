@@ -4,18 +4,19 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"strings"
-	"time"
 )
 
-type resourceKeyfactorCertificateDeploymentType struct{}
+type resourceCommandCertificateDeploymentType struct{}
 
-func (r resourceKeyfactorCertificateDeploymentType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
+func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
@@ -55,23 +56,27 @@ func (r resourceKeyfactorCertificateDeploymentType) GetSchema(_ context.Context)
 				Description: "A map of entry parameters to be passed to the deployment job. These will only be used if the orchestrator extension supports them.",
 			},
 		},
+		Description: "Used to schedule a certificate deployment(" +
+			"/management) job on Keyfactor Command using the `/OrchestratorJobs/Custom` API to deploy certificates to" +
+			" `keyfactor_certificate_store` resources. " +
+			"*NOTE:* The jobs are run asynchronously, and depend on orchestrator agent check in schedules. The provider will wait for the job to complete successfully and may run for a long time.",
 	}, nil
 }
 
-func (r resourceKeyfactorCertificateDeploymentType) NewResource(_ context.Context, p tfsdk.Provider) (
+func (r resourceCommandCertificateDeploymentType) NewResource(_ context.Context, p tfsdk.Provider) (
 	tfsdk.Resource,
 	diag.Diagnostics,
 ) {
-	return resourceKeyfactorCertificateDeployment{
+	return resourceCommandCertificateDeployment{
 		p: *(p.(*provider)),
 	}, nil
 }
 
-type resourceKeyfactorCertificateDeployment struct {
+type resourceCommandCertificateDeployment struct {
 	p provider
 }
 
-func (r resourceKeyfactorCertificateDeployment) Create(
+func (r resourceCommandCertificateDeployment) Create(
 	ctx context.Context, request tfsdk.CreateResourceRequest,
 	response *tfsdk.CreateResourceResponse,
 ) {
@@ -84,7 +89,7 @@ func (r resourceKeyfactorCertificateDeployment) Create(
 	}
 
 	// Retrieve values from plan
-	var plan KeyfactorCertificateDeployment
+	var plan CommandCertificateDeployment
 	diags := request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -194,7 +199,7 @@ func (r resourceKeyfactorCertificateDeployment) Create(
 	}
 
 	// Set state
-	var result = KeyfactorCertificateDeployment{
+	var result = CommandCertificateDeployment{
 		ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
 		CertificateId:    plan.CertificateId,
 		StoreId:          plan.StoreId,
@@ -211,12 +216,12 @@ func (r resourceKeyfactorCertificateDeployment) Create(
 
 }
 
-func (r resourceKeyfactorCertificateDeployment) Read(
+func (r resourceCommandCertificateDeployment) Read(
 	ctx context.Context,
 	request tfsdk.ReadResourceRequest,
 	response *tfsdk.ReadResourceResponse,
 ) {
-	var state KeyfactorCertificateDeployment
+	var state CommandCertificateDeployment
 	diags := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -261,7 +266,7 @@ func (r resourceKeyfactorCertificateDeployment) Read(
 	}
 
 	// Set state
-	var result = KeyfactorCertificateDeployment{
+	var result = CommandCertificateDeployment{
 		ID:               state.ID,
 		CertificateId:    state.CertificateId,
 		StoreId:          state.StoreId,
@@ -277,13 +282,13 @@ func (r resourceKeyfactorCertificateDeployment) Read(
 	}
 }
 
-func (r resourceKeyfactorCertificateDeployment) Update(
+func (r resourceCommandCertificateDeployment) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
 	response *tfsdk.UpdateResourceResponse,
 ) {
 	// Get plan values
-	var plan KeyfactorCertificate
+	var plan CommandCertificate
 	diags := request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -291,7 +296,7 @@ func (r resourceKeyfactorCertificateDeployment) Update(
 	}
 
 	// Get current state
-	var state KeyfactorCertificate
+	var state CommandCertificate
 	diags = request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -311,12 +316,12 @@ func (r resourceKeyfactorCertificateDeployment) Update(
 	}
 }
 
-func (r resourceKeyfactorCertificateDeployment) Delete(
+func (r resourceCommandCertificateDeployment) Delete(
 	ctx context.Context,
 	request tfsdk.DeleteResourceRequest,
 	response *tfsdk.DeleteResourceResponse,
 ) {
-	var state KeyfactorCertificateDeployment
+	var state CommandCertificateDeployment
 	diags := request.State.Get(ctx, &state)
 
 	response.Diagnostics.Append(diags...)
@@ -397,7 +402,7 @@ func (r resourceKeyfactorCertificateDeployment) Delete(
 	response.State.RemoveResource(ctx)
 }
 
-func (r resourceKeyfactorCertificateDeployment) ImportState(
+func (r resourceCommandCertificateDeployment) ImportState(
 	ctx context.Context,
 	request tfsdk.ImportResourceStateRequest,
 	response *tfsdk.ImportResourceStateResponse,

@@ -3,12 +3,12 @@
 page_title: "keyfactor_certificate_store Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Used to manage Keyfactor Command certificate stores using the /CertificateStores API, which can be used with keyfactor_certificate_deployment resources.
 ---
 
 # keyfactor_certificate_store (Resource)
 
-
+Used to manage Keyfactor Command certificate stores using the `/CertificateStores` API, which can be used with `keyfactor_certificate_deployment` resources.
 
 ## Example Usage
 

@@ -2,27 +2,25 @@ package keyfactor
 
 import (
 	"context"
-	"crypto/ecdsa"
-	rsa2 "crypto/rsa"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-type resourceKeyfactorCertificateType struct{}
+type resourceCommandCertificateType struct{}
 
-func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
+func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"csr": {
@@ -220,24 +218,128 @@ func (r resourceKeyfactorCertificateType) GetSchema(_ context.Context) (tfsdk.Sc
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
+			"is_expired": {
+				Type:          types.BoolType,
+				Computed:      true,
+				Description:   "Whether the certificate is expired",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+			},
+			"is_revoked": {
+				Type:          types.BoolType,
+				Computed:      true,
+				Description:   "Whether the certificate is revoked",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+			},
+			"is_pending_revocation": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether the certificate is pending revocation",
+			},
+			"expiry_warn_days": {
+				Type:     types.Int64Type,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"Number of days before expiry to warn about the certificate. "+
+						"Defaults to %d days.", DEFAULT_EXPIRY_WARNING_DAYS,
+				),
+			},
+			"renewal_config": {
+				Attributes: tfsdk.SingleNestedAttributes(
+					map[string]tfsdk.Attribute{
+						"force_renewal": {
+							Type:        types.BoolType,
+							Description: "Will force certificate to be renewed",
+							Optional:    true,
+							PlanModifiers: []tfsdk.AttributePlanModifier{
+								tfsdk.RequiresReplaceIf(
+									// The conditional function
+									func(ctx context.Context, state attr.Value, config attr.Value, path path.Path) (
+										bool,
+										diag.Diagnostics,
+									) {
+										var diags diag.Diagnostics
+
+										// Check if the planned value (config) is valid and known
+										//plannedValue, _ := config.ToTerraformValue(ctx)
+										//var stateValue bool
+										//pErr := plannedValue.As(&stateValue)
+										//if pErr != nil {
+										//	diags.AddError(
+										//		"Value conversion error",
+										//		"Unable to convert value to bool",
+										//	)
+										//	return false, diags
+										//}
+										planVal, err := config.ToTerraformValue(ctx)
+										if err != nil {
+											diags.AddError(
+												"Value conversion error",
+												"Unable to convert value to bool",
+											)
+										}
+
+										var forceRenewal bool
+										convErr := planVal.As(&forceRenewal)
+										if convErr != nil {
+											diags.AddError(
+												"Value conversion error",
+												"Unable to convert value to bool",
+											)
+											return false, diags
+										}
+
+										if forceRenewal {
+											return true, diags
+										}
+
+										return false, diags
+									},
+									"Triggers resource replacement when force_renewal is set to true.",     // Description
+									"Triggers resource replacement when `force_renewal` is set to `true`.", // Markdown Description
+								),
+							},
+						},
+						"renew_days": {
+							Type:        types.Int64Type,
+							Required:    true,
+							Description: "The number of days before the certificate expires to renew.",
+						},
+						"renew_eligible": {
+							Type:          types.BoolType,
+							Computed:      true,
+							PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+							Description:   "Whether the certificate is eligible for renewal.",
+						},
+						"revoke_on_renew": {
+							Type:        types.BoolType,
+							Optional:    true,
+							Description: "Whether the existing certificate should be revoked on renewal.",
+						},
+					},
+				),
+				Optional:    true,
+				Computed:    false,
+				Description: "Configuration for certificate auto renewal. Includes whether auto-renewal is enabled and the number of days before expiry.",
+			},
 		},
+		Description: "Manages a certificate in Keyfactor Command using the `/Enrollment` and `/Certificates` APIs",
 	}, nil
 }
 
-func (r resourceKeyfactorCertificateType) NewResource(_ context.Context, p tfsdk.Provider) (
+func (r resourceCommandCertificateType) NewResource(_ context.Context, p tfsdk.Provider) (
 	tfsdk.Resource,
 	diag.Diagnostics,
 ) {
-	return resourceKeyfactorCertificate{
+	return resourceCommandCertificate{
 		p: *(p.(*provider)),
 	}, nil
 }
 
-type resourceKeyfactorCertificate struct {
+type resourceCommandCertificate struct {
 	p provider
 }
 
-func (r resourceKeyfactorCertificate) Create(
+func (r resourceCommandCertificate) Create(
 	ctx context.Context,
 	request tfsdk.CreateResourceRequest,
 	response *tfsdk.CreateResourceResponse,
@@ -253,16 +355,12 @@ func (r resourceKeyfactorCertificate) Create(
 	}
 
 	// Retrieve values from plan
-	var plan KeyfactorCertificate
+	var plan CommandCertificate
 	diags := request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
-
-	// Generate API request body from plan
-
-	kfClient := r.p.client
 
 	certificateId := plan.ID.Value
 	collectionId := plan.CollectionId.Value
@@ -282,403 +380,12 @@ func (r resourceKeyfactorCertificate) Create(
 		)
 		return
 	}
-
-	var dnsSANs []string
-	var ipSANs []string
-	var uriSANs []string
-	var metadata map[string]interface{}
-	tflog.Debug(ctx, fmt.Sprintf("Parsing DNS SANs: %s", plan.DNSSANs))
-	diags = plan.DNSSANs.ElementsAs(ctx, &dnsSANs, true)
-	tflog.Debug(ctx, fmt.Sprintf("Parsing IP SANs: %s", plan.IPSANs))
-	diags = plan.IPSANs.ElementsAs(ctx, &ipSANs, true)
-	tflog.Debug(ctx, fmt.Sprintf("Parsing URI SANs: %s", plan.URISANs))
-	diags = plan.URISANs.ElementsAs(ctx, &uriSANs, true)
-	// iterate over metadata map and convert to map[string]interface{}
-	tflog.Debug(ctx, fmt.Sprintf("Parsing metadata: %s", plan.Metadata))
-	metaDataElms := plan.Metadata.Elems
-	metadata = make(map[string]interface{})
-	for k, elm := range metaDataElms {
-		metadata[k] = strings.Replace(elm.String(), "\"", "", -1)
-	}
-
-	sans := append(dnsSANs, ipSANs...)
-	sans = append(sans, uriSANs...)
-	ctx = tflog.SetField(ctx, "sans", sans)
-
-	var autoPassword string
-	var lookupPassword string
-
 	if !plan.CSR.IsNull() && csr != "" { //Enroll CSR
-
-		//ensure that conflicting values are not set
-		if plan.CommonName.Value != "" || plan.Organization.Value != "" || plan.OrganizationalUnit.Value != "" || plan.Locality.Value != "" || plan.State.Value != "" || plan.Country.Value != "" || plan.PrivateKey.Value != "" || plan.KeyPassword.Value != "" {
-			response.Diagnostics.AddError(
-				ERR_SUMMARY_INVALID_CERTIFICATE_RESOURCE,
-				"You cannot set the private_key, password, common_name, organization, organizational_unit, locality, state, or country when using a CSR.",
-			)
+		tflog.Debug(ctx, "Calling enrollCSR()")
+		result, csrErr := r.enrollCSR(ctx, csr, &plan)
+		if csrErr != nil {
+			response.Diagnostics.Append(csrErr...)
 			return
-		}
-
-		tflog.Debug(ctx, "Creating certificate from CSR.")
-
-		tflog.Debug(ctx, fmt.Sprintf("Creating certificate with SANs: %s", sans))
-		CSRArgs := &api.EnrollCSRFctArgs{
-			CSR:                  csr,
-			CertificateAuthority: plan.CertificateAuthority.Value,
-			Template:             plan.CertificateTemplate.Value,
-			IncludeChain:         true,
-			CertFormat:           "PEM", // Retrieve certificate in READ
-			SANs: &api.SANs{
-				IP4: ipSANs,
-				IP6: nil, //TODO: ipv6 SANs support
-				DNS: dnsSANs,
-				URI: uriSANs,
-			},
-			Metadata: metadata,
-		}
-		tflog.Trace(
-			ctx, "Passing args to Keyfactor API.", map[string]interface{}{
-				"args": CSRArgs,
-			},
-		)
-		enrollResponse, err := kfClient.EnrollCSR(CSRArgs)
-		if err != nil {
-			response.Diagnostics.AddError(
-				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
-				"Could not create certificate in Keyfactor: "+err.Error(),
-			)
-			return
-		}
-
-		//Collection
-
-		// iterate through CertificateInformation.Certificates and concatenate
-		var (
-			fullChain string
-			caCert    string
-			leaf      string
-		)
-
-		for i, cert := range enrollResponse.CertificateInformation.Certificates {
-			// split by \r\n and remove first line if '#' is present
-			if strings.Contains(cert, "#") {
-				cert = strings.Join(strings.Split(cert, "\r\n")[1:], "\r\n")
-			}
-
-			fullChain += cert
-			if i > 0 { //caCert returns full chain minus leaf
-				caCert += cert
-			} else {
-				// split by \r\n and remove first line
-
-				leaf = cert
-			}
-		}
-
-		//fetch certificate from Keyfactor
-		//leaf, chain, _, dErr := downloadCertificate(
-		//	enrollResponse.CertificateInformation.KeyfactorID,
-		//	int(collectionId),
-		//	r.p.client,
-		//	autoPassword,
-		//	csr != "",
-		//)
-		//if dErr != nil {
-		//	response.Diagnostics.AddError(
-		//		ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-		//		fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
-		//	)
-		//	return
-		//}
-
-		// Set state
-		var result = KeyfactorCertificate{
-			ID: types.String{
-				Value: fmt.Sprintf(
-					"%v",
-					enrollResponse.CertificateInformation.KeyfactorID,
-				),
-			},
-			CSR:                  types.String{Value: csr},
-			CommonName:           plan.CommonName,
-			Organization:         plan.Organization,
-			OrganizationalUnit:   plan.OrganizationalUnit,
-			Locality:             plan.Locality,
-			State:                plan.State,
-			Country:              plan.Country,
-			DNSSANs:              plan.DNSSANs,
-			IPSANs:               plan.IPSANs,
-			URISANs:              plan.URISANs,
-			SerialNumber:         types.String{Value: enrollResponse.CertificateInformation.SerialNumber},
-			IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
-			Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
-			PEM:                  types.String{Value: leaf},
-			PEMCACert:            types.String{Value: caCert},
-			PEMChain:             types.String{Value: fullChain},
-			PrivateKey:           types.String{Value: plan.PrivateKey.Value, Null: true},
-			KeyPassword:          types.String{Value: plan.KeyPassword.Value, Null: true},
-			CertificateAuthority: plan.CertificateAuthority,
-			CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
-			CertificateTemplate:  plan.CertificateTemplate,
-			Metadata:             plan.Metadata,
-			CollectionId:         plan.CollectionId,
-			FriendlyName:         plan.FriendlyName,
-			UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
-		}
-
-		diags = response.State.Set(ctx, result)
-		response.Diagnostics.Append(diags...)
-		if response.Diagnostics.HasError() {
-			return
-		}
-	} else { //Enroll PFX
-		tflog.Info(ctx, "Resource is PFX certificate enrollment.")
-		if plan.KeyPassword.Value == "" {
-			tflog.Debug(ctx, "No password provided, generating random password.")
-
-			autoPassword = generatePassword(
-				PFXPasswordLength,
-				PFXPasswordSpecialChars,
-				PFXPasswordDigits,
-				PFXPasswordUpperCases,
-			)
-			lookupPassword = autoPassword
-		} else {
-			tflog.Debug(ctx, "Password provided, using provided password.")
-			lookupPassword = plan.KeyPassword.Value
-		}
-
-		useCNAsFriendlyName := true // Defaults to true for backwards compatability
-		if !plan.UseCNAsFriendlyName.Null {
-			useCNAsFriendlyName = plan.UseCNAsFriendlyName.Value
-		}
-
-		var friendlyName = plan.FriendlyName.Value
-		if friendlyName == "" && useCNAsFriendlyName {
-			friendlyName = plan.CommonName.Value
-		}
-
-		tflog.Debug(ctx, "Creating API request.")
-		PFXArgs := &api.EnrollPFXFctArgsV2{
-			CustomFriendlyName:          friendlyName,
-			Password:                    lookupPassword,
-			PopulateMissingValuesFromAD: false, //TODO: Add support for this
-			CertificateAuthority:        plan.CertificateAuthority.Value,
-			Template:                    plan.CertificateTemplate.Value,
-			IncludeChain:                true,    //TODO: Add support for this
-			CertFormat:                  "STORE", // Get certificate from data source
-			SANs: &api.SANs{
-				IP4: ipSANs,
-				IP6: nil, //TODO: ipv6 SANs support
-				DNS: dnsSANs,
-				URI: uriSANs,
-			},
-			Metadata: metadata,
-			Subject: &api.CertificateSubject{
-				SubjectCommonName:         plan.CommonName.Value,
-				SubjectLocality:           plan.Locality.Value,
-				SubjectOrganization:       plan.Organization.Value,
-				SubjectCountry:            plan.Country.Value,
-				SubjectOrganizationalUnit: plan.OrganizationalUnit.Value,
-				SubjectState:              plan.State.Value,
-			},
-		}
-		tflog.Debug(ctx, "API PFXArgs created.")
-
-		//convert PFX args to JSON string
-		tflog.Debug(ctx, "Converting PFXArgs to JSON.")
-		jsonData, err := json.Marshal(PFXArgs)
-		if err != nil {
-			tflog.Error(ctx, "Error converting PFXArgs to JSON.")
-			response.Diagnostics.AddError(
-				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
-				"Could not convert PFXArgs to JSON: "+err.Error(),
-			)
-			return
-		}
-		ctx = tflog.SetField(ctx, "pfx_args", string(jsonData))
-
-		tflog.Debug(ctx, fmt.Sprintf("PFXArgs: %s", string(jsonData)))
-		tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))
-		tflog.Debug(ctx, "Calling EnrollPFXV2.")
-		enrollResponse, err := r.p.client.EnrollPFXV2(PFXArgs)
-		if err != nil {
-			tflog.Error(ctx, "No response from Keyfactor Command after PFX enrollment.")
-			response.Diagnostics.AddError(
-				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
-				fmt.Sprintf(
-					"Could not create certificate %s on Keyfactor: "+err.Error(),
-					PFXArgs.Subject.SubjectCommonName,
-				),
-			)
-			return
-		}
-		enrolledId := enrollResponse.CertificateInformation.KeyfactorID
-		ctx = tflog.SetField(ctx, "enrolled_id", enrolledId)
-		enrolledThumbprint := enrollResponse.CertificateInformation.Thumbprint
-		ctx = tflog.SetField(ctx, "enrolled_thumbprint", enrolledThumbprint)
-		enrolledSerialNumber := enrollResponse.CertificateInformation.SerialNumber
-		ctx = tflog.SetField(ctx, "enrolled_serial_number", enrolledSerialNumber)
-		enrolledIssuerDN := enrollResponse.CertificateInformation.IssuerDN
-		ctx = tflog.SetField(ctx, "enrolled_issuer_dn", enrolledIssuerDN)
-		// check if request is pending approvals
-		if enrollResponse.CertificateInformation.RequestDisposition == "PENDING" {
-			// call HandlePendingCert
-			tflog.Debug(ctx, fmt.Sprintf("Certificate %s is pending approval.", PFXArgs.Subject.SubjectCommonName))
-			tflog.Debug(
-				ctx,
-				fmt.Sprintf("Calling HandlePendingCert for certificate %s.", PFXArgs.Subject.SubjectCommonName),
-			)
-			approvedCert, pErr := r.HandlePendingCert(
-				ctx,
-				enrollResponse,
-				PFXArgs.Subject.SubjectCommonName,
-				int(collectionId),
-			)
-			ERROR_PENDING_CERTS_PERMISSIONS := "does not have any of the required permissions: Alerts - Read"
-			if pErr != nil {
-				//check if error contains 401
-				if strings.Contains(pErr.Error(), "401") || strings.Contains(
-					pErr.Error(),
-					ERROR_PENDING_CERTS_PERMISSIONS,
-				) {
-					tflog.Warn(ctx, "Unauthorized to list pending certificate requests.")
-					waitResp, waitErr := r.WaitForPendingCert(
-						ctx,
-						enrollResponse,
-						plan.CommonName.Value,
-						int(collectionId),
-					)
-					if waitErr != nil {
-						tflog.Error(
-							ctx,
-							fmt.Sprintf("Error handling pending certificate %s.", PFXArgs.Subject.SubjectCommonName),
-						)
-						response.Diagnostics.AddError(
-							ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
-							fmt.Sprintf(
-								"Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(),
-								PFXArgs.Subject.SubjectCommonName,
-							),
-						)
-						return
-					}
-					approvedCert = waitResp
-				} else {
-					tflog.Error(
-						ctx,
-						fmt.Sprintf("Error handling pending certificate %s.", PFXArgs.Subject.SubjectCommonName),
-					)
-					response.Diagnostics.AddError(
-						ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
-						fmt.Sprintf(
-							"Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(),
-							PFXArgs.Subject.SubjectCommonName,
-						),
-					)
-					return
-				}
-			}
-			if approvedCert == nil {
-				tflog.Error(
-					ctx,
-					fmt.Sprintf("Certificate '%s' is pending approval.", PFXArgs.Subject.SubjectCommonName),
-				)
-				response.Diagnostics.AddError(
-					ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
-					fmt.Sprintf(
-						"No response recieved on create certificate '%s' on Keyfactor Command: "+pErr.Error(),
-						PFXArgs.Subject.SubjectCommonName,
-					),
-				)
-				return
-			}
-
-			enrolledId = approvedCert.Id
-			ctx = tflog.SetField(ctx, "enrolled_id", enrolledId)
-			enrolledThumbprint = approvedCert.Thumbprint
-			ctx = tflog.SetField(ctx, "enrolled_thumbprint", enrolledThumbprint)
-			enrolledSerialNumber = approvedCert.SerialNumber
-			ctx = tflog.SetField(ctx, "enrolled_serial_number", enrolledSerialNumber)
-			enrolledIssuerDN = approvedCert.IssuerDN
-			ctx = tflog.SetField(ctx, "enrolled_issuer_dn", enrolledIssuerDN)
-			tflog.Info(
-				ctx,
-				fmt.Sprintf(
-					"Certificate %s (%d) has been approved and created.",
-					PFXArgs.Subject.SubjectCommonName,
-					enrolledId,
-				),
-			)
-		}
-
-		// Download and assign certificates to proper location
-		tflog.Info(
-			ctx,
-			fmt.Sprintf(
-				"Downloading certificate '%s'(%d) from Keyfactor Command.",
-				PFXArgs.Subject.SubjectCommonName,
-				enrolledId,
-			),
-		)
-		tflog.Debug(ctx, "Calling downloadCertificate")
-		leaf, chain, pKey, dErr := downloadCertificate(
-			enrolledId,
-			int(collectionId),
-			r.p.client,
-			lookupPassword,
-			csr != "",
-		)
-		if dErr != nil {
-			response.Diagnostics.AddError(
-				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
-			)
-		}
-		tflog.Info(
-			ctx,
-			fmt.Sprintf(
-				"Certificate '%s'(%d) has been downloaded from Keyfactor Command.",
-				PFXArgs.Subject.SubjectCommonName,
-				enrolledId,
-			),
-		)
-
-		fullChain := leaf + chain
-		// Set state
-		tflog.Info(
-			ctx,
-			fmt.Sprintf("Setting state for certificate '%s'(%d).", PFXArgs.Subject.SubjectCommonName, enrolledId),
-		)
-		tflog.Debug(ctx, "Creating state object")
-		var result = KeyfactorCertificate{
-			ID:                   types.String{Value: fmt.Sprintf("%v", enrolledId)},
-			CSR:                  plan.CSR,
-			CommonName:           plan.CommonName,
-			Organization:         plan.Organization,
-			OrganizationalUnit:   plan.OrganizationalUnit,
-			Locality:             plan.Locality,
-			State:                plan.State,
-			Country:              plan.Country,
-			DNSSANs:              plan.DNSSANs,
-			IPSANs:               plan.IPSANs,
-			URISANs:              plan.URISANs,
-			SerialNumber:         types.String{Value: enrolledSerialNumber},
-			IssuerDN:             types.String{Value: enrolledIssuerDN},
-			Thumbprint:           types.String{Value: enrolledThumbprint},
-			PEM:                  types.String{Value: leaf},
-			PEMCACert:            types.String{Value: chain},
-			PEMChain:             types.String{Value: fullChain},
-			PrivateKey:           types.String{Value: pKey},
-			KeyPassword:          plan.KeyPassword,
-			CertificateAuthority: plan.CertificateAuthority,
-			CertificateTemplate:  plan.CertificateTemplate,
-			CertificateId:        types.Int64{Value: int64(enrolledId)},
-			RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
-			Metadata:             plan.Metadata,
-			CollectionId:         plan.CollectionId,
-			FriendlyName:         plan.FriendlyName,
-			UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
 		}
 
 		tflog.Debug(ctx, "Setting state")
@@ -688,17 +395,46 @@ func (r resourceKeyfactorCertificate) Create(
 			tflog.Error(ctx, "Error setting state")
 			return
 		}
+
+		return
+	} else { //Enroll PFX
+		tflog.Debug(ctx, "Calling enrollPFXV2()")
+		result, pfxErr := r.enrollPFXV2(ctx, &plan)
+		if pfxErr.HasError() {
+			response.Diagnostics.Append(pfxErr...)
+			return
+		}
+
+		if result == nil {
+			response.Diagnostics.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+				"empty response returned from Keyfactor Command after PFX enrollment",
+			)
+			return
+		}
+
+		tflog.Debug(ctx, "Setting state")
+		diags = response.State.Set(ctx, *result)
+		response.Diagnostics.Append(diags...)
+		if response.Diagnostics.HasError() {
+			tflog.Error(ctx, "Error setting state")
+			return
+		}
 	}
 
 }
 
-func (r resourceKeyfactorCertificate) Read(
+func (r resourceCommandCertificate) Read(
 	ctx context.Context,
 	request tfsdk.ReadResourceRequest,
 	response *tfsdk.ReadResourceResponse,
 ) {
-	tflog.Info(ctx, "Read called on certificate resource")
-	var state KeyfactorCertificate
+	var state CommandCertificate
+	tflog.Info(ctx, "Read called on CommandCertificate resource")
+	if response == nil {
+		tflog.Warn(ctx, "nil ReadResourceResponse")
+	}
+
 	tflog.Debug(ctx, "Reading state file")
 	diags := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
@@ -707,416 +443,192 @@ func (r resourceKeyfactorCertificate) Read(
 		return
 	}
 
-	tflog.Debug(ctx, "Parsing certificate ID")
-	certificateIdInt, cIdErr := strconv.Atoi(state.ID.Value)
-	if cIdErr != nil {
-		tflog.Error(ctx, "Error parsing certificate ID, setting to -1")
-		certificateIdInt = -1
+	// Determine certificate ID type and resolve CN or thumbprint
+	certificateID, idTypeErr := strconv.Atoi(state.ID.Value)
+	if idTypeErr != nil {
+		certificateID = UNKNOWN_CERTIFICATE_ID
 	}
-	var (
-		certificateCN         string
-		certificateThumbprint string
+	collectionIdInt := int(state.CollectionId.Value)
+
+	thumbprint, commonName := determineCertificateIdType(state.ID.Value)
+	logInitialCertificateFields(ctx, certificateID, commonName, thumbprint, collectionIdInt)
+
+	// Prepare args for API call
+	apiArgs := prepareCertificateContextArgs(certificateID, collectionIdInt, thumbprint, commonName)
+
+	// Fetch certificate context
+	certGetResp, apiErr := r.p.client.GetCertificateContext(apiArgs)
+	if hasAPIErrors(ctx, apiErr, state.ID.Value, &response.Diagnostics) {
+		tflog.Warn(ctx, fmt.Sprintf("Failed to retrieve certificate from GET /Certificates/%d", certificateID))
+	}
+
+	// Attempt to recover or download certificate from Command
+	leafPEM, chainPEM, pKeyPEM, rDiags := recoverOrDownloadCertificate(
+		ctx,
+		certificateID,
+		collectionIdInt,
+		state.KeyPassword.Value,
+		r.p.client,
 	)
-	// Check if certificateID is a thumbprint or CN
-	if certificateIdInt == -1 {
-		tflog.Debug(ctx, "Certificate ID is not an integer, checking if it is a thumbprint or CN")
-		if len(state.ID.Value) == 40 {
-			tflog.Info(ctx, fmt.Sprintf("Certificate ID '%v' is a thumbprint.", state.ID.Value))
-			certificateThumbprint = state.ID.Value
-		} else {
-			tflog.Info(ctx, fmt.Sprintf("Certificate ID '%v' is a CN.", state.ID.Value))
-			certificateCN = state.ID.Value
-		}
+
+	// Handle leaf PEM encoding for certificates without private keys
+	if certGetResp != nil && leafPEM == "" {
+		leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certificateID)
 	}
 
-	collectionID := state.CollectionId.Value
-	collectionIdInt := int(collectionID)
-
-	ctx = tflog.SetField(ctx, "collection_id", collectionID)
-	ctx = tflog.SetField(ctx, "certificate_id", certificateIdInt)
-	ctx = tflog.SetField(ctx, "certificate_cn", certificateCN)
-	ctx = tflog.SetField(ctx, "certificate_thumbprint", certificateThumbprint)
-
-	tflog.Info(ctx, fmt.Sprintf("Attempting to lookup certificate '%v' in Keyfactor.", state.ID.Value))
-	tflog.Debug(ctx, "Calling GetCertificateContextArgs")
-	args := &api.GetCertificateContextArgs{
-		IncludeMetadata:      boolToPointer(true),
-		IncludeLocations:     boolToPointer(true),
-		IncludeHasPrivateKey: boolToPointer(true),
-		CollectionId:         intToPointer(collectionIdInt),
-		Id:                   certificateIdInt,
-		CommonName:           certificateCN,
-		Thumbprint:           certificateThumbprint,
-	}
-
-	tflog.Debug(ctx, "Calling GetCertificateContext")
-	cResp, err := r.p.client.GetCertificateContext(args)
-	if err != nil {
-		tflog.Error(ctx, "Error calling GetCertificateContext")
-		response.Diagnostics.AddWarning(
+	if leafPEM == "" {
+		response.Diagnostics.Append(rDiags...)
+		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), state.ID.Value),
+			fmt.Sprintf(
+				"Failed to retrieve certificate '%s' from Keyfactor Command. "+
+					"Please check the certificate ID and try again.", state.ID.Value,
+			),
 		)
-		nullValue := types.String{Null: true}
-		nullList := types.List{Null: true, ElemType: types.StringType}
-		emptyResult := KeyfactorCertificate{
-			ID:                 nullValue,
-			CSR:                nullValue,
-			CommonName:         nullValue,
-			Locality:           nullValue,
-			State:              nullValue,
-			Country:            nullValue,
-			Organization:       nullValue,
-			OrganizationalUnit: nullValue,
-			DNSSANs:            nullList,
-			IPSANs:             nullList,
-			URISANs:            nullList,
-			SerialNumber:       nullValue,
-			IssuerDN:           nullValue,
-			Thumbprint:         nullValue,
-			PEM:                nullValue,
-			PEMCACert:          nullValue,
-			PEMChain:           nullValue,
-			PrivateKey:         nullValue,
-			KeyPassword:        state.KeyPassword,
-			//PEM:                  state.PEM,
-			//PEMChain:             state.PEMChain,
-			//PrivateKey:           state.PrivateKey,
-			//KeyPassword:          state.KeyPassword,
-			CertificateAuthority: nullValue,
-			CertificateTemplate:  nullValue,
-			Metadata:             types.Map{Null: true, ElemType: types.StringType},
-			CertificateId:        types.Int64{Null: true},
-		}
-		diags = response.State.Set(ctx, &emptyResult)
-		response.Diagnostics.Append(diags...)
 		return
 	}
 
-	// Get the password out of current schema
-	csr := state.CSR.Value
-
-	// Download and assign certificates to proper location
-	//leaf, chain, pKey, dErr := downloadCertificate(certificateIdInt, r.p.client, state.KeyPassword.Value, csr != "")
-	// check if state has an auto password
-	lookupPassword := state.KeyPassword.Value
-	if lookupPassword == "" {
-		tflog.Debug(ctx, "No password provided, generating random password.")
-		lookupPassword = generatePassword(
-			PFXPasswordLength,
-			PFXPasswordSpecialChars,
-			PFXPasswordDigits,
-			PFXPasswordUpperCases,
-		)
-	}
-	tflog.Info(
+	leaf, lDiags := parseLeafCert(
 		ctx,
-		fmt.Sprintf("Downloading certificate '%s'(%d) from Keyfactor Command.", state.ID.Value, certificateIdInt),
+		leafPEM,
 	)
-	_, _, _, dErr := downloadCertificate(certificateIdInt, collectionIdInt, r.p.client, lookupPassword, csr != "")
-	if dErr != nil {
-		tflog.Error(ctx, "Error downloading certificate from Keyfactor Command.")
+	response.Diagnostics.Append(lDiags...)
+	if response.Diagnostics.HasError() {
+		tflog.Error(ctx, "Error parsing certificate")
+		return
+	} else if leaf == nil {
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), state.ID.Value),
-		)
-	}
-
-	tflog.Debug(ctx, "Calling expandSubject")
-	cn, ou, o, l, st, c := expandSubject(cResp.IssuedDN)
-	tflog.Debug(ctx, "Calling flattenSANs")
-	dnsSans, ipSans, uriSans := flattenSANs(cResp.SubjectAltNameElements, state.DNSSANs, state.IPSANs, state.URISANs)
-	ctx = tflog.SetField(ctx, "dns_sans", dnsSans)
-	ctx = tflog.SetField(ctx, "ip_sans", ipSans)
-	ctx = tflog.SetField(ctx, "uri_sans", uriSans)
-
-	var (
-		leaf  string
-		chain = ""
-		pKey  = ""
-	)
-
-	if cResp.HasPrivateKey {
-		tflog.Info(ctx, "Requested certificate has a private key attempting to recover from Keyfactor Command.")
-		tflog.Debug(ctx, "Calling RecoverCertificate")
-		//pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", lookupPassword)
-		pKeyO, _, chainO, dErrO := r.p.client.RecoverCertificate(cResp.Id, "", "", "", lookupPassword, collectionIdInt)
-		if dErrO != nil {
-			tflog.Error(
-				ctx,
-				fmt.Sprintf("Unable to recover private key for certificate '%v' from Keyfactor Command.", cResp.Id),
-			)
-			response.Diagnostics.AddError(
-				"Error recovering private key from Keyfactor Command.",
-				fmt.Sprintf(
-					"Could not retrieve private key for certificate '%s' from Keyfactor Command: "+dErrO.Error(),
-					cResp.Id,
-				),
-			)
-			return
-		}
-		tflog.Info(ctx, "Recovered private key from Keyfactor Command.")
-		tflog.Debug(ctx, "Decoding certificate response")
-		lBytes, lbErr := base64.StdEncoding.DecodeString(cResp.ContentBytes)
-		if lbErr != nil {
-			tflog.Error(ctx, "Error decoding certificate content bytes.")
-			response.Diagnostics.AddError(
-				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-				fmt.Sprintf(
-					"Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(),
-					state.ID.Value,
-				),
-			)
-			return
-		}
-		tflog.Debug(ctx, "Decoding leaf cert.")
-		leaf = string(
-			pem.EncodeToMemory(
-				&pem.Block{
-					Type:  "CERTIFICATE",
-					Bytes: lBytes,
-				},
+			fmt.Sprintf(
+				"Failed to parse certificate '%s' from Keyfactor Command. "+
+					"Please check the certificate ID and try again.", state.ID.Value,
 			),
 		)
-		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
-		tflog.Debug(ctx, leaf)
-		tflog.Debug(ctx, "Recovered certificate chain from Keyfactor Command:")
-		for i, cert := range chainO {
-			tflog.Debug(ctx, fmt.Sprintf("Decoding chain cert %d", i))
-			chainLink := string(
-				pem.EncodeToMemory(
-					&pem.Block{
-						Type:  "CERTIFICATE",
-						Bytes: cert.Raw,
-					},
-				),
-			)
-			chain += chainLink
-			tflog.Debug(ctx, chainLink)
-		}
+		return
+	}
 
-		tflog.Debug(ctx, "Recovered private key from Keyfactor Command:")
-		tflog.Debug(ctx, "Attempting RSA private key recovery")
-		rsa, ok := pKeyO.(*rsa2.PrivateKey)
-		if ok {
-			tflog.Debug(ctx, "Recovered RSA private key from Keyfactor Command:")
-			buf := x509.MarshalPKCS1PrivateKey(rsa)
-			if len(buf) > 0 {
-				tflog.Debug(ctx, "Encoding RSA private key from Keyfactor Command.")
-				pKey = string(
-					pem.EncodeToMemory(
-						&pem.Block{
-							Bytes: buf,
-							Type:  "RSA PRIVATE KEY",
-						},
-					),
-				)
-				tflog.Trace(ctx, pKey)
-			} else {
-				tflog.Debug(ctx, "Empty Key Recovered from Keyfactor Command.")
-			}
-		} else {
-			tflog.Debug(ctx, "Attempting ECC private key recovery")
-			ecc, ok := pKeyO.(*ecdsa.PrivateKey)
-			if ok {
-				// We don't really care about the error here. An error just means that the key will be blank which isn't a
-				// reason to fail
-				tflog.Debug(ctx, "Recovered ECC private key from Keyfactor Command:")
-				buf, _ := x509.MarshalECPrivateKey(ecc)
-				if len(buf) > 0 {
-					tflog.Debug(ctx, "Encoding ECC private key from Keyfactor Command.")
-					pKey = string(
-						pem.EncodeToMemory(
-							&pem.Block{
-								Bytes: buf,
-								Type:  "EC PRIVATE KEY",
-							},
-						),
-					)
-					tflog.Trace(ctx, pKey)
+	sn := leaf.SerialNumber.String()
+	issuerDN := leaf.Issuer.String()
+	tp, _ := GetCertificateThumbprint(leaf)
+	fullChain := chainPEM
+	if !strings.Contains(fullChain, leafPEM) {
+		fullChain = leafPEM + chainPEM
+	}
+
+	caName := state.CertificateAuthority.Value
+	templateName := state.CertificateTemplate.Value
+	metadata := state.Metadata
+
+	cn, l, s, c, o, ou := parseSubjectToTfState(*leaf)
+	var warningDays int
+	if state.ExpiryWarningDays.Null || state.ExpiryWarningDays.Unknown || state.ExpiryWarningDays.Value <= 0 {
+		warningDays = DEFAULT_EXPIRY_WARNING_DAYS
+	} else {
+		warningDays = int(state.ExpiryWarningDays.Value)
+	}
+
+	var (
+		revoked bool
+		expired bool
+		//expiring bool
+		cDiags diag.Diagnostics
+	)
+	tflog.Debug(ctx, "Calling checkCertDiags()")
+	revoked, _, expired, cDiags = checkCertDiags(ctx, certGetResp, warningDays, leaf)
+	response.Diagnostics.Append(cDiags...)
+	if certGetResp != nil {
+		caName = certGetResp.CertificateAuthorityName
+		certificateID = certGetResp.Id
+		//templateName = certGetResp.TemplateName
+		metadata = flattenMetadata(certGetResp.Metadata)
+	}
+
+	renewalConfig := state.RenewalConfig
+	if state.RenewalConfig != nil {
+		renewalConfig = &CertificateAutoRenewConfig{
+			ForceRenewal: state.RenewalConfig.ForceRenewal,
+			RenewDays:    state.RenewalConfig.RenewDays,
+			//RenewEligible: types.Bool{
+			//	Value: renewEligible,
+			//},
+			RevokeOnRenew: state.RenewalConfig.RevokeOnRenew,
+		}
+		if state.RenewalConfig.RenewDays.Value != 0 {
+			ctx = tflog.SetField(ctx, "renew_days", state.RenewalConfig.RenewDays.Value)
+			tflog.Info(ctx, "Checking if certificate is eligible for renewal.")
+			renewDays := int(state.RenewalConfig.RenewDays.Value)
+			renewEligible, _, _ := isExpiring(ctx, leaf, renewDays)
+			if renewEligible {
+				renewalConfig.RenewEligible = types.Bool{
+					Unknown: false,
+					Null:    false,
+					Value:   renewEligible,
 				}
 			}
 		}
-	} else {
-		// Convert string to []byte and then to pem.
-		tflog.Info(
-			ctx,
-			fmt.Sprintf(
-				"Requested certificate '%s'(%d) does not have a private key in Keyfactor Command.",
-				state.ID.Value,
-				certificateIdInt,
-			),
-		)
-		tflog.Debug(ctx, "Decoding certificate response")
-		lBytes, lbErr := base64.StdEncoding.DecodeString(cResp.ContentBytes)
-		if lbErr != nil {
-			tflog.Error(ctx, "Error decoding certificate content bytes.")
-			tflog.Error(ctx, lbErr.Error())
-			response.Diagnostics.AddError(
-				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-				fmt.Sprintf(
-					"Could not retrieve certificate '%s' from Keyfactor Command: "+lbErr.Error(),
-					state.ID.Value,
-				),
-			)
-			return
-		}
-
-		tflog.Debug(ctx, "Decoding leaf cert.")
-		leaf = string(
-			pem.EncodeToMemory(
-				&pem.Block{
-					Type:  "CERTIFICATE",
-					Bytes: lBytes,
-				},
-			),
-		)
-		tflog.Debug(ctx, "Recovered leaf certificate from Keyfactor Command:")
-		tflog.Debug(ctx, leaf)
-
-		tflog.Info(
-			ctx,
-			fmt.Sprintf(
-				"Attempting to download certificate '%s'(%d) chain from Keyfactor Command.",
-				state.ID.Value,
-				certificateIdInt,
-			),
-		)
-		tflog.Debug(ctx, "Calling downloadCertificate")
-		dlf, dChain, _, dChainErr := downloadCertificate(
-			certificateIdInt,
-			collectionIdInt,
-			r.p.client,
-			lookupPassword,
-			csr != "",
-		)
-		//leaf, chain, pKey, dErr := downloadCertificate(enrolledId, int(collectionId), r.p.client, lookupPassword, csr != "")
-		if dChainErr != nil {
-			tflog.Error(ctx, "Error downloading certificate chain from Keyfactor Command.")
-			response.Diagnostics.AddWarning(
-				"Certificate Download Error",
-				fmt.Sprintf(
-					"Could not dowload certificate '%s' from Keyfactor. Chain will not be included: %s",
-					state.ID.Value,
-					dChainErr.Error(),
-				),
-			)
-		}
-		tflog.Trace(ctx, fmt.Sprintf("Downloaded certificate chain from Keyfactor Command:\n%s%s", dlf, dChain))
 	}
 
-	tflog.Debug(ctx, "Calling  flattenMetadata")
-	metadata := flattenMetadata(cResp.Metadata)
-
-	if len(state.Metadata.Elems) == 0 && len(metadata.Elems) == 0 {
-		tflog.Debug(ctx, "Both state and Keyfactor Command metadata are empty.")
-		// If both are empty then use whatever state is telling you about the value being null
-		metadata.Null = state.Metadata.Null
-	}
-
-	/*
-		fix issuer_dn to match create response:
-		For some reason Command returns w/ spaces on create and w/o spaces on get.
-		It's safer to add spaces between commas rather than trim all spaces as CNs can have spaces.
-	*/
-	tflog.Debug(ctx, "Fixing issuer_dn")
-	issuerDN := strings.Replace(cResp.IssuerDN, ",", ", ", -1)
-
-	fullChain := leaf + chain
-	var result = KeyfactorCertificate{}
-	if state.CSR.Value != "" {
-		tflog.Debug(ctx, "Creating state object for certificate with CSR.")
-		result = KeyfactorCertificate{
-			ID:                 types.String{Value: fmt.Sprintf("%v", cResp.Id)},
-			CSR:                types.String{Value: csr, Null: isNullString(csr)},
-			CommonName:         types.String{Value: cn.Value, Null: true},
-			Locality:           types.String{Value: l.Value, Null: true},
-			State:              types.String{Value: st.Value, Null: true},
-			Country:            types.String{Value: c.Value, Null: true},
-			Organization:       types.String{Value: o.Value, Null: true},
-			OrganizationalUnit: types.String{Value: ou.Value, Null: true},
-			DNSSANs:            state.DNSSANs,
-			IPSANs:             state.IPSANs,
-			URISANs:            state.URISANs,
-			SerialNumber:       types.String{Value: cResp.SerialNumber, Null: isNullString(cResp.SerialNumber)},
-			IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
-			Thumbprint:         types.String{Value: cResp.Thumbprint, Null: isNullString(cResp.Thumbprint)},
-			PEM:                types.String{Value: leaf, Null: isNullString(leaf)},
-			PEMCACert:          types.String{Value: chain, Null: isNullString(chain)},
-			PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
-			PrivateKey:         state.PrivateKey,
-			KeyPassword:        state.KeyPassword,
-			//PEM:                  state.PEM,
-			//PEMChain:             state.PEMChain,
-			//PrivateKey:           state.PrivateKey,
-			//KeyPassword:          state.KeyPassword,
-			CertificateAuthority: types.String{
-				Value: cResp.CertificateAuthorityName,
-				Null:  isNullString(cResp.CertificateAuthorityName),
-			},
-			CertificateTemplate: state.CertificateTemplate,
-			Metadata:            metadata,
-			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
-			CollectionId:        state.CollectionId,
-			FriendlyName:        state.FriendlyName,
-			UseCNAsFriendlyName: state.UseCNAsFriendlyName,
-		}
-	} else {
-		tflog.Debug(ctx, "Creating state object for certificate PFX.")
-		result = KeyfactorCertificate{
-			ID:                 types.String{Value: fmt.Sprintf("%v", cResp.Id)},
-			CSR:                types.String{Value: csr, Null: isNullString(csr)},
-			CommonName:         cn,
-			Locality:           types.String{Value: l.Value, Null: isNullString(l.Value)},
-			State:              types.String{Value: st.Value, Null: isNullString(st.Value)},
-			Country:            types.String{Value: c.Value, Null: isNullString(c.Value)},
-			Organization:       types.String{Value: o.Value, Null: isNullString(o.Value)},
-			OrganizationalUnit: types.String{Value: ou.Value, Null: isNullString(ou.Value)},
-			DNSSANs:            dnsSans,
-			IPSANs:             ipSans,
-			URISANs:            uriSans,
-			SerialNumber:       types.String{Value: cResp.SerialNumber, Null: isNullString(cResp.SerialNumber)},
-			IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
-			Thumbprint:         types.String{Value: cResp.Thumbprint, Null: isNullString(cResp.Thumbprint)},
-			PEM:                types.String{Value: leaf, Null: isNullString(leaf)},
-			PEMCACert:          types.String{Value: chain, Null: isNullString(chain)},
-			PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
-			PrivateKey:         types.String{Value: pKey, Null: isNullString(pKey)},
-			KeyPassword:        state.KeyPassword,
-			//PEM:                  state.PEM,
-			//PEMChain:             state.PEMChain,
-			//PrivateKey:           state.PrivateKey,
-			//KeyPassword:          state.KeyPassword,
-			CertificateAuthority: types.String{
-				Value: cResp.CertificateAuthorityName,
-				Null:  isNullString(cResp.CertificateAuthorityName),
-			},
-			CertificateTemplate: state.CertificateTemplate,
-			Metadata:            metadata,
-			CertificateId:       types.Int64{Value: int64(cResp.Id), Null: isNullId(cResp.Id)},
-			CollectionId:        state.CollectionId,
-			FriendlyName:        state.FriendlyName,
-			UseCNAsFriendlyName: state.UseCNAsFriendlyName,
-		}
+	tflog.Debug(ctx, "Creating state object for certificate.")
+	result := CommandCertificate{
+		ID:                 state.ID,
+		CSR:                state.CSR,
+		CommonName:         cn,
+		Locality:           l,
+		State:              s,
+		Country:            c,
+		Organization:       o,
+		OrganizationalUnit: ou,
+		DNSSANs:            DNSSANStoTerraform(leaf.DNSNames, false),
+		IPSANs:             IPSANStoTerraform(leaf.IPAddresses, false),
+		URISANs:            URISANStoTerraform(leaf.URIs, false),
+		SerialNumber:       types.String{Value: sn, Null: isNullString(sn)},
+		IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
+		Thumbprint:         types.String{Value: tp, Null: isNullString(tp)},
+		PEM:                types.String{Value: leafPEM, Null: isNullString(leafPEM)},
+		PEMCACert:          types.String{Value: chainPEM, Null: isNullString(chainPEM)},
+		PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
+		PrivateKey:         types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
+		KeyPassword:        state.KeyPassword,
+		CertificateAuthority: types.String{
+			Value: caName,
+			Null:  isNullString(caName),
+		},
+		CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
+		Metadata:            metadata,
+		CertificateId:       types.Int64{Value: int64(certificateID), Null: isNullId(certificateID)},
+		CollectionId:        state.CollectionId,
+		FriendlyName:        state.FriendlyName,
+		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
+		ExpiryWarningDays:   state.ExpiryWarningDays,
+		IsExpired: types.Bool{
+			Value: expired,
+		},
+		IsRevoked: types.Bool{
+			Value: revoked,
+		},
+		IsPendingRevocation: types.Bool{
+			Null: true,
+		},
+		RenewalConfig: renewalConfig,
 	}
 
 	// Set state
 	tflog.Debug(ctx, "Setting state")
-	diags = response.State.Set(ctx, &result)
-	response.Diagnostics.Append(diags...)
+	sDiags := response.State.Set(ctx, &result)
+	response.Diagnostics.Append(sDiags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 }
 
-func (r resourceKeyfactorCertificate) Update(
+func (r resourceCommandCertificate) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
 	response *tfsdk.UpdateResourceResponse,
 ) {
 	tflog.Info(ctx, "Update called on certificate resource")
 	// Get plan values
-	var plan KeyfactorCertificate
+	var plan CommandCertificate
 	tflog.Debug(ctx, "Reading plan file")
 	diags := request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diags...)
@@ -1126,7 +638,7 @@ func (r resourceKeyfactorCertificate) Update(
 	}
 
 	// Get current state
-	var state KeyfactorCertificate
+	var state CommandCertificate
 	tflog.Debug(ctx, "Reading state file")
 	diags = request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
@@ -1147,6 +659,80 @@ func (r resourceKeyfactorCertificate) Update(
 			"You must provide either a CSR or a CN to create a certificate.",
 		)
 		return
+	}
+
+	collectionIdInt := int(state.CollectionId.Value)
+
+	thumbprint, commonName := determineCertificateIdType(state.ID.Value)
+	certificateID := int(state.CertificateId.Value)
+	logInitialCertificateFields(ctx, certificateID, commonName, thumbprint, collectionIdInt)
+
+	// Prepare args for API call
+	apiArgs := prepareCertificateContextArgs(certificateID, collectionIdInt, thumbprint, commonName)
+
+	var (
+		revoked bool
+		expired bool
+		//expiring bool
+		cDiags diag.Diagnostics
+	)
+
+	var warningDays int
+	if plan.ExpiryWarningDays.Null || plan.ExpiryWarningDays.Unknown || plan.ExpiryWarningDays.Value <= 0 {
+		warningDays = DEFAULT_EXPIRY_WARNING_DAYS
+	} else {
+		warningDays = int(plan.ExpiryWarningDays.Value)
+	}
+
+	// Fetch certificate context
+	certGetResp, apiErr := r.p.client.GetCertificateContext(apiArgs)
+	if hasAPIErrors(ctx, apiErr, state.ID.Value, &response.Diagnostics) {
+		tflog.Warn(ctx, fmt.Sprintf("Failed to retrieve certificate from GET /Certificates/%d", certificateID))
+	}
+
+	leaf, lDiags := parseLeafCert(
+		ctx,
+		state.PEM.Value,
+	)
+	if lDiags.HasError() {
+		//this should never happen unless state has been manually manipulated
+		response.Diagnostics.Append(lDiags...)
+		return
+	}
+
+	tflog.Debug(ctx, "Calling checkCertDiags()")
+	revoked, _, expired, cDiags = checkCertDiags(ctx, certGetResp, warningDays, leaf)
+	response.Diagnostics.Append(cDiags...)
+	//if certGetResp != nil {
+	//	caName = certGetResp.CertificateAuthorityName
+	//	certificateID = certGetResp.Id
+	//	//templateName = certGetResp.TemplateName
+	//	metadata = flattenMetadata(certGetResp.Metadata)
+	//}
+
+	renewalConfig := state.RenewalConfig
+	if plan.RenewalConfig != nil {
+		renewalConfig = &CertificateAutoRenewConfig{
+			ForceRenewal: plan.RenewalConfig.ForceRenewal,
+			RenewDays:    plan.RenewalConfig.RenewDays,
+			//RenewEligible: types.Bool{
+			//	Value: renewEligible,
+			//},
+			RevokeOnRenew: plan.RenewalConfig.RevokeOnRenew,
+		}
+		if plan.RenewalConfig.RenewDays.Value != 0 {
+			ctx = tflog.SetField(ctx, "renew_days", plan.RenewalConfig.RenewDays.Value)
+			tflog.Info(ctx, "Checking if certificate is eligible for renewal.")
+			renewDays := int(plan.RenewalConfig.RenewDays.Value)
+			renewEligible, _, _ := isExpiring(ctx, leaf, renewDays)
+			if renewEligible {
+				renewalConfig.RenewEligible = types.Bool{
+					Unknown: false,
+					Null:    false,
+					Value:   renewEligible,
+				}
+			}
+		}
 	}
 
 	if csr != "" {
@@ -1203,7 +789,7 @@ func (r resourceKeyfactorCertificate) Update(
 		}
 
 		// Set state
-		var result = KeyfactorCertificate{
+		var result = CommandCertificate{
 			ID:                   types.String{Value: state.ID.Value},
 			CSR:                  plan.CSR,
 			CommonName:           plan.CommonName,
@@ -1229,6 +815,17 @@ func (r resourceKeyfactorCertificate) Update(
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
 			CollectionId:         state.CollectionId,
+			ExpiryWarningDays:    plan.ExpiryWarningDays,
+			IsExpired: types.Bool{
+				Value: expired,
+			},
+			IsRevoked: types.Bool{
+				Value: revoked,
+			},
+			IsPendingRevocation: types.Bool{
+				Null: true,
+			},
+			RenewalConfig: renewalConfig,
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -1254,7 +851,10 @@ func (r resourceKeyfactorCertificate) Update(
 				tflog.Trace(ctx, fmt.Sprintf("Setting metadata key %s to value %s", k, v))
 				planMetadataInterface[k] = v
 			}
-			tflog.Info(ctx, fmt.Sprintf("Updating metadata for certificate '%s' on Keyfactor Command.", state.ID.Value))
+			tflog.Info(
+				ctx,
+				fmt.Sprintf("Updating metadata for certificate '%s' on Keyfactor Command.", state.ID.Value),
+			)
 			err := r.p.client.UpdateMetadata(
 				&api.UpdateMetadataArgs{
 					CertID:   int(state.CertificateId.Value),
@@ -1271,8 +871,8 @@ func (r resourceKeyfactorCertificate) Update(
 		}
 
 		// Set state
-		tflog.Debug(ctx, "Creating KeyfactorCertificate state object")
-		var result = KeyfactorCertificate{
+		tflog.Debug(ctx, "Creating CommandCertificate state object")
+		var result = CommandCertificate{
 			ID:                   state.ID,
 			CSR:                  state.CSR,
 			CommonName:           state.CommonName,
@@ -1299,6 +899,17 @@ func (r resourceKeyfactorCertificate) Update(
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
 			CollectionId:         state.CollectionId,
+			ExpiryWarningDays:    plan.ExpiryWarningDays,
+			IsExpired: types.Bool{
+				Value: expired,
+			},
+			IsRevoked: types.Bool{
+				Value: revoked,
+			},
+			IsPendingRevocation: types.Bool{
+				Null: true,
+			},
+			RenewalConfig: renewalConfig,
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -1310,13 +921,13 @@ func (r resourceKeyfactorCertificate) Update(
 	}
 }
 
-func (r resourceKeyfactorCertificate) Delete(
+func (r resourceCommandCertificate) Delete(
 	ctx context.Context,
 	request tfsdk.DeleteResourceRequest,
 	response *tfsdk.DeleteResourceResponse,
 ) {
 	tflog.Info(ctx, "Delete called on certificate resource")
-	var state KeyfactorCertificate
+	var state CommandCertificate
 	tflog.Debug(ctx, "Reading state file")
 	diags := request.State.Get(ctx, &state)
 	kfClient := r.p.client
@@ -1366,6 +977,14 @@ func (r resourceKeyfactorCertificate) Delete(
 	ctx = tflog.SetField(ctx, "certificate_cn", certificateCN)
 	ctx = tflog.SetField(ctx, "certificate_thumbprint", certificateThumbprint)
 
+	if state.RenewalConfig != nil && !state.RenewalConfig.RevokeOnRenew.Value {
+		// Remove resource from state without revocation
+		tflog.Debug(ctx, "RevokeOnRenew is false, skipping revocation for certificate.")
+		response.State.RemoveResource(ctx)
+		tflog.Info(ctx, fmt.Sprintf("Certificate '%s' removed from state.", certificateId))
+		return
+	}
+
 	tflog.Info(ctx, fmt.Sprintf("Revoking certificate %v on Keyfactor Command", certificateId))
 
 	tflog.Debug(ctx, "Creating RevokeCertArgs")
@@ -1383,11 +1002,20 @@ func (r resourceKeyfactorCertificate) Delete(
 	tflog.Debug(ctx, "Calling RevokeCert")
 	err := kfClient.RevokeCert(revokeArgs)
 	if err != nil {
-		tflog.Error(ctx, fmt.Sprintf("Error revoking certificate '%d' on Keyfactor Command", certificateIdInt))
-		response.Diagnostics.AddError(
-			"Certificate revocation error.",
-			fmt.Sprintf("Could not revoke cert '%s' on Keyfactor: "+err.Error(), certificateId),
-		)
+
+		if strings.Contains(err.Error(), "has previously been revoked") { // EJBCA specific?
+			response.Diagnostics.AddWarning(
+				"Certificate previously revoked",
+				fmt.Sprintf(err.Error()),
+			)
+		} else {
+			tflog.Error(ctx, fmt.Sprintf("Error revoking certificate '%d' on Keyfactor Command", certificateIdInt))
+			response.Diagnostics.AddError(
+				"Certificate revocation error.",
+				fmt.Sprintf("Keyfactor Command could not revoke cert '%s' : "+err.Error(), state.ID.Value),
+			)
+			return
+		}
 	}
 
 	// Remove resource from state
@@ -1396,110 +1024,132 @@ func (r resourceKeyfactorCertificate) Delete(
 	tflog.Info(ctx, fmt.Sprintf("Certificate '%s' removed from state.", certificateId))
 }
 
-func (r resourceKeyfactorCertificate) ImportState(
+func (r resourceCommandCertificate) ImportState(
 	ctx context.Context,
 	request tfsdk.ImportResourceStateRequest,
 	response *tfsdk.ImportResourceStateResponse,
 ) {
 	tflog.Info(ctx, "ImportState called on certificate resource")
-	var state KeyfactorCertificate
+	var state CommandCertificate
 	if response.Diagnostics.HasError() {
 		return
 	}
 
 	tflog.Info(ctx, "Read called on certificate resource")
 	certificateId := request.ID
-	certificateIdInt, err := strconv.Atoi(certificateId)
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Import error.",
-			fmt.Sprintf("Could not convert cert ID '%s' to integer: "+err.Error(), certificateId),
-		)
-		return
+	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
+
+	certificateIdInt, _ := strconv.Atoi(certificateId)
+
+	// Prepare args for API call
+	// Use of collection_id to import is not currently supported
+	apiArgs := prepareCertificateContextArgs(certificateIdInt, 0, request.ID, request.ID)
+
+	// Fetch certificate context
+	certGetResp, apiErr := r.p.client.GetCertificateContext(apiArgs)
+	if hasAPIErrors(ctx, apiErr, state.ID.Value, &response.Diagnostics) {
+		tflog.Warn(ctx, fmt.Sprintf("Failed to retrieve certificate from GET /Certificates/%s", state.ID.Value))
 	}
 
-	tflog.SetField(ctx, "certificate_id", certificateId)
-
-	// Get certificate context
-	tflog.Debug(ctx, "Creating GetCertificateContextArgs object")
-	args := &api.GetCertificateContextArgs{
-		IncludeMetadata:  boolToPointer(true),
-		IncludeLocations: boolToPointer(true),
-		CollectionId:     nil,
-		Id:               certificateIdInt,
-	}
-	tflog.Info(ctx, fmt.Sprintf("Attempting to retrieve certificate '%s' from Keyfactor Command.", certificateId))
-	//todo: support for collection ID
-	tflog.Debug(ctx, "Calling GetCertificateContext")
-	certificateData, err := r.p.client.GetCertificateContext(args)
-	if err != nil {
-		tflog.Error(
-			ctx,
-			fmt.Sprintf("Error retrieving certificate '%s' from Keyfactor Command: "+err.Error(), certificateId),
-		)
-		response.Diagnostics.AddError(
-			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), certificateId),
-		)
-		return
-	}
-
-	// Get the password out of current schema
-	password := ""
-	csr := ""
-
-	// Download and assign certificates to proper location
-	tflog.Info(
+	tflog.Info(ctx, fmt.Sprintf("Attempting to retrieve certificate '%s' from Keyfactor Command.", state.ID.Value))
+	tflog.Debug(ctx, "Calling recoverOrDownloadCertificate")
+	leafPEM, chainPEM, pKeyPEM, rDiags := recoverOrDownloadCertificate(
 		ctx,
-		fmt.Sprintf(
-			"Downloading certificate '%s'(%d) from Keyfactor Command.",
-			certificateData.IssuedCN,
-			certificateData.Id,
-		),
-	)
-	tflog.Debug(ctx, "Calling downloadCertificate")
-	leaf, chain, priv, dErr := downloadCertificate(
-		certificateData.Id,
-		0,
+		certificateIdInt,
+		int(state.CollectionId.Value),
+		state.KeyPassword.Value,
 		r.p.client,
-		password,
-		csr != "",
-	) // add support for importing with collection ID
-	if dErr != nil {
-		tflog.Error(
-			ctx,
-			fmt.Sprintf("Error downloading certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
-		)
+	)
+
+	if rDiags.HasError() {
+		tflog.Error(ctx, fmt.Sprintf("Error retrieving certificate '%s' from Keyfactor Command.", certificateId))
+		response.Diagnostics.Append(rDiags...)
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
+			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command", certificateId),
 		)
 		return
 	}
 
-	tflog.Debug(ctx, "Creating KeyfactorCertificate object")
-	var result = KeyfactorCertificate{
-		ID:                   types.String{Value: state.ID.Value},
-		CSR:                  types.String{Value: csr},
-		CommonName:           state.CommonName,
-		Locality:             state.Locality,
-		State:                state.State,
-		Country:              state.Country,
-		Organization:         state.Organization,
-		OrganizationalUnit:   state.OrganizationalUnit,
-		DNSSANs:              state.DNSSANs,
-		IPSANs:               state.IPSANs,
-		URISANs:              state.URISANs,
-		SerialNumber:         state.SerialNumber,
-		IssuerDN:             state.IssuerDN,
-		Thumbprint:           state.Thumbprint,
-		PEM:                  types.String{Value: leaf},
-		PEMChain:             types.String{Value: chain},
-		PrivateKey:           types.String{Value: priv},
-		KeyPassword:          types.String{Value: password},
-		CertificateAuthority: state.CertificateAuthority,
-		CertificateTemplate:  state.CertificateTemplate,
-		Metadata:             state.Metadata,
+	// Handle leaf PEM encoding for certificates without private keys
+	if certGetResp != nil && leafPEM == "" {
+		leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certGetResp.Id)
+	}
+
+	if leafPEM == "" {
+		response.Diagnostics.Append(rDiags...)
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf(
+				"Failed to retrieve certificate '%s' from Keyfactor Command. "+
+					"Please check the certificate ID and try again.", state.ID.Value,
+			),
+		)
+		return
+	}
+
+	leaf := x509.Certificate{
+		Raw: []byte(leafPEM),
+	}
+	sn := leaf.SerialNumber.String()
+	issuerDN := leaf.Issuer.String()
+	tp, _ := GetCertificateThumbprint(&leaf)
+	fullChain := chainPEM
+	if !strings.Contains(fullChain, leafPEM) {
+		fullChain = leafPEM + chainPEM
+	}
+
+	caName := state.CertificateAuthority.Value
+	templateName := state.CertificateTemplate.Value
+	metadata := state.Metadata
+	if certGetResp != nil {
+		// Info that can only be retrieved with `Read Certificates` permissions
+		caName = certGetResp.CertificateAuthorityName
+		certificateIdInt = certGetResp.Id
+		templateName = certGetResp.TemplateName
+		metadata = flattenMetadata(certGetResp.Metadata)
+		revoked := isRevoked(certGetResp)
+		if revoked {
+			response.Diagnostics.AddWarning(
+				"Certificate revoked",
+				fmt.Sprintf("Certificate '%s' is revoked", state.ID.Value),
+			)
+		}
+	}
+
+	cn, l, s, c, o, ou := parseSubjectToTfState(leaf)
+
+	tflog.Debug(ctx, "Creating CommandCertificate object")
+	var result = CommandCertificate{
+		ID:                 state.ID,
+		CSR:                state.CSR,
+		CommonName:         cn,
+		Locality:           l,
+		State:              s,
+		Country:            c,
+		Organization:       o,
+		OrganizationalUnit: ou,
+		DNSSANs:            DNSSANStoTerraform(leaf.DNSNames, false),
+		IPSANs:             IPSANStoTerraform(leaf.IPAddresses, false),
+		URISANs:            URISANStoTerraform(leaf.URIs, false),
+		SerialNumber:       types.String{Value: sn, Null: isNullString(sn)},
+		IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
+		Thumbprint:         types.String{Value: tp, Null: isNullString(tp)},
+		PEM:                types.String{Value: leafPEM, Null: isNullString(leafPEM)},
+		PEMCACert:          types.String{Value: chainPEM, Null: isNullString(chainPEM)},
+		PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
+		PrivateKey:         types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
+		KeyPassword:        state.KeyPassword,
+		CertificateAuthority: types.String{
+			Value: caName,
+			Null:  isNullString(caName),
+		},
+		CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
+		Metadata:            metadata,
+		CertificateId:       types.Int64{Value: int64(certificateIdInt), Null: isNullId(certificateIdInt)},
+		CollectionId:        state.CollectionId,
+		FriendlyName:        state.FriendlyName,
+		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
 	}
 
 	// Set state
@@ -1513,7 +1163,7 @@ func (r resourceKeyfactorCertificate) ImportState(
 	tflog.Info(ctx, fmt.Sprintf("Certificate '%s' imported into state.", certificateId))
 }
 
-func (r resourceKeyfactorCertificate) CertLookupByRequestID(
+func (r resourceCommandCertificate) CertLookupByRequestID(
 	ctx context.Context,
 	requestID int,
 	collectionId int,
@@ -1535,7 +1185,7 @@ func (r resourceKeyfactorCertificate) CertLookupByRequestID(
 	return certResp, nil
 }
 
-func (r resourceKeyfactorCertificate) WaitForPendingCert(
+func (r resourceCommandCertificate) WaitForPendingCert(
 	ctx context.Context,
 	enrollResponse *api.EnrollResponseV2,
 	cn string,
@@ -1617,7 +1267,7 @@ func (r resourceKeyfactorCertificate) WaitForPendingCert(
 	)
 }
 
-func (r resourceKeyfactorCertificate) HandlePendingCert(
+func (r resourceCommandCertificate) HandlePendingCert(
 	ctx context.Context,
 	enrollResponse *api.EnrollResponseV2,
 	cn string,
@@ -1660,7 +1310,10 @@ func (r resourceKeyfactorCertificate) HandlePendingCert(
 				"Iterating through pending certificates from Keyfactor Command to check if certificate is still pending",
 			)
 			if len(pendingCertsResponse) > 0 || len(pendingExternalResponse) > 0 {
-				tflog.Debug(ctx, "Iterating through certificates pending internal validation from Keyfactor Command")
+				tflog.Debug(
+					ctx,
+					"Iterating through certificates pending internal validation from Keyfactor Command",
+				)
 				for _, cert := range pendingCertsResponse {
 					if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
 						tflog.Info(
@@ -1734,7 +1387,10 @@ func (r resourceKeyfactorCertificate) HandlePendingCert(
 				isPending = false
 			}
 			if !isPending {
-				tflog.Debug(ctx, "Iterating through certificates pending external validation from Keyfactor Command")
+				tflog.Debug(
+					ctx,
+					"Iterating through certificates pending external validation from Keyfactor Command",
+				)
 				for _, cert := range pendingExternalResponse {
 					if cert.Id == enrollResponse.CertificateInformation.KeyfactorRequestID {
 						tflog.Info(
@@ -1814,4 +1470,444 @@ func (r resourceKeyfactorCertificate) HandlePendingCert(
 		return nil, gErr
 	}
 	return certResponse, nil
+}
+
+func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *CommandCertificate) (
+	*CommandCertificate,
+	diag.Diagnostics,
+) {
+
+	var (
+		autoPassword   string
+		lookupPassword string
+		pKeyPEM        string
+		leafPEM        string
+		chainPEM       string
+	)
+
+	collectionId := plan.CollectionId.Value
+	collectionIdInt := int(collectionId)
+
+	tflog.Info(ctx, "Resource is PFX certificate enrollment.")
+	diags := diag.Diagnostics{}
+	if plan.KeyPassword.Value == "" {
+		tflog.Debug(ctx, "No password provided, generating random password.")
+
+		autoPassword = generatePassword(
+			PFXPasswordLength,
+			PFXPasswordSpecialChars,
+			PFXPasswordDigits,
+			PFXPasswordUpperCases,
+		)
+		lookupPassword = autoPassword
+	} else {
+		tflog.Debug(ctx, "Password provided, using provided password.")
+		lookupPassword = plan.KeyPassword.Value
+	}
+
+	useCNAsFriendlyName := true // Defaults to true for backwards compatability
+	if !plan.UseCNAsFriendlyName.Null {
+		useCNAsFriendlyName = plan.UseCNAsFriendlyName.Value
+	}
+
+	var friendlyName = plan.FriendlyName.Value
+	if friendlyName == "" && useCNAsFriendlyName {
+		friendlyName = plan.CommonName.Value
+	}
+
+	dnsSANs, ipSANs, uriSANs, dnsSANsDiags := r.parseSans(ctx, plan)
+	if dnsSANsDiags.HasError() {
+		diags.Append(dnsSANsDiags...)
+	}
+
+	metadata, metadataErr := r.parseMetadata(ctx, plan)
+	if metadataErr != nil {
+		diags.Append(metadataErr...)
+	}
+
+	tflog.Debug(ctx, "Creating API request.")
+	PFXArgs := &api.EnrollPFXFctArgsV2{
+		CustomFriendlyName:          friendlyName,
+		Password:                    lookupPassword,
+		PopulateMissingValuesFromAD: false, //TODO: Add support for this
+		CertificateAuthority:        plan.CertificateAuthority.Value,
+		Template:                    plan.CertificateTemplate.Value,
+		IncludeChain:                true,    //TODO: Add support for this
+		CertFormat:                  "STORE", // Get certificate from data source
+		SANs: &api.SANs{
+			IP4: ipSANs,
+			IP6: nil, //TODO: ipv6 SANs support
+			DNS: dnsSANs,
+			URI: uriSANs,
+		},
+		Metadata: metadata,
+		Subject: &api.CertificateSubject{
+			SubjectCommonName:         plan.CommonName.Value,
+			SubjectLocality:           escapeCommas(plan.Locality.Value),
+			SubjectOrganization:       escapeCommas(plan.Organization.Value),
+			SubjectCountry:            escapeCommas(plan.Country.Value),
+			SubjectOrganizationalUnit: escapeCommas(plan.OrganizationalUnit.Value),
+			SubjectState:              escapeCommas(plan.State.Value),
+		},
+	}
+	tflog.Debug(ctx, "API PFXArgs created.")
+
+	//convert PFX args to JSON string
+	tflog.Debug(ctx, "Converting PFXArgs to JSON.")
+	jsonData, err := json.Marshal(PFXArgs)
+	if err != nil {
+		tflog.Error(ctx, "Error converting PFXArgs to JSON.")
+		diags.AddError(
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+			"Could not convert PFXArgs to JSON: "+err.Error(),
+		)
+		return nil, diags
+	}
+	ctx = tflog.SetField(ctx, "pfx_args", string(jsonData))
+
+	tflog.Debug(ctx, fmt.Sprintf("PFXArgs: %s", string(jsonData)))
+	tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))
+	tflog.Debug(ctx, "Calling EnrollPFXV2.")
+	enrollResponse, err := r.p.client.EnrollPFXV2(PFXArgs)
+	if err != nil {
+		tflog.Error(ctx, "No response from Keyfactor Command after PFX enrollment.")
+		diags.AddError(
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+			fmt.Sprintf(
+				"Could not create certificate %s on Keyfactor: "+err.Error(),
+				PFXArgs.Subject.SubjectCommonName,
+			),
+		)
+		return nil, diags
+	}
+	enrolledId := enrollResponse.CertificateInformation.KeyfactorID
+	ctx = tflog.SetField(ctx, "enrolled_id", enrolledId)
+	enrolledThumbprint := enrollResponse.CertificateInformation.Thumbprint
+	ctx = tflog.SetField(ctx, "enrolled_thumbprint", enrolledThumbprint)
+	enrolledSerialNumber := enrollResponse.CertificateInformation.SerialNumber
+	ctx = tflog.SetField(ctx, "enrolled_serial_number", enrolledSerialNumber)
+	enrolledIssuerDN := enrollResponse.CertificateInformation.IssuerDN
+	ctx = tflog.SetField(ctx, "enrolled_issuer_dn", enrolledIssuerDN)
+	// check if request is pending approvals
+	if enrollResponse.CertificateInformation.RequestDisposition == "PENDING" {
+		// call HandlePendingCert
+		tflog.Debug(ctx, fmt.Sprintf("Certificate %s is pending approval.", PFXArgs.Subject.SubjectCommonName))
+		tflog.Debug(
+			ctx,
+			fmt.Sprintf("Calling HandlePendingCert for certificate %s.", PFXArgs.Subject.SubjectCommonName),
+		)
+		approvedCert, pErr := r.HandlePendingCert(
+			ctx,
+			enrollResponse,
+			PFXArgs.Subject.SubjectCommonName,
+			int(collectionId),
+		)
+		ERROR_PENDING_CERTS_PERMISSIONS := "does not have any of the required permissions: Alerts - Read"
+		if pErr != nil {
+			//check if error contains 401
+			if strings.Contains(pErr.Error(), "401") || strings.Contains(
+				pErr.Error(),
+				ERROR_PENDING_CERTS_PERMISSIONS,
+			) {
+				tflog.Warn(ctx, "Unauthorized to list pending certificate requests.")
+				waitResp, waitErr := r.WaitForPendingCert(
+					ctx,
+					enrollResponse,
+					plan.CommonName.Value,
+					int(collectionId),
+				)
+				if waitErr != nil {
+					tflog.Error(
+						ctx,
+						fmt.Sprintf("Error handling pending certificate %s.", PFXArgs.Subject.SubjectCommonName),
+					)
+					diags.AddError(
+						ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+						fmt.Sprintf(
+							"Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(),
+							PFXArgs.Subject.SubjectCommonName,
+						),
+					)
+					return nil, diags
+				}
+				approvedCert = waitResp
+			} else {
+				tflog.Error(
+					ctx,
+					fmt.Sprintf("Error handling pending certificate %s.", PFXArgs.Subject.SubjectCommonName),
+				)
+				diags.AddError(
+					ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+					fmt.Sprintf(
+						"Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(),
+						PFXArgs.Subject.SubjectCommonName,
+					),
+				)
+				return nil, diags
+			}
+		}
+		if approvedCert == nil {
+			tflog.Error(
+				ctx,
+				fmt.Sprintf("Certificate '%s' is pending approval.", PFXArgs.Subject.SubjectCommonName),
+			)
+			diags.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+				fmt.Sprintf(
+					"No response recieved on create certificate '%s' on Keyfactor Command: "+pErr.Error(),
+					PFXArgs.Subject.SubjectCommonName,
+				),
+			)
+			return nil, diags
+		}
+
+		enrolledId = approvedCert.Id
+		ctx = tflog.SetField(ctx, "enrolled_id", enrolledId)
+		enrolledThumbprint = approvedCert.Thumbprint
+		ctx = tflog.SetField(ctx, "enrolled_thumbprint", enrolledThumbprint)
+		enrolledSerialNumber = approvedCert.SerialNumber
+		ctx = tflog.SetField(ctx, "enrolled_serial_number", enrolledSerialNumber)
+		enrolledIssuerDN = approvedCert.IssuerDN
+		ctx = tflog.SetField(ctx, "enrolled_issuer_dn", enrolledIssuerDN)
+		tflog.Info(
+			ctx,
+			fmt.Sprintf(
+				"Certificate %s (%d) has been approved and created.",
+				PFXArgs.Subject.SubjectCommonName,
+				enrolledId,
+			),
+		)
+	}
+	// Recover private key
+	var (
+		uErr   error
+		pChain []string
+	)
+	pKeyPEM, leafPEM, pChain, uErr = unpackPkcs12(enrollResponse.CertificateInformation.PKCS12Blob, lookupPassword)
+	chainPEM = strings.Join(pChain, "\n")
+
+	if uErr != nil {
+		tflog.Error(ctx, "Error unpacking PKCS12 blob, attempting to recover private key.")
+		//attempt to recover private key
+		rErr := diag.Diagnostics{}
+		pKeyPEM, leafPEM, chainPEM, rErr = recoverPrivateKeyFromKeyfactorCommand(
+			ctx, enrolledId,
+			collectionIdInt, lookupPassword, r.p.client,
+		)
+		diags.Append(rErr...)
+		if diags.HasError() {
+			diags.AddError(
+				"Private key recovery failed.",
+				"Could not recover private key from Keyfactor Command: "+uErr.Error(),
+			)
+			return nil, diags
+		}
+	}
+
+	// Set state
+	tflog.Info(
+		ctx,
+		fmt.Sprintf("Setting state for certificate '%s'(%d).", PFXArgs.Subject.SubjectCommonName, enrolledId),
+	)
+	tflog.Debug(ctx, "Creating state object")
+	var result = CommandCertificate{
+		ID:                   types.String{Value: fmt.Sprintf("%v", enrolledId)},
+		CSR:                  plan.CSR,
+		CommonName:           plan.CommonName,
+		Organization:         plan.Organization,
+		OrganizationalUnit:   plan.OrganizationalUnit,
+		Locality:             plan.Locality,
+		State:                plan.State,
+		Country:              plan.Country,
+		DNSSANs:              plan.DNSSANs,
+		IPSANs:               plan.IPSANs,
+		URISANs:              plan.URISANs,
+		SerialNumber:         types.String{Value: enrolledSerialNumber},
+		IssuerDN:             types.String{Value: enrolledIssuerDN},
+		Thumbprint:           types.String{Value: enrolledThumbprint},
+		PEM:                  types.String{Value: leafPEM},
+		PEMCACert:            types.String{Value: chainPEM},
+		PEMChain:             types.String{Value: chainPEM},
+		PrivateKey:           types.String{Value: pKeyPEM},
+		KeyPassword:          plan.KeyPassword,
+		CertificateAuthority: plan.CertificateAuthority,
+		CertificateTemplate:  plan.CertificateTemplate,
+		CertificateId:        types.Int64{Value: int64(enrolledId)},
+		RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
+		Metadata:             plan.Metadata,
+		CollectionId:         plan.CollectionId,
+		FriendlyName:         plan.FriendlyName,
+		UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
+	}
+
+	return &result, diags
+}
+
+func (r resourceCommandCertificate) parseSans(ctx context.Context, plan *CommandCertificate) (
+	[]string, []string,
+	[]string, diag.Diagnostics,
+) {
+	var dnsSANs []string
+	var ipSANs []string
+	var uriSANs []string
+	diags := diag.Diagnostics{}
+
+	tflog.Debug(ctx, fmt.Sprintf("Parsing DNS SANs: %s", plan.DNSSANs))
+	diags = plan.DNSSANs.ElementsAs(ctx, &dnsSANs, true)
+	tflog.Debug(ctx, fmt.Sprintf("Parsing IP SANs: %s", plan.IPSANs))
+	diags = plan.IPSANs.ElementsAs(ctx, &ipSANs, true)
+	tflog.Debug(ctx, fmt.Sprintf("Parsing URI SANs: %s", plan.URISANs))
+	diags = plan.URISANs.ElementsAs(ctx, &uriSANs, true)
+
+	return dnsSANs, ipSANs, uriSANs, diags
+}
+
+func (r resourceCommandCertificate) parseMetadata(
+	ctx context.Context,
+	plan *CommandCertificate,
+) (map[string]interface{}, diag.Diagnostics) {
+	// iterate over metadata map and convert to map[string]interface{}
+	tflog.Debug(ctx, fmt.Sprintf("Parsing metadata: %s", plan.Metadata))
+	metaDataElms := plan.Metadata.Elems
+	metadata := make(map[string]interface{})
+	for k, elm := range metaDataElms {
+		metadata[k] = strings.Replace(elm.String(), "\"", "", -1)
+	}
+	return metadata, nil
+}
+
+func (r resourceCommandCertificate) enrollCSR(
+	ctx context.Context, csr string,
+	plan *CommandCertificate,
+) (
+	*CommandCertificate,
+	diag.Diagnostics,
+) {
+	//ensure that conflicting values are not set
+	diags := diag.Diagnostics{}
+	if plan.CommonName.Value != "" || plan.Organization.Value != "" || plan.OrganizationalUnit.Value != "" || plan.Locality.Value != "" || plan.State.Value != "" || plan.Country.Value != "" || plan.PrivateKey.Value != "" || plan.KeyPassword.Value != "" {
+		diags.AddError(
+			ERR_SUMMARY_INVALID_CERTIFICATE_RESOURCE,
+			"You cannot set the private_key, password, common_name, organization, organizational_unit, locality, state, or country when using a CSR.",
+		)
+		return nil, diags
+	}
+
+	tflog.Debug(ctx, "Calling parseSans()")
+	dnsSANs, ipSANs, uriSANs, dnsSANsDiags := r.parseSans(ctx, plan)
+	if dnsSANsDiags.HasError() {
+		diags.Append(dnsSANsDiags...)
+	}
+
+	metadata, metadataDiags := r.parseMetadata(ctx, plan)
+	if metadataDiags.HasError() {
+		diags.Append(metadataDiags...)
+	}
+
+	tflog.Debug(ctx, "Creating certificate from CSR.")
+	CSRArgs := &api.EnrollCSRFctArgs{
+		CSR:                  csr,
+		CertificateAuthority: plan.CertificateAuthority.Value,
+		Template:             plan.CertificateTemplate.Value,
+		IncludeChain:         true,
+		CertFormat:           "PEM", // Retrieve certificate in READ
+		SANs: &api.SANs{
+			IP4: ipSANs,
+			IP6: nil, //TODO: ipv6 SANs support
+			DNS: dnsSANs,
+			URI: uriSANs,
+		},
+		Metadata: metadata,
+	}
+	tflog.Trace(
+		ctx, "Passing args to Keyfactor API.", map[string]interface{}{
+			"args": CSRArgs,
+		},
+	)
+	enrollResponse, err := r.p.client.EnrollCSR(CSRArgs)
+	if err != nil {
+		diags.AddError(
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+			"Could not create certificate in Keyfactor: "+err.Error(),
+		)
+		return nil, diags
+	}
+
+	//Collection
+
+	// iterate through CertificateInformation.Certificates and concatenate
+	var (
+		fullChain string
+		caCert    string
+		leaf      string
+	)
+
+	for i, cert := range enrollResponse.CertificateInformation.Certificates {
+		// split by \r\n and remove first line if '#' is present
+		if strings.Contains(cert, "#") {
+			cert = strings.Join(strings.Split(cert, "\r\n")[1:], "\r\n")
+		}
+
+		fullChain += cert
+		if i > 0 { //caCert returns full chain minus leaf
+			caCert += cert
+		} else {
+			// split by \r\n and remove first line
+
+			leaf = cert
+		}
+	}
+
+	//fetch certificate from Keyfactor
+	//leaf, chain, _, dErr := downloadCertificate(
+	//	enrollResponse.CertificateInformation.KeyfactorID,
+	//	int(collectionId),
+	//	r.p.client,
+	//	autoPassword,
+	//	csr != "",
+	//)
+	//if dErr != nil {
+	//	response.Diagnostics.AddError(
+	//		ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+	//		fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
+	//	)
+	//	return
+	//}
+
+	// Set state
+	var result = CommandCertificate{
+		ID: types.String{
+			Value: fmt.Sprintf(
+				"%v",
+				enrollResponse.CertificateInformation.KeyfactorID,
+			),
+		},
+		CSR:                  types.String{Value: csr},
+		CommonName:           plan.CommonName,
+		Organization:         plan.Organization,
+		OrganizationalUnit:   plan.OrganizationalUnit,
+		Locality:             plan.Locality,
+		State:                plan.State,
+		Country:              plan.Country,
+		DNSSANs:              plan.DNSSANs,
+		IPSANs:               plan.IPSANs,
+		URISANs:              plan.URISANs,
+		SerialNumber:         types.String{Value: enrollResponse.CertificateInformation.SerialNumber},
+		IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
+		Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
+		PEM:                  types.String{Value: leaf},
+		PEMCACert:            types.String{Value: caCert},
+		PEMChain:             types.String{Value: fullChain},
+		PrivateKey:           types.String{Value: plan.PrivateKey.Value, Null: true},
+		KeyPassword:          types.String{Value: plan.KeyPassword.Value, Null: true},
+		CertificateAuthority: plan.CertificateAuthority,
+		CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
+		CertificateTemplate:  plan.CertificateTemplate,
+		Metadata:             plan.Metadata,
+		CollectionId:         plan.CollectionId,
+		FriendlyName:         plan.FriendlyName,
+		UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
+	}
+
+	return &result, diags
 }

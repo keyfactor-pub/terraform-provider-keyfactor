@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strconv"
+	"strings"
+
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"log"
-	"strconv"
-	"strings"
 )
 
 type resourceCertificateStoreType struct{}
@@ -149,6 +150,8 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				Description: "Indicates whether the certificate store host requires SSL. In Keyfactor Command this is the 'ServerUseSsl' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
 			},
 		},
+		Description: "Used to manage Keyfactor Command certificate stores using the `/CertificateStores` API, which " +
+			"can be used with `keyfactor_certificate_deployment` resources.",
 	}, nil
 }
 

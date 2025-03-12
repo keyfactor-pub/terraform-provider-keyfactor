@@ -23,6 +23,17 @@ resource "keyfactor_certificate" "pkcs12_enrollment" {
     "Email-Contact" = "kfadmin@keyfactor.com"
     "Owner"         = "integrations@keyfactor.com"
   }
+
+  friendly_name = "friend"
+  collection_id = 6
+
+  expiry_warn_days = 90
+
+  renewal_config = {
+    renew_days      = 30
+    revoke_on_renew = true
+    force_renewal   = false
+  }
 }
 
 ## CSR Enrollment
@@ -59,5 +70,15 @@ resource "keyfactor_certificate" "kf_csr_cert" {
   metadata = {
     "Email-Contact" = "my_username@mydomain.com"
     # Note: metadata keys must be defined in Keyfactor and cannot just be arbitrarily added
+  }
+
+  collection_id = 2
+
+  expiry_warn_days = 90
+
+  renewal_config = {
+    renew_days      = 30
+    revoke_on_renew = true
+    force_renewal   = false
   }
 }

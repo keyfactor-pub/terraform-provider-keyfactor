@@ -1,3 +1,17 @@
+# v2.4.0
+
+### Certificates
+
+#### Fixes
+
+* fix(certificates): Fix `inconsistent state` error on updates by including expiry and renewal params.
+
+### Certificate Deployments
+
+#### Features
+* feat(deployments): Add support `overwrite` flag. *NOTE*: As of Keyfactor Command v12.0 if `overwrite=true` then the API will check if the certificate alias exists before scheduling a job.
+* feat(deployments): Add support for `redeploy` flag. Which will force a certificate to be `undeployed` and then `redeployed`.
+
 # v2.3.0
 
 ### Certificates

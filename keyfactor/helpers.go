@@ -33,6 +33,7 @@ import (
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/spbsoluble/go-pkcs12"
@@ -1432,4 +1433,32 @@ func parseLeafCert(ctx context.Context, leafPEM string) (*x509.Certificate, diag
 		return nil, diags
 	}
 	return leaf, diags
+}
+
+func forceIfTrue(ctx context.Context, state attr.Value, config attr.Value, path path.Path) (bool, diag.Diagnostics) {
+	diags := diag.Diagnostics{}
+
+	planVal, err := config.ToTerraformValue(ctx)
+	if err != nil {
+		diags.AddError(
+			"Value conversion error",
+			"Unable to convert value to bool",
+		)
+	}
+
+	var forceRenewal bool
+	convErr := planVal.As(&forceRenewal)
+	if convErr != nil {
+		diags.AddError(
+			"Value conversion error",
+			"Unable to convert value to bool",
+		)
+		return false, diags
+	}
+
+	if forceRenewal {
+		return true, diags
+	}
+
+	return false, diags
 }

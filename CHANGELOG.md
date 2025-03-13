@@ -12,6 +12,10 @@
 * feat(deployments): Add support `overwrite` flag. *NOTE*: As of Keyfactor Command v12.0 if `overwrite=true` then the API will check if the certificate alias exists before scheduling a job.
 * feat(deployments): Add support for `redeploy` flag. Which will force a certificate to be `undeployed` and then `redeployed`.
 
+### Roles
+* chore(docs): Add deprecation notice to `keyfactor_role` resources to be replaced with `keyfactor_security_role` resource.
+* chore(docs): Add deprecation notice to `keyfactor_identity` resource to be replaced with `keyfactor_security_claim` resource.
+
 # v2.3.0
 
 ### Certificates

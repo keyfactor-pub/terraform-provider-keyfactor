@@ -5,6 +5,7 @@
 #### Fixes
 
 * fix(certificates): Fix `inconsistent state` error on updates by including expiry and renewal params.
+* fix(certificates): Remove comma escaping logic for enrollment subject parameters.
 
 ### Certificate Deployments
 

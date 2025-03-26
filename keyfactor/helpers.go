@@ -1259,9 +1259,10 @@ func parseSubjectToTfState(cert x509.Certificate) (
 	return
 }
 
-func escapeCommas(input string) string {
-	return strings.ReplaceAll(input, ",", "\\,")
-}
+//func escapeCommas(input string) string {
+//	//return strings.ReplaceAll(input, ",", `\,`)
+//	return input
+//}
 
 // parseX509Subject parses an X.509 certificate subject string into a map of attributes,
 // handling escaped commas within values correctly.

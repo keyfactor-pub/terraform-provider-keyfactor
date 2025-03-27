@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v3"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -25,6 +26,7 @@ func New() tfsdk.Provider {
 type provider struct {
 	configured bool
 	client     *api.Client
+	sdkClient  *keyfactor.APIClient
 }
 
 const (
@@ -559,8 +561,31 @@ func (p *provider) Configure(
 		}
 		connected = true
 		p.client = c
+		continue
+	}
+
+	connected = false
+	connectionRetries = 0
+	for !connected && connectionRetries < 5 {
+		c, err := keyfactor.NewAPIClient(serverConfig)
+
+		if err != nil {
+			if connectionRetries == 4 {
+				resp.Diagnostics.AddError(
+					"Client error.",
+					"Unable to create client connection to Keyfactor Command (SDK client):\n\n"+err.Error(),
+				)
+				return
+			}
+			connectionRetries++
+			// Sleep for 5 seconds before retrying
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		connected = true
+		p.sdkClient = c
 		p.configured = true
-		return
+		continue
 	}
 }
 
@@ -571,6 +596,7 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 		"keyfactor_certificate":            resourceCommandCertificateType{},
 		"keyfactor_certificate_store":      resourceCertificateStoreType{},
 		"keyfactor_certificate_deployment": resourceCommandCertificateDeploymentType{},
+		"keyfactor_oauth_security_claim":   resourceOAuthSecurityClaimType{},
 		"keyfactor_role":                   resourceSecurityRoleType{},
 		"keyfactor_template_role_binding":  resourceCertificateTemplateRoleBindingType{},
 	}, nil
@@ -583,6 +609,7 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 		"keyfactor_certificate":          dataSourceCertificateType{},
 		"keyfactor_certificate_store":    dataSourceCertificateStoreType{},
 		"keyfactor_certificate_template": dataSourceCertificateTemplateType{},
+		"keyfactor_oauth_security_claim": dataSourceOAuthSecurityClaimType{},
 		"keyfactor_role":                 dataSourceSecurityRoleType{},
 		"keyfactor_identity":             dataSourceSecurityIdentityType{},
 	}, nil

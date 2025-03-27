@@ -23,7 +23,7 @@ func (r dataSourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sc
 			},
 			"description": {
 				Type:        types.StringType,
-				Required:    true,
+				Computed:    true,
 				Description: "A string containing the description of the OAuth security claim in Keyfactor",
 			},
 			"claim_type": {
@@ -53,7 +53,7 @@ func (r dataSourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sc
 }
 
 func (r dataSourceOAuthSecurityClaimType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	return dataSourceSecurityRole{
+	return dataSourceOauthSecurityClaim{
 		p: *(p.(*provider)),
 	}, nil
 }
@@ -63,14 +63,20 @@ type dataSourceOauthSecurityClaim struct {
 }
 
 func (r dataSourceOauthSecurityClaim) GetSecurityClaimByTypeAndValueAndScheme(ctx context.Context, claimType string, claimValue string, authenticationScheme string) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting security claim from remote source. ClaimType: %s, ClaimValue: %s, AuthenticationScheme: %s", claimType, claimValue, authenticationScheme))
+
 	claimTypeEnum, err := kfv1.ParseCSSCMSCoreEnumsClaimType(claimType)
 	if err != nil {
 		return nil, err
 	}
+
+	tflog.Debug(ctx, fmt.Sprintf("Claim type %s has been parsed to %d", claimType, *claimTypeEnum))
+
 	api := r.p.sdkClient.V1.SecurityClaimsApi
 	req := api.
 		GetSecurityClaims(ctx).
-		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\")) and ClaimType -eq %d", claimValue, claimTypeEnum))
+		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\")) and ClaimType -eq %d", claimValue, *claimTypeEnum))
+
 	response, _, err := api.GetSecurityClaimsExecute(req)
 
 	if err != nil {
@@ -101,7 +107,7 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	tflog.Info(ctx, "Read called on security remoteState resource")
 	var state OAuthSecurityClaim
 
-	tflog.Info(ctx, "Read called on OAuth security claim.")
+	tflog.Info(ctx, "Read called on OAuth security claim data source.")
 	diags := request.Config.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -112,17 +118,15 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	claimValue := state.ClaimValue.Value
 	authenticationScheme := state.ProviderAuthenticationScheme.Value
 	tflog.SetField(ctx, "claim_type", claimType)
-	tflog.SetField(ctx, "claim_value", claimValue)
-	tflog.SetField(ctx, "authentication_scheme", authenticationScheme)
 
 	remoteState, err := r.GetSecurityClaimByTypeAndValueAndScheme(ctx, claimType, claimValue, authenticationScheme)
 	if remoteState == nil {
-		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unable to find OAuth security claim '%s' with claimType '%s' on Keyfactor. Read failed. ", claimValue, claimType))
+		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unable to find OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme))
 		return
 	}
 
 	if err != nil {
-		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unknown error while trying to import OAuth security claim '%s' with claimType '%s' on Keyfactor. Read failed. "+err.Error(), claimValue, claimType))
+		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unknown error while trying to import OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. "+err.Error(), claimValue, claimType, authenticationScheme))
 		return
 	}
 
@@ -144,4 +148,6 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	if response.Diagnostics.HasError() {
 		return
 	}
+
+	tflog.Debug(ctx, "OAuth security claim data source read successfully.")
 }

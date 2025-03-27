@@ -128,6 +128,8 @@ func (r resourceOAuthSecurityClaim) Read(
 	if response.Diagnostics.HasError() {
 		return
 	}
+
+	tflog.Debug(ctx, "OAuth security claim read successfully.")
 }
 
 func (r resourceOAuthSecurityClaim) Update(
@@ -135,74 +137,63 @@ func (r resourceOAuthSecurityClaim) Update(
 	request tfsdk.UpdateResourceRequest,
 	response *tfsdk.UpdateResourceResponse,
 ) {
-	// // Get plan values
-	// var plan OAuthSecurityClaim
-	// diags := request.Plan.Get(ctx, &plan)
-	// response.Diagnostics.Append(diags...)
-	// if response.Diagnostics.HasError() {
-	// 	return
-	// }
-
 	tflog.Info(ctx, "Update called on OAuth security claim resource")
 
-	// // Get current state
-	// var state OAuthSecurityClaim
-	// diags = request.State.Get(ctx, &state)
-	// response.Diagnostics.Append(diags...)
-	// if response.Diagnostics.HasError() {
-	// 	return
-	// }
+	// Get plan values
+	var plan OAuthSecurityClaim
+	diags := request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 
-	// roleId := state.ID.Value
-	// tflog.SetField(ctx, "id", roleId)
+	// Get current state
+	var state OAuthSecurityClaim
+	diags = request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 
-	// // Generate API request body from plan
+	claimIdValue := state.ID.Value
+	claimId := int32(claimIdValue)
+	tflog.SetField(ctx, "claim_id", claimId)
 
-	// var permissions []string
-	// plan.Permissions.ElementsAs(ctx, &permissions, false)
-	// //Update role identities
-	// updateArg := &api.UpdateSecurityRoleArg{
-	// 	Id: int(roleId),
-	// 	CreateSecurityRoleArg: api.CreateSecurityRoleArg{
-	// 		Name:        plan.Name.Value,
-	// 		Description: plan.Description.Value,
-	// 		Permissions: &permissions,
-	// 	},
-	// }
+	// Generate API request
+	api := r.p.sdkClient.V1.SecurityClaimsApi
+	req := api.UpdateSecurityClaims(ctx).SecurityRoleClaimDefinitionsRoleClaimDefinitionUpdateRequest(v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionUpdateRequest{
+		Id:          claimId,
+		Description: plan.Description.Value,
+	})
 
-	// remoteState, err := r.p.client.UpdateSecurityRole(updateArg)
-	// if err != nil {
-	// 	response.Diagnostics.AddError(
-	// 		"Identity role update error.",
-	// 		fmt.Sprintf("Error updating identity role '%s': "+err.Error(), plan.Name.Value),
-	// 	)
-	// 	return
-	// }
+	// Execute API request
+	remoteState, _, err := api.UpdateSecurityClaimsExecute(req)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error updating security identity.",
+			"Could not update identity "+plan.ClaimValue.Value+", unexpected error: "+err.Error(),
+		)
+		return
+	}
 
-	// var permissionValues []attr.Value
-	// sort.Strings(*remoteState.Permissions)
-	// for _, perm := range *remoteState.Permissions {
-	// 	tflog.Info(ctx, "Permission: "+perm)
-	// 	permissionValues = append(
-	// 		permissionValues, types.String{
-	// 			Value: perm,
-	// 		},
-	// 	)
-	// }
+	provider := *remoteState.Provider
 
-	// var result = SecurityRole{
-	// 	ID:          types.Int64{Value: int64(state.ID.Value)},
-	// 	Name:        types.String{Value: remoteState.Name},
-	// 	Description: types.String{Value: remoteState.Description},
-	// 	Permissions: types.List{ElemType: types.StringType, Elems: permissionValues},
-	// }
+	var result = OAuthSecurityClaim{
+		ID:                           types.Int64{Value: int64(*remoteState.Id)},
+		Description:                  types.String{Value: *remoteState.Description.Get()},
+		ClaimType:                    types.String{Value: *remoteState.ClaimType.Get()},
+		ClaimValue:                   types.String{Value: *remoteState.ClaimValue.Get()},
+		ProviderAuthenticationScheme: types.String{Value: *provider.AuthenticationScheme.Get()},
+		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
+	}
 
-	// // Set state
-	// diags = response.State.Set(ctx, result)
-	// response.Diagnostics.Append(diags...)
-	// if response.Diagnostics.HasError() {
-	// 	return
-	// }
+	diags = response.State.Set(ctx, result)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	tflog.Debug(ctx, "OAuth security claim updated successfully.")
 }
 
 func (r resourceOAuthSecurityClaim) Delete(
@@ -211,30 +202,45 @@ func (r resourceOAuthSecurityClaim) Delete(
 	response *tfsdk.DeleteResourceResponse,
 ) {
 	tflog.Info(ctx, "Delete called on OAuth security claim resource")
-	// var state SecurityRole
-	// diags := request.State.Get(ctx, &state)
-	// kfClient := r.p.client
+	var state OAuthSecurityClaim
+	diags := request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 
-	// response.Diagnostics.Append(diags...)
-	// if response.Diagnostics.HasError() {
-	// 	return
-	// }
+	// Get order ID from state
+	claimIdValue := state.ID.Value
+	claimId := int32(claimIdValue)
+	tflog.SetField(ctx, "claim_id", claimId)
 
-	// // Get order ID from state
-	// identityId := state.ID.Value
+	tflog.Debug(ctx, fmt.Sprintf("Deleting OAuth security claim ID %d...", claimId))
 
-	// // Delete order by calling API
-	// err := kfClient.DeleteSecurityRole(int(identityId))
-	// if err != nil {
-	// 	response.Diagnostics.AddError(
-	// 		ERR_SUMMARY_IDENTITY_DELETE,
-	// 		"Could not delete "+state.Name.Value+" from Keyfactor Command: "+err.Error(),
-	// 	)
-	// 	return
-	// }
+	api := r.p.sdkClient.V1.SecurityClaimsApi
+	req := api.DeleteSecurityClaimsById(ctx, claimId)
 
-	// // Remove resource from state
-	// response.State.RemoveResource(ctx)
+	httpResp, err := api.DeleteSecurityClaimsByIdExecute(req)
+
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error deleting security identity.",
+			"Could not delete identity "+state.ClaimValue.Value+", unexpected error: "+err.Error(),
+		)
+		return
+	}
+
+	if httpResp.StatusCode != 204 {
+		response.Diagnostics.AddError(
+			"Error deleting security identity.",
+			"Could not delete identity "+state.ClaimValue.Value+", unexpected status code: "+httpResp.Status,
+		)
+		return
+	}
+
+	tflog.Debug(ctx, "OAuth security claim deleted successfully.")
+
+	// Remove resource from state
+	response.State.RemoveResource(ctx)
 
 }
 
@@ -312,6 +318,8 @@ func (r resourceOAuthSecurityClaim) Create(
 	if response.Diagnostics.HasError() {
 		return
 	}
+
+	tflog.Debug(ctx, "OAuth security claim created successfully.")
 }
 
 func (r resourceOAuthSecurityClaim) ImportState(
@@ -374,4 +382,6 @@ func (r resourceOAuthSecurityClaim) ImportState(
 	if response.Diagnostics.HasError() {
 		return
 	}
+
+	tflog.Debug(ctx, "OAuth security claim state imported successfully.")
 }

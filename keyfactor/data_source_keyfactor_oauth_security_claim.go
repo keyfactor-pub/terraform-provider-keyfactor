@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v3/api/keyfactor/v1"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -127,19 +126,14 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 		return
 	}
 
+	provider := *remoteState.Provider
+
 	var result = OAuthSecurityClaim{
 		ID:          types.Int64{Value: int64(*remoteState.Id)},
 		Description: types.String{Value: *remoteState.Description.Get()},
 		ClaimType:   types.String{Value: *remoteState.ClaimType.Get()},
 		ClaimValue:  types.String{Value: *remoteState.ClaimValue.Get()},
-		Provider: types.Object{
-			Attrs: map[string]attr.Value{
-				"id":                    types.String{Value: *remoteState.Provider.Id},
-				"authentication_scheme": types.String{Value: *remoteState.Provider.AuthenticationScheme.Get()},
-				"display_name":          types.String{Value: *remoteState.Provider.DisplayName.Get()},
-			},
-			AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
-		},
+		Provider:    mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
 	}
 
 	diags = response.State.Set(ctx, result)

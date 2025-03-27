@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -110,20 +109,15 @@ func (r resourceOAuthSecurityClaim) Read(
 		return
 	}
 
+	provider := *remoteState.Provider
+
 	var result = OAuthSecurityClaim{
 		ID:                           types.Int64{Value: int64(*remoteState.Id)},
 		Description:                  types.String{Value: *remoteState.Description.Get()},
 		ClaimType:                    types.String{Value: *remoteState.ClaimType.Get()},
 		ClaimValue:                   types.String{Value: *remoteState.ClaimValue.Get()},
 		ProviderAuthenticationScheme: types.String{Value: *remoteState.Provider.AuthenticationScheme.Get()},
-		Provider: types.Object{
-			Attrs: map[string]attr.Value{
-				"id":                    types.String{Value: *remoteState.Provider.Id},
-				"authentication_scheme": types.String{Value: *remoteState.Provider.AuthenticationScheme.Get()},
-				"display_name":          types.String{Value: *remoteState.Provider.DisplayName.Get()},
-			},
-			AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
-		},
+		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -302,20 +296,15 @@ func (r resourceOAuthSecurityClaim) Create(
 
 	tflog.Debug(ctx, fmt.Sprintf("Successfully created OAuth security claim. Claim ID: %d", *createResponse.Id))
 
+	provider := *createResponse.Provider
+
 	var result = OAuthSecurityClaim{
 		ID:                           types.Int64{Value: int64(*createResponse.Id)},
 		Description:                  types.String{Value: *createResponse.Description.Get()},
 		ClaimType:                    types.String{Value: *createResponse.ClaimType.Get()},
 		ClaimValue:                   types.String{Value: *createResponse.ClaimValue.Get()},
 		ProviderAuthenticationScheme: types.String{Value: *createResponse.Provider.AuthenticationScheme.Get()},
-		Provider: types.Object{
-			Attrs: map[string]attr.Value{
-				"id":                    types.String{Value: *createResponse.Provider.Id},
-				"authentication_scheme": types.String{Value: *createResponse.Provider.AuthenticationScheme.Get()},
-				"display_name":          types.String{Value: *createResponse.Provider.DisplayName.Get()},
-			},
-			AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
-		},
+		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -366,13 +355,15 @@ func (r resourceOAuthSecurityClaim) ImportState(
 		return
 	}
 
+	provider := *remoteState.Provider
+
 	var result = OAuthSecurityClaim{
 		ID:                           types.Int64{Value: int64(*remoteState.Id)},
 		Description:                  types.String{Value: *remoteState.Description.Get()},
 		ClaimType:                    types.String{Value: *remoteState.ClaimType.Get()},
 		ClaimValue:                   types.String{Value: *remoteState.ClaimValue.Get()},
 		ProviderAuthenticationScheme: types.String{Value: *remoteState.Provider.AuthenticationScheme.Get()},
-		// Provider: &OAuthSecurityClaimAuthenticationProvider{
+		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
 	}
 
 	diags := response.State.Set(ctx, result)

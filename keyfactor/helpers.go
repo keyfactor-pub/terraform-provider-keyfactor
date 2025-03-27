@@ -221,6 +221,17 @@ func flattenMetadata(metadata interface{}) types.Map {
 	return result
 }
 
+func mapAuthenticationProviderType(id string, authScheme string, displayName string) types.Object {
+	return types.Object{
+		Attrs: map[string]attr.Value{
+			"id":                    types.String{Value: id},
+			"authentication_scheme": types.String{Value: authScheme},
+			"display_name":          types.String{Value: displayName},
+		},
+		AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
+	}
+}
+
 // DNSSANStoTerraform converts a slice of DNS SANs (Subject Alternative Names) into a Terraform-compatible
 // `types.List`. The function can either allow duplicates or ensure unique entries based on the
 // `allowDuplicates` parameter.

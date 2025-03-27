@@ -48,12 +48,6 @@ var OAuthSecurityClaimAuthenticationProviderType = map[string]attr.Type{
 	"display_name":          types.StringType,
 }
 
-// type OAuthSecurityClaimAuthenticationProvider struct {
-// 	ID                   types.String `tfsdk:"id"`
-// 	AuthenticationScheme types.String `tfsdk:"authentication_scheme"`
-// 	DisplayName          types.String `tfsdk:"display_name"`
-// }
-
 // OAuthSecurityClaim represents an OAuth security claim in Keyfactor.
 type OAuthSecurityClaim struct {
 	ID                           types.Int64  `tfsdk:"id"`                             // Unique ID of the OAuth security claim.

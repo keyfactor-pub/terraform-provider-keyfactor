@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -43,29 +44,13 @@ func (r resourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sche
 				Required:    true,
 				Description: "The identity provider associated with the OAuth security claim. Used only for resource creation. Not returned by the API.",
 			},
-			// "provider": {
-			// 	Attributes: tfsdk.SingleNestedAttributes(
-			// 		map[string]tfsdk.Attribute{
-			// 			"id": {
-			// 				Type:        types.StringType,
-			// 				Description: "Internal ID of the authentication provider",
-			// 				Computed:    true,
-			// 			},
-			// 			"authentication_scheme": {
-			// 				Type:        types.StringType,
-			// 				Description: "The authentication scheme used by the provider",
-			// 				Computed:    true,
-			// 			},
-			// 			"display_name": {
-			// 				Type:        types.StringType,
-			// 				Description: "The display name of the provider",
-			// 				Computed:    true,
-			// 			},
-			// 		},
-			// 	),
-			// 	Computed:    true,
-			// 	Description: "An object containing the provider of the OAuth security claim in Keyfactor",
-			// },
+			"provider": {
+				Type: types.ObjectType{
+					AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
+				},
+				Computed:    true,
+				Description: "An object containing the provider of the OAuth security claim in Keyfactor",
+			},
 		},
 		Description: "An OAuth security claim in Keyfactor Command",
 	}, nil
@@ -88,7 +73,6 @@ func (r resourceOAuthSecurityClaim) Read(
 	response *tfsdk.ReadResourceResponse,
 ) {
 	tflog.Info(ctx, "Read called on OAuth security claim resource")
-	// NOOP
 
 	var state OAuthSecurityClaim
 	diags := request.State.Get(ctx, &state)
@@ -132,7 +116,14 @@ func (r resourceOAuthSecurityClaim) Read(
 		ClaimType:                    types.String{Value: *remoteState.ClaimType.Get()},
 		ClaimValue:                   types.String{Value: *remoteState.ClaimValue.Get()},
 		ProviderAuthenticationScheme: types.String{Value: *remoteState.Provider.AuthenticationScheme.Get()},
-		// Provider: &OAuthSecurityClaimAuthenticationProvider{
+		Provider: types.Object{
+			Attrs: map[string]attr.Value{
+				"id":                    types.String{Value: *remoteState.Provider.Id},
+				"authentication_scheme": types.String{Value: *remoteState.Provider.AuthenticationScheme.Get()},
+				"display_name":          types.String{Value: *remoteState.Provider.DisplayName.Get()},
+			},
+			AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
+		},
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -317,11 +308,14 @@ func (r resourceOAuthSecurityClaim) Create(
 		ClaimType:                    types.String{Value: *createResponse.ClaimType.Get()},
 		ClaimValue:                   types.String{Value: *createResponse.ClaimValue.Get()},
 		ProviderAuthenticationScheme: types.String{Value: *createResponse.Provider.AuthenticationScheme.Get()},
-		// Provider: &OAuthSecurityClaimAuthenticationProvider{
-		// 	ID:                   types.String{Value: *createResponse.Provider.Id},
-		// 	AuthenticationScheme: types.String{Value: *createResponse.Provider.AuthenticationScheme.Get()},
-		// 	DisplayName:          types.String{Value: *createResponse.Provider.DisplayName.Get()},
-		// },
+		Provider: types.Object{
+			Attrs: map[string]attr.Value{
+				"id":                    types.String{Value: *createResponse.Provider.Id},
+				"authentication_scheme": types.String{Value: *createResponse.Provider.AuthenticationScheme.Get()},
+				"display_name":          types.String{Value: *createResponse.Provider.DisplayName.Get()},
+			},
+			AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
+		},
 	}
 
 	diags = response.State.Set(ctx, result)

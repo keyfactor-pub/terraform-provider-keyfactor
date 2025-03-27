@@ -1,6 +1,7 @@
 package keyfactor
 
 import (
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -41,19 +42,25 @@ type SecurityRole struct {
 	Permissions types.List   `tfsdk:"permissions"` // List of permissions assigned to the role.
 }
 
-type OAuthSecurityClaimAuthenticationProvider struct {
-	ID                   types.String `tfsdk:"id"`
-	AuthenticationScheme types.String `tfsdk:"authentication_scheme"`
-	DisplayName          types.String `tfsdk:"display_name"`
+var OAuthSecurityClaimAuthenticationProviderType = map[string]attr.Type{
+	"id":                    types.StringType,
+	"authentication_scheme": types.StringType,
+	"display_name":          types.StringType,
 }
+
+// type OAuthSecurityClaimAuthenticationProvider struct {
+// 	ID                   types.String `tfsdk:"id"`
+// 	AuthenticationScheme types.String `tfsdk:"authentication_scheme"`
+// 	DisplayName          types.String `tfsdk:"display_name"`
+// }
 
 // OAuthSecurityClaim represents an OAuth security claim in Keyfactor.
 type OAuthSecurityClaim struct {
-	ID          types.Int64  `tfsdk:"id"`          // Unique ID of the OAuth security claim.
-	Description types.String `tfsdk:"description"` // Description of the OAuth security claim.
-	ClaimType   types.String `tfsdk:"claim_type"`  // Type of the OAuth security claim.
-	ClaimValue  types.String `tfsdk:"claim_value"` // Value of the OAuth security claim.
-	// Provider                     *OAuthSecurityClaimAuthenticationProvider `tfsdk:"provider"`                       // Authentication Provider of the OAuth security claim.
+	ID                           types.Int64  `tfsdk:"id"`                             // Unique ID of the OAuth security claim.
+	Description                  types.String `tfsdk:"description"`                    // Description of the OAuth security claim.
+	ClaimType                    types.String `tfsdk:"claim_type"`                     // Type of the OAuth security claim.
+	ClaimValue                   types.String `tfsdk:"claim_value"`                    // Value of the OAuth security claim.
+	Provider                     types.Object `tfsdk:"provider"`                       // Authentication Provider of the OAuth security claim.
 	ProviderAuthenticationScheme types.String `tfsdk:"provider_authentication_scheme"` // Authentication Provider of the OAuth security claim.
 }
 

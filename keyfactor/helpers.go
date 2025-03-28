@@ -30,6 +30,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v3"
+	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v3/api/keyfactor/v1"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -1472,4 +1474,48 @@ func forceIfTrue(ctx context.Context, state attr.Value, config attr.Value, path 
 	}
 
 	return false, diags
+}
+
+// The v1 APIClient exposes a method to query security claims by type and value. To retrieve a unique security claim from Command
+// it is required to also find a claim with the matching authentication scheme, which is not queryable via the QueryString parameter. That must be done as a separate
+// operation from the API call. This function will query the security claims by type and value, then filter the results by the authentication scheme to return a unique claim if it exists.
+func GetSecurityClaimByTypeAndValueAndScheme(ctx context.Context, apiClient *keyfactor.APIClient, claimType string, claimValue string, authenticationScheme string) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting security claim from remote source. ClaimType: %s, ClaimValue: %s, AuthenticationScheme: %s", claimType, claimValue, authenticationScheme))
+
+	claimTypeEnum, err := kfv1.ParseCSSCMSCoreEnumsClaimType(claimType)
+	if err != nil {
+		return nil, err
+	}
+
+	tflog.Debug(ctx, fmt.Sprintf("Claim type %s has been parsed to %d", claimType, *claimTypeEnum))
+
+	api := apiClient.V1.SecurityClaimsApi
+	req := api.
+		NewGetSecurityClaimsRequest(ctx).
+		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\")) and ClaimType -eq %d", claimValue, *claimTypeEnum))
+
+	response, _, err := api.GetSecurityClaimsExecute(req)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 {
+		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s", claimType, claimValue)
+	}
+
+	var result *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse
+
+	for _, claim := range response {
+		if claim.Provider != nil && claim.Provider.AuthenticationScheme.Get() != nil && *claim.Provider.AuthenticationScheme.Get() == authenticationScheme {
+			result = &claim
+			break
+		}
+	}
+
+	if result == nil {
+		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s and authenticationScheme %s", claimType, claimValue, authenticationScheme)
+	}
+
+	return result, nil
 }

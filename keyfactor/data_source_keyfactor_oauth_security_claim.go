@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v3/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -62,47 +61,6 @@ type dataSourceOauthSecurityClaim struct {
 	p provider
 }
 
-func (r dataSourceOauthSecurityClaim) GetSecurityClaimByTypeAndValueAndScheme(ctx context.Context, claimType string, claimValue string, authenticationScheme string) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
-	tflog.Debug(ctx, fmt.Sprintf("Getting security claim from remote source. ClaimType: %s, ClaimValue: %s, AuthenticationScheme: %s", claimType, claimValue, authenticationScheme))
-
-	claimTypeEnum, err := kfv1.ParseCSSCMSCoreEnumsClaimType(claimType)
-	if err != nil {
-		return nil, err
-	}
-
-	tflog.Debug(ctx, fmt.Sprintf("Claim type %s has been parsed to %d", claimType, *claimTypeEnum))
-
-	api := r.p.sdkClient.V1.SecurityClaimsApi
-	req := api.
-		GetSecurityClaims(ctx).
-		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\")) and ClaimType -eq %d", claimValue, *claimTypeEnum))
-
-	response, _, err := api.GetSecurityClaimsExecute(req)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if len(response) == 0 {
-		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s", claimType, claimValue)
-	}
-
-	var result *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse
-
-	for _, claim := range response {
-		if claim.Provider != nil && claim.Provider.AuthenticationScheme.Get() != nil && *claim.Provider.AuthenticationScheme.Get() == authenticationScheme {
-			result = &claim
-			break
-		}
-	}
-
-	if result == nil {
-		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s and authenticationScheme %s", claimType, claimValue, authenticationScheme)
-	}
-
-	return result, nil
-}
-
 func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
 	tflog.Info(ctx, "Read called on security remoteState resource")
 	var state OAuthSecurityClaim
@@ -119,7 +77,7 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	authenticationScheme := state.ProviderAuthenticationScheme.Value
 	tflog.SetField(ctx, "claim_type", claimType)
 
-	remoteState, err := r.GetSecurityClaimByTypeAndValueAndScheme(ctx, claimType, claimValue, authenticationScheme)
+	remoteState, err := GetSecurityClaimByTypeAndValueAndScheme(ctx, r.p.sdkClient, claimType, claimValue, authenticationScheme)
 	if remoteState == nil {
 		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unable to find OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme))
 		return

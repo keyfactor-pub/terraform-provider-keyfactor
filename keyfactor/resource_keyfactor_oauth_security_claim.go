@@ -86,11 +86,11 @@ func (r resourceOAuthSecurityClaim) Read(
 	tflog.SetField(ctx, "claim_id", claimId)
 
 	api := r.p.sdkClient.V1.SecurityClaimsApi
-	req := api.GetSecurityClaimsById(ctx, int32(claimId))
+	req := api.NewGetSecurityClaimsByIdRequest(ctx, int32(claimId))
 
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security claim %d...", claimId))
 
-	remoteState, httpReq, err := api.GetSecurityClaimsByIdExecute(req)
+	remoteState, httpReq, err := req.Execute()
 
 	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 
@@ -155,19 +155,27 @@ func (r resourceOAuthSecurityClaim) Update(
 		return
 	}
 
+	tflog.Debug(ctx, fmt.Sprintf("ClaimType: %s, ClaimValue: %s, ProviderAuthenticationScheme: %s, Claim ID: %d",
+		plan.ClaimType.Value,
+		plan.ClaimValue.Value,
+		plan.ProviderAuthenticationScheme.Value,
+		state.ID.Value))
+
 	claimIdValue := state.ID.Value
 	claimId := int32(claimIdValue)
 	tflog.SetField(ctx, "claim_id", claimId)
 
 	// Generate API request
 	api := r.p.sdkClient.V1.SecurityClaimsApi
-	req := api.UpdateSecurityClaims(ctx).SecurityRoleClaimDefinitionsRoleClaimDefinitionUpdateRequest(v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionUpdateRequest{
+	req := api.NewUpdateSecurityClaimsRequest(ctx).SecurityRoleClaimDefinitionsRoleClaimDefinitionUpdateRequest(v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionUpdateRequest{
 		Id:          claimId,
 		Description: plan.Description.Value,
 	})
 
+	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to update OAuth security claim id %d...", claimId))
+
 	// Execute API request
-	remoteState, _, err := api.UpdateSecurityClaimsExecute(req)
+	remoteState, _, err := req.Execute()
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error updating security identity.",
@@ -217,7 +225,7 @@ func (r resourceOAuthSecurityClaim) Delete(
 	tflog.Debug(ctx, fmt.Sprintf("Deleting OAuth security claim ID %d...", claimId))
 
 	api := r.p.sdkClient.V1.SecurityClaimsApi
-	req := api.DeleteSecurityClaimsById(ctx, claimId)
+	req := api.NewDeleteSecurityClaimsByIdRequest(ctx, claimId)
 
 	httpResp, err := api.DeleteSecurityClaimsByIdExecute(req)
 
@@ -283,7 +291,7 @@ func (r resourceOAuthSecurityClaim) Create(
 
 	api := r.p.sdkClient.V1.SecurityClaimsApi
 	claimTypeEnum, err := v1.ParseCSSCMSCoreEnumsClaimType(claimType)
-	req := api.CreateSecurityClaims(ctx).
+	req := api.NewCreateSecurityClaimsRequest(ctx).
 		SecurityRoleClaimDefinitionsRoleClaimDefinitionCreationRequest(v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionCreationRequest{
 			ClaimType:                    *claimTypeEnum,
 			ClaimValue:                   claimValue,
@@ -291,7 +299,7 @@ func (r resourceOAuthSecurityClaim) Create(
 			ProviderAuthenticationScheme: authenticationScheme,
 		})
 
-	createResponse, _, err := api.CreateSecurityClaimsExecute(req)
+	createResponse, _, err := req.Execute()
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error creating security identity.",
@@ -342,11 +350,11 @@ func (r resourceOAuthSecurityClaim) ImportState(
 	tflog.SetField(ctx, "claim_id", claimIdStr)
 
 	api := r.p.sdkClient.V1.SecurityClaimsApi
-	req := api.GetSecurityClaimsById(ctx, int32(claimId))
+	req := api.NewGetSecurityClaimsByIdRequest(ctx, int32(claimId))
 
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security claim %s...", claimIdStr))
+	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security claim ID %d...", claimId))
 
-	remoteState, _, err := api.GetSecurityClaimsByIdExecute(req)
+	remoteState, _, err := req.Execute()
 	if remoteState == nil {
 		response.Diagnostics.AddError(
 			"Unknown OAuth security claim error.",

@@ -65,7 +65,7 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	tflog.Info(ctx, "Read called on security remoteState resource")
 	var state OAuthSecurityClaim
 
-	tflog.Info(ctx, "Read called on OAuth security claim data source.")
+	tflog.Debug(ctx, "Read called on OAuth security claim data source.")
 	diags := request.Config.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -88,21 +88,23 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 		return
 	}
 
+	tflog.Debug(ctx, "Data source was able to pull OAuth security claim from remote source")
+
 	provider := *remoteState.Provider
 
 	var result = OAuthSecurityClaim{
-		ID:          types.Int64{Value: int64(*remoteState.Id)},
-		Description: types.String{Value: *remoteState.Description.Get()},
-		ClaimType:   types.String{Value: *remoteState.ClaimType.Get()},
-		ClaimValue:  types.String{Value: *remoteState.ClaimValue.Get()},
-		Provider:    mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
+		ID:                           types.Int64{Value: int64(*remoteState.Id)},
+		Description:                  types.String{Value: *remoteState.Description.Get()},
+		ClaimType:                    types.String{Value: *remoteState.ClaimType.Get()},
+		ClaimValue:                   types.String{Value: *remoteState.ClaimValue.Get()},
+		ProviderAuthenticationScheme: types.String{Value: *provider.AuthenticationScheme.Get()},
+		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
 	}
+
+	tflog.Debug(ctx, "Saving OAuth security claim to state")
 
 	diags = response.State.Set(ctx, result)
 	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
-		return
-	}
 	if response.Diagnostics.HasError() {
 		return
 	}

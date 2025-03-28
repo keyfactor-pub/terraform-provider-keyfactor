@@ -34,7 +34,9 @@ type SecurityIdentity struct {
 	Valid        types.Bool   `tfsdk:"valid"`         // Indicates if the identity is valid.
 }
 
-// SecurityRole represents a security role in Keyfactor.
+// DEPRECATED: SecurityRole represents a security role in Keyfactor.
+// This struct is deprecated and should be used for backward compatibility only.
+// It is recommended to use the `OAuthSecurityClaim` struct.
 type SecurityRole struct {
 	ID          types.Int64  `tfsdk:"id"`          // Unique ID of the security role.
 	Name        types.String `tfsdk:"name"`        // Name of the security role.
@@ -48,6 +50,18 @@ var OAuthSecurityClaimAuthenticationProviderType = map[string]attr.Type{
 	"display_name":          types.StringType,
 }
 
+var OAuthSecurityClaimType = types.ObjectType{
+	AttrTypes: map[string]attr.Type{
+		"id":          types.Int64Type,
+		"claim_type":  types.StringType,
+		"claim_value": types.StringType,
+		"description": types.StringType,
+		"provider": types.ObjectType{
+			AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
+		},
+	},
+}
+
 // OAuthSecurityClaim represents an OAuth security claim in Keyfactor.
 type OAuthSecurityClaim struct {
 	ID                           types.Int64  `tfsdk:"id"`                             // Unique ID of the OAuth security claim.
@@ -56,6 +70,18 @@ type OAuthSecurityClaim struct {
 	ClaimValue                   types.String `tfsdk:"claim_value"`                    // Value of the OAuth security claim.
 	Provider                     types.Object `tfsdk:"provider"`                       // Authentication Provider of the OAuth security claim.
 	ProviderAuthenticationScheme types.String `tfsdk:"provider_authentication_scheme"` // Authentication Provider of the OAuth security claim.
+}
+
+type OAuthSecurityRole struct {
+	ID                types.Int64          `tfsdk:"id"`                  // Unique ID of the OAuth security role.
+	Name              types.String         `tfsdk:"name"`                // Name of the OAuth security role.
+	Description       types.String         `tfsdk:"description"`         // Description of the OAuth security role.
+	EmailAddress      types.String         `tfsdk:"email_address"`       // Email address associated with the OAuth security role.
+	Immutable         types.Bool           `tfsdk:"immutable"`           // Indicates if the OAuth security role is immutable.
+	Permissions       types.List           `tfsdk:"permissions"`         // List of permissions assigned to the OAuth security role.
+	PermissionSetName types.String         `tfsdk:"permission_set_name"` // Permission Set Name associated with the OAuth security role.
+	PermissionSetId   types.String         `tfsdk:"permission_set_id"`   // Permission Set ID associated with the OAuth security role.
+	Claims            []OAuthSecurityClaim `tfsdk:"claims"`              // List of OAuth security claims associated with this role.
 }
 
 // CommandCertificate represents a certificate entity in Keyfactor.

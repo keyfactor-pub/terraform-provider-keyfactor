@@ -32,6 +32,7 @@ import (
 
 	"github.com/Keyfactor/keyfactor-go-client-sdk/v3"
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v3/api/keyfactor/v1"
+	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v3/api/keyfactor/v2"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -1492,7 +1493,7 @@ func GetSecurityClaimByTypeAndValueAndScheme(ctx context.Context, apiClient *key
 	api := apiClient.V1.SecurityClaimsApi
 	req := api.
 		NewGetSecurityClaimsRequest(ctx).
-		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\")) and ClaimType -eq %d", claimValue, *claimTypeEnum))
+		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\" and ClaimType -eq %d))", claimValue, *claimTypeEnum))
 
 	response, _, err := api.GetSecurityClaimsExecute(req)
 
@@ -1518,4 +1519,80 @@ func GetSecurityClaimByTypeAndValueAndScheme(ctx context.Context, apiClient *key
 	}
 
 	return result, nil
+}
+
+// The v2 APIClient exposes a method to query a role by name.  This function will query the security roles and filter security roles by name.
+func GetSecurityRoleByName(ctx context.Context, apiClient *keyfactor.APIClient, roleName string) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting security role from remote source. Role Name: %s", roleName))
+
+	api := apiClient.V2.SecurityRolesApi
+	req := api.
+		NewGetSecurityRolesRequest(ctx).
+		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", roleName))
+
+	response, _, err := req.Execute()
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 {
+		return nil, fmt.Errorf("No security role found with name %s", roleName)
+	}
+
+	// Command should not allow multiple security roles with the same name. Not going to code logic around multiple results.
+
+	return &response[0], nil
+}
+
+func GetSecurityPermissionSetNameById(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetId string) (*string, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting permission set name by ID from remote source. Permission set ID: %s", permissionSetId))
+
+	api := apiClient.V1.PermissionSetApi
+	response, _, err := api.NewGetPermissionSetsByIdRequest(ctx, permissionSetId).Execute()
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query permission set by ID: %w", err)
+	}
+
+	permissionName := response.Name.Get()
+
+	tflog.Debug(ctx, fmt.Sprintf("Found permission set with matching ID %s. Name: %s", permissionSetId, *permissionName))
+
+	return permissionName, nil
+}
+
+func GetSecurityPermissionSetIdByName(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetName string) (*string, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting permission set ID by name from remote source. Permission set name: %s", permissionSetName))
+
+	api := apiClient.V1.PermissionSetApi
+	var model *kfv1.PermissionSetsPermissionSetResponse
+	pageNumber := 1
+	for model == nil {
+		tflog.Debug(ctx, fmt.Sprintf("Querying permission set page %d", pageNumber))
+		permissionSets, _, err := api.NewGetPermissionSetsRequest(ctx).ReturnLimit(50).PageReturned(int32(pageNumber)).Execute()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to query permission sets: %w", err)
+		}
+
+		if len(permissionSets) == 0 {
+			return nil, fmt.Errorf("no permissions were found with name %s", permissionSetName)
+		}
+
+		pageNumber++
+
+		for _, permission := range permissionSets {
+			// Check if the permission set name matches the requested name
+			if permission.Name.Get() != nil && *permission.Name.Get() == permissionSetName {
+				tflog.Debug(ctx, fmt.Sprintf("Found permission set with name: %s", permissionSetName))
+				model = &permission
+				break
+			}
+		}
+	}
+
+	tflog.Debug(ctx, fmt.Sprintf("Found permission set with matching name %s. ID: %s", permissionSetName, *model.Id))
+
+	return model.Name.Get(), nil
 }

@@ -33,9 +33,10 @@ func (r resourceSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schema, di
 				Description: "A string containing the description of the role in Keyfactor",
 			},
 			"permissions": {
-				Type:        types.ListType{ElemType: types.StringType},
-				Optional:    true,
-				Description: "An array containing the permissions assigned to the role in a list of Name:Value pairs",
+				Type:                types.ListType{ElemType: types.StringType},
+				Optional:            true,
+				Description:         "An array containing the permissions assigned to the role in a list of Name:Value pairs",
+				MarkdownDescription: "An array containing the permissions assigned to the role in a list of Name:Value pairs. For more information about allowed permission values, please refer to the Keyfactor Command [Version One Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version1).",
 			},
 		},
 		Description:        "IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource.",

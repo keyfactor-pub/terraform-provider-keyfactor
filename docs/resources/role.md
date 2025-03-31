@@ -60,7 +60,7 @@ resource "keyfactor_role" "kf_terraform_role" {
 
 ### Optional
 
-- `permissions` (List of String) An array containing the permissions assigned to the role in a list of Name:Value pairs
+- `permissions` (List of String) An array containing the permissions assigned to the role in a list of Name:Value pairs. For more information about allowed permission values, please refer to the Keyfactor Command [Version One Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version1).
 
 ### Read-Only
 

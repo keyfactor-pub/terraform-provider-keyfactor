@@ -1,0 +1,1 @@
+terraform import keyfactor_oauth_security_role.my_security_claim ROLE_ID

@@ -20,25 +20,25 @@ provider "keyfactor" {
 }
 
 data "keyfactor_oauth_security_role" "existing_oauth_role" {
-    name = "InstanceOwner"
+  name = "InstanceOwner"
 }
 
 output "existing_oauth_role" {
-    value = {
-        id = data.keyfactor_oauth_security_role.existing_oauth_role.id
-        name = data.keyfactor_oauth_security_role.existing_oauth_role.name
-        description = data.keyfactor_oauth_security_role.existing_oauth_role.description
-        permission_set_id = data.keyfactor_oauth_security_role.existing_oauth_role.permission_set_id
-        permissions = data.keyfactor_oauth_security_role.existing_oauth_role.permissions
-        email_address = data.keyfactor_oauth_security_role.existing_oauth_role.email_address
-        claims = [data.keyfactor_oauth_security_role.existing_oauth_role.claims != null ? 
-            [for claim in data.keyfactor_oauth_security_role.existing_oauth_role.claims : {
-                description = claim.description
-                claim_type = claim.claim_type
-                claim_value = claim.claim_value
-                provider_authentication_scheme = claim.provider_authentication_scheme
-            }] : []]
-    }
+  value = {
+    id                = data.keyfactor_oauth_security_role.existing_oauth_role.id
+    name              = data.keyfactor_oauth_security_role.existing_oauth_role.name
+    description       = data.keyfactor_oauth_security_role.existing_oauth_role.description
+    permission_set_id = data.keyfactor_oauth_security_role.existing_oauth_role.permission_set_id
+    permissions       = data.keyfactor_oauth_security_role.existing_oauth_role.permissions
+    email_address     = data.keyfactor_oauth_security_role.existing_oauth_role.email_address
+    claims = [data.keyfactor_oauth_security_role.existing_oauth_role.claims != null ?
+      [for claim in data.keyfactor_oauth_security_role.existing_oauth_role.claims : {
+        description                    = claim.description
+        claim_type                     = claim.claim_type
+        claim_value                    = claim.claim_value
+        provider_authentication_scheme = claim.provider_authentication_scheme
+    }] : []]
+  }
 }
 ```
 

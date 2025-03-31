@@ -21,9 +21,9 @@ provider "keyfactor" {
 }
 
 resource "keyfactor_oauth_security_claim" "system_claim_123" {
-  claim_type = "OAuthSubject"
-  claim_value = "1234567890"
-  description = "Security Claim for System"
+  claim_type                     = "OAuthSubject"
+  claim_value                    = "1234567890"
+  description                    = "Security Claim for System"
   provider_authentication_scheme = "System"
 }
 ```

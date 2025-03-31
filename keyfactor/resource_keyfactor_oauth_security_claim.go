@@ -280,6 +280,14 @@ func (r resourceOAuthSecurityClaim) Create(
 
 	api := r.p.sdkClient.V1.SecurityClaimsApi
 	claimTypeEnum, err := v1.ParseCSSCMSCoreEnumsClaimType(claimType)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error creating security identity.",
+			"Could not create identity "+claimValue+", error parsing claim type "+err.Error(),
+		)
+		return
+	}
+
 	req := api.NewCreateSecurityClaimsRequest(ctx).
 		SecurityRoleClaimDefinitionsRoleClaimDefinitionCreationRequest(v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionCreationRequest{
 			ClaimType:                    *claimTypeEnum,

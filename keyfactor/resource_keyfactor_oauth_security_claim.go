@@ -224,20 +224,12 @@ func (r resourceOAuthSecurityClaim) Delete(
 	api := r.p.sdkClient.V1.SecurityClaimsApi
 	req := api.NewDeleteSecurityClaimsByIdRequest(ctx, claimId)
 
-	httpResp, err := api.DeleteSecurityClaimsByIdExecute(req)
+	_, err := api.DeleteSecurityClaimsByIdExecute(req)
 
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error deleting security identity.",
-			"Could not delete identity "+state.ClaimValue.Value+", unexpected error: "+err.Error(),
-		)
-		return
-	}
-
-	if httpResp.StatusCode != 204 {
-		response.Diagnostics.AddError(
-			"Error deleting security identity.",
-			"Could not delete identity "+state.ClaimValue.Value+", unexpected status code: "+httpResp.Status,
+			"Error deleting OAuth security claim.",
+			"Could not delete OAuth security claim "+state.ClaimValue.Value+", unexpected error: "+err.Error(),
 		)
 		return
 	}

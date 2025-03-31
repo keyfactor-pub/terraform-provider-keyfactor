@@ -235,6 +235,17 @@ func mapAuthenticationProviderType(id string, authScheme string, displayName str
 	}
 }
 
+func mapAuthenticationProviderTypeV2(id *string, authScheme *string, displayName *string) types.Object {
+	return types.Object{
+		Attrs: map[string]attr.Value{
+			"id":                    GetStringType(id),
+			"authentication_scheme": GetStringType(authScheme),
+			"display_name":          GetStringType(displayName),
+		},
+		AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
+	}
+}
+
 // DNSSANStoTerraform converts a slice of DNS SANs (Subject Alternative Names) into a Terraform-compatible
 // `types.List`. The function can either allow duplicates or ensure unique entries based on the
 // `allowDuplicates` parameter.
@@ -1630,4 +1641,11 @@ func GetSecurityPermissionSetByName(ctx context.Context, apiClient *keyfactor.AP
 	tflog.Debug(ctx, fmt.Sprintf("Found permission set with matching name %s. ID: %s", permissionSetName, *model.Id))
 
 	return model, nil
+}
+
+func GetStringType(value *string) types.String {
+	if value == nil {
+		return types.String{Value: "", Null: true}
+	}
+	return types.String{Value: *value}
 }

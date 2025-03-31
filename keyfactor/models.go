@@ -78,17 +78,6 @@ type OAuthSecurityClaim struct {
 	ProviderAuthenticationScheme types.String `tfsdk:"provider_authentication_scheme"` // Authentication Provider of the OAuth security claim.
 }
 
-type OAuthSecurityRoleCreateRequest struct {
-	ID              types.Int64    `tfsdk:"id"`                // Unique ID of the OAuth security role.
-	Name            types.String   `tfsdk:"name"`              // Name of the OAuth security role.
-	Description     types.String   `tfsdk:"description"`       // Description of the OAuth security role.
-	EmailAddress    types.String   `tfsdk:"email_address"`     // Email address associated with the OAuth security role.
-	Immutable       types.Bool     `tfsdk:"immutable"`         // Indicates if the OAuth security role is immutable.
-	Permissions     types.List     `tfsdk:"permissions"`       // List of permissions assigned to the OAuth security role.
-	PermissionSetId types.String   `tfsdk:"permission_set_id"` // Permission Set ID associated with the OAuth security role.
-	Claims          []types.String `tfsdk:"claims"`            // List of OAuth security claims associated with this role.
-}
-
 type OAuthSecurityRole struct {
 	ID              types.Int64          `tfsdk:"id"`                // Unique ID of the OAuth security role.
 	Name            types.String         `tfsdk:"name"`              // Name of the OAuth security role.

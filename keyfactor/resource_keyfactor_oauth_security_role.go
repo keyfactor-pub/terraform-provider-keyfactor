@@ -161,7 +161,7 @@ func (r resourceOAuthSecurityRole) Read(
 		permissionValues = append(permissionValues, types.String{Value: perm})
 	}
 
-	var claims []OAuthSecurityClaim
+	claims := []OAuthSecurityClaim{}
 	for _, claim := range remoteState.Claims {
 		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
 		provider := *claim.Provider
@@ -224,7 +224,7 @@ func (r resourceOAuthSecurityRole) Update(
 	roleName := plan.Name.Value
 	roleId := int32(state.ID.Value)
 
-	var permissionArray []string
+	permissionArray := []string{}
 	for _, permission := range plan.Permissions.Elems {
 		permissionStr := strings.Trim(permission.String(), "\"") // Remove unnecessary wrapping quotes
 		tflog.Debug(ctx, fmt.Sprintf("Appending permission %s to array....\n", permissionStr))
@@ -287,7 +287,7 @@ func (r resourceOAuthSecurityRole) Update(
 		responsePermissions = append(responsePermissions, types.String{Value: perm})
 	}
 
-	var responseClaims []OAuthSecurityClaim
+	responseClaims := []OAuthSecurityClaim{}
 	for _, claim := range updateResponse.Claims {
 		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
 		provider := *claim.Provider
@@ -395,14 +395,14 @@ func (r resourceOAuthSecurityRole) Create(
 	ctx = tflog.SetField(ctx, "role_name", roleName)
 	tflog.Debug(ctx, fmt.Sprintf("Creating OAuth security role with name: %s", roleName))
 
-	var permissionArray []string
+	permissionArray := []string{}
 	for _, permission := range plan.Permissions.Elems {
 		permissionStr := strings.Trim(permission.String(), "\"") // Remove unnecessary wrapping quotes
 		tflog.Debug(ctx, fmt.Sprintf("Appending permission %s to array....\n", permissionStr))
 		permissionArray = append(permissionArray, permissionStr)
 	}
 
-	var claims []v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest
+	claims := []v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{}
 	for _, claim := range plan.Claims {
 		claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(claim.ClaimType.Value)
 		if err != nil {
@@ -457,7 +457,7 @@ func (r resourceOAuthSecurityRole) Create(
 		responsePermissions = append(responsePermissions, types.String{Value: perm})
 	}
 
-	var responseClaims []OAuthSecurityClaim
+	responseClaims := []OAuthSecurityClaim{}
 	for _, claim := range createResponse.Claims {
 		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
 		provider := *claim.Provider
@@ -543,7 +543,7 @@ func (r resourceOAuthSecurityRole) ImportState(
 		permissionValues = append(permissionValues, types.String{Value: perm})
 	}
 
-	var claims []OAuthSecurityClaim
+	claims := []OAuthSecurityClaim{}
 	for _, claim := range remoteState.Claims {
 		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
 		provider := *claim.Provider

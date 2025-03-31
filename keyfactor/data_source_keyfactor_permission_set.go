@@ -36,7 +36,7 @@ func (r dataSourcePermissionSetType) GetSchema(_ context.Context) (tfsdk.Schema,
 }
 
 func (r dataSourcePermissionSetType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	return dataSourceOauthSecurityRole{
+	return dataSourcePermissionSet{
 		p: *(p.(*provider)),
 	}, nil
 }

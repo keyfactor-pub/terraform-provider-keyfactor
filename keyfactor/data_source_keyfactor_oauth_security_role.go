@@ -161,14 +161,16 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 		claims = append(claims, temp)
 	}
 
-	tflog.Debug(ctx, "Data source was able to get OAuth security role from remote source using ID")
+	tflog.Debug(ctx, "Data source was able to resource OAuth security role from remote source using ID")
 
 	var result = OAuthSecurityRole{
 		ID:              types.Int64{Value: int64(*remoteState.Id)},
-		Description:     types.String{Value: *remoteState.Description.Get()},
 		Name:            types.String{Value: *remoteState.Name.Get()},
-		PermissionSetId: types.String{Value: *remoteState.PermissionSetId},
+		Description:     types.String{Value: *remoteState.Description.Get()},
+		EmailAddress:    types.String{Value: *remoteState.EmailAddress.Get()},
+		Immutable:       types.Bool{Value: *remoteState.Immutable},
 		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
+		PermissionSetId: types.String{Value: *remoteState.PermissionSetId},
 		Claims:          claims,
 	}
 

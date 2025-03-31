@@ -3,12 +3,12 @@
 page_title: "keyfactor_oauth_security_role Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Used to manage Keyfactor Command Security Roles using the V2 /Security/Roles API. This resource is compatible with Keyfactor Command versions 11+
 ---
 
 # keyfactor_oauth_security_role (Resource)
 
-
+Used to manage Keyfactor Command Security Roles using the V2 `/Security/Roles` API. This resource is compatible with Keyfactor Command versions 11+
 
 ## Example Usage
 

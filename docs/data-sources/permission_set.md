@@ -3,12 +3,12 @@
 page_title: "keyfactor_permission_set Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Reads an existing permission set from Keyfactor Command using the V1 /PermissionSets API. Compatible with Keyfactor Command versions 11+.
 ---
 
 # keyfactor_permission_set (Data Source)
 
-
+Reads an existing permission set from Keyfactor Command using the V1 `/PermissionSets` API. Compatible with Keyfactor Command versions 11+.
 
 
 

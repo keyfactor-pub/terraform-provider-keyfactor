@@ -48,6 +48,7 @@ func (r dataSourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sc
 				Description: "An object containing the provider of the OAuth security claim in Keyfactor",
 			},
 		},
+		Description: "Reads an existing security claims from Keyfactor Command using the V1 `/Security/Claims` API. Compatible with Keyfactor Command versions 11+.",
 	}, nil
 }
 

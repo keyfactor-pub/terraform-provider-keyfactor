@@ -3,12 +3,12 @@
 page_title: "keyfactor_role Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource.
+  IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource, keyfactor_oauth_security_role.
 ---
 
 # keyfactor_role (Resource)
 
-IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource.
+IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource, `keyfactor_oauth_security_role`.
 
 ## Example Usage
 

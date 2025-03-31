@@ -3,12 +3,12 @@
 page_title: "keyfactor_oauth_security_role Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Reads an existing security role from Keyfactor Command using the V2 /Security/Roles API. Compatible with Keyfactor Command versions 11+.
 ---
 
 # keyfactor_oauth_security_role (Data Source)
 
-
+Reads an existing security role from Keyfactor Command using the V2 `/Security/Roles` API. Compatible with Keyfactor Command versions 11+.
 
 ## Example Usage
 

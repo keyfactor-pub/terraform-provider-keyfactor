@@ -32,6 +32,7 @@ func (r dataSourcePermissionSetType) GetSchema(_ context.Context) (tfsdk.Schema,
 				Description: "A list of permissions associated with the permission set",
 			},
 		},
+		Description: "Reads an existing permission set from Keyfactor Command using the V1 `/PermissionSets` API. Compatible with Keyfactor Command versions 11+.",
 	}, nil
 }
 

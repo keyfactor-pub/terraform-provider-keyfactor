@@ -98,6 +98,7 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 				Description: "A list of OAuth security claims associated with the OAuth security role in Keyfactor",
 			},
 		},
+		Description: "Used to manage Keyfactor Command Security Roles using the V2 `/Security/Roles` API. This resource is compatible with Keyfactor Command versions 11+",
 	}, nil
 }
 

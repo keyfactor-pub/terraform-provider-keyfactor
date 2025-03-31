@@ -3,12 +3,12 @@
 page_title: "keyfactor_oauth_security_claim Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  An OAuth security claim in Keyfactor Command
+  Used to manage Keyfactor Command Security Claims using the V1 /Security/Claims API. This resource is compatible with Keyfactor Command versions 11+
 ---
 
 # keyfactor_oauth_security_claim (Resource)
 
-An OAuth security claim in Keyfactor Command
+Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+
 
 ## Example Usage
 

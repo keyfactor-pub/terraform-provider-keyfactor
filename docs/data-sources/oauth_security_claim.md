@@ -3,12 +3,12 @@
 page_title: "keyfactor_oauth_security_claim Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Reads an existing security claims from Keyfactor Command using the V1 /Security/Claims API. Compatible with Keyfactor Command versions 11+.
 ---
 
 # keyfactor_oauth_security_claim (Data Source)
 
-
+Reads an existing security claims from Keyfactor Command using the V1 `/Security/Claims` API. Compatible with Keyfactor Command versions 11+.
 
 ## Example Usage
 

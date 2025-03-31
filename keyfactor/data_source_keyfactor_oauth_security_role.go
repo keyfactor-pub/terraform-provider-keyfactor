@@ -136,7 +136,7 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error reading OAuth security role",
-			fmt.Sprintf("Unable to query OAuth security role %s by ID %d. Err: %w", roleName, roleId, err),
+			fmt.Sprintf("Unable to query OAuth security role %s by ID %d. Err: %s", roleName, roleId, err.Error()),
 		)
 	}
 

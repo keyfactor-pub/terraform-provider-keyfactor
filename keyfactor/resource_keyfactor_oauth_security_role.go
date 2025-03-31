@@ -504,7 +504,7 @@ func (r resourceOAuthSecurityRole) ImportState(
 
 	requestId := request.ID
 
-	tflog.Debug(ctx, fmt.Sprintf("OAuth security claim role ID requested: %d...", requestId))
+	tflog.Debug(ctx, fmt.Sprintf("OAuth security claim role ID requested: %s...", requestId))
 
 	roleId, err := strconv.Atoi(requestId)
 

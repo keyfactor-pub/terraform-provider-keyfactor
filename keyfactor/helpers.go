@@ -1596,3 +1596,38 @@ func GetSecurityPermissionSetIdByName(ctx context.Context, apiClient *keyfactor.
 
 	return model.Name.Get(), nil
 }
+
+func GetSecurityPermissionSetByName(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetName string) (*kfv1.PermissionSetsPermissionSetResponse, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting permission set ID by name from remote source. Permission set name: %s", permissionSetName))
+
+	api := apiClient.V1.PermissionSetApi
+	var model *kfv1.PermissionSetsPermissionSetResponse
+	pageNumber := 1
+	for model == nil {
+		tflog.Debug(ctx, fmt.Sprintf("Querying permission set page %d", pageNumber))
+		permissionSets, _, err := api.NewGetPermissionSetsRequest(ctx).ReturnLimit(50).PageReturned(int32(pageNumber)).Execute()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to query permission sets: %w", err)
+		}
+
+		if len(permissionSets) == 0 {
+			return nil, fmt.Errorf("no permissions were found with name %s", permissionSetName)
+		}
+
+		pageNumber++
+
+		for _, permission := range permissionSets {
+			// Check if the permission set name matches the requested name
+			if permission.Name.Get() != nil && *permission.Name.Get() == permissionSetName {
+				tflog.Debug(ctx, fmt.Sprintf("Found permission set with name: %s", permissionSetName))
+				model = &permission
+				break
+			}
+		}
+	}
+
+	tflog.Debug(ctx, fmt.Sprintf("Found permission set with matching name %s. ID: %s", permissionSetName, *model.Id))
+
+	return model, nil
+}

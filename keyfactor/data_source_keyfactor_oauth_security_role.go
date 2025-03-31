@@ -41,20 +41,15 @@ func (r dataSourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Sch
 				Computed:    true,
 				Description: "Indicates whether the OAuth security role in Keyfactor is immutable. If true, the role cannot be modified or deleted. This is typically used for system-defined roles that are essential for the operation of Keyfactor.",
 			},
-			"permission_set_name": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "The name of the permission set associated with OAuth security claim in Keyfactor.",
-			},
 			"permission_set_id": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "The ID of the permission set associated with the OAuth security claim in Keyfactor. This is used to identify the permissions associated with the claim.",
+				Description: "The ID of the permission set associated with the OAuth security role in Keyfactor. This is used to identify the permissions associated with the role.",
 			},
 			"permissions": {
 				Type:        types.ListType{ElemType: types.StringType},
 				Computed:    true,
-				Description: "A list of permissions associated with the OAuth security claim in Keyfactor. This will return a list of permissions that are associated with the OAuth security claim. This is used to identify the permissions associated with the claim.",
+				Description: "A list of permissions associated with the OAuth security role in Keyfactor. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role.",
 			},
 			"claims": {
 				Attributes: tfsdk.ListNestedAttributes(
@@ -166,28 +161,18 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 		claims = append(claims, temp)
 	}
 
-	permissionSetName, err := GetSecurityPermissionSetNameById(ctx, r.p.sdkClient, *remoteState.PermissionSetId)
-
-	if err != nil {
-		// Handle the case where the permission set ID could not be found
-		response.Diagnostics.AddError(
-			"Error retrieving permission set name",
-			fmt.Sprintf("Unable to retrieve permission set name for ID %d. Error: %s", *remoteState.PermissionSetId, err.Error()),
-		)
-		return
-	}
-
 	tflog.Debug(ctx, "Data source was able to get OAuth security role from remote source using ID")
 
 	var result = OAuthSecurityRole{
-		ID:                types.Int64{Value: int64(*remoteState.Id)},
-		Description:       types.String{Value: *remoteState.Description.Get()},
-		Name:              types.String{Value: *remoteState.Name.Get()},
-		PermissionSetName: types.String{Value: *permissionSetName},
-		PermissionSetId:   types.String{Value: *remoteState.PermissionSetId},
-		Permissions:       types.List{ElemType: types.StringType, Elems: permissionValues},
-		Claims:            claims,
+		ID:              types.Int64{Value: int64(*remoteState.Id)},
+		Description:     types.String{Value: *remoteState.Description.Get()},
+		Name:            types.String{Value: *remoteState.Name.Get()},
+		PermissionSetId: types.String{Value: *remoteState.PermissionSetId},
+		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
+		Claims:          claims,
 	}
+
+	tflog.Debug(ctx, "Saving OAuth security role data source information into state...")
 
 	diags = response.State.Set(ctx, result)
 	response.Diagnostics.Append(diags...)

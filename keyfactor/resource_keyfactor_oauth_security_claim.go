@@ -77,7 +77,7 @@ func (r resourceOAuthSecurityClaim) Read(
 	diags := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 
-	tflog.Debug(ctx, fmt.Sprintf("OAuth security claim id from state: %d...", state.ID.Value))
+	tflog.Debug(ctx, fmt.Sprintf("OAuth security claim id from state: ID %d...", state.ID.Value))
 
 	claimId := int32(state.ID.Value)
 
@@ -86,7 +86,7 @@ func (r resourceOAuthSecurityClaim) Read(
 	tflog.SetField(ctx, "claim_id", claimId)
 
 	api := r.p.sdkClient.V1.SecurityClaimsApi
-	req := api.NewGetSecurityClaimsByIdRequest(ctx, int32(claimId))
+	req := api.NewGetSecurityClaimsByIdRequest(ctx, claimId)
 
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security claim %d...", claimId))
 
@@ -122,9 +122,6 @@ func (r resourceOAuthSecurityClaim) Read(
 
 	diags = response.State.Set(ctx, result)
 	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
-		return
-	}
 	if response.Diagnostics.HasError() {
 		return
 	}
@@ -384,9 +381,6 @@ func (r resourceOAuthSecurityClaim) ImportState(
 
 	diags := response.State.Set(ctx, result)
 	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
-		return
-	}
 	if response.Diagnostics.HasError() {
 		return
 	}

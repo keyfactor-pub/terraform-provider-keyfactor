@@ -78,7 +78,7 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	authenticationScheme := state.ProviderAuthenticationScheme.Value
 	tflog.SetField(ctx, "claim_type", claimType)
 
-	remoteState, err := GetSecurityClaimByTypeAndValueAndScheme(ctx, r.p.sdkClient, claimType, claimValue, authenticationScheme)
+	remoteState, err := getSecurityClaimByTypeAndValueAndScheme(ctx, r.p.sdkClient, claimType, claimValue, authenticationScheme)
 	if remoteState == nil {
 		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unable to find OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme))
 		return

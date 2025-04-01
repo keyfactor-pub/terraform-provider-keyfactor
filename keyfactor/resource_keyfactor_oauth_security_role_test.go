@@ -21,7 +21,7 @@ type oauthRoleTestCase struct {
 func TestAccKeyfactorOAuthRoleResource(t *testing.T) {
 
 	r := oauthRoleTestCase{
-		name:         "TerraformAcceptanceRole",
+		name:         generateFakeName(10),
 		description:  "Terraform Create Role",
 		permissions:  []string{"/metadata/types/read/"},
 		claims:       []OAuthSecurityClaim{},
@@ -33,7 +33,7 @@ func TestAccKeyfactorOAuthRoleResource(t *testing.T) {
 
 	c := oauthClaimTestCase{
 		description:        "Terraform Claim",
-		claimValue:         "TerraformAcceptanceRoleClaim",
+		claimValue:         generateFakeName(10),
 		claimType:          "OAuthSubject",
 		providerAuthScheme: "System",
 		resourceType:       "keyfactor_oauth_security_claim",

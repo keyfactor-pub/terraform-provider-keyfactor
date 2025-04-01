@@ -6,7 +6,7 @@ toolchain go1.23.4
 
 require (
 	github.com/Keyfactor/keyfactor-auth-client-go v1.2.0
-	github.com/Keyfactor/keyfactor-go-client-sdk/v3 v3.0.0-rc.4
+	github.com/Keyfactor/keyfactor-go-client-sdk/v3 v3.0.0-rc.5
 	github.com/Keyfactor/keyfactor-go-client/v3 v3.2.0-rc.1
 	github.com/hashicorp/terraform-plugin-framework v0.10.0
 	github.com/hashicorp/terraform-plugin-go v0.18.0

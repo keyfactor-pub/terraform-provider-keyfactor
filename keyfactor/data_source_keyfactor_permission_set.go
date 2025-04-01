@@ -57,7 +57,7 @@ func (r dataSourcePermissionSet) Read(ctx context.Context, request tfsdk.ReadDat
 	}
 
 	permissionSetName := state.Name.Value
-	permissionSet, err := GetSecurityPermissionSetByName(ctx, r.p.sdkClient, permissionSetName)
+	permissionSet, err := getSecurityPermissionSetByName(ctx, r.p.sdkClient, permissionSetName)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error reading permission set",

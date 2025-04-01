@@ -118,7 +118,7 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 	}
 
 	roleName := state.Name.Value
-	role, err := GetSecurityRoleByName(ctx, r.p.sdkClient, roleName)
+	role, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error reading OAuth security role",

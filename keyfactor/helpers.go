@@ -95,6 +95,12 @@ func generatePassword(passwordLength, minSpecialChar, minNum, minUpperCase int) 
 	return string(inRune)
 }
 
+// Generates a fake name with a specified length.
+// This is used for generating random names for resources in test cases.
+func generateFakeName(length int) string {
+	return generatePassword(length, 0, 0, 10)
+}
+
 // expandSubject extracts subject fields from a given string and returns them as Terraform types.
 //
 // Parameters:
@@ -238,9 +244,9 @@ func mapAuthenticationProviderType(id string, authScheme string, displayName str
 func mapAuthenticationProviderTypeV2(id *string, authScheme *string, displayName *string) types.Object {
 	return types.Object{
 		Attrs: map[string]attr.Value{
-			"id":                    GetStringType(id),
-			"authentication_scheme": GetStringType(authScheme),
-			"display_name":          GetStringType(displayName),
+			"id":                    getStringType(id),
+			"authentication_scheme": getStringType(authScheme),
+			"display_name":          getStringType(displayName),
 		},
 		AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
 	}
@@ -1491,7 +1497,7 @@ func forceIfTrue(ctx context.Context, state attr.Value, config attr.Value, path 
 // The v1 APIClient exposes a method to query security claims by type and value. To retrieve a unique security claim from Command
 // it is required to also find a claim with the matching authentication scheme, which is not queryable via the QueryString parameter. That must be done as a separate
 // operation from the API call. This function will query the security claims by type and value, then filter the results by the authentication scheme to return a unique claim if it exists.
-func GetSecurityClaimByTypeAndValueAndScheme(ctx context.Context, apiClient *keyfactor.APIClient, claimType string, claimValue string, authenticationScheme string) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
+func getSecurityClaimByTypeAndValueAndScheme(ctx context.Context, apiClient *keyfactor.APIClient, claimType string, claimValue string, authenticationScheme string) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting security claim from remote source. ClaimType: %s, ClaimValue: %s, AuthenticationScheme: %s", claimType, claimValue, authenticationScheme))
 
 	claimTypeEnum, err := kfv1.ParseCSSCMSCoreEnumsClaimType(claimType)
@@ -1533,7 +1539,7 @@ func GetSecurityClaimByTypeAndValueAndScheme(ctx context.Context, apiClient *key
 }
 
 // The v2 APIClient exposes a method to query a role by name.  This function will query the security roles and filter security roles by name.
-func GetSecurityRoleByName(ctx context.Context, apiClient *keyfactor.APIClient, roleName string) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
+func getSecurityRoleByName(ctx context.Context, apiClient *keyfactor.APIClient, roleName string) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting security role from remote source. Role Name: %s", roleName))
 
 	api := apiClient.V2.SecurityRolesApi
@@ -1556,7 +1562,7 @@ func GetSecurityRoleByName(ctx context.Context, apiClient *keyfactor.APIClient, 
 	return &response[0], nil
 }
 
-func GetSecurityPermissionSetNameById(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetId string) (*string, error) {
+func getSecurityPermissionSetNameById(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetId string) (*string, error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting permission set name by ID from remote source. Permission set ID: %s", permissionSetId))
 
 	api := apiClient.V1.PermissionSetApi
@@ -1573,7 +1579,7 @@ func GetSecurityPermissionSetNameById(ctx context.Context, apiClient *keyfactor.
 	return permissionName, nil
 }
 
-func GetSecurityPermissionSetIdByName(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetName string) (*string, error) {
+func getSecurityPermissionSetIdByName(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetName string) (*string, error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting permission set ID by name from remote source. Permission set name: %s", permissionSetName))
 
 	api := apiClient.V1.PermissionSetApi
@@ -1608,7 +1614,7 @@ func GetSecurityPermissionSetIdByName(ctx context.Context, apiClient *keyfactor.
 	return model.Name.Get(), nil
 }
 
-func GetSecurityPermissionSetByName(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetName string) (*kfv1.PermissionSetsPermissionSetResponse, error) {
+func getSecurityPermissionSetByName(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetName string) (*kfv1.PermissionSetsPermissionSetResponse, error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting permission set ID by name from remote source. Permission set name: %s", permissionSetName))
 
 	api := apiClient.V1.PermissionSetApi
@@ -1643,7 +1649,7 @@ func GetSecurityPermissionSetByName(ctx context.Context, apiClient *keyfactor.AP
 	return model, nil
 }
 
-func GetStringType(value *string) types.String {
+func getStringType(value *string) types.String {
 	if value == nil {
 		return types.String{Value: "", Null: true}
 	}

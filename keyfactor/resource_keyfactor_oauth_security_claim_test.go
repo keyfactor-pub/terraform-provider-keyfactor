@@ -22,7 +22,7 @@ func TestAccKeyfactorOAuthClaimResource(t *testing.T) {
 
 	r := oauthClaimTestCase{
 		description:        "Terraform Create Claim",
-		claimValue:         "TerraformAcceptanceClaim",
+		claimValue:         generateFakeName(10),
 		claimType:          "OAuthSubject",
 		providerAuthScheme: "System",
 		resourceType:       "keyfactor_oauth_security_claim",

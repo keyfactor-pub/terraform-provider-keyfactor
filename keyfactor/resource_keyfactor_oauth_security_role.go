@@ -181,10 +181,10 @@ func (r resourceOAuthSecurityRole) Read(
 	var result = OAuthSecurityRole{
 		ID:              types.Int64{Value: int64(*remoteState.Id)},
 		Immutable:       types.Bool{Value: *remoteState.Immutable},
-		EmailAddress:    GetStringType(remoteState.EmailAddress.Get()),
-		Description:     GetStringType(remoteState.Description.Get()),
-		Name:            GetStringType(remoteState.Name.Get()),
-		PermissionSetId: GetStringType(remoteState.PermissionSetId),
+		EmailAddress:    getStringType(remoteState.EmailAddress.Get()),
+		Description:     getStringType(remoteState.Description.Get()),
+		Name:            getStringType(remoteState.Name.Get()),
+		PermissionSetId: getStringType(remoteState.PermissionSetId),
 		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
 		Claims:          claims,
 	}
@@ -293,10 +293,10 @@ func (r resourceOAuthSecurityRole) Update(
 		provider := *claim.Provider
 		temp := OAuthSecurityClaim{
 			ID:                           types.Int64{Value: int64(*claim.Id)},
-			Description:                  GetStringType(claim.Description.Get()),
-			ClaimType:                    GetStringType(claim.ClaimType.Get()),
-			ClaimValue:                   GetStringType(claim.ClaimValue.Get()),
-			ProviderAuthenticationScheme: GetStringType(provider.AuthenticationScheme.Get()),
+			Description:                  getStringType(claim.Description.Get()),
+			ClaimType:                    getStringType(claim.ClaimType.Get()),
+			ClaimValue:                   getStringType(claim.ClaimValue.Get()),
+			ProviderAuthenticationScheme: getStringType(provider.AuthenticationScheme.Get()),
 			Provider:                     mapAuthenticationProviderTypeV2(provider.Id, provider.AuthenticationScheme.Get(), provider.DisplayName.Get()),
 		}
 		responseClaims = append(responseClaims, temp)
@@ -306,10 +306,10 @@ func (r resourceOAuthSecurityRole) Update(
 
 	var result = OAuthSecurityRole{
 		ID:              types.Int64{Value: int64(*updateResponse.Id)},
-		Name:            GetStringType(updateResponse.Name.Get()),
-		Description:     GetStringType(updateResponse.Description.Get()),
-		EmailAddress:    GetStringType(updateResponse.EmailAddress.Get()),
-		PermissionSetId: GetStringType(updateResponse.PermissionSetId),
+		Name:            getStringType(updateResponse.Name.Get()),
+		Description:     getStringType(updateResponse.Description.Get()),
+		EmailAddress:    getStringType(updateResponse.EmailAddress.Get()),
+		PermissionSetId: getStringType(updateResponse.PermissionSetId),
 		Immutable:       types.Bool{Value: *updateResponse.Immutable},
 		Permissions:     types.List{ElemType: types.StringType, Elems: responsePermissions},
 		Claims:          responseClaims,
@@ -463,10 +463,10 @@ func (r resourceOAuthSecurityRole) Create(
 		provider := *claim.Provider
 		temp := OAuthSecurityClaim{
 			ID:                           types.Int64{Value: int64(*claim.Id)},
-			Description:                  GetStringType(claim.Description.Get()),
-			ClaimType:                    GetStringType(claim.ClaimType.Get()),
-			ClaimValue:                   GetStringType(claim.ClaimValue.Get()),
-			ProviderAuthenticationScheme: GetStringType(provider.AuthenticationScheme.Get()),
+			Description:                  getStringType(claim.Description.Get()),
+			ClaimType:                    getStringType(claim.ClaimType.Get()),
+			ClaimValue:                   getStringType(claim.ClaimValue.Get()),
+			ProviderAuthenticationScheme: getStringType(provider.AuthenticationScheme.Get()),
 			Provider:                     mapAuthenticationProviderTypeV2(provider.Id, provider.AuthenticationScheme.Get(), provider.DisplayName.Get()),
 		}
 		responseClaims = append(responseClaims, temp)
@@ -476,10 +476,10 @@ func (r resourceOAuthSecurityRole) Create(
 
 	var result = OAuthSecurityRole{
 		ID:              types.Int64{Value: int64(*createResponse.Id)},
-		Name:            GetStringType(createResponse.Name.Get()),
-		Description:     GetStringType(createResponse.Description.Get()),
-		EmailAddress:    GetStringType(createResponse.EmailAddress.Get()),
-		PermissionSetId: GetStringType(createResponse.PermissionSetId),
+		Name:            getStringType(createResponse.Name.Get()),
+		Description:     getStringType(createResponse.Description.Get()),
+		EmailAddress:    getStringType(createResponse.EmailAddress.Get()),
+		PermissionSetId: getStringType(createResponse.PermissionSetId),
 		Immutable:       types.Bool{Value: *createResponse.Immutable},
 		Permissions:     types.List{ElemType: types.StringType, Elems: responsePermissions},
 		Claims:          responseClaims,

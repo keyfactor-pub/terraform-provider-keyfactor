@@ -19,11 +19,14 @@ resource "keyfactor_oauth_security_claim" "system_claim" {
 resource "keyfactor_oauth_security_role" "certificate_admin_role" {
   name        = "Certificate Admin"
   description = "A security role created through Terraform"
-  # permission_set_id = "099c05f0-deba-4562-a5b1-f491e19c0749" # Global
   permission_set_id = data.keyfactor_permission_set.global_permission_set.id
   permissions = [
     "/certificates/",
     "/metadata/types/read/",
   ]
-  # email_address = "foo.bar@example.com"
+}
+
+resource "keyfactor_oauth_security_role_claim_association" "cert_admin_system_claim_role" {
+  role_id  = resource.keyfactor_oauth_security_role.certificate_admin_role.id
+  claim_id = resource.keyfactor_oauth_security_claim.system_claim.id
 }

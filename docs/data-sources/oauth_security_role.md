@@ -51,31 +51,9 @@ output "existing_oauth_role" {
 
 ### Read-Only
 
-- `claims` (Attributes List) A list of OAuth security claims associated with the OAuth security role in Keyfactor (see [below for nested schema](#nestedatt--claims))
 - `description` (String) A string containing the description of the OAuth security claim in Keyfactor
 - `email_address` (String) Email address associated with the OAuth security role in Keyfactor
 - `id` (Number) Internal ID of the role.
 - `immutable` (Boolean) Indicates whether the OAuth security role in Keyfactor is immutable. If true, the role cannot be modified or deleted. This is typically used for system-defined roles that are essential for the operation of Keyfactor.
 - `permission_set_id` (String) The ID of the permission set associated with the OAuth security role in Keyfactor. This is used to identify the permissions associated with the role.
 - `permissions` (List of String) A list of permissions associated with the OAuth security role in Keyfactor. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role.
-
-<a id="nestedatt--claims"></a>
-### Nested Schema for `claims`
-
-Read-Only:
-
-- `claim_type` (String) The claim type of the OAuth security claim in Keyfactor
-- `claim_value` (String) The claim value of the OAuth security claim in Keyfactor
-- `description` (String) The description of the OAuth security claim in Keyfactor
-- `id` (Number) The ID of the OAuth security claim in Keyfactor
-- `provider` (Object) An object containing the provider of the OAuth security claim in Keyfactor (see [below for nested schema](#nestedatt--claims--provider))
-- `provider_authentication_scheme` (String) The provider authentication scheme of the OAuth security claim in Keyfactor
-
-<a id="nestedatt--claims--provider"></a>
-### Nested Schema for `claims.provider`
-
-Read-Only:
-
-- `authentication_scheme` (String)
-- `display_name` (String)
-- `id` (String)

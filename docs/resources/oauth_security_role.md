@@ -41,14 +41,6 @@ resource "keyfactor_oauth_security_role" "certificate_admin_role" {
     "/metadata/types/read/",
   ]
   # email_address = "foo.bar@example.com"
-  claims = [
-    {
-      description                    = resource.keyfactor_oauth_security_claim.system_claim.description
-      claim_type                     = resource.keyfactor_oauth_security_claim.system_claim.claim_type
-      claim_value                    = resource.keyfactor_oauth_security_claim.system_claim.claim_value
-      provider_authentication_scheme = resource.keyfactor_oauth_security_claim.system_claim.provider_authentication_scheme
-    }
-  ]
 }
 ```
 
@@ -57,7 +49,6 @@ resource "keyfactor_oauth_security_role" "certificate_admin_role" {
 
 ### Required
 
-- `claims` (Attributes List) A list of OAuth security claims associated with the OAuth security role in Keyfactor (see [below for nested schema](#nestedatt--claims))
 - `description` (String) A string containing the description of the OAuth security role.
 - `name` (String) Description of the OAuth security role
 - `permission_set_id` (String) The ID of the permission set associated with the OAuth security role. This is used to identify the permissions associated with the role.
@@ -71,30 +62,6 @@ resource "keyfactor_oauth_security_role" "certificate_admin_role" {
 
 - `id` (Number) Internal ID of the OAuth security role.
 - `immutable` (Boolean) Indicates whether the OAuth security role is immutable.
-
-<a id="nestedatt--claims"></a>
-### Nested Schema for `claims`
-
-Required:
-
-- `claim_type` (String) A string containing the claim type of the OAuth security claim in Keyfactor. For allowed possible values, please refer to the `Claim Type String` values in ClaimType table in the [Command REST API documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaimsPOST.htm).
-- `claim_value` (String) The claim value of the OAuth security claim in Keyfactor
-- `description` (String) The description of the OAuth security claim in Keyfactor
-- `provider_authentication_scheme` (String) The provider authentication scheme of the OAuth security claim in Keyfactor
-
-Read-Only:
-
-- `id` (Number) The ID of the OAuth security claim in Keyfactor
-- `provider` (Object) An object containing the provider of the OAuth security claim in Keyfactor (see [below for nested schema](#nestedatt--claims--provider))
-
-<a id="nestedatt--claims--provider"></a>
-### Nested Schema for `claims.provider`
-
-Required:
-
-- `authentication_scheme` (String)
-- `display_name` (String)
-- `id` (String)
 
 ## Import
 

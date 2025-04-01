@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -83,6 +84,7 @@ func (r resourceOAuthSecurityClaim) Read(
 	claimId := int32(state.ID.Value)
 
 	tflog.Debug(ctx, fmt.Sprintf("Parsed claim ID: %d...", claimId))
+	tflog.Debug(ctx, fmt.Sprintf("Claim values in state: Claim Type: %s, Claim Value: %s, Provider Authentication Scheme: %s...", state.ClaimType.Value, state.ClaimValue.Value, state.ProviderAuthenticationScheme.Value))
 
 	tflog.SetField(ctx, "claim_id", claimId)
 
@@ -102,11 +104,13 @@ func (r resourceOAuthSecurityClaim) Read(
 	}
 
 	if err != nil {
-		response.Diagnostics.AddError(
-			"Unknown OAuth security claim error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security claim '%d' on Keyfactor. Read failed. "+err.Error(), claimId),
-		)
+		defer httpReq.Body.Close()
+		body, _ := io.ReadAll(httpReq.Body)
 
+		response.Diagnostics.AddError(
+			"Error reading security claim",
+			fmt.Sprintf("Could not read OAuth security claim ID %d, unexpected error: %s. Details %s ", claimId, err.Error(), string(body)),
+		)
 		return
 	}
 
@@ -173,11 +177,14 @@ func (r resourceOAuthSecurityClaim) Update(
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to update OAuth security claim id %d...", claimId))
 
 	// Execute API request
-	remoteState, _, err := req.Execute()
+	remoteState, httpReq, err := req.Execute()
 	if err != nil {
+		defer httpReq.Body.Close()
+		body, _ := io.ReadAll(httpReq.Body)
+
 		response.Diagnostics.AddError(
-			"Error updating security identity.",
-			"Could not update identity "+plan.ClaimValue.Value+", unexpected error: "+err.Error(),
+			"Error updating security claim",
+			fmt.Sprintf("Could not update OAuth security claim ID %d, unexpected error: %s. Details %s ", claimId, err.Error(), string(body)),
 		)
 		return
 	}
@@ -225,12 +232,15 @@ func (r resourceOAuthSecurityClaim) Delete(
 	api := r.p.sdkClient.V1.SecurityClaimsApi
 	req := api.NewDeleteSecurityClaimsByIdRequest(ctx, claimId)
 
-	_, err := api.DeleteSecurityClaimsByIdExecute(req)
+	httpReq, err := api.DeleteSecurityClaimsByIdExecute(req)
 
 	if err != nil {
+		defer httpReq.Body.Close()
+		body, _ := io.ReadAll(httpReq.Body)
+
 		response.Diagnostics.AddError(
-			"Error deleting OAuth security claim.",
-			"Could not delete OAuth security claim "+state.ClaimValue.Value+", unexpected error: "+err.Error(),
+			"Error deleting security claim",
+			fmt.Sprintf("Could not delete OAuth security claim ID %d , unexpected error: %s. Details %s ", claimId, err.Error(), string(body)),
 		)
 		return
 	}
@@ -262,10 +272,6 @@ func (r resourceOAuthSecurityClaim) Create(
 	diags := request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
-		tflog.Error(ctx, "An error occurred getting the plan")
-		for _, err := range response.Diagnostics.Errors() {
-			tflog.Error(ctx, fmt.Sprintf("Error: %s\n===Detail: %s\n", err.Summary(), err.Detail()))
-		}
 		return
 	}
 
@@ -283,8 +289,8 @@ func (r resourceOAuthSecurityClaim) Create(
 	claimTypeEnum, err := v1.ParseCSSCMSCoreEnumsClaimType(claimType)
 	if err != nil {
 		response.Diagnostics.AddError(
-			"Error creating security identity.",
-			"Could not create identity "+claimValue+", error parsing claim type "+err.Error(),
+			"Error parsing security claim type.",
+			"Could not parse security claim value "+claimValue+", error parsing claim type: "+err.Error(),
 		)
 		return
 	}
@@ -297,11 +303,14 @@ func (r resourceOAuthSecurityClaim) Create(
 			ProviderAuthenticationScheme: authenticationScheme,
 		})
 
-	createResponse, _, err := req.Execute()
+	createResponse, httpReq, err := req.Execute()
 	if err != nil {
+		defer httpReq.Body.Close()
+		body, _ := io.ReadAll(httpReq.Body)
+
 		response.Diagnostics.AddError(
-			"Error creating security identity.",
-			"Could not create identity "+claimValue+", unexpected error: "+err.Error(),
+			"Error creating security claim",
+			fmt.Sprintf("Could not create OAuth security claim %s with claim type %s , unexpected error: %s. Details %s ", claimValue, claimType, err.Error(), string(body)),
 		)
 		return
 	}
@@ -352,8 +361,8 @@ func (r resourceOAuthSecurityClaim) ImportState(
 
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security claim ID %d...", claimId))
 
-	remoteState, _, err := req.Execute()
-	if remoteState == nil {
+	remoteState, httpReq, err := req.Execute()
+	if httpReq.StatusCode == 404 {
 		response.Diagnostics.AddError(
 			"Unknown OAuth security claim error.",
 			fmt.Sprintf("Unable to find OAuth security claim '%s' on Keyfactor. Read failed.", claimIdStr),
@@ -362,9 +371,12 @@ func (r resourceOAuthSecurityClaim) ImportState(
 	}
 
 	if err != nil {
+		defer httpReq.Body.Close()
+		body, _ := io.ReadAll(httpReq.Body)
+
 		response.Diagnostics.AddError(
-			"Unknown OAuth security claim error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security claim '%s' on Keyfactor. Read failed. "+err.Error(), claimIdStr),
+			"Error importing security claim",
+			fmt.Sprintf("Could not import OAuth security claim ID %d , unexpected error: %s. Details %s ", claimId, err.Error(), string(body)),
 		)
 		return
 	}

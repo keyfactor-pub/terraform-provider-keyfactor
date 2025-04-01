@@ -592,14 +592,15 @@ func (p *provider) Configure(
 // GetResources - Defines provider resources
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
-		"keyfactor_identity":               resourceSecurityIdentityType{},
-		"keyfactor_certificate":            resourceCommandCertificateType{},
-		"keyfactor_certificate_store":      resourceCertificateStoreType{},
-		"keyfactor_certificate_deployment": resourceCommandCertificateDeploymentType{},
-		"keyfactor_oauth_security_claim":   resourceOAuthSecurityClaimType{},
-		"keyfactor_oauth_security_role":    resourceOAuthSecurityRoleType{},
-		"keyfactor_role":                   resourceSecurityRoleType{},
-		"keyfactor_template_role_binding":  resourceCertificateTemplateRoleBindingType{},
+		"keyfactor_identity":                              resourceSecurityIdentityType{},
+		"keyfactor_certificate":                           resourceCommandCertificateType{},
+		"keyfactor_certificate_store":                     resourceCertificateStoreType{},
+		"keyfactor_certificate_deployment":                resourceCommandCertificateDeploymentType{},
+		"keyfactor_oauth_security_role_claim_association": resourceOAuthSecurityRoleClaimAssociationType{},
+		"keyfactor_oauth_security_claim":                  resourceOAuthSecurityClaimType{},
+		"keyfactor_oauth_security_role":                   resourceOAuthSecurityRoleType{},
+		"keyfactor_role":                                  resourceSecurityRoleType{},
+		"keyfactor_template_role_binding":                 resourceCertificateTemplateRoleBindingType{},
 	}, nil
 }
 

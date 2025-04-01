@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -51,46 +52,6 @@ func (r dataSourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Sch
 				Computed:    true,
 				Description: "A list of permissions associated with the OAuth security role in Keyfactor. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role.",
 			},
-			"claims": {
-				Attributes: tfsdk.ListNestedAttributes(
-					map[string]tfsdk.Attribute{
-						"id": {
-							Type:        types.Int64Type,
-							Computed:    true,
-							Description: "The ID of the OAuth security claim in Keyfactor",
-						},
-						"description": {
-							Type:        types.StringType,
-							Computed:    true,
-							Description: "The description of the OAuth security claim in Keyfactor",
-						},
-						"claim_type": {
-							Type:        types.StringType,
-							Computed:    true,
-							Description: "The claim type of the OAuth security claim in Keyfactor",
-						},
-						"claim_value": {
-							Type:        types.StringType,
-							Computed:    true,
-							Description: "The claim value of the OAuth security claim in Keyfactor",
-						},
-						"provider_authentication_scheme": {
-							Type:        types.StringType,
-							Computed:    true,
-							Description: "The provider authentication scheme of the OAuth security claim in Keyfactor",
-						},
-						"provider": {
-							Type: types.ObjectType{
-								AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
-							},
-							Computed:    true,
-							Description: "An object containing the provider of the OAuth security claim in Keyfactor",
-						},
-					},
-				),
-				Computed:    true,
-				Description: "A list of OAuth security claims associated with the OAuth security role in Keyfactor",
-			},
 		},
 		Description: "Reads an existing security role from Keyfactor Command using the V2 `/Security/Roles` API. Compatible with Keyfactor Command versions 11+.",
 	}, nil
@@ -133,33 +94,22 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 	tflog.Debug(ctx, fmt.Sprintf("Querying security role by ID %d", roleId))
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
-	remoteState, _, err := api.NewGetSecurityRolesByIdRequest(ctx, int32(*role.Id)).Execute()
+	remoteState, httpReq, err := api.NewGetSecurityRolesByIdRequest(ctx, int32(*role.Id)).Execute()
 	if err != nil {
+		defer httpReq.Body.Close()
+		body, _ := io.ReadAll(httpReq.Body)
+
 		response.Diagnostics.AddError(
-			"Error reading OAuth security role",
-			fmt.Sprintf("Unable to query OAuth security role %s by ID %d. Err: %s", roleName, roleId, err.Error()),
+			"Error reading security role",
+			fmt.Sprintf("Could not read OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), string(body)),
 		)
+		return
 	}
 
 	var permissionValues []attr.Value
 	for _, perm := range remoteState.Permissions {
 		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
 		permissionValues = append(permissionValues, types.String{Value: perm})
-	}
-
-	var claims []OAuthSecurityClaim
-	for _, claim := range remoteState.Claims {
-		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
-		provider := *claim.Provider
-		temp := OAuthSecurityClaim{
-			ID:                           types.Int64{Value: int64(*claim.Id)},
-			Description:                  types.String{Value: *claim.Description.Get()},
-			ClaimType:                    types.String{Value: *claim.ClaimType.Get()},
-			ClaimValue:                   types.String{Value: *claim.ClaimValue.Get()},
-			ProviderAuthenticationScheme: types.String{Value: *provider.AuthenticationScheme.Get()},
-			Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
-		}
-		claims = append(claims, temp)
 	}
 
 	tflog.Debug(ctx, "Data source was able to resource OAuth security role from remote source using ID")
@@ -172,7 +122,6 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 		Immutable:       types.Bool{Value: *remoteState.Immutable},
 		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
 		PermissionSetId: types.String{Value: *remoteState.PermissionSetId},
-		Claims:          claims,
 	}
 
 	tflog.Debug(ctx, "Saving OAuth security role data source information into state...")

@@ -78,15 +78,22 @@ type OAuthSecurityClaim struct {
 	ProviderAuthenticationScheme types.String `tfsdk:"provider_authentication_scheme"` // Authentication Provider of the OAuth security claim.
 }
 
+// OAuthSecurityRole represents an OAuth security role in Keyfactor.
 type OAuthSecurityRole struct {
-	ID              types.Int64          `tfsdk:"id"`                // Unique ID of the OAuth security role.
-	Name            types.String         `tfsdk:"name"`              // Name of the OAuth security role.
-	Description     types.String         `tfsdk:"description"`       // Description of the OAuth security role.
-	EmailAddress    types.String         `tfsdk:"email_address"`     // Email address associated with the OAuth security role.
-	Immutable       types.Bool           `tfsdk:"immutable"`         // Indicates if the OAuth security role is immutable.
-	Permissions     types.List           `tfsdk:"permissions"`       // List of permissions assigned to the OAuth security role.
-	PermissionSetId types.String         `tfsdk:"permission_set_id"` // Permission Set ID associated with the OAuth security role.
-	Claims          []OAuthSecurityClaim `tfsdk:"claims"`            // List of OAuth security claims associated with this role.
+	ID              types.Int64  `tfsdk:"id"`                // Unique ID of the OAuth security role.
+	Name            types.String `tfsdk:"name"`              // Name of the OAuth security role.
+	Description     types.String `tfsdk:"description"`       // Description of the OAuth security role.
+	EmailAddress    types.String `tfsdk:"email_address"`     // Email address associated with the OAuth security role.
+	Immutable       types.Bool   `tfsdk:"immutable"`         // Indicates if the OAuth security role is immutable.
+	Permissions     types.List   `tfsdk:"permissions"`       // List of permissions assigned to the OAuth security role.
+	PermissionSetId types.String `tfsdk:"permission_set_id"` // Permission Set ID associated with the OAuth security role.
+}
+
+// OAuthSecurityRoleClaimAssociation represents an association between an OAuth security role and an OAuth security claim.
+type OAuthSecurityRoleClaimAssociation struct {
+	ID      types.String `tfsdk:"id"`       // Unique ID of the association between the OAuth security role and the OAuth security claim. This is computed when the role claim association is created.
+	RoleID  types.Int64  `tfsdk:"role_id"`  // ID of the OAuth security role.
+	ClaimID types.Int64  `tfsdk:"claim_id"` // ID of the OAuth security claim to be associated with the OAuth security role.
 }
 
 // CommandCertificate represents a certificate entity in Keyfactor.

@@ -57,47 +57,6 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 				Description:         "A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role.",
 				MarkdownDescription: "A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role. For more information about allowed permission values, please refer to the Keyfactor Command [Version Two Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version2).",
 			},
-			"claims": {
-				Attributes: tfsdk.ListNestedAttributes(
-					map[string]tfsdk.Attribute{
-						"id": {
-							Type:        types.Int64Type,
-							Computed:    true,
-							Description: "The ID of the OAuth security claim in Keyfactor",
-						},
-						"description": {
-							Type:        types.StringType,
-							Required:    true,
-							Description: "The description of the OAuth security claim in Keyfactor",
-						},
-						"claim_type": {
-							Type:                types.StringType,
-							Required:            true,
-							Description:         "The claim type of the OAuth security claim in Keyfactor",
-							MarkdownDescription: "A string containing the claim type of the OAuth security claim in Keyfactor. For allowed possible values, please refer to the `Claim Type String` values in ClaimType table in the [Command REST API documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaimsPOST.htm).",
-						},
-						"claim_value": {
-							Type:        types.StringType,
-							Required:    true,
-							Description: "The claim value of the OAuth security claim in Keyfactor",
-						},
-						"provider_authentication_scheme": {
-							Type:        types.StringType,
-							Required:    true,
-							Description: "The provider authentication scheme of the OAuth security claim in Keyfactor",
-						},
-						"provider": {
-							Type: types.ObjectType{
-								AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
-							},
-							Computed:    true,
-							Description: "An object containing the provider of the OAuth security claim in Keyfactor",
-						},
-					},
-				),
-				Required:    true,
-				Description: "A list of OAuth security claims associated with the OAuth security role in Keyfactor",
-			},
 		},
 		Description: "Used to manage Keyfactor Command Security Roles using the V2 `/Security/Roles` API. This resource is compatible with Keyfactor Command versions 11+",
 	}, nil
@@ -124,7 +83,7 @@ func (r resourceOAuthSecurityRole) Read(
 	diags := request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 
-	tflog.Debug(ctx, fmt.Sprintf("OAuth security claim role from state: ID %d...", state.ID.Value))
+	tflog.Debug(ctx, fmt.Sprintf("OAuth security role from state: ID %d...", state.ID.Value))
 
 	roleId := int32(state.ID.Value)
 
@@ -148,11 +107,13 @@ func (r resourceOAuthSecurityRole) Read(
 	}
 
 	if err != nil {
-		response.Diagnostics.AddError(
-			"Unknown OAuth security role error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security role '%d' on Keyfactor. Read failed. "+err.Error(), roleId),
-		)
+		defer httpReq.Body.Close()
+		body, _ := io.ReadAll(httpReq.Body)
 
+		response.Diagnostics.AddError(
+			"Error reading security role",
+			fmt.Sprintf("Could not read OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+		)
 		return
 	}
 
@@ -160,21 +121,6 @@ func (r resourceOAuthSecurityRole) Read(
 	for _, perm := range remoteState.Permissions {
 		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
 		permissionValues = append(permissionValues, types.String{Value: perm})
-	}
-
-	claims := []OAuthSecurityClaim{}
-	for _, claim := range remoteState.Claims {
-		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
-		provider := *claim.Provider
-		temp := OAuthSecurityClaim{
-			ID:                           types.Int64{Value: int64(*claim.Id)},
-			Description:                  types.String{Value: *claim.Description.Get()},
-			ClaimType:                    types.String{Value: *claim.ClaimType.Get()},
-			ClaimValue:                   types.String{Value: *claim.ClaimValue.Get()},
-			ProviderAuthenticationScheme: types.String{Value: *provider.AuthenticationScheme.Get()},
-			Provider:                     mapAuthenticationProviderTypeV2(provider.Id, provider.AuthenticationScheme.Get(), provider.DisplayName.Get()),
-		}
-		claims = append(claims, temp)
 	}
 
 	tflog.Debug(ctx, "Data source was able to read OAuth security role resource from remote source using ID")
@@ -187,7 +133,6 @@ func (r resourceOAuthSecurityRole) Read(
 		Name:            getStringType(remoteState.Name.Get()),
 		PermissionSetId: getStringType(remoteState.PermissionSetId),
 		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
-		Claims:          claims,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -232,25 +177,6 @@ func (r resourceOAuthSecurityRole) Update(
 		permissionArray = append(permissionArray, permissionStr)
 	}
 
-	var claims []v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest
-	for _, claim := range plan.Claims {
-		claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(claim.ClaimType.Value)
-		if err != nil {
-			response.Diagnostics.AddError(
-				"Error parsing claim type",
-				fmt.Sprintf("Unable to parse claim type with name %s. Error: %s", claim.ClaimType.Value, err.Error()),
-			)
-			return
-		}
-
-		claims = append(claims, v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
-			ClaimType:                    *claimTypeEnum,
-			ClaimValue:                   claim.ClaimValue.Value,
-			Description:                  claim.Description.Value,
-			ProviderAuthenticationScheme: claim.ProviderAuthenticationScheme.Value,
-		})
-	}
-
 	api := r.p.sdkClient.V2.SecurityRolesApi
 	req := api.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
 		Id:              roleId,
@@ -259,7 +185,6 @@ func (r resourceOAuthSecurityRole) Update(
 		EmailAddress:    *v2.NewNullableString(&plan.EmailAddress.Value),
 		PermissionSetId: plan.PermissionSetId.Value,
 		Permissions:     permissionArray,
-		Claims:          claims,
 	})
 
 	tflog.Debug(ctx, fmt.Sprintf("Updating OAuth security role with ID: %d, name: %s;\n\tDescription: %s;\n\tEmailAddress: %s;\nt\tPermissionSetId: %s", roleId, roleName, plan.Description.Value, plan.EmailAddress.Value, plan.PermissionSetId.Value))
@@ -268,16 +193,13 @@ func (r resourceOAuthSecurityRole) Update(
 
 	updateResponse, http, err := req.Execute()
 	if err != nil {
-		response.Diagnostics.AddError(
-			"Error updating security role.",
-			"Could not update OAuth security role "+roleName+", unexpected error: "+err.Error(),
-		)
-		// read body of http
-
 		defer http.Body.Close()
-
 		body, _ := io.ReadAll(http.Body)
-		response.Diagnostics.AddError("Error updating security role.", string(body))
+
+		response.Diagnostics.AddError(
+			"Error updating security role",
+			fmt.Sprintf("Could not update OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+		)
 		return
 	}
 
@@ -286,21 +208,6 @@ func (r resourceOAuthSecurityRole) Update(
 	for _, perm := range updateResponse.Permissions {
 		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
 		responsePermissions = append(responsePermissions, types.String{Value: perm})
-	}
-
-	responseClaims := []OAuthSecurityClaim{}
-	for _, claim := range updateResponse.Claims {
-		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
-		provider := *claim.Provider
-		temp := OAuthSecurityClaim{
-			ID:                           types.Int64{Value: int64(*claim.Id)},
-			Description:                  getStringType(claim.Description.Get()),
-			ClaimType:                    getStringType(claim.ClaimType.Get()),
-			ClaimValue:                   getStringType(claim.ClaimValue.Get()),
-			ProviderAuthenticationScheme: getStringType(provider.AuthenticationScheme.Get()),
-			Provider:                     mapAuthenticationProviderTypeV2(provider.Id, provider.AuthenticationScheme.Get(), provider.DisplayName.Get()),
-		}
-		responseClaims = append(responseClaims, temp)
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("Successfully updated OAuth security role. Role ID: %d", *updateResponse.Id))
@@ -313,7 +220,6 @@ func (r resourceOAuthSecurityRole) Update(
 		PermissionSetId: getStringType(updateResponse.PermissionSetId),
 		Immutable:       types.Bool{Value: *updateResponse.Immutable},
 		Permissions:     types.List{ElemType: types.StringType, Elems: responsePermissions},
-		Claims:          responseClaims,
 	}
 
 	tflog.Debug(ctx, "Saving OAuth security role resource information into state...")
@@ -348,12 +254,15 @@ func (r resourceOAuthSecurityRole) Delete(
 	api := r.p.sdkClient.V1.SecurityRolesApi
 	req := api.NewDeleteSecurityRolesByIdRequest(ctx, roleId)
 
-	_, err := req.Execute()
+	http, err := req.Execute()
 
 	if err != nil {
+		defer http.Body.Close()
+		body, _ := io.ReadAll(http.Body)
+
 		response.Diagnostics.AddError(
-			"Error deleting OAuth security role.",
-			"Could not delete OAuth security role "+state.Name.Value+", unexpected error: "+err.Error(),
+			"Error deleting security role",
+			fmt.Sprintf("Could not delete OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
 		)
 		return
 	}
@@ -382,10 +291,6 @@ func (r resourceOAuthSecurityRole) Create(
 	diags := request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
-		tflog.Error(ctx, "An error occurred getting the plan")
-		for _, err := range response.Diagnostics.Errors() {
-			tflog.Error(ctx, fmt.Sprintf("Error: %s\n===Detail: %s\n", err.Summary(), err.Detail()))
-		}
 		return
 	}
 
@@ -403,25 +308,6 @@ func (r resourceOAuthSecurityRole) Create(
 		permissionArray = append(permissionArray, permissionStr)
 	}
 
-	claims := []v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{}
-	for _, claim := range plan.Claims {
-		claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(claim.ClaimType.Value)
-		if err != nil {
-			response.Diagnostics.AddError(
-				"Error parsing claim type",
-				fmt.Sprintf("Unable to parse claim type with name %s. Error: %s", claim.ClaimType.Value, err.Error()),
-			)
-			return
-		}
-
-		claims = append(claims, v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
-			ClaimType:                    *claimTypeEnum,
-			ClaimValue:                   claim.ClaimValue.Value,
-			Description:                  claim.Description.Value,
-			ProviderAuthenticationScheme: claim.ProviderAuthenticationScheme.Value,
-		})
-	}
-
 	api := r.p.sdkClient.V2.SecurityRolesApi
 	req := api.NewCreateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleCreationRequest(v2.SecuritySecurityRolesSecurityRoleCreationRequest{
 		Name:            roleName,
@@ -429,7 +315,6 @@ func (r resourceOAuthSecurityRole) Create(
 		EmailAddress:    *v2.NewNullableString(&plan.EmailAddress.Value),
 		PermissionSetId: plan.PermissionSetId.Value,
 		Permissions:     permissionArray,
-		Claims:          claims,
 	})
 
 	tflog.Debug(ctx, fmt.Sprintf("Creating OAuth security role with name: %s;\n\tDescription: %s;\n\tEmailAddress: %s;\nt\tPermissionSetId: %s", roleName, plan.Description.Value, plan.EmailAddress.Value, plan.PermissionSetId.Value))
@@ -438,39 +323,20 @@ func (r resourceOAuthSecurityRole) Create(
 
 	createResponse, http, err := req.Execute()
 	if err != nil {
-		response.Diagnostics.AddError(
-			"Error creating security role.",
-			"Could not create OAuth security role "+roleName+", unexpected error: "+err.Error(),
-		)
-		// read body of http
-
 		defer http.Body.Close()
-
 		body, _ := io.ReadAll(http.Body)
-		response.Diagnostics.AddError("Error creating security role.", string(body))
+
+		response.Diagnostics.AddError(
+			"Error creating security role",
+			fmt.Sprintf("Could not create OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), string(body)),
+		)
 		return
 	}
 
-	// To be on the safe side, map the permissions returned from the API response
 	var responsePermissions []attr.Value
 	for _, perm := range createResponse.Permissions {
 		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
 		responsePermissions = append(responsePermissions, types.String{Value: perm})
-	}
-
-	responseClaims := []OAuthSecurityClaim{}
-	for _, claim := range createResponse.Claims {
-		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
-		provider := *claim.Provider
-		temp := OAuthSecurityClaim{
-			ID:                           types.Int64{Value: int64(*claim.Id)},
-			Description:                  getStringType(claim.Description.Get()),
-			ClaimType:                    getStringType(claim.ClaimType.Get()),
-			ClaimValue:                   getStringType(claim.ClaimValue.Get()),
-			ProviderAuthenticationScheme: getStringType(provider.AuthenticationScheme.Get()),
-			Provider:                     mapAuthenticationProviderTypeV2(provider.Id, provider.AuthenticationScheme.Get(), provider.DisplayName.Get()),
-		}
-		responseClaims = append(responseClaims, temp)
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("Successfully created OAuth security role. Role ID: %d", *createResponse.Id))
@@ -483,7 +349,6 @@ func (r resourceOAuthSecurityRole) Create(
 		PermissionSetId: getStringType(createResponse.PermissionSetId),
 		Immutable:       types.Bool{Value: *createResponse.Immutable},
 		Permissions:     types.List{ElemType: types.StringType, Elems: responsePermissions},
-		Claims:          responseClaims,
 	}
 
 	tflog.Debug(ctx, "Saving OAuth security role resource information into state...")
@@ -506,7 +371,7 @@ func (r resourceOAuthSecurityRole) ImportState(
 
 	requestId := request.ID
 
-	tflog.Debug(ctx, fmt.Sprintf("OAuth security claim role ID requested: %s...", requestId))
+	tflog.Debug(ctx, fmt.Sprintf("OAuth security role ID requested: %s...", requestId))
 
 	roleId, err := strconv.Atoi(requestId)
 
@@ -530,11 +395,13 @@ func (r resourceOAuthSecurityRole) ImportState(
 	}
 
 	if err != nil {
-		response.Diagnostics.AddError(
-			"Unknown OAuth security role error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security role '%d' on Keyfactor. Read failed. "+err.Error(), roleId),
-		)
+		defer httpReq.Body.Close()
+		body, _ := io.ReadAll(httpReq.Body)
 
+		response.Diagnostics.AddError(
+			"Error importing security role",
+			fmt.Sprintf("Could not import OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+		)
 		return
 	}
 
@@ -542,21 +409,6 @@ func (r resourceOAuthSecurityRole) ImportState(
 	for _, perm := range remoteState.Permissions {
 		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
 		permissionValues = append(permissionValues, types.String{Value: perm})
-	}
-
-	claims := []OAuthSecurityClaim{}
-	for _, claim := range remoteState.Claims {
-		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
-		provider := *claim.Provider
-		temp := OAuthSecurityClaim{
-			ID:                           types.Int64{Value: int64(*claim.Id)},
-			Description:                  types.String{Value: *claim.Description.Get()},
-			ClaimType:                    types.String{Value: *claim.ClaimType.Get()},
-			ClaimValue:                   types.String{Value: *claim.ClaimValue.Get()},
-			ProviderAuthenticationScheme: types.String{Value: *provider.AuthenticationScheme.Get()},
-			Provider:                     mapAuthenticationProviderTypeV2(provider.Id, provider.AuthenticationScheme.Get(), provider.DisplayName.Get()),
-		}
-		claims = append(claims, temp)
 	}
 
 	tflog.Debug(ctx, "Data source was able to import state of OAuth security role resource from remote source using ID")
@@ -567,7 +419,6 @@ func (r resourceOAuthSecurityRole) ImportState(
 		Name:            types.String{Value: *remoteState.Name.Get()},
 		PermissionSetId: types.String{Value: *remoteState.PermissionSetId},
 		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
-		Claims:          claims,
 	}
 
 	diags := response.State.Set(ctx, result)

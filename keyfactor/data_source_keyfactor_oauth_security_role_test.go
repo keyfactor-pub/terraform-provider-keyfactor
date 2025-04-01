@@ -21,7 +21,6 @@ func TestAccKeyfactorOAuthSecurityRoleDataSource(t *testing.T) {
 	// In order for test to pass, security role MUST have:
 	// - Email set (not empty)
 	// - At least one permission associated with it
-	// - At least one claim associated with it
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -35,7 +34,6 @@ func TestAccKeyfactorOAuthSecurityRoleDataSource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "permission_set_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "permissions.#"),
 					resource.TestCheckResourceAttrSet(resourceName, "email_address"),
-					resource.TestCheckResourceAttrSet(resourceName, "claims.#"),
 					resource.TestCheckResourceAttr(resourceName, "name", securityRoleName),
 				),
 			},

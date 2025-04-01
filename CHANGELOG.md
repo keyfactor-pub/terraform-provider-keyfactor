@@ -9,6 +9,11 @@
 #### Features
 * feat(oauth_security_claims): Add support to read and manage security claims in Keyfactor Command
 
+### OAuth Security Role Claims Association
+
+#### Features
+* feat(oauth_security_role_claim_association): Add support to associate an OAuth security claim to an OAuth security role resource.
+
 ### Security Roles
 
 #### Chores

@@ -26,9 +26,10 @@ func (r dataSourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sc
 				Description: "A string containing the description of the OAuth security claim in Keyfactor",
 			},
 			"claim_type": {
-				Type:        types.StringType,
-				Required:    true,
-				Description: "A string containing the claim type of the OAuth security claim in Keyfactor",
+				Type:                types.StringType,
+				Required:            true,
+				Description:         "A string containing the claim type of the OAuth security claim in Keyfactor",
+				MarkdownDescription: "A string containing the claim type of the OAuth security claim in Keyfactor. For allowed possible values, please refer to the `Claim Type String` values in ClaimType table in the [Command REST API documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaimsPOST.htm).",
 			},
 			"claim_value": {
 				Type:        types.StringType,

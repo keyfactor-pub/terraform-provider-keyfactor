@@ -77,7 +77,7 @@ resource "keyfactor_oauth_security_role" "certificate_admin_role" {
 
 Required:
 
-- `claim_type` (String) The claim type of the OAuth security claim in Keyfactor
+- `claim_type` (String) A string containing the claim type of the OAuth security claim in Keyfactor. For allowed possible values, please refer to the `Claim Type String` values in ClaimType table in the [Command REST API documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaimsPOST.htm).
 - `claim_value` (String) The claim value of the OAuth security claim in Keyfactor
 - `description` (String) The description of the OAuth security claim in Keyfactor
 - `provider_authentication_scheme` (String) The provider authentication scheme of the OAuth security claim in Keyfactor

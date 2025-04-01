@@ -42,7 +42,7 @@ output "existing_claim" {
 
 ### Required
 
-- `claim_type` (String) A string containing the claim type of the OAuth security claim in Keyfactor
+- `claim_type` (String) A string containing the claim type of the OAuth security claim in Keyfactor. For allowed possible values, please refer to the `Claim Type String` values in ClaimType table in the [Command REST API documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaimsPOST.htm).
 - `claim_value` (String) A string containing the claim value of the OAuth security claim in Keyfactor
 - `provider_authentication_scheme` (String) The identity provider associated with the OAuth security claim. Used only for resource creation. Not returned by the API.
 

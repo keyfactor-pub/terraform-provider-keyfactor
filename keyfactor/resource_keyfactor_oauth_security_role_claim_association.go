@@ -129,9 +129,65 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Update(
 	request tfsdk.UpdateResourceRequest,
 	response *tfsdk.UpdateResourceResponse,
 ) {
+	// Because role claim associations are immutable, we need to delete and recreate the resource
 	tflog.Info(ctx, "Update called on OAuth security role claim association resource")
 
-	// NOOP
+	var state OAuthSecurityRoleClaimAssociation
+	diags := request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	roleId := int32(state.RoleID.Value)
+	claimId := int32(state.ClaimID.Value)
+
+	tflog.Debug(ctx, fmt.Sprintf("Parsed old role claim association. Role ID: %d, Claim ID: %d", roleId, claimId))
+
+	// Call Delete first
+	deleteRequest := tfsdk.DeleteResourceRequest{State: request.State}
+	deleteResponse := tfsdk.DeleteResourceResponse{State: response.State}
+	r.Delete(ctx, deleteRequest, &deleteResponse)
+	if deleteResponse.Diagnostics.HasError() {
+		response.Diagnostics.Append(deleteResponse.Diagnostics...)
+		return
+	}
+
+	response.State.RemoveResource(ctx)
+
+	var plan OAuthSecurityRoleClaimAssociation
+	diags = request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	roleId = int32(plan.RoleID.Value)
+	claimId = int32(plan.ClaimID.Value)
+
+	tflog.Debug(ctx, fmt.Sprintf("Parsed new role claim association. Role ID: %d, Claim ID: %d", roleId, claimId))
+
+	// Call Create after deletion
+	createRequest := tfsdk.CreateResourceRequest{Plan: request.Plan}
+	createResponse := tfsdk.CreateResourceResponse{State: response.State}
+	r.Create(ctx, createRequest, &createResponse)
+	response.Diagnostics.Append(createResponse.Diagnostics...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	var result = OAuthSecurityRoleClaimAssociation{
+		ID:      types.String{Value: fmt.Sprintf("%d-%d", roleId, claimId)},
+		RoleID:  types.Int64{Value: int64(roleId)},
+		ClaimID: types.Int64{Value: int64(claimId)},
+	}
+
+	// Update state after successful recreation
+	diags = response.State.Set(ctx, result)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 
 	tflog.Debug(ctx, "OAuth security role claim association data source updated successfully.")
 }

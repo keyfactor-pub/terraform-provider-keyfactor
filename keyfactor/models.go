@@ -105,12 +105,14 @@ type CertificateAutoRenewConfig struct {
 
 // CommandCertificateDeployment represents a deployment of a certificate to a store.
 type CommandCertificateDeployment struct {
-	ID               types.String `tfsdk:"id"`                   // Unique identifier for the deployment.
-	CertificateId    types.Int64  `tfsdk:"certificate_id"`       // ID of the certificate being deployed.
-	CertificateAlias types.String `tfsdk:"certificate_alias"`    // Alias for the certificate in the deployment.
+	ID               types.String `tfsdk:"id"`                   // ID represents the unique identifier for the certificate deployment resource.
+	CertificateId    types.Int64  `tfsdk:"certificate_id"`       // CertificateId represents the unique identifier for the certificate being deployed.
+	CertificateAlias types.String `tfsdk:"certificate_alias"`    // CertificateAlias specifies the alias for the certificate being deployed in the store.
 	StoreId          types.String `tfsdk:"certificate_store_id"` // ID of the store where the certificate is deployed.
-	KeyPassword      types.String `tfsdk:"key_password"`         // Password for the key associated with the deployment.
-	JobParameters    types.Map    `tfsdk:"job_parameters"`       // Additional parameters for the deployment job.
+	KeyPassword      types.String `tfsdk:"key_password"`         // KeyPassword represents the password for the private key associated with the certificate being deployed.
+	JobParameters    types.Map    `tfsdk:"job_parameters"`       // JobParameters represents additional parameters for the certificate deployment job as a map of key-value pairs.
+	Overwrite        types.Bool   `tfsdk:"overwrite"`            // Overwrite specifies whether an existing certificate should be overwritten during deployment.
+	Redeploy         types.Bool   `tfsdk:"redeploy"`             // Redeploy specifies whether a certificate should be redeployed to the store during the deployment process.
 }
 
 // CSRCertificate represents a certificate provisioned via a CSR in Keyfactor.

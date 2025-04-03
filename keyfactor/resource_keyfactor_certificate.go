@@ -10,9 +10,7 @@ import (
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -253,48 +251,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 							PlanModifiers: []tfsdk.AttributePlanModifier{
 								tfsdk.RequiresReplaceIf(
 									// The conditional function
-									func(ctx context.Context, state attr.Value, config attr.Value, path path.Path) (
-										bool,
-										diag.Diagnostics,
-									) {
-										var diags diag.Diagnostics
-
-										// Check if the planned value (config) is valid and known
-										//plannedValue, _ := config.ToTerraformValue(ctx)
-										//var stateValue bool
-										//pErr := plannedValue.As(&stateValue)
-										//if pErr != nil {
-										//	diags.AddError(
-										//		"Value conversion error",
-										//		"Unable to convert value to bool",
-										//	)
-										//	return false, diags
-										//}
-										planVal, err := config.ToTerraformValue(ctx)
-										if err != nil {
-											diags.AddError(
-												"Value conversion error",
-												"Unable to convert value to bool",
-											)
-										}
-
-										var forceRenewal bool
-										convErr := planVal.As(&forceRenewal)
-										if convErr != nil {
-											diags.AddError(
-												"Value conversion error",
-												"Unable to convert value to bool",
-											)
-											return false, diags
-										}
-
-										if forceRenewal {
-											return true, diags
-										}
-
-										return false, diags
-									},
-									"Triggers resource replacement when force_renewal is set to true.",     // Description
+									forceIfTrue,
+									"Triggers resource replacement when 'force_renewal' is set to 'true'.", // Description
 									"Triggers resource replacement when `force_renewal` is set to `true`.", // Markdown Description
 								),
 							},
@@ -1543,11 +1501,11 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		Metadata: metadata,
 		Subject: &api.CertificateSubject{
 			SubjectCommonName:         plan.CommonName.Value,
-			SubjectLocality:           escapeCommas(plan.Locality.Value),
-			SubjectOrganization:       escapeCommas(plan.Organization.Value),
-			SubjectCountry:            escapeCommas(plan.Country.Value),
-			SubjectOrganizationalUnit: escapeCommas(plan.OrganizationalUnit.Value),
-			SubjectState:              escapeCommas(plan.State.Value),
+			SubjectLocality:           plan.Locality.Value,
+			SubjectOrganization:       plan.Organization.Value,
+			SubjectCountry:            plan.Country.Value,
+			SubjectOrganizationalUnit: plan.OrganizationalUnit.Value,
+			SubjectState:              plan.State.Value,
 		},
 	}
 	tflog.Debug(ctx, "API PFXArgs created.")
@@ -1710,6 +1668,10 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		fmt.Sprintf("Setting state for certificate '%s'(%d).", PFXArgs.Subject.SubjectCommonName, enrolledId),
 	)
 	tflog.Debug(ctx, "Creating state object")
+
+	plan.IsPendingRevocation.Unknown = false
+	plan.IsExpired.Unknown = false
+	plan.IsRevoked.Unknown = false
 	var result = CommandCertificate{
 		ID:                   types.String{Value: fmt.Sprintf("%v", enrolledId)},
 		CSR:                  plan.CSR,
@@ -1738,6 +1700,11 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		CollectionId:         plan.CollectionId,
 		FriendlyName:         plan.FriendlyName,
 		UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
+		ExpiryWarningDays:    plan.ExpiryWarningDays,
+		IsExpired:            plan.IsExpired,
+		IsRevoked:            plan.IsRevoked,
+		IsPendingRevocation:  plan.IsPendingRevocation,
+		RenewalConfig:        plan.RenewalConfig,
 	}
 
 	return &result, diags
@@ -1907,6 +1874,11 @@ func (r resourceCommandCertificate) enrollCSR(
 		CollectionId:         plan.CollectionId,
 		FriendlyName:         plan.FriendlyName,
 		UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
+		ExpiryWarningDays:    plan.ExpiryWarningDays,
+		IsExpired:            plan.IsExpired,
+		IsRevoked:            plan.IsRevoked,
+		IsPendingRevocation:  plan.IsPendingRevocation,
+		RenewalConfig:        plan.RenewalConfig,
 	}
 
 	return &result, diags

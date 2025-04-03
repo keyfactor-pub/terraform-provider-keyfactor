@@ -3,16 +3,17 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"log"
+	"regexp"
+	"strconv"
+	"strings"
+
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"log"
-	"regexp"
-	"strconv"
-	"strings"
 )
 
 type resourceSecurityIdentityType struct{}
@@ -51,6 +52,9 @@ func (r resourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Schema
 				Description: "A Boolean that indicates whether the security identity's audit XML is valid (true) or not (false). A security identity may become invalid if Keyfactor Command determines that it appears to have been tampered with.",
 			},
 		},
+		Description: "IMPORTANT: This endpoint is for managing legacy formatted Active Directory identities only and" +
+			" is retained for backwards compatibility. New applications should use the Security Claims resource for both Active Directory and other identity providers.",
+		DeprecationMessage: "This endpoint is for managing legacy formatted Active Directory identities only and is retained for backwards compatibility. New applications should use the Security Claims resource for both Active Directory and other identity providers.",
 	}, nil
 }
 

@@ -3,12 +3,12 @@
 page_title: "keyfactor_identity Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  IMPORTANT: This endpoint is for managing legacy formatted Active Directory identities only and is retained for backwards compatibility. New applications should use the Security Claims resource for both Active Directory and other identity providers.
 ---
 
 # keyfactor_identity (Resource)
 
-
+IMPORTANT: This endpoint is for managing legacy formatted Active Directory identities only and is retained for backwards compatibility. New applications should use the Security Claims resource for both Active Directory and other identity providers.
 
 ## Example Usage
 

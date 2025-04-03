@@ -55,6 +55,25 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 				Optional:    true,
 				Description: "A map of entry parameters to be passed to the deployment job. These will only be used if the orchestrator extension supports them.",
 			},
+			"overwrite": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Description: "If true, any existing certificate with the same alias will be overwritten. If false, an error will be returned if a certificate with the same alias already exists. Default value is `true`.",
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+			},
+			"redeploy": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Description: "If true, the certificate will be redeployed to the store. If false, the certificate will be deployed only if it is not already deployed to the store.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.RequiresReplaceIf(
+						// The conditional function
+						forceIfTrue,
+						"Triggers resource replacement when 'redeploy' is set to 'true'.", // Description
+						"Triggers resource replacement when `redeploy` is set to `true`.", // Markdown Description
+					),
+				},
+			},
 		},
 		Description: "Used to schedule a certificate deployment(" +
 			"/management) job on Keyfactor Command using the `/OrchestratorJobs/Custom` API to deploy certificates to" +
@@ -104,7 +123,11 @@ func (r resourceCommandCertificateDeployment) Create(
 	certificateIdInt := int(certificateId)
 	storeId := plan.StoreId.Value
 	certificateAlias := plan.CertificateAlias.Value
-	keyPassword := plan.KeyPassword.Value
+	//keyPassword := plan.KeyPassword.Value
+
+	overwrite := plan.Overwrite.Value
+	forceRedploy := plan.Redeploy.Value
+
 	var jobParams map[string]string
 	_ = plan.JobParameters.ElementsAs(ctx, &jobParams, false)
 	hid := fmt.Sprintf("%v-%s-%s", certificateId, storeId, certificateAlias)
@@ -112,6 +135,9 @@ func (r resourceCommandCertificateDeployment) Create(
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
 	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
 	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
+	//ctx = tflog.SetField(ctx, "key_password", keyPassword)
+	ctx = tflog.SetField(ctx, "overwrite", overwrite)
+	ctx = tflog.SetField(ctx, "redeploy", forceRedploy)
 	tflog.Info(ctx, "Create called on certificate deployment resource")
 
 	//Read cert from Keyfactor Command
@@ -152,11 +178,8 @@ func (r resourceCommandCertificateDeployment) Create(
 		addErr := addCertificateToStore(
 			ctx,
 			kfClient,
-			certificateIdInt,
-			certificateAlias,
-			keyPassword,
-			storeId,
 			jobParams,
+			&plan,
 		)
 		if addErr != nil {
 			response.Diagnostics.AddError(
@@ -206,6 +229,8 @@ func (r resourceCommandCertificateDeployment) Create(
 		CertificateAlias: plan.CertificateAlias,
 		KeyPassword:      plan.KeyPassword,
 		JobParameters:    plan.JobParameters,
+		Redeploy:         plan.Redeploy,
+		Overwrite:        plan.Overwrite,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -273,6 +298,8 @@ func (r resourceCommandCertificateDeployment) Read(
 		CertificateAlias: state.CertificateAlias,
 		KeyPassword:      state.KeyPassword,
 		JobParameters:    state.JobParameters,
+		Redeploy:         state.Redeploy,
+		Overwrite:        state.Overwrite,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -422,47 +449,99 @@ func (r resourceCommandCertificateDeployment) ImportState(
 func addCertificateToStore(
 	ctx context.Context,
 	conn *api.Client,
-	certificateId int,
-	certificateAlias string,
-	keyPassword string,
-	storeId string,
 	jobParams map[string]string,
+	plan *CommandCertificateDeployment,
 ) error {
 	var storesStruct []api.CertificateStore
 
-	storeRequest := new(api.CertificateStore)
+	certificateIdInt := int(plan.CertificateId.Value)
+	implicitOverwrite := plan.Overwrite.Null || plan.Overwrite.Value
+	ctx = tflog.SetField(ctx, "certificate_id", certificateIdInt)
+	ctx = tflog.SetField(ctx, "implicit_overwrite", implicitOverwrite)
+	ctx = tflog.SetField(ctx, "certificate_alias", plan.CertificateAlias.Value)
+	ctx = tflog.SetField(ctx, "store_id", plan.StoreId.Value)
 
-	storeRequest.CertificateStoreId = storeId
-	storeRequest.Alias = certificateAlias
-
-	storeRequest.IncludePrivateKey = true //todo: make this configurable
-	storeRequest.Overwrite = true
-	storeRequest.PfxPassword = keyPassword
-	storeRequest.JobParameters = jobParams
-	storesStruct = append(storesStruct, *storeRequest)
-
-	// We want Keyfactor to immediately apply these changes.
-	tflog.Debug(ctx, "Creating immediate request to add certificate to store")
-
-	schedule := &api.InventorySchedule{
-		Immediate: boolToPointer(true),
+	tflog.Debug(ctx, "Adding certificate to Keyfactor store")
+	certificateStoreRequest := &api.CertificateStore{
+		CertificateStoreId: plan.StoreId.Value,
+		Alias:              plan.CertificateAlias.Value,
+		IncludePrivateKey:  true, // TODO: Make this configurable
+		Overwrite:          implicitOverwrite,
+		PfxPassword:        plan.KeyPassword.Value,
+		JobParameters:      jobParams,
 	}
+	storesStruct = append(storesStruct, *certificateStoreRequest)
+
+	// Prepare configuration
 	config := &api.AddCertificateToStore{
-		CertificateId:     certificateId,
+		CertificateId:     certificateIdInt,
 		CertificateStores: &storesStruct,
-		InventorySchedule: schedule,
+		InventorySchedule: &api.InventorySchedule{
+			Immediate: boolToPointer(true),
+		},
 	}
-	tflog.Debug(ctx, fmt.Sprintf("Adding certificate %v to Keyfactor store %v", certificateId, storeId))
-	_, err := conn.AddCertificateToStores(config)
+
+	// Add certificate to store
+	err := tryAddCertificateToStore(
+		ctx,
+		conn,
+		config,
+		certificateStoreRequest,
+		implicitOverwrite,
+		plan.CertificateId.Value,
+		plan.StoreId.Value,
+	)
 	if err != nil {
-		tflog.Error(
-			ctx,
-			fmt.Sprintf("Error adding certificate %v to Keyfactor store %v: %v", certificateId, storeId, err),
-		)
 		return err
 	}
-	tflog.Debug(ctx, fmt.Sprintf("Successfully added certificate %v to Keyfactor store %v", certificateId, storeId))
+
+	tflog.Debug(
+		ctx,
+		fmt.Sprintf(
+			"Successfully added certificate %v to Keyfactor store %v",
+			plan.CertificateId.Value,
+			plan.StoreId.Value,
+		),
+	)
 	return nil
+}
+
+// Extracted helper function to avoid duplication
+func tryAddCertificateToStore(
+	ctx context.Context,
+	conn *api.Client,
+	config *api.AddCertificateToStore,
+	certificateStoreRequest *api.CertificateStore,
+	implicitOverwrite bool,
+	certificateId interface{},
+	storeId interface{},
+) error {
+	resp, err := conn.AddCertificateToStores(config)
+	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
+	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
+	ctx = tflog.SetField(ctx, "certificate_alias", certificateStoreRequest.Alias)
+	ctx = tflog.SetField(ctx, "implicit_overwrite", implicitOverwrite)
+
+	if err == nil {
+		tflog.Trace(ctx, fmt.Sprintf("Response from Keyfactor: %v", resp))
+		return nil // No error, exit early
+	}
+
+	if strings.Contains(err.Error(), "does not exist in certificate store") && implicitOverwrite {
+		if config.CertificateStores != nil && len(*config.CertificateStores) > 0 {
+			for i := range *config.CertificateStores {
+				(*config.CertificateStores)[i].Overwrite = false
+			}
+		}
+		resp, err = conn.AddCertificateToStores(config)
+		if err == nil {
+			tflog.Trace(ctx, fmt.Sprintf("Response from Keyfactor on retry: %v", resp))
+			return nil
+		}
+	}
+
+	tflog.Error(ctx, fmt.Sprintf("Error adding certificate %v to Keyfactor store %v: %v", certificateId, storeId, err))
+	return err
 }
 
 func validateUndeployment(
@@ -514,9 +593,9 @@ func validateUndeployment(
 				),
 			)
 			time.Sleep(time.Duration(retryDelay) * time.Second)
-			retryDelay = retryDelay * 2
-			if retryDelay > 60 {
-				retryDelay = 60
+			retryDelay *= 2
+			if retryDelay > MAX_WAIT_SECONDS {
+				retryDelay = MAX_WAIT_SECONDS
 			}
 			deployed = false
 		} else {

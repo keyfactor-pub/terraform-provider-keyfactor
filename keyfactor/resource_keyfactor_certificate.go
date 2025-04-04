@@ -1501,11 +1501,11 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		Metadata: metadata,
 		Subject: &api.CertificateSubject{
 			SubjectCommonName:         plan.CommonName.Value,
-			SubjectLocality:           escapeCommas(plan.Locality.Value),
-			SubjectOrganization:       escapeCommas(plan.Organization.Value),
-			SubjectCountry:            escapeCommas(plan.Country.Value),
-			SubjectOrganizationalUnit: escapeCommas(plan.OrganizationalUnit.Value),
-			SubjectState:              escapeCommas(plan.State.Value),
+			SubjectLocality:           plan.Locality.Value,
+			SubjectOrganization:       plan.Organization.Value,
+			SubjectCountry:            plan.Country.Value,
+			SubjectOrganizationalUnit: plan.OrganizationalUnit.Value,
+			SubjectState:              plan.State.Value,
 		},
 	}
 	tflog.Debug(ctx, "API PFXArgs created.")

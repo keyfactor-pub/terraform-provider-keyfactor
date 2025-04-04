@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
-	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v3/api/keyfactor/v1"
+	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 )
 
 type resourceOAuthSecurityClaimType struct{}

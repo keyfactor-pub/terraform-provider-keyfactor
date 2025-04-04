@@ -30,9 +30,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Keyfactor/keyfactor-go-client-sdk/v3"
-	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v3/api/keyfactor/v1"
-	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v3/api/keyfactor/v2"
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
+	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
@@ -21,11 +22,11 @@ type oauthSecurityRoleClaimAssociationTestCase struct {
 func TestAccKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 
 	r := oauthSecurityRoleClaimAssociationTestCase{
-		role1Name:              generateFakeName(15),
-		role2Name:              generateFakeName(15),
+		role1Name:              acctest.RandomWithPrefix("tf-acc-role"),
+		role2Name:              acctest.RandomWithPrefix("tf-acc-role"),
 		associatedRoleResource: "test_role_1",
-		claimValue:             generateFakeName(15),
-		claimProviderScheme:    "System",
+		claimValue:             acctest.RandomWithPrefix("tf-acc-claim"),
+		claimProviderScheme:    getEnvOrSkip(t, "KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME"),
 		resourceType:           "keyfactor_oauth_security_role_claim_association",
 		resourceName:           "test_role_claim_association",
 		resourcePath:           "keyfactor_oauth_security_role_claim_association.test_role_claim_association",

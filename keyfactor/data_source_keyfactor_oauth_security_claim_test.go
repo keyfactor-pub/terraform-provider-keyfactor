@@ -2,7 +2,6 @@ package keyfactor
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -12,15 +11,9 @@ func TestAccKeyfactorOAuthSecurityClaimDataSource(t *testing.T) {
 	var resourceType = "keyfactor_oauth_security_claim"
 	var resourceName = fmt.Sprintf("data.%s.test", resourceType)
 
-	securityClaimType := os.Getenv("KEYFACTOR_OAUTH_SECURITY_CLAIM_TYPE")
-	securityClaimValue := os.Getenv("KEYFACTOR_OAUTH_SECURITY_CLAIM_VALUE")
-	securityClaimAuthScheme := os.Getenv("KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME")
-
-	if securityClaimType == "" ||
-		securityClaimValue == "" ||
-		securityClaimAuthScheme == "" {
-		t.Skip("Skipping test due to missing environment variables: KEYFACTOR_OAUTH_SECURITY_CLAIM_TYPE, KEYFACTOR_OAUTH_SECURITY_CLAIM_VALUE, KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME are all required")
-	}
+	securityClaimType := getEnvOrSkip(t, "KEYFACTOR_OAUTH_SECURITY_CLAIM_TYPE")
+	securityClaimValue := getEnvOrSkip(t, "KEYFACTOR_OAUTH_SECURITY_CLAIM_VALUE")
+	securityClaimAuthScheme := getEnvOrSkip(t, "KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME")
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },

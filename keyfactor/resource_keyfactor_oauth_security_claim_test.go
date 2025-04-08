@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
@@ -22,9 +23,9 @@ func TestAccKeyfactorOAuthClaimResource(t *testing.T) {
 
 	r := oauthClaimTestCase{
 		description:        "Terraform Create Claim",
-		claimValue:         generateFakeName(10),
+		claimValue:         acctest.RandomWithPrefix("tf-acc-claim"),
 		claimType:          "OAuthSubject",
-		providerAuthScheme: "System",
+		providerAuthScheme: getEnvOrSkip(t, "KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME"),
 		resourceType:       "keyfactor_oauth_security_claim",
 		resourceName:       "terraform_test",
 		resourcePath:       "keyfactor_oauth_security_claim.terraform_test",

@@ -24,10 +24,12 @@ import (
 	"math/rand"
 	"net"
 	"net/url"
+	"os"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
@@ -95,10 +97,13 @@ func generatePassword(passwordLength, minSpecialChar, minNum, minUpperCase int) 
 	return string(inRune)
 }
 
-// Generates a fake name with a specified length.
-// This is used for generating random names for resources in test cases.
-func generateFakeName(length int) string {
-	return generatePassword(length, 0, 0, 10)
+// Gets the value of an environment variable or skips the test if the variable is not set.
+func getEnvOrSkip(t *testing.T, envVar string) string {
+	value := os.Getenv(envVar)
+	if value == "" {
+		t.Skipf("Skipping test: because %s is not set", envVar)
+	}
+	return value
 }
 
 // expandSubject extracts subject fields from a given string and returns them as Terraform types.
@@ -1563,58 +1568,7 @@ func getSecurityRoleByName(ctx context.Context, apiClient *keyfactor.APIClient, 
 	return &response[0], nil
 }
 
-func getSecurityPermissionSetNameById(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetId string) (*string, error) {
-	tflog.Debug(ctx, fmt.Sprintf("Getting permission set name by ID from remote source. Permission set ID: %s", permissionSetId))
-
-	api := apiClient.V1.PermissionSetApi
-	response, _, err := api.NewGetPermissionSetsByIdRequest(ctx, permissionSetId).Execute()
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to query permission set by ID: %w", err)
-	}
-
-	permissionName := response.Name.Get()
-
-	tflog.Debug(ctx, fmt.Sprintf("Found permission set with matching ID %s. Name: %s", permissionSetId, *permissionName))
-
-	return permissionName, nil
-}
-
-func getSecurityPermissionSetIdByName(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetName string) (*string, error) {
-	tflog.Debug(ctx, fmt.Sprintf("Getting permission set ID by name from remote source. Permission set name: %s", permissionSetName))
-
-	api := apiClient.V1.PermissionSetApi
-	var model *kfv1.PermissionSetsPermissionSetResponse
-	pageNumber := 1
-	for model == nil {
-		tflog.Debug(ctx, fmt.Sprintf("Querying permission set page %d", pageNumber))
-		permissionSets, _, err := api.NewGetPermissionSetsRequest(ctx).ReturnLimit(50).PageReturned(int32(pageNumber)).Execute()
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to query permission sets: %w", err)
-		}
-
-		if len(permissionSets) == 0 {
-			return nil, fmt.Errorf("no permissions were found with name %s", permissionSetName)
-		}
-
-		pageNumber++
-
-		for _, permission := range permissionSets {
-			// Check if the permission set name matches the requested name
-			if permission.Name.Get() != nil && *permission.Name.Get() == permissionSetName {
-				tflog.Debug(ctx, fmt.Sprintf("Found permission set with name: %s", permissionSetName))
-				model = &permission
-				break
-			}
-		}
-	}
-
-	tflog.Debug(ctx, fmt.Sprintf("Found permission set with matching name %s. ID: %s", permissionSetName, *model.Id))
-
-	return model.Name.Get(), nil
-}
-
+// Queries security permissions by name and returns the first matching permission set.
 func getSecurityPermissionSetByName(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetName string) (*kfv1.PermissionSetsPermissionSetResponse, error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting permission set ID by name from remote source. Permission set name: %s", permissionSetName))
 
@@ -1650,6 +1604,8 @@ func getSecurityPermissionSetByName(ctx context.Context, apiClient *keyfactor.AP
 	return model, nil
 }
 
+// Converts a pointer to a string to a types.String object.
+// If the pointer is nil, it returns a types.String with Null set to true.
 func getStringType(value *string) types.String {
 	if value == nil {
 		return types.String{Value: "", Null: true}

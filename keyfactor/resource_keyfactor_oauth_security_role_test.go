@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
@@ -20,7 +21,7 @@ type oauthRoleTestCase struct {
 func TestAccKeyfactorOAuthRoleResource(t *testing.T) {
 
 	r := oauthRoleTestCase{
-		name:         generateFakeName(10),
+		name:         acctest.RandomWithPrefix("tf-acc-role"),
 		description:  "Terraform Create Role",
 		permissions:  []string{"/metadata/types/read/"},
 		emailAddress: "foo@example.com",
@@ -29,7 +30,7 @@ func TestAccKeyfactorOAuthRoleResource(t *testing.T) {
 		resourcePath: "keyfactor_oauth_security_role.terraform_test",
 	}
 
-	// Update to multiple claims test
+	// Update role attributes
 	r2 := r
 	r2.description = "Terraform Update Claim"
 	r2.permissions = []string{"/certificates/"}

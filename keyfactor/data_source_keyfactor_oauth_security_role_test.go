@@ -2,7 +2,6 @@ package keyfactor
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -12,11 +11,7 @@ func TestAccKeyfactorOAuthSecurityRoleDataSource(t *testing.T) {
 	var resourceType = "keyfactor_oauth_security_role"
 	var resourceName = fmt.Sprintf("data.%s.test", resourceType)
 
-	securityRoleName := os.Getenv("KEYFACTOR_OAUTH_SECURITY_ROLE_NAME")
-
-	if securityRoleName == "" {
-		t.Skip("Skipping test due to missing environment variables: KEYFACTOR_OAUTH_SECURITY_ROLE_NAME is required")
-	}
+	securityRoleName := getEnvOrSkip(t, "KEYFACTOR_OAUTH_SECURITY_ROLE_NAME")
 
 	// In order for test to pass, security role MUST have:
 	// - Email set (not empty)

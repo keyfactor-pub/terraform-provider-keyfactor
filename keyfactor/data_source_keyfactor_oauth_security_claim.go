@@ -64,10 +64,9 @@ type dataSourceOauthSecurityClaim struct {
 }
 
 func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
-	tflog.Info(ctx, "Read called on security remoteState resource")
-	var state OAuthSecurityClaim
+	tflog.Info(ctx, "Read called on OAuth security claim data source")
 
-	tflog.Debug(ctx, "Read called on OAuth security claim data source.")
+	var state OAuthSecurityClaim
 	diags := request.Config.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {

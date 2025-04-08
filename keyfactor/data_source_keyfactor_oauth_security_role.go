@@ -68,10 +68,9 @@ type dataSourceOauthSecurityRole struct {
 }
 
 func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
-	tflog.Info(ctx, "Read called on security remoteState resource")
-	var state OAuthSecurityRole
+	tflog.Info(ctx, "Read called on OAuth security role data source.")
 
-	tflog.Debug(ctx, "Read called on OAuth security role data source.")
+	var state OAuthSecurityRole
 	diags := request.Config.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {

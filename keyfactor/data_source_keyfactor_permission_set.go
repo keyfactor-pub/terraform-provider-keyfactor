@@ -47,9 +47,9 @@ type dataSourcePermissionSet struct {
 }
 
 func (r dataSourcePermissionSet) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
-	tflog.Info(ctx, "Read called on permission set remoteState resource")
-	var state PermissionSet
+	tflog.Info(ctx, "Read called on permission set data source")
 
+	var state PermissionSet
 	diags := request.Config.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {

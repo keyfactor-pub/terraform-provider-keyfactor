@@ -227,6 +227,13 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d...", roleId))
 
 	_, httpResp, err := updateReq.Execute()
+
+	if httpResp.StatusCode == 404 {
+		tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+		response.State.RemoveResource(ctx)
+		return
+	}
+
 	if err != nil {
 		defer httpResp.Body.Close()
 		body, _ := io.ReadAll(httpResp.Body)
@@ -279,9 +286,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security role ID %d...", roleId))
 
-	remoteRoleState, httpReq, err := roleRequest.Execute()
+	remoteRoleState, httpResp, err := roleRequest.Execute()
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpResp.StatusCode))
 
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -367,7 +374,7 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d...", roleId))
 
-	_, httpResp, err := updateReq.Execute()
+	_, httpResp, err = updateReq.Execute()
 	if err != nil {
 		defer httpResp.Body.Close()
 		body, _ := io.ReadAll(httpResp.Body)

@@ -23,14 +23,16 @@ func (r resourceOAuthSecurityRoleClaimAssociationType) GetSchema(_ context.Conte
 				Description: "Internal ID of the OAuth security role claim association.",
 			},
 			"role_id": {
-				Type:        types.Int64Type,
-				Required:    true,
-				Description: "Internal ID of the OAuth security role.",
+				Type:          types.Int64Type,
+				Required:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Internal ID of the OAuth security role.",
 			},
 			"claim_id": {
-				Type:        types.Int64Type,
-				Required:    true,
-				Description: "Internal ID of the OAuth security claim.",
+				Type:          types.Int64Type,
+				Required:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description:   "Internal ID of the OAuth security claim.",
 			},
 		},
 		Description: "Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+",
@@ -129,67 +131,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Update(
 	request tfsdk.UpdateResourceRequest,
 	response *tfsdk.UpdateResourceResponse,
 ) {
-	// Because role claim associations are immutable, we need to delete and recreate the resource
-	tflog.Info(ctx, "Update called on OAuth security role claim association resource")
-
-	var state OAuthSecurityRoleClaimAssociation
-	diags := request.State.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
-		return
-	}
-
-	roleId := int32(state.RoleID.Value)
-	claimId := int32(state.ClaimID.Value)
-
-	tflog.Debug(ctx, fmt.Sprintf("Parsed old role claim association. Role ID: %d, Claim ID: %d", roleId, claimId))
-
-	// Call Delete first
-	deleteRequest := tfsdk.DeleteResourceRequest{State: request.State}
-	deleteResponse := tfsdk.DeleteResourceResponse{State: response.State}
-	r.Delete(ctx, deleteRequest, &deleteResponse)
-	if deleteResponse.Diagnostics.HasError() {
-		response.Diagnostics.Append(deleteResponse.Diagnostics...)
-		return
-	}
-
-	response.State.RemoveResource(ctx)
-
-	var plan OAuthSecurityRoleClaimAssociation
-	diags = request.Plan.Get(ctx, &plan)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
-		return
-	}
-
-	roleId = int32(plan.RoleID.Value)
-	claimId = int32(plan.ClaimID.Value)
-
-	tflog.Debug(ctx, fmt.Sprintf("Parsed new role claim association. Role ID: %d, Claim ID: %d", roleId, claimId))
-
-	// Call Create after deletion
-	createRequest := tfsdk.CreateResourceRequest{Plan: request.Plan}
-	createResponse := tfsdk.CreateResourceResponse{State: response.State}
-	r.Create(ctx, createRequest, &createResponse)
-	response.Diagnostics.Append(createResponse.Diagnostics...)
-	if response.Diagnostics.HasError() {
-		return
-	}
-
-	var result = OAuthSecurityRoleClaimAssociation{
-		ID:      types.String{Value: fmt.Sprintf("%d-%d", roleId, claimId)},
-		RoleID:  types.Int64{Value: int64(roleId)},
-		ClaimID: types.Int64{Value: int64(claimId)},
-	}
-
-	// Update state after successful recreation
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
-		return
-	}
-
-	tflog.Debug(ctx, "OAuth security role claim association data source updated successfully.")
+	// Any updates to role claim association results in a delete & create.
+	// NOOP
 }
 
 func (r resourceOAuthSecurityRoleClaimAssociation) Delete(

@@ -56,9 +56,10 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Read(
 ) {
 	tflog.Info(ctx, "Read called on OAuth security role claim association resource")
 
-	var state OAuthSecurityRoleClaimAssociation
-	diags := request.State.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
+	state, ok := getState[OAuthSecurityRoleClaimAssociation](ctx, &request.State, &response.Diagnostics)
+	if !ok {
+		return
+	}
 
 	tflog.Debug(ctx, fmt.Sprintf("OAuth security role claim association from state: Role ID %d, Claim ID: %d...", state.RoleID.Value, state.ClaimID.Value))
 
@@ -111,15 +112,10 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Read(
 
 	tflog.Debug(ctx, "Data source was able to read OAuth security role claim association from resource")
 
-	var result = OAuthSecurityRoleClaimAssociation{
-		ID:      types.String{Value: fmt.Sprintf("%d-%d", roleId, claimId)},
-		RoleID:  types.Int64{Value: int64(roleId)},
-		ClaimID: types.Int64{Value: int64(claimId)},
-	}
+	result := mapOAuthSecurityRoleClaimAssociation(ctx, roleId, claimId)
 
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 
@@ -142,10 +138,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 ) {
 	tflog.Info(ctx, "Delete called on OAuth security role claim association resource")
 
-	var state OAuthSecurityRoleClaimAssociation
-	diags := request.State.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	state, ok := getState[OAuthSecurityRoleClaimAssociation](ctx, &request.State, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
@@ -181,36 +175,11 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 		return
 	}
 
-	claims := []v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{}
-	for _, claim := range remoteState.Claims {
-		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
-
-		if claim.Id != nil && *claim.Id == claimId {
-			// Skip adding claim to claims array
-			continue
-		}
-
-		provider := *claim.Provider
-		claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(*claim.ClaimType.Get())
-
-		// This shouldn't happen since the claim type is coming from the API
-		// But just in case
-		if err != nil {
-			response.Diagnostics.AddError(
-				"Error creating security identity.",
-				"Could not create identity role claim association, error parsing claim type "+err.Error(),
-			)
-			return
-		}
-
-		temp := v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
-			ClaimType:                    *claimTypeEnum,
-			ClaimValue:                   *claim.ClaimValue.Get(),
-			ProviderAuthenticationScheme: *provider.AuthenticationScheme.Get(),
-			Description:                  *claim.Description.Get(),
-		}
-		claims = append(claims, temp)
+	updatedClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteState, &claimId)
+	if !ok {
+		return
 	}
+	claims := *updatedClaims
 
 	tflog.Debug(ctx, "Data source was able to import state of OAuth security role resource from remote source using ID")
 
@@ -256,19 +225,14 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 	request tfsdk.CreateResourceRequest,
 	response *tfsdk.CreateResourceResponse,
 ) {
-	if !r.p.configured {
-		response.Diagnostics.AddError(
-			"Provider not configured",
-			"The provider hasn't been configured before apply, likely because it depends on an unknown value from another resource. This leads to weird stuff happening, so we'd prefer if you didn't do that. Thanks!",
-		)
+	ok := checkIfProviderIsConfigured(r.p, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
 	tflog.Info(ctx, "Create called on OAuth security role claim association resource")
-	var plan OAuthSecurityRoleClaimAssociation
-	diags := request.Plan.Get(ctx, &plan)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	plan, ok := getPlan[OAuthSecurityRoleClaimAssociation](ctx, &request.Plan, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
@@ -314,31 +278,11 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 		)
 	}
 
-	claims := []v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{}
-	for _, claim := range remoteRoleState.Claims {
-		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
-
-		provider := *claim.Provider
-		claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(*claim.ClaimType.Get())
-
-		// This shouldn't happen since the claim type is coming from the API
-		// But just in case
-		if err != nil {
-			response.Diagnostics.AddError(
-				"Error creating security identity.",
-				"Could not create identity role claim association, error parsing claim type "+err.Error(),
-			)
-			return
-		}
-
-		temp := v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
-			ClaimType:                    *claimTypeEnum,
-			ClaimValue:                   *claim.ClaimValue.Get(),
-			ProviderAuthenticationScheme: *provider.AuthenticationScheme.Get(),
-			Description:                  *claim.Description.Get(),
-		}
-		claims = append(claims, temp)
+	existingClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteRoleState, nil)
+	if !ok {
+		return
 	}
+	claims := *existingClaims
 
 	provider := *remoteClaimState.Provider
 	claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(*remoteClaimState.ClaimType.Get())
@@ -386,17 +330,12 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 		return
 	}
 
-	result := OAuthSecurityRoleClaimAssociation{
-		ID:      types.String{Value: fmt.Sprintf("%d-%d", roleId, claimId)},
-		RoleID:  types.Int64{Value: int64(roleId)},
-		ClaimID: types.Int64{Value: int64(claimId)},
-	}
+	result := mapOAuthSecurityRoleClaimAssociation(ctx, roleId, claimId)
 
 	tflog.Debug(ctx, "Saving OAuth security role claim association resource information into state...")
 
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 

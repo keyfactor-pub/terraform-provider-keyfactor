@@ -75,9 +75,10 @@ func (r resourceOAuthSecurityClaim) Read(
 ) {
 	tflog.Info(ctx, "Read called on OAuth security claim resource")
 
-	var state OAuthSecurityClaim
-	diags := request.State.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
+	state, ok := getState[OAuthSecurityClaim](ctx, &request.State, &response.Diagnostics)
+	if !ok {
+		return
+	}
 
 	tflog.Debug(ctx, fmt.Sprintf("OAuth security claim id from state: ID %d...", state.ID.Value))
 
@@ -114,20 +115,10 @@ func (r resourceOAuthSecurityClaim) Read(
 		return
 	}
 
-	provider := *remoteState.Provider
+	var result = mapOAuthSecurityClaim(ctx, remoteState)
 
-	var result = OAuthSecurityClaim{
-		ID:                           types.Int64{Value: int64(*remoteState.Id)},
-		Description:                  types.String{Value: *remoteState.Description.Get()},
-		ClaimType:                    types.String{Value: *remoteState.ClaimType.Get()},
-		ClaimValue:                   types.String{Value: *remoteState.ClaimValue.Get()},
-		ProviderAuthenticationScheme: types.String{Value: *remoteState.Provider.AuthenticationScheme.Get()},
-		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
-	}
-
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 
@@ -142,18 +133,14 @@ func (r resourceOAuthSecurityClaim) Update(
 	tflog.Info(ctx, "Update called on OAuth security claim resource")
 
 	// Get plan values
-	var plan OAuthSecurityClaim
-	diags := request.Plan.Get(ctx, &plan)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	plan, ok := getPlan[OAuthSecurityClaim](ctx, &request.Plan, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
 	// Get current state
-	var state OAuthSecurityClaim
-	diags = request.State.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	state, ok := getState[OAuthSecurityClaim](ctx, &request.State, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
@@ -189,20 +176,10 @@ func (r resourceOAuthSecurityClaim) Update(
 		return
 	}
 
-	provider := *remoteState.Provider
+	var result = mapOAuthSecurityClaim(ctx, remoteState)
 
-	var result = OAuthSecurityClaim{
-		ID:                           types.Int64{Value: int64(*remoteState.Id)},
-		Description:                  types.String{Value: *remoteState.Description.Get()},
-		ClaimType:                    types.String{Value: *remoteState.ClaimType.Get()},
-		ClaimValue:                   types.String{Value: *remoteState.ClaimValue.Get()},
-		ProviderAuthenticationScheme: types.String{Value: *provider.AuthenticationScheme.Get()},
-		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
-	}
-
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 
@@ -215,10 +192,8 @@ func (r resourceOAuthSecurityClaim) Delete(
 	response *tfsdk.DeleteResourceResponse,
 ) {
 	tflog.Info(ctx, "Delete called on OAuth security claim resource")
-	var state OAuthSecurityClaim
-	diags := request.State.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	state, ok := getState[OAuthSecurityClaim](ctx, &request.State, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
@@ -249,7 +224,6 @@ func (r resourceOAuthSecurityClaim) Delete(
 
 	// Remove resource from state
 	response.State.RemoveResource(ctx)
-
 }
 
 func (r resourceOAuthSecurityClaim) Create(
@@ -257,21 +231,16 @@ func (r resourceOAuthSecurityClaim) Create(
 	request tfsdk.CreateResourceRequest,
 	response *tfsdk.CreateResourceResponse,
 ) {
-	if !r.p.configured {
-		response.Diagnostics.AddError(
-			"Provider not configured",
-			"The provider hasn't been configured before apply, likely because it depends on an unknown value from another resource. This leads to weird stuff happening, so we'd prefer if you didn't do that. Thanks!",
-		)
+	ok := checkIfProviderIsConfigured(r.p, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
 	tflog.Info(ctx, "Create called on OAuth security claim resource")
 
 	// Retrieve values from plan
-	var plan OAuthSecurityClaim
-	diags := request.Plan.Get(ctx, &plan)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	plan, ok := getPlan[OAuthSecurityClaim](ctx, &request.Plan, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
@@ -317,20 +286,10 @@ func (r resourceOAuthSecurityClaim) Create(
 
 	tflog.Debug(ctx, fmt.Sprintf("Successfully created OAuth security claim. Claim ID: %d", *createResponse.Id))
 
-	provider := *createResponse.Provider
+	var result = mapOAuthSecurityClaim(ctx, createResponse)
 
-	var result = OAuthSecurityClaim{
-		ID:                           types.Int64{Value: int64(*createResponse.Id)},
-		Description:                  types.String{Value: *createResponse.Description.Get()},
-		ClaimType:                    types.String{Value: *createResponse.ClaimType.Get()},
-		ClaimValue:                   types.String{Value: *createResponse.ClaimValue.Get()},
-		ProviderAuthenticationScheme: types.String{Value: *createResponse.Provider.AuthenticationScheme.Get()},
-		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
-	}
-
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 
@@ -381,20 +340,10 @@ func (r resourceOAuthSecurityClaim) ImportState(
 		return
 	}
 
-	provider := *remoteState.Provider
+	var result = mapOAuthSecurityClaim(ctx, remoteState)
 
-	var result = OAuthSecurityClaim{
-		ID:                           types.Int64{Value: int64(*remoteState.Id)},
-		Description:                  types.String{Value: *remoteState.Description.Get()},
-		ClaimType:                    types.String{Value: *remoteState.ClaimType.Get()},
-		ClaimValue:                   types.String{Value: *remoteState.ClaimValue.Get()},
-		ProviderAuthenticationScheme: types.String{Value: *remoteState.Provider.AuthenticationScheme.Get()},
-		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
-	}
-
-	diags := response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok := updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -70,14 +69,12 @@ type dataSourceOauthSecurityRole struct {
 func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
 	tflog.Info(ctx, "Read called on OAuth security role data source.")
 
-	var state OAuthSecurityRole
-	diags := request.Config.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	data, ok := getDataSource[OAuthSecurityRole](ctx, &request.Config, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
-	roleName := state.Name.Value
+	roleName := data.Name.Value
 	role, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -105,29 +102,14 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 		return
 	}
 
-	var permissionValues []attr.Value
-	for _, perm := range remoteState.Permissions {
-		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
-		permissionValues = append(permissionValues, types.String{Value: perm})
-	}
-
 	tflog.Debug(ctx, "Data source was able to resource OAuth security role from remote source using ID")
 
-	var result = OAuthSecurityRole{
-		ID:              types.Int64{Value: int64(*remoteState.Id)},
-		Name:            types.String{Value: *remoteState.Name.Get()},
-		Description:     types.String{Value: *remoteState.Description.Get()},
-		EmailAddress:    types.String{Value: *remoteState.EmailAddress.Get()},
-		Immutable:       types.Bool{Value: *remoteState.Immutable},
-		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
-		PermissionSetId: types.String{Value: *remoteState.PermissionSetId},
-	}
+	var result = mapOAuthSecurityRole(ctx, remoteState)
 
 	tflog.Debug(ctx, "Saving OAuth security role data source information into state...")
 
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 

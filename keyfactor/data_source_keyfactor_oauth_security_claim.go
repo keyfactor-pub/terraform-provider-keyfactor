@@ -66,16 +66,14 @@ type dataSourceOauthSecurityClaim struct {
 func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
 	tflog.Info(ctx, "Read called on OAuth security claim data source")
 
-	var state OAuthSecurityClaim
-	diags := request.Config.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	data, ok := getDataSource[OAuthSecurityClaim](ctx, &request.Config, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
-	claimType := state.ClaimType.Value
-	claimValue := state.ClaimValue.Value
-	authenticationScheme := state.ProviderAuthenticationScheme.Value
+	claimType := data.ClaimType.Value
+	claimValue := data.ClaimValue.Value
+	authenticationScheme := data.ProviderAuthenticationScheme.Value
 	tflog.SetField(ctx, "claim_type", claimType)
 
 	remoteState, err := getSecurityClaimByTypeAndValueAndScheme(ctx, r.p.sdkClient, claimType, claimValue, authenticationScheme)
@@ -104,9 +102,8 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 
 	tflog.Debug(ctx, "Saving OAuth security claim to state")
 
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 

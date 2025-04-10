@@ -35,10 +35,12 @@ import (
 	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
+	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/spbsoluble/go-pkcs12"
@@ -255,6 +257,84 @@ func mapAuthenticationProviderTypeV2(id *string, authScheme *string, displayName
 		},
 		AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
 	}
+}
+
+// Maps an OAuth Security Role from a SecuritySecurityRolesSecurityRoleResponse response model
+func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesSecurityRoleResponse) OAuthSecurityRole {
+	var permissionValues []attr.Value
+	for _, perm := range data.Permissions {
+		tflog.Debug(ctx, fmt.Sprintf("Permission: %s", perm))
+		permissionValues = append(permissionValues, types.String{Value: perm})
+	}
+
+	var result = OAuthSecurityRole{
+		ID:              types.Int64{Value: int64(*data.Id)},
+		Name:            getStringType(data.Name.Get()),
+		Description:     getStringType(data.Description.Get()),
+		EmailAddress:    getStringType(data.EmailAddress.Get()),
+		Immutable:       types.Bool{Value: *data.Immutable},
+		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
+		PermissionSetId: getStringType(data.PermissionSetId),
+	}
+	return result
+}
+
+func mapOAuthSecurityClaim(ctx context.Context, data *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse) OAuthSecurityClaim {
+	provider := *data.Provider
+
+	var result = OAuthSecurityClaim{
+		ID:                           types.Int64{Value: int64(*data.Id)},
+		Description:                  getStringType(data.Description.Get()),
+		ClaimType:                    getStringType(data.ClaimType.Get()),
+		ClaimValue:                   getStringType(data.ClaimValue.Get()),
+		ProviderAuthenticationScheme: getStringType(data.Provider.AuthenticationScheme.Get()),
+		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
+	}
+	return result
+}
+
+func mapOAuthSecurityRoleClaimAssociation(ctx context.Context, roleId int32, claimId int32) OAuthSecurityRoleClaimAssociation {
+	result := OAuthSecurityRoleClaimAssociation{
+		ID:      types.String{Value: fmt.Sprintf("%d-%d", roleId, claimId)},
+		RoleID:  types.Int64{Value: int64(roleId)},
+		ClaimID: types.Int64{Value: int64(claimId)},
+	}
+	return result
+}
+
+func mapOAuthSecurityClaimsFromRole(ctx context.Context, diagnostics *diag.Diagnostics, remoteState *kfv2.SecuritySecurityRolesSecurityRoleResponse, existingClaimId *int32) (*[]kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest, bool) {
+	claims := []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{}
+	for _, claim := range remoteState.Claims {
+		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
+
+		if claim.Id != nil && existingClaimId != nil && *claim.Id == *existingClaimId {
+			// Skip adding claim to claims array
+			continue
+		}
+
+		provider := *claim.Provider
+		claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(*claim.ClaimType.Get())
+
+		// This shouldn't happen since the claim type is coming from the API
+		// But just in case
+		if err != nil {
+			diagnostics.AddError(
+				"Error creating security identity.",
+				"Could not create identity role claim association, error parsing claim type "+err.Error(),
+			)
+			return nil, false
+		}
+
+		temp := v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
+			ClaimType:                    *claimTypeEnum,
+			ClaimValue:                   *claim.ClaimValue.Get(),
+			ProviderAuthenticationScheme: *provider.AuthenticationScheme.Get(),
+			Description:                  *claim.Description.Get(),
+		}
+		claims = append(claims, temp)
+	}
+
+	return &claims, true
 }
 
 // DNSSANStoTerraform converts a slice of DNS SANs (Subject Alternative Names) into a Terraform-compatible
@@ -1611,4 +1691,56 @@ func getStringType(value *string) types.String {
 		return types.String{Value: "", Null: true}
 	}
 	return types.String{Value: *value}
+}
+
+// Gets Terraform plan for a given resource type. If there's an error retrieving the state, an error is appended to diagnostics.
+func getPlan[T any](ctx context.Context, plan *tfsdk.Plan, diagnostics *diag.Diagnostics) (*T, bool) {
+	var result T
+	diags := plan.Get(ctx, &result)
+	diagnostics.Append(diags...)
+	if diagnostics.HasError() {
+		return nil, false
+	}
+	return &result, true
+}
+
+// Gets Terraform state for a given resource type. If there's an error retrieving the state, an error is appended to diagnostics.
+func getState[T any](ctx context.Context, state *tfsdk.State, diagnostics *diag.Diagnostics) (*T, bool) {
+	var result T
+	diags := state.Get(ctx, &result)
+	diagnostics.Append(diags...)
+	if diagnostics.HasError() {
+		return nil, false
+	}
+	return &result, true
+}
+
+// Gets a data source from the config. If there's an error retrieving the configuration, an error is appended to diagnostics.
+func getDataSource[T any](ctx context.Context, config *tfsdk.Config, diagnostics *diag.Diagnostics) (*T, bool) {
+	var result T
+	diags := config.Get(ctx, &result)
+	diagnostics.Append(diags...)
+	if diagnostics.HasError() {
+		return nil, false
+	}
+	return &result, true
+}
+
+// Updates Terraform state with provided result type. If there's an error, it appends to diagnostics.
+func updateState[T any](ctx context.Context, state *tfsdk.State, diagnostics *diag.Diagnostics, result T) bool {
+	diags := state.Set(ctx, result)
+	diagnostics.Append(diags...)
+	return diagnostics.HasError()
+}
+
+// Determines if the provider has been configured. If not, adds an error to the diagnostics.
+func checkIfProviderIsConfigured(provider provider, diagnostics *diag.Diagnostics) bool {
+	if !provider.configured {
+		diagnostics.AddError(
+			"Provider not configured",
+			"The provider hasn't been configured before apply, likely because it depends on an unknown value from another resource. This leads to weird stuff happening, so we'd prefer if you didn't do that. Thanks!",
+		)
+		return false
+	}
+	return true
 }

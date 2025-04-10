@@ -49,14 +49,12 @@ type dataSourcePermissionSet struct {
 func (r dataSourcePermissionSet) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
 	tflog.Info(ctx, "Read called on permission set data source")
 
-	var state PermissionSet
-	diags := request.Config.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	data, ok := getDataSource[PermissionSet](ctx, &request.Config, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
-	permissionSetName := state.Name.Value
+	permissionSetName := data.Name.Value
 	permissionSet, err := getSecurityPermissionSetByName(ctx, r.p.sdkClient, permissionSetName)
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -82,9 +80,8 @@ func (r dataSourcePermissionSet) Read(ctx context.Context, request tfsdk.ReadDat
 
 	tflog.Debug(ctx, "Saving permission set data source information into state...")
 
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 

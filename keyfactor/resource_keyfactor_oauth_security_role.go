@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -79,9 +78,10 @@ func (r resourceOAuthSecurityRole) Read(
 ) {
 	tflog.Info(ctx, "Read called on OAuth security role resource")
 
-	var state OAuthSecurityRole
-	diags := request.State.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
+	state, ok := getState[OAuthSecurityRole](ctx, &request.State, &response.Diagnostics)
+	if !ok {
+		return
+	}
 
 	tflog.Debug(ctx, fmt.Sprintf("OAuth security role from state: ID %d...", state.ID.Value))
 
@@ -117,27 +117,11 @@ func (r resourceOAuthSecurityRole) Read(
 		return
 	}
 
-	var permissionValues []attr.Value
-	for _, perm := range remoteState.Permissions {
-		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
-		permissionValues = append(permissionValues, types.String{Value: perm})
-	}
-
+	var result = mapOAuthSecurityRole(ctx, remoteState)
 	tflog.Debug(ctx, "Data source was able to read OAuth security role resource from remote source using ID")
 
-	var result = OAuthSecurityRole{
-		ID:              types.Int64{Value: int64(*remoteState.Id)},
-		Immutable:       types.Bool{Value: *remoteState.Immutable},
-		EmailAddress:    getStringType(remoteState.EmailAddress.Get()),
-		Description:     getStringType(remoteState.Description.Get()),
-		Name:            getStringType(remoteState.Name.Get()),
-		PermissionSetId: getStringType(remoteState.PermissionSetId),
-		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
-	}
-
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 
@@ -152,18 +136,14 @@ func (r resourceOAuthSecurityRole) Update(
 	tflog.Info(ctx, "Update called on OAuth security role resource")
 
 	// Get plan values
-	var plan OAuthSecurityRole
-	diags := request.Plan.Get(ctx, &plan)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	plan, ok := getPlan[OAuthSecurityRole](ctx, &request.Plan, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
 	// Get current state
-	var state OAuthSecurityRole
-	diags = request.State.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	state, ok := getState[OAuthSecurityRole](ctx, &request.State, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
@@ -203,30 +183,11 @@ func (r resourceOAuthSecurityRole) Update(
 		return
 	}
 
-	// To be on the safe side, map the permissions returned from the API response
-	var responsePermissions []attr.Value
-	for _, perm := range updateResponse.Permissions {
-		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
-		responsePermissions = append(responsePermissions, types.String{Value: perm})
-	}
-
-	tflog.Debug(ctx, fmt.Sprintf("Successfully updated OAuth security role. Role ID: %d", *updateResponse.Id))
-
-	var result = OAuthSecurityRole{
-		ID:              types.Int64{Value: int64(*updateResponse.Id)},
-		Name:            getStringType(updateResponse.Name.Get()),
-		Description:     getStringType(updateResponse.Description.Get()),
-		EmailAddress:    getStringType(updateResponse.EmailAddress.Get()),
-		PermissionSetId: getStringType(updateResponse.PermissionSetId),
-		Immutable:       types.Bool{Value: *updateResponse.Immutable},
-		Permissions:     types.List{ElemType: types.StringType, Elems: responsePermissions},
-	}
-
+	var result = mapOAuthSecurityRole(ctx, updateResponse)
 	tflog.Debug(ctx, "Saving OAuth security role resource information into state...")
 
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 
@@ -239,10 +200,8 @@ func (r resourceOAuthSecurityRole) Delete(
 	response *tfsdk.DeleteResourceResponse,
 ) {
 	tflog.Info(ctx, "Delete called on OAuth security role resource")
-	var state OAuthSecurityRole
-	diags := request.State.Get(ctx, &state)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	state, ok := getState[OAuthSecurityRole](ctx, &request.State, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
@@ -278,19 +237,14 @@ func (r resourceOAuthSecurityRole) Create(
 	request tfsdk.CreateResourceRequest,
 	response *tfsdk.CreateResourceResponse,
 ) {
-	if !r.p.configured {
-		response.Diagnostics.AddError(
-			"Provider not configured",
-			"The provider hasn't been configured before apply, likely because it depends on an unknown value from another resource. This leads to weird stuff happening, so we'd prefer if you didn't do that. Thanks!",
-		)
+	ok := checkIfProviderIsConfigured(r.p, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
 	tflog.Info(ctx, "Create called on OAuth security role resource")
-	var plan OAuthSecurityRole
-	diags := request.Plan.Get(ctx, &plan)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	plan, ok := getPlan[OAuthSecurityRole](ctx, &request.Plan, &response.Diagnostics)
+	if !ok {
 		return
 	}
 
@@ -333,29 +287,14 @@ func (r resourceOAuthSecurityRole) Create(
 		return
 	}
 
-	var responsePermissions []attr.Value
-	for _, perm := range createResponse.Permissions {
-		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
-		responsePermissions = append(responsePermissions, types.String{Value: perm})
-	}
-
 	tflog.Debug(ctx, fmt.Sprintf("Successfully created OAuth security role. Role ID: %d", *createResponse.Id))
 
-	var result = OAuthSecurityRole{
-		ID:              types.Int64{Value: int64(*createResponse.Id)},
-		Name:            getStringType(createResponse.Name.Get()),
-		Description:     getStringType(createResponse.Description.Get()),
-		EmailAddress:    getStringType(createResponse.EmailAddress.Get()),
-		PermissionSetId: getStringType(createResponse.PermissionSetId),
-		Immutable:       types.Bool{Value: *createResponse.Immutable},
-		Permissions:     types.List{ElemType: types.StringType, Elems: responsePermissions},
-	}
+	var result = mapOAuthSecurityRole(ctx, createResponse)
 
 	tflog.Debug(ctx, "Saving OAuth security role resource information into state...")
 
-	diags = response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 
@@ -405,25 +344,11 @@ func (r resourceOAuthSecurityRole) ImportState(
 		return
 	}
 
-	var permissionValues []attr.Value
-	for _, perm := range remoteState.Permissions {
-		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
-		permissionValues = append(permissionValues, types.String{Value: perm})
-	}
-
+	var result = mapOAuthSecurityRole(ctx, remoteState)
 	tflog.Debug(ctx, "Data source was able to import state of OAuth security role resource from remote source using ID")
 
-	var result = OAuthSecurityRole{
-		ID:              types.Int64{Value: int64(*remoteState.Id)},
-		Description:     types.String{Value: *remoteState.Description.Get()},
-		Name:            types.String{Value: *remoteState.Name.Get()},
-		PermissionSetId: types.String{Value: *remoteState.PermissionSetId},
-		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
-	}
-
-	diags := response.State.Set(ctx, result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
+	ok := updateState(ctx, &response.State, &response.Diagnostics, result)
+	if !ok {
 		return
 	}
 

@@ -42,8 +42,8 @@ resource "keyfactor_oauth_security_role" "certificate_admin_role" {
 }
 
 resource "keyfactor_oauth_security_role_claim_association" "cert_admin_system_claim_role" {
-    role_id = resource.keyfactor_oauth_security_role.certificate_admin_role.id
-    claim_id = resource.keyfactor_oauth_security_claim.system_claim.id
+  role_id  = resource.keyfactor_oauth_security_role.certificate_admin_role.id
+  claim_id = resource.keyfactor_oauth_security_claim.system_claim.id
 }
 ```
 
@@ -58,3 +58,11 @@ resource "keyfactor_oauth_security_role_claim_association" "cert_admin_system_cl
 ### Read-Only
 
 - `id` (String) Internal ID of the OAuth security role claim association.
+
+## Import
+
+Import is supported using the following syntax:
+
+```shell
+terraform import keyfactor_oauth_security_role_claim_association.my_role_claim_association <role-id>/<claim-id>
+```

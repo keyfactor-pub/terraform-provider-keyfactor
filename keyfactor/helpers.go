@@ -248,17 +248,6 @@ func mapAuthenticationProviderType(id string, authScheme string, displayName str
 	}
 }
 
-func mapAuthenticationProviderTypeV2(id *string, authScheme *string, displayName *string) types.Object {
-	return types.Object{
-		Attrs: map[string]attr.Value{
-			"id":                    getStringType(id),
-			"authentication_scheme": getStringType(authScheme),
-			"display_name":          getStringType(displayName),
-		},
-		AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
-	}
-}
-
 // Maps an OAuth Security Role from a SecuritySecurityRolesSecurityRoleResponse response model
 func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesSecurityRoleResponse) OAuthSecurityRole {
 	var permissionValues []attr.Value
@@ -295,7 +284,7 @@ func mapOAuthSecurityClaim(ctx context.Context, data *kfv1.SecurityRoleClaimDefi
 
 func mapOAuthSecurityRoleClaimAssociation(ctx context.Context, roleId int32, claimId int32) OAuthSecurityRoleClaimAssociation {
 	result := OAuthSecurityRoleClaimAssociation{
-		ID:      types.String{Value: fmt.Sprintf("%d-%d", roleId, claimId)},
+		ID:      types.String{Value: fmt.Sprintf("%d/%d", roleId, claimId)},
 		RoleID:  types.Int64{Value: int64(roleId)},
 		ClaimID: types.Int64{Value: int64(claimId)},
 	}

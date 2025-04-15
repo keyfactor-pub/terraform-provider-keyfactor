@@ -35,7 +35,6 @@ import (
 	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
-	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -302,7 +301,7 @@ func mapOAuthSecurityClaimsFromRole(ctx context.Context, diagnostics *diag.Diagn
 		}
 
 		provider := *claim.Provider
-		claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(*claim.ClaimType.Get())
+		claimTypeEnum, err := kfv2.ParseCSSCMSCoreEnumsClaimType(*claim.ClaimType.Get())
 
 		// This shouldn't happen since the claim type is coming from the API
 		// But just in case
@@ -314,7 +313,7 @@ func mapOAuthSecurityClaimsFromRole(ctx context.Context, diagnostics *diag.Diagn
 			return nil, false
 		}
 
-		temp := v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
+		temp := kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
 			ClaimType:                    *claimTypeEnum,
 			ClaimValue:                   *claim.ClaimValue.Get(),
 			ProviderAuthenticationScheme: *provider.AuthenticationScheme.Get(),

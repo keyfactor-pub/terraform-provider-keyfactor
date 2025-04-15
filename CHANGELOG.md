@@ -17,7 +17,7 @@
 ### Security Roles
 
 #### Chores
-* chore(roles): Update documentation for Security Roles to reference list of possible permisison values.
+* chore(roles): Update documentation for Security Roles to reference list of possible permission values.
 
 # v2.4.0
 

@@ -27,6 +27,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -250,6 +251,7 @@ func mapAuthenticationProviderType(id string, authScheme string, displayName str
 // Maps an OAuth Security Role from a SecuritySecurityRolesSecurityRoleResponse response model
 func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesSecurityRoleResponse) OAuthSecurityRole {
 	var permissionValues []attr.Value
+	sort.Strings(data.Permissions)
 	for _, perm := range data.Permissions {
 		tflog.Debug(ctx, fmt.Sprintf("Permission: %s", perm))
 		permissionValues = append(permissionValues, types.String{Value: perm})
@@ -261,7 +263,7 @@ func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesS
 		Description:     getStringType(data.Description.Get()),
 		EmailAddress:    getStringType(data.EmailAddress.Get()),
 		Immutable:       types.Bool{Value: *data.Immutable},
-		Permissions:     types.List{ElemType: types.StringType, Elems: permissionValues},
+		Permissions:     types.Set{ElemType: types.StringType, Elems: permissionValues},
 		PermissionSetId: getStringType(data.PermissionSetId),
 	}
 	return result

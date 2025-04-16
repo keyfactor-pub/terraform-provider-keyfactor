@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
-	"strings"
 
 	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -51,7 +51,7 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 				Description: "The ID of the permission set associated with the OAuth security role. This is used to identify the permissions associated with the role.",
 			},
 			"permissions": {
-				Type:                types.ListType{ElemType: types.StringType},
+				Type:                types.SetType{ElemType: types.StringType},
 				Required:            true,
 				Description:         "A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role.",
 				MarkdownDescription: "A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role. For more information about allowed permission values, please refer to the Keyfactor Command [Version Two Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version2).",
@@ -150,12 +150,9 @@ func (r resourceOAuthSecurityRole) Update(
 	roleName := plan.Name.Value
 	roleId := int32(state.ID.Value)
 
-	permissionArray := []string{}
-	for _, permission := range plan.Permissions.Elems {
-		permissionStr := strings.Trim(permission.String(), "\"") // Remove unnecessary wrapping quotes
-		tflog.Debug(ctx, fmt.Sprintf("Appending permission %s to array....\n", permissionStr))
-		permissionArray = append(permissionArray, permissionStr)
-	}
+	var permissions []string
+	plan.Permissions.ElementsAs(ctx, &permissions, false)
+	sort.Strings(permissions)
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
 	req := api.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
@@ -164,7 +161,7 @@ func (r resourceOAuthSecurityRole) Update(
 		Description:     plan.Description.Value,
 		EmailAddress:    *v2.NewNullableString(&plan.EmailAddress.Value),
 		PermissionSetId: plan.PermissionSetId.Value,
-		Permissions:     permissionArray,
+		Permissions:     permissions,
 	})
 
 	tflog.Debug(ctx, fmt.Sprintf("Updating OAuth security role with ID: %d, name: %s;\n\tDescription: %s;\n\tEmailAddress: %s;\nt\tPermissionSetId: %s", roleId, roleName, plan.Description.Value, plan.EmailAddress.Value, plan.PermissionSetId.Value))
@@ -255,12 +252,9 @@ func (r resourceOAuthSecurityRole) Create(
 	ctx = tflog.SetField(ctx, "role_name", roleName)
 	tflog.Debug(ctx, fmt.Sprintf("Creating OAuth security role with name: %s", roleName))
 
-	permissionArray := []string{}
-	for _, permission := range plan.Permissions.Elems {
-		permissionStr := strings.Trim(permission.String(), "\"") // Remove unnecessary wrapping quotes
-		tflog.Debug(ctx, fmt.Sprintf("Appending permission %s to array....\n", permissionStr))
-		permissionArray = append(permissionArray, permissionStr)
-	}
+	var permissions []string
+	plan.Permissions.ElementsAs(ctx, &permissions, false)
+	sort.Strings(permissions)
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
 	req := api.NewCreateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleCreationRequest(v2.SecuritySecurityRolesSecurityRoleCreationRequest{
@@ -268,7 +262,7 @@ func (r resourceOAuthSecurityRole) Create(
 		Description:     plan.Description.Value,
 		EmailAddress:    *v2.NewNullableString(&plan.EmailAddress.Value),
 		PermissionSetId: plan.PermissionSetId.Value,
-		Permissions:     permissionArray,
+		Permissions:     permissions,
 	})
 
 	tflog.Debug(ctx, fmt.Sprintf("Creating OAuth security role with name: %s;\n\tDescription: %s;\n\tEmailAddress: %s;\nt\tPermissionSetId: %s", roleName, plan.Description.Value, plan.EmailAddress.Value, plan.PermissionSetId.Value))

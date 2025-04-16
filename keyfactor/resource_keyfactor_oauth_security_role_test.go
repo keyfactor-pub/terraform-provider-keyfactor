@@ -65,7 +65,46 @@ func TestAccKeyfactorOAuthRoleResource(t *testing.T) {
 	})
 }
 
+func TestAccKeyfactorOAuthRoleResourceDuplicateUnsortedPermissions(t *testing.T) {
+
+	r := oauthRoleTestCase{
+		name:         acctest.RandomWithPrefix("tf-acc-role"),
+		description:  "Terraform Create Role",
+		permissions:  []string{"/metadata/types/read/", "/certificates/"},
+		emailAddress: "foo@example.com",
+		resourceType: "keyfactor_oauth_security_role",
+		resourceName: "terraform_test",
+		resourcePath: "keyfactor_oauth_security_role.terraform_test",
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Read and Create role
+			{
+				Config: testAccKeyfactorOAuthRoleResourceConfig(r),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
+					resource.TestCheckResourceAttrSet(r.resourcePath, "permission_set_id"),
+					resource.TestCheckResourceAttr(r.resourcePath, "name", r.name),
+					resource.TestCheckResourceAttr(r.resourcePath, "description", r.description),
+					resource.TestCheckResourceAttr(r.resourcePath, "email_address", r.emailAddress),
+				),
+			},
+			// Delete testing automatically occurs in TestCase
+		},
+	})
+}
+
 func testAccKeyfactorOAuthRoleResourceConfig(t oauthRoleTestCase) string {
+	var permissionString string
+	for _, permission := range t.permissions {
+		if permissionString != "" {
+			permissionString += ","
+		}
+		permissionString += fmt.Sprintf("\"%s\"", permission)
+	}
 	output := fmt.Sprintf(`	
 data "keyfactor_permission_set" "global_permission_set" {
      name = "Global"
@@ -76,8 +115,8 @@ resource "%s" "%s" {
 	description  = "%s"
 	permission_set_id  = data.keyfactor_permission_set.global_permission_set.id
 	email_address = "%s"
-	permissions = ["%s"]
+	permissions = [%s]
 }
-`, t.resourceType, t.resourceName, t.name, t.description, t.emailAddress, t.permissions[0])
+`, t.resourceType, t.resourceName, t.name, t.description, t.emailAddress, permissionString)
 	return output
 }

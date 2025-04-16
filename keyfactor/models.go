@@ -85,7 +85,7 @@ type OAuthSecurityRole struct {
 	Description     types.String `tfsdk:"description"`       // Description of the OAuth security role.
 	EmailAddress    types.String `tfsdk:"email_address"`     // Email address associated with the OAuth security role.
 	Immutable       types.Bool   `tfsdk:"immutable"`         // Indicates if the OAuth security role is immutable.
-	Permissions     types.List   `tfsdk:"permissions"`       // List of permissions assigned to the OAuth security role.
+	Permissions     types.Set    `tfsdk:"permissions"`       // List of permissions assigned to the OAuth security role.
 	PermissionSetId types.String `tfsdk:"permission_set_id"` // Permission Set ID associated with the OAuth security role.
 }
 

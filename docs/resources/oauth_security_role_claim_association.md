@@ -32,8 +32,8 @@ resource "keyfactor_oauth_security_claim" "system_claim" {
 }
 
 resource "keyfactor_oauth_security_role" "certificate_admin_role" {
-  name        = "Certificate Admin"
-  description = "A security role created through Terraform"
+  name              = "Certificate Admin"
+  description       = "A security role created through Terraform"
   permission_set_id = data.keyfactor_permission_set.global_permission_set.id
   permissions = [
     "/certificates/",

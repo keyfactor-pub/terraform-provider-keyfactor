@@ -52,7 +52,7 @@ resource "keyfactor_oauth_security_role" "certificate_admin_role" {
 - `description` (String) A string containing the description of the OAuth security role.
 - `name` (String) Description of the OAuth security role
 - `permission_set_id` (String) The ID of the permission set associated with the OAuth security role. This is used to identify the permissions associated with the role.
-- `permissions` (List of String) A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role. For more information about allowed permission values, please refer to the Keyfactor Command [Version Two Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version2).
+- `permissions` (Set of String) A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role. For more information about allowed permission values, please refer to the Keyfactor Command [Version Two Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version2).
 
 ### Optional
 

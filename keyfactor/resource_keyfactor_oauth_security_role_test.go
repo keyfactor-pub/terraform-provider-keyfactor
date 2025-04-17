@@ -70,12 +70,16 @@ func TestAccKeyfactorOAuthRoleResourceDuplicateUnsortedPermissions(t *testing.T)
 	r := oauthRoleTestCase{
 		name:         acctest.RandomWithPrefix("tf-acc-role"),
 		description:  "Terraform Create Role",
-		permissions:  []string{"/metadata/types/read/", "/certificates/"},
+		permissions:  []string{"/metadata/types/read/", "/certificates/", "/metadata/types/read/"},
 		emailAddress: "foo@example.com",
 		resourceType: "keyfactor_oauth_security_role",
 		resourceName: "terraform_test",
 		resourcePath: "keyfactor_oauth_security_role.terraform_test",
 	}
+
+	// Update role attributes
+	r2 := r
+	r2.permissions = []string{"/metadata/types/read/", "/metadata/types/read/", "/dashboard/read/"}
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -90,6 +94,12 @@ func TestAccKeyfactorOAuthRoleResourceDuplicateUnsortedPermissions(t *testing.T)
 					resource.TestCheckResourceAttr(r.resourcePath, "name", r.name),
 					resource.TestCheckResourceAttr(r.resourcePath, "description", r.description),
 					resource.TestCheckResourceAttr(r.resourcePath, "email_address", r.emailAddress),
+				),
+			}, // Update role
+			{
+				Config: testAccKeyfactorOAuthRoleResourceConfig(r2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
 				),
 			},
 			// Delete testing automatically occurs in TestCase

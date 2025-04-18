@@ -14,6 +14,9 @@ func TestAccKeyfactorSecurityIdentityDataSource(t *testing.T) {
 	var iNameEscaped = fmt.Sprintf("%s\\\\%s", strings.ToUpper(os.Getenv("KEYFACTOR_DOMAIN")), os.Getenv("KEYFACTOR_USERNAME"))
 	var iName = fmt.Sprintf("%s\\%s", strings.ToUpper(os.Getenv("KEYFACTOR_DOMAIN")), os.Getenv("KEYFACTOR_USERNAME"))
 
+	// TODO: Identities don't seem to be compatible with CI test environment. Skip in CI pipeline.
+	checkIfTestShouldBeIgnored(t)
+
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

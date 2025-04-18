@@ -2,9 +2,10 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 type certificateStoreTestCase_v9 struct {
@@ -35,6 +36,9 @@ type certificateStoreTestCase struct {
 
 func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 
+	// TODO: Test is dependent on a client machine to exist. Skip in CI pipeline.
+	checkIfTestShouldBeIgnored(t)
+
 	r := certificateStoreTestCase{
 		clientMachine:   os.Getenv("KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE"),
 		storePath:       os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PATH"),
@@ -55,9 +59,6 @@ func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Create and Read testing
 			{
-				//ResourceName: "",
-				//PreConfig:    nil,
-				//Taint:        nil,
 				Config: testAccKeyfactorCertificateStoreResourceConfig(r),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(r.resourceName, "id"),
@@ -67,24 +68,6 @@ func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(r.resourceName, "agent_id"),       // TODO: Check specific value
 					resource.TestCheckResourceAttrSet(r.resourceName, "password"),       // TODO: Check specific value
 				),
-				//Destroy:                   false,
-				//ExpectNonEmptyPlan:        false,
-				//ExpectError:               nil,
-				//PlanOnly:                  false,
-				//PreventDiskCleanup:        false,
-				//PreventPostDestroyRefresh: false,
-				//SkipFunc:                  nil,
-				//ImportState:               false,
-				//ImportStateId:             "",
-				//ImportStateIdPrefix:       "",
-				//ImportStateIdFunc:         nil,
-				//ImportStateCheck:          nil,
-				//ImportStateVerify:         false,
-				//ImportStateVerifyIgnore:   nil,
-				//ProviderFactories:         nil,
-				//ProtoV5ProviderFactories:  nil,
-				//ProtoV6ProviderFactories:  nil,
-				//ExternalProviders:         nil,
 			},
 			// ImportState testing
 			//{

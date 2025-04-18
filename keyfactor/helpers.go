@@ -108,6 +108,13 @@ func getEnvOrSkip(t *testing.T, envVar string) string {
 	return value
 }
 
+func checkIfTestShouldBeIgnored(t *testing.T) {
+	value := os.Getenv("GITHUB_ACTIONS")
+	if value == "true" {
+		t.Skipf("Skipping test: Test is running in GitHub Actions environment")
+	}
+}
+
 // expandSubject extracts subject fields from a given string and returns them as Terraform types.
 //
 // Parameters:

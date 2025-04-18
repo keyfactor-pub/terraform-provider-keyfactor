@@ -27,11 +27,11 @@ func TestAccKeyfactorCertificateTemplateDataSource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "key_size"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_type"),
 					resource.TestCheckResourceAttrSet(resourceName, "forest_root"),
-					resource.TestCheckResourceAttrSet(resourceName, "friendly_name"), //TODO: This is causing issues
+					resource.TestCheckResourceAttrSet(resourceName, "friendly_name"), // This is an optional field and may not be populated in Command.
 					resource.TestCheckResourceAttrSet(resourceName, "key_retention"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_retention_days"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_archival"),
-					//resource.TestCheckResourceAttrSet(resourceName, "enrollment_fields.#"), // TODO: Check this
+					//resource.TestCheckResourceAttrSet(resourceName, "enrollment_fields.#"), // TODO: Check this. Currently we are passing the current state back to the property.
 					resource.TestCheckResourceAttrSet(resourceName, "allowed_enrollment_types"),
 					resource.TestCheckResourceAttrSet(resourceName, "template_regexes.#"),
 					resource.TestCheckResourceAttrSet(resourceName, "allowed_requesters.#"),

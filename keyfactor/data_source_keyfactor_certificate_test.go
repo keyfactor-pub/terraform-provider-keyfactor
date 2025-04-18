@@ -2,12 +2,17 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 func TestAccKeyfactorCertificateDataSource(t *testing.T) {
+
+	// TODO: Has a dependency on a certificate existing in the remote system in a chain, PEM format. Skip in CI pipeline.
+	checkIfTestShouldBeIgnored(t)
+
 	var resourceType = "keyfactor_certificate"
 	var resourceName = fmt.Sprintf("data.%s.test", resourceType)
 	var cID = os.Getenv("KEYFACTOR_CERTIFICATE_ID")

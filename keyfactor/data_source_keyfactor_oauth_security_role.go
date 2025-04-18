@@ -47,7 +47,7 @@ func (r dataSourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Sch
 				Description: "The ID of the permission set associated with the OAuth security role in Keyfactor. This is used to identify the permissions associated with the role.",
 			},
 			"permissions": {
-				Type:        types.ListType{ElemType: types.StringType},
+				Type:        types.SetType{ElemType: types.StringType},
 				Computed:    true,
 				Description: "A list of permissions associated with the OAuth security role in Keyfactor. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role.",
 			},

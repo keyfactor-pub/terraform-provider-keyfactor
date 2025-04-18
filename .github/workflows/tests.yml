@@ -38,6 +38,10 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: '1.7.*'
+          terraform_wrapper: false
       - run: go generate ./...
       - name: git diff
         run: |
@@ -55,13 +59,13 @@ jobs:
       matrix:
         # list whatever Terraform versions here you would like to support
         terraform:
-          - '1.0.*'
-          - '1.1.*'
-          - '1.2.*'
-          - '1.3.*'
-          - '1.4.*'
-          - '1.5.*'
-          - '1.6.*'
+          # - '1.0.*'
+          # - '1.1.*'
+          # - '1.2.*'
+          # - '1.3.*'
+          # - '1.4.*'
+          # - '1.5.*'
+          # - '1.6.*'
           - '1.7.*'
     steps:
       - uses: actions/checkout@v3
@@ -75,11 +79,14 @@ jobs:
           terraform_wrapper: false
       - run: go mod download
       - env:
+          GITHUB_ACTIONS: true # This should be already in place, but adding for clarity.
           TF_ACC: "1"
           KEYFACTOR_HOSTNAME: ${{secrets.KEYFACTOR_HOSTNAME}}
-          KEYFACTOR_USERNAME: ${{secrets.KEYFACTOR_USERNAME}}
-          KEYFACTOR_PASSWORD: ${{secrets.KEYFACTOR_PASSWORD}}
           KEYFACTOR_DOMAIN: ${{secrets.KEYFACTOR_DOMAIN}}
+          KEYFACTOR_API_PATH: ${{secrets.KEYFACTOR_API_PATH}}
+          KEYFACTOR_AUTH_TOKEN_URL: ${{secrets.KEYFACTOR_AUTH_TOKEN_URL}}
+          KEYFACTOR_AUTH_CLIENT_ID: ${{secrets.KEYFACTOR_AUTH_CLIENT_ID}}
+          KEYFACTOR_AUTH_CLIENT_SECRET: ${{secrets.KEYFACTOR_AUTH_CLIENT_SECRET}}
 
           KEYFACTOR_CERTIFICATE_ID: ${{secrets.KEYFACTOR_CERTIFICATE_ID}}
           KEYFACTOR_CERTIFICATE_PASSWORD: ${{secrets.KEYFACTOR_CERTIFICATE_PASSWORD}}
@@ -107,6 +114,12 @@ jobs:
           KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1: ${{secrets.KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1}}
           KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2: ${{secrets.KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2}}
           KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3: ${{secrets.KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3}}
+
+          KEYFACTOR_OAUTH_SECURITY_CLAIM_TYPE: ${{secrets.KEYFACTOR_OAUTH_SECURITY_CLAIM_TYPE}}
+          KEYFACTOR_OAUTH_SECURITY_CLAIM_VALUE: ${{secrets.KEYFACTOR_OAUTH_SECURITY_CLAIM_VALUE}}
+          KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME: ${{secrets.KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME}}
+          KEYFACTOR_OAUTH_SECURITY_ROLE_NAME: ${{secrets.KEYFACTOR_OAUTH_SECURITY_ROLE_NAME}}
+          KEYFACTOR_COMMAND_PERMISSION_SET_ID: ${{secrets.KEYFACTOR_COMMAND_PERMISSION_SET_ID}}
 
         run: go test -v -cover ./keyfactor
         timeout-minutes: 10

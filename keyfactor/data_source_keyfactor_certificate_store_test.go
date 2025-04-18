@@ -2,12 +2,17 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 func TestAccKeyfactorCertificateStoreDataSource(t *testing.T) {
+
+	// TODO: Test has a dependency on a certificate store. Skip in CI pipeline.
+	checkIfTestShouldBeIgnored(t)
+
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate_store")
 	var sID = os.Getenv("TEST_CERTIFICATE_STORE_ID")
 	if sID == "" {

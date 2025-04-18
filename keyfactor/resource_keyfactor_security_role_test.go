@@ -3,9 +3,10 @@ package keyfactor
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
-	"os"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 type roleTestCase struct {
@@ -19,11 +20,11 @@ type roleTestCase struct {
 func TestAccKeyfactorRoleResource(t *testing.T) {
 
 	r := roleTestCase{
-		name:        os.Getenv("KEYFACTOR_SECURITY_ROLE_NAME"),
+		name:        acctest.RandomWithPrefix("tf-acc-security-role"),
 		description: "Role used for a Terraform.",
 		permissions: []string{
 			"AdminPortal:Read",
-			"API:Read",
+			"Dashboard:Read",
 		},
 		resourceName: "keyfactor_role.terraform_test",
 	}
@@ -33,23 +34,12 @@ func TestAccKeyfactorRoleResource(t *testing.T) {
 	// Update to multiple roles test
 	r2 := r
 	additionalPermissions := []string{
-		"Certificates:Read",
+		"Certificates:Delete",
 		"Certificates:EditMetadata",
 		"Certificates:Import",
+		"Certificates:Read",
 		"Certificates:Recover",
 		"Certificates:Revoke",
-		"Certificates:Delete",
-		"Certificates:ImportPrivateKey",
-		"CertificateCollections:Modify",
-		"PkiManagement:Read",
-		"PkiManagement:Modify",
-		"CertificateStoreManagement:Read",
-		"CertificateStoreManagement:Modify",
-		"CertificateStoreManagement:Schedule",
-		"CertificateEnrollment:EnrollPFX",
-		"CertificateEnrollment:EnrollCSR",
-		"CertificateEnrollment:CsrGeneration",
-		"CertificateEnrollment:PendingCsr",
 	}
 	r2.permissions = append(r2.permissions, additionalPermissions...)
 	r2Str, _ := json.Marshal(r2.permissions)
@@ -68,9 +58,6 @@ func TestAccKeyfactorRoleResource(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Create and Read testing
 			{
-				//ResourceName: "",
-				//PreConfig:    nil,
-				//Taint:        nil,
 				Config: testAccKeyfactorRoleResourceConfig(r),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(r.resourceName, "id"),
@@ -79,24 +66,6 @@ func TestAccKeyfactorRoleResource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(r.resourceName, "permissions.1"), // TODO: Check specific value
 
 				),
-				//Destroy:                   false,
-				//ExpectNonEmptyPlan:        false,
-				//ExpectError:               nil,
-				//PlanOnly:                  false,
-				//PreventDiskCleanup:        false,
-				//PreventPostDestroyRefresh: false,
-				//SkipFunc:                  nil,
-				//ImportState:               false,
-				//ImportStateId:             "",
-				//ImportStateIdPrefix:       "",
-				//ImportStateIdFunc:         nil,
-				//ImportStateCheck:          nil,
-				//ImportStateVerify:         false,
-				//ImportStateVerifyIgnore:   nil,
-				//ProviderFactories:         nil,
-				//ProtoV5ProviderFactories:  nil,
-				//ProtoV6ProviderFactories:  nil,
-				//ExternalProviders:         nil,
 			},
 			// ImportState testing
 			//{

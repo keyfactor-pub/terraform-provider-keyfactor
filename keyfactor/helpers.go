@@ -24,10 +24,12 @@ import (
 	"math/rand"
 	"net"
 	"net/url"
+	"os"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
@@ -90,6 +92,22 @@ func generatePassword(passwordLength, minSpecialChar, minNum, minUpperCase int) 
 		},
 	)
 	return string(inRune)
+}
+
+// Gets the value of an environment variable or skips the test if the variable is not set.
+func getEnvOrSkip(t *testing.T, envVar string) string {
+	value := os.Getenv(envVar)
+	if value == "" {
+		t.Skipf("Skipping test: because %s is not set", envVar)
+	}
+	return value
+}
+
+func checkIfTestShouldBeIgnored(t *testing.T) {
+	value := os.Getenv("GITHUB_ACTIONS")
+	if value == "true" {
+		t.Skipf("Skipping test: Test is running in GitHub Actions environment")
+	}
 }
 
 // expandSubject extracts subject fields from a given string and returns them as Terraform types.

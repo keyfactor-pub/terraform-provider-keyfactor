@@ -43,6 +43,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"github.com/spbsoluble/go-pkcs12"
 )
 
@@ -269,15 +270,41 @@ func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesS
 	return result
 }
 
-func mapOAuthSecurityClaim(ctx context.Context, data *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse) OAuthSecurityClaim {
-	provider := *data.Provider
+func mapOAuthSecurityClaim(ctx context.Context, remote *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse, local *OAuthSecurityClaim) OAuthSecurityClaim {
+	provider := *remote.Provider
+
+	providerAuthScheme := provider.AuthenticationScheme.Get()
+	claimValue := remote.ClaimValue.Get()
+
+	if local != nil {
+		// In rare cases (like "unknown"), the remote scheme value may differ from local value.
+		providerAuthScheme = &local.ProviderAuthenticationScheme.Value
+
+		// For Active Directory, claim values may resolve on the remote side with domain prefixes.
+		// If we ignore the domain prefix and the claim value matches, that's good.
+		// Otherwise, let Terraform handle the discrepancy (update, inconsistent state, etc.)
+		if *providerAuthScheme == "Active Directory" {
+			sep := "\\"
+			split := strings.Split(*claimValue, sep)
+
+			if len(split) > 0 {
+				split = split[1:]
+				localClaimValue := local.ClaimValue.Value
+				val := strings.Join(split, sep)
+
+				if val == localClaimValue {
+					claimValue = &localClaimValue
+				}
+			}
+		}
+	}
 
 	var result = OAuthSecurityClaim{
-		ID:                           types.Int64{Value: int64(*data.Id)},
-		Description:                  getStringType(data.Description.Get()),
-		ClaimType:                    getStringType(data.ClaimType.Get()),
-		ClaimValue:                   getStringType(data.ClaimValue.Get()),
-		ProviderAuthenticationScheme: getStringType(data.Provider.AuthenticationScheme.Get()),
+		ID:                           types.Int64{Value: int64(*remote.Id)},
+		Description:                  getStringType(remote.Description.Get()),
+		ClaimType:                    getStringType(remote.ClaimType.Get()),
+		ClaimValue:                   getStringType(claimValue),
+		ProviderAuthenticationScheme: getStringType(providerAuthScheme),
 		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
 	}
 	return result
@@ -1674,6 +1701,11 @@ func getSecurityPermissionSetByName(ctx context.Context, apiClient *keyfactor.AP
 	return model, nil
 }
 
+// Returns a pointer to the input object
+func ptr[T any](v T) *T {
+	return &v
+}
+
 // Converts a pointer to a string to a types.String object.
 // If the pointer is nil, it returns a types.String with Null set to true.
 func getStringType(value *string) types.String {
@@ -1733,4 +1765,13 @@ func checkIfProviderIsConfigured(provider provider, diagnostics *diag.Diagnostic
 		return false
 	}
 	return true
+}
+
+func getResourceIdFromTerraformState(state *terraform.State, resourcePath string) (string, error) {
+	// Use the known resource path to construct the import ID
+	rs, ok := state.RootModule().Resources[resourcePath]
+	if !ok {
+		return "", fmt.Errorf("not found")
+	}
+	return rs.Primary.Attributes["id"], nil
 }

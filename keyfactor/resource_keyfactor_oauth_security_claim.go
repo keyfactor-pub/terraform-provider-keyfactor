@@ -30,30 +30,34 @@ func (r resourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sche
 				Description: "A string containing the description of the OAuth security claim in Keyfactor",
 			},
 			"claim_type": {
-				Type:                types.StringType,
-				Required:            true,
-				Description:         "A string containing the claim type of the OAuth security claim in Keyfactor",
-				MarkdownDescription: "A string containing the claim type of the OAuth security claim in Keyfactor. For allowed possible values, please refer to the `Claim Type String` values in ClaimType table in the [Command REST API documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaimsPOST.htm).",
+				Type:          types.StringType,
+				Required:      true,
+				Description:   "A string containing the claim type of the OAuth security claim in Keyfactor. Changing this value forces a new resource.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"claim_value": {
-				Type:        types.StringType,
-				Required:    true,
-				Description: "A string containing the claim value of the OAuth security claim in Keyfactor",
+				Type:                types.StringType,
+				Required:            true,
+				Description:         "A string containing the claim value of the OAuth security claim in Keyfactor. For implementations authenticated using Active Directory, this will be in NetBIOS format (DOMAIN\\account-name). For example, group KEYEXAMPLE\\PKI Administrators or for a computer, machine account KEYEXAMPLE\\MyServer$. For implementations authenticated using OAuth, this will be in the format defined by the Name Claim Type. Changing this value forces a new resource.",
+				MarkdownDescription: "A string containing the claim value of the OAuth security claim in Keyfactor. For implementations authenticated using Active Directory, this will be in NetBIOS format (`DOMAIN\\account-name`). For example, group `KEYEXAMPLE\\PKI Administrators` or for a computer, machine account `KEYEXAMPLE\\MyServer$`. For implementations authenticated using OAuth, this will be in the format defined by the Name Claim Type. Changing this value forces a new resource.",
+				PlanModifiers:       []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"provider_authentication_scheme": {
-				Type:        types.StringType,
-				Required:    true,
-				Description: "The identity provider associated with the OAuth security claim. Used only for resource creation. Not returned by the API.",
+				Type:          types.StringType,
+				Required:      true,
+				Description:   "The authentication scheme of an Identity Provider to associate with the OAuth security claim. Changing this value forces a new resource.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"provider": {
 				Type: types.ObjectType{
 					AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
 				},
 				Computed:    true,
-				Description: "An object containing the provider of the OAuth security claim in Keyfactor",
+				Description: "An object mapping of the identity provider associated with the OAuth security claim in Keyfactor",
 			},
 		},
-		Description: "Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+",
+		Description:         "Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct and its fields, please refer to the API documentation for Security Claims: https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm",
+		MarkdownDescription: "Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct and its fields, please refer to [the API documentation for Security Claims](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm).",
 	}, nil
 }
 
@@ -115,7 +119,7 @@ func (r resourceOAuthSecurityClaim) Read(
 		return
 	}
 
-	var result = mapOAuthSecurityClaim(ctx, remoteState)
+	var result = mapOAuthSecurityClaim(ctx, remoteState, state)
 
 	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
 	if !ok {
@@ -176,7 +180,7 @@ func (r resourceOAuthSecurityClaim) Update(
 		return
 	}
 
-	var result = mapOAuthSecurityClaim(ctx, remoteState)
+	var result = mapOAuthSecurityClaim(ctx, remoteState, plan)
 
 	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
 	if !ok {
@@ -286,7 +290,7 @@ func (r resourceOAuthSecurityClaim) Create(
 
 	tflog.Debug(ctx, fmt.Sprintf("Successfully created OAuth security claim. Claim ID: %d", *createResponse.Id))
 
-	var result = mapOAuthSecurityClaim(ctx, createResponse)
+	var result = mapOAuthSecurityClaim(ctx, createResponse, plan)
 
 	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
 	if !ok {
@@ -340,7 +344,7 @@ func (r resourceOAuthSecurityClaim) ImportState(
 		return
 	}
 
-	var result = mapOAuthSecurityClaim(ctx, remoteState)
+	var result = mapOAuthSecurityClaim(ctx, remoteState, nil)
 
 	ok := updateState(ctx, &response.State, &response.Diagnostics, result)
 	if !ok {

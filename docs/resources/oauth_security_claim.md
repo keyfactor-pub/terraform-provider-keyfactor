@@ -3,12 +3,12 @@
 page_title: "keyfactor_oauth_security_claim Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  Used to manage Keyfactor Command Security Claims using the V1 /Security/Claims API. This resource is compatible with Keyfactor Command versions 11+
+  Used to manage Keyfactor Command Security Claims using the V1 /Security/Claims API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct and its fields, please refer to the API documentation for Security Claims https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm.
 ---
 
 # keyfactor_oauth_security_claim (Resource)
 
-Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+
+Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct and its fields, please refer to [the API documentation for Security Claims](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm).
 
 ## Example Usage
 
@@ -61,15 +61,15 @@ resource "keyfactor_oauth_security_claim" "ad_group_claim" {
 
 ### Required
 
-- `claim_type` (String) A string containing the claim type of the OAuth security claim in Keyfactor. For allowed possible values, please refer to the `Claim Type String` values in ClaimType table in the [Command REST API documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaimsPOST.htm).
-- `claim_value` (String) A string containing the claim value of the OAuth security claim in Keyfactor
+- `claim_type` (String) A string containing the claim type of the OAuth security claim in Keyfactor. Changing this value forces a new resource.
+- `claim_value` (String) A string containing the claim value of the OAuth security claim in Keyfactor. For implementations authenticated using Active Directory, this will be in NetBIOS format (`DOMAIN\account-name`). For example, group `KEYEXAMPLE\PKI Administrators` or for a computer, machine account `KEYEXAMPLE\MyServer$`. For implementations authenticated using OAuth, this will be in the format defined by the Name Claim Type. Changing this value forces a new resource.
 - `description` (String) A string containing the description of the OAuth security claim in Keyfactor
-- `provider_authentication_scheme` (String) The identity provider associated with the OAuth security claim. Used only for resource creation. Not returned by the API.
+- `provider_authentication_scheme` (String) The authentication scheme of an Identity Provider to associate with the OAuth security claim. Changing this value forces a new resource.
 
 ### Read-Only
 
 - `id` (Number) Internal ID of the role.
-- `provider` (Object) An object containing the provider of the OAuth security claim in Keyfactor (see [below for nested schema](#nestedatt--provider))
+- `provider` (Object) An object mapping of the identity provider associated with the OAuth security claim in Keyfactor (see [below for nested schema](#nestedatt--provider))
 
 <a id="nestedatt--provider"></a>
 ### Nested Schema for `provider`

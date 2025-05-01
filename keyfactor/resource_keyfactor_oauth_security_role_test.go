@@ -119,6 +119,8 @@ func TestAccKeyfactorOAuthRoleImportState(t *testing.T) {
 		resourcePath: "keyfactor_oauth_security_role.terraform_test",
 	}
 
+	resourcePath := fmt.Sprintf("%s.%s", r.resourceType, r.resourceName)
+
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -128,7 +130,7 @@ func TestAccKeyfactorOAuthRoleImportState(t *testing.T) {
 				Config: testAccKeyfactorOAuthRoleResourceConfig(r),
 			}, // Import State
 			{
-				ResourceName:      fmt.Sprintf("%s.%s", r.resourceType, r.resourceName),
+				ResourceName:      resourcePath,
 				ImportState:       true,
 				ImportStateVerify: true,
 				ImportStateIdFunc: func(state *terraform.State) (string, error) {

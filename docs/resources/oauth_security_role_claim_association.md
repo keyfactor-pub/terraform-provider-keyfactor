@@ -45,8 +45,8 @@ resource "keyfactor_oauth_security_role_claim_association" "subject_system_claim
 
 ### Required
 
-- `claim_id` (Number) Internal ID of the OAuth security claim.
-- `role_id` (Number) Internal ID of the OAuth security role.
+- `claim_id` (Number) Internal ID of the OAuth security claim. Changing this value forces a new resource.
+- `role_id` (Number) Internal ID of the OAuth security role. Changing this value forces a new resource.
 
 ### Read-Only
 

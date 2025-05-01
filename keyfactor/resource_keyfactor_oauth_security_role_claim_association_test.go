@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 type oauthSecurityRoleClaimAssociationTestCase struct {
@@ -55,6 +56,51 @@ func TestAccKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 				),
 			},
 			// Delete testing automatically occurs in TestCase
+		},
+	})
+}
+
+func TestAccKeyfactorOAuthSecurityRoleClaimAssociationImportState(t *testing.T) {
+	r := oauthSecurityRoleClaimAssociationTestCase{
+		role1Name:              acctest.RandomWithPrefix("tf-acc-role"),
+		role2Name:              acctest.RandomWithPrefix("tf-acc-role"),
+		associatedRoleResource: "test_role_1",
+		claimValue:             acctest.RandomWithPrefix("tf-acc-claim"),
+		claimProviderScheme:    getEnvOrSkip(t, "KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME"),
+		resourceType:           "keyfactor_oauth_security_role_claim_association",
+		resourceName:           "test_role_claim_association",
+		resourcePath:           "keyfactor_oauth_security_role_claim_association.test_role_claim_association",
+	}
+
+	roleResourcePath := fmt.Sprintf("%s.%s", "keyfactor_oauth_security_role", "test_role_1")
+	claimResourcePath := fmt.Sprintf("%s.%s", "keyfactor_oauth_security_claim", "test_claim")
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Read and Create role
+			{
+				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResource(r),
+			}, // Import State
+			{
+				ResourceName:      r.resourcePath,
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(state *terraform.State) (string, error) {
+					roleId, err := getResourceIdFromTerraformState(state, roleResourcePath)
+					if err != nil {
+						return "", err
+					}
+
+					claimId, err := getResourceIdFromTerraformState(state, claimResourcePath)
+					if err != nil {
+						return "", err
+					}
+
+					return fmt.Sprintf("%s/%s", roleId, claimId), nil
+				},
+			},
 		},
 	})
 }

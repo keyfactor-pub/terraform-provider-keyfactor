@@ -49,5 +49,3 @@ data "keyfactor_agent" "agent_lookup_client_machine" {
 - `thumbprint` (String) A string indicating the thumbprint of the certificate that Keyfactor Command is expecting the orchestrator to use for client certificate authentication.
 - `username` (String) A string indicating the Active Directory user or service account the orchestrator is using to connect to Keyfactor Command.
 - `version` (String) A string indicating the version of the orchestrator.
-
-

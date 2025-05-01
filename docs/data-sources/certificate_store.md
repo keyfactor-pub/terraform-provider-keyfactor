@@ -56,5 +56,3 @@ data "keyfactor_certificate_store" "k8s_cluster_store_lookup" {
 - `server_username` (String) The username to access the host of the certificate store. In Keyfactor Command this is the 'ServerUsername' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.
 - `store_password` (String, Sensitive) The password to access the contents of the certificate store. In Keyfactor Command this is the 'StorePassword' field. field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.
 - `store_type` (String) Short name of certificate store type. See API reference guide
-
-

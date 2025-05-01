@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strconv"
 
 	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -302,18 +301,28 @@ func (r resourceOAuthSecurityRole) ImportState(
 ) {
 	tflog.Info(ctx, "ImportState called on OAuth security role resource")
 
-	requestId := request.ID
+	roleName := request.ID
 
-	tflog.Debug(ctx, fmt.Sprintf("OAuth security role ID requested: %s...", requestId))
+	tflog.Debug(ctx, fmt.Sprintf("OAuth security role name requested: %s...", roleName))
 
-	roleId, err := strconv.Atoi(requestId)
+	tflog.SetField(ctx, "role_name", roleName)
 
-	tflog.Debug(ctx, fmt.Sprintf("Parsed role ID: %d", roleId))
+	remoteRoleQuery, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
 
-	tflog.SetField(ctx, "role_id", roleId)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error importing security role",
+			fmt.Sprintf("Could not import OAuth security role name %s , an error occurred querying security role: %s.", roleName, err.Error()),
+		)
+		return
+	}
+
+	tflog.Debug(ctx, fmt.Sprintf("Successfully queried security role %s. Role ID: %d", roleName, *remoteRoleQuery.Id))
+
+	roleId := *remoteRoleQuery.Id
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
-	req := api.NewGetSecurityRolesByIdRequest(ctx, int32(roleId))
+	req := api.NewGetSecurityRolesByIdRequest(ctx, roleId)
 
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security role %d...", roleId))
 

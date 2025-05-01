@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 type oauthRoleTestCase struct {
@@ -103,6 +104,38 @@ func TestAccKeyfactorOAuthRoleResourceDuplicateUnsortedPermissions(t *testing.T)
 				),
 			},
 			// Delete testing automatically occurs in TestCase
+		},
+	})
+}
+
+func TestAccKeyfactorOAuthRoleImportState(t *testing.T) {
+	r := oauthRoleTestCase{
+		name:         acctest.RandomWithPrefix("tf-acc-role"),
+		description:  "Terraform Import Role",
+		permissions:  []string{"/metadata/types/read/"},
+		emailAddress: "foo@example.com",
+		resourceType: "keyfactor_oauth_security_role",
+		resourceName: "terraform_test",
+		resourcePath: "keyfactor_oauth_security_role.terraform_test",
+	}
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:                 func() { testAccPreCheck(t) },
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Read and Create role
+			{
+				Config: testAccKeyfactorOAuthRoleResourceConfig(r),
+			}, // Import State
+			{
+				ResourceName:      fmt.Sprintf("%s.%s", r.resourceType, r.resourceName),
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(state *terraform.State) (string, error) {
+					// Use the known roleName to construct the import ID
+					return r.name, nil
+				},
+			},
 		},
 	})
 }

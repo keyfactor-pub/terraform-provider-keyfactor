@@ -51,11 +51,3 @@ resource "keyfactor_oauth_security_role_claim_association" "subject_system_claim
 ### Read-Only
 
 - `id` (String) Internal ID of the OAuth security role claim association.
-
-## Import
-
-Import is supported using the following syntax:
-
-```shell
-terraform import keyfactor_oauth_security_role_claim_association.my_role_claim_association <role-id>/<claim-id>
-```

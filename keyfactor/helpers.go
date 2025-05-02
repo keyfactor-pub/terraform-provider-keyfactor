@@ -280,20 +280,31 @@ func mapOAuthSecurityClaim(ctx context.Context, remote *kfv1.SecurityRoleClaimDe
 		// In rare cases (like "unknown"), the remote scheme value may differ from local value.
 		providerAuthScheme = &local.ProviderAuthenticationScheme.Value
 
-		// For Active Directory, claim values may resolve on the remote side with domain prefixes.
+		// For Active Directory, claim values may resolve on the remote side with domain prefixes / different casing.
 		// If we ignore the domain prefix and the claim value matches, that's good.
 		// Otherwise, let Terraform handle the discrepancy (update, inconsistent state, etc.)
 		if *providerAuthScheme == "Active Directory" {
-			sep := "\\"
-			split := strings.Split(*claimValue, sep)
 
-			if len(split) > 0 {
-				split = split[1:]
-				localClaimValue := local.ClaimValue.Value
-				val := strings.Join(split, sep)
+			localClaimValue := strings.ToLower(local.ClaimValue.Value)
+			remoteClaimValue := strings.ToLower(*claimValue)
 
-				if val == localClaimValue {
-					claimValue = &localClaimValue
+			// If value from remote == local (case insensitive), great.
+			// Otherwise, do some comparison on username value (without domain)
+			if localClaimValue == remoteClaimValue {
+				claimValue = &local.ClaimValue.Value
+			} else {
+				sep := "\\"
+				split := strings.Split(remoteClaimValue, sep)
+
+				if len(split) > 0 {
+					split = split[1:]
+					val := strings.Join(split, sep)
+
+					// At this point, we've confirmed the username matches (case insensitive).
+					// To prevent inconsistent state issues, store the Terraform plan value into the state.
+					if val == localClaimValue {
+						claimValue = &local.ClaimValue.Value
+					}
 				}
 			}
 		}
@@ -319,13 +330,13 @@ func mapOAuthSecurityRoleClaimAssociation(ctx context.Context, roleId int32, cla
 	return result
 }
 
-func mapOAuthSecurityClaimsFromRole(ctx context.Context, diagnostics *diag.Diagnostics, remoteState *kfv2.SecuritySecurityRolesSecurityRoleResponse, existingClaimId *int32) (*[]kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest, bool) {
+func mapOAuthSecurityClaimsFromRole(ctx context.Context, diagnostics *diag.Diagnostics, remoteState *kfv2.SecuritySecurityRolesSecurityRoleResponse, deletedClaimId *int32) (*[]kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest, bool) {
 	claims := []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{}
 	for _, claim := range remoteState.Claims {
 		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
 
-		if claim.Id != nil && existingClaimId != nil && *claim.Id == *existingClaimId {
-			// Skip adding claim to claims array
+		// Skip adding claim to claims array -- delete the claim from the security role
+		if claim.Id != nil && deletedClaimId != nil && *claim.Id == *deletedClaimId {
 			continue
 		}
 
@@ -352,6 +363,20 @@ func mapOAuthSecurityClaimsFromRole(ctx context.Context, diagnostics *diag.Diagn
 	}
 
 	return &claims, true
+}
+
+// To fix an issue where duplicate claims on a security role corrupts a security role, perform a check that the new claim being added is not a duplicate
+func addOAuthSecurityClaimToRole(ctx context.Context, existingClaims []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest, newClaim kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest) []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest {
+	var result []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest
+	for _, claim := range existingClaims {
+		// If we detect that the claim is being duplicated, we will skip over that claim and add it toward the end
+		if claim.ClaimType == newClaim.ClaimType && claim.ClaimValue == newClaim.ClaimValue && claim.ProviderAuthenticationScheme == newClaim.ProviderAuthenticationScheme {
+			continue
+		}
+		result = append(result, claim)
+	}
+	result = append(result, newClaim)
+	return result
 }
 
 // DNSSANStoTerraform converts a slice of DNS SANs (Subject Alternative Names) into a Terraform-compatible

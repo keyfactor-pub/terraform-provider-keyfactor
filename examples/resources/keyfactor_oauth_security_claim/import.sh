@@ -1,0 +1,1 @@
+terraform import keyfactor_oauth_security_claim.my_other_claim CLAIM_ID

@@ -24,18 +24,26 @@ import (
 	"math/rand"
 	"net"
 	"net/url"
+	"os"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
+	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"github.com/spbsoluble/go-pkcs12"
 )
 
@@ -90,6 +98,15 @@ func generatePassword(passwordLength, minSpecialChar, minNum, minUpperCase int) 
 		},
 	)
 	return string(inRune)
+}
+
+// Gets the value of an environment variable or skips the test if the variable is not set.
+func getEnvOrSkip(t *testing.T, envVar string) string {
+	value := os.Getenv(envVar)
+	if value == "" {
+		t.Skipf("Skipping test: because %s is not set", envVar)
+	}
+	return value
 }
 
 // expandSubject extracts subject fields from a given string and returns them as Terraform types.
@@ -218,6 +235,147 @@ func flattenMetadata(metadata interface{}) types.Map {
 	if len(result.Elems) == 0 {
 		result.Null = true
 	}
+	return result
+}
+
+func mapAuthenticationProviderType(id string, authScheme string, displayName string) types.Object {
+	return types.Object{
+		Attrs: map[string]attr.Value{
+			"id":                    types.String{Value: id},
+			"authentication_scheme": types.String{Value: authScheme},
+			"display_name":          types.String{Value: displayName},
+		},
+		AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
+	}
+}
+
+// Maps an OAuth Security Role from a SecuritySecurityRolesSecurityRoleResponse response model
+func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesSecurityRoleResponse) OAuthSecurityRole {
+	var permissionValues []attr.Value
+	sort.Strings(data.Permissions)
+	for _, perm := range data.Permissions {
+		tflog.Debug(ctx, fmt.Sprintf("Permission: %s", perm))
+		permissionValues = append(permissionValues, types.String{Value: perm})
+	}
+
+	var result = OAuthSecurityRole{
+		ID:              types.Int64{Value: int64(*data.Id)},
+		Name:            getStringType(data.Name.Get()),
+		Description:     getStringType(data.Description.Get()),
+		EmailAddress:    getStringType(data.EmailAddress.Get()),
+		Immutable:       types.Bool{Value: *data.Immutable},
+		Permissions:     types.Set{ElemType: types.StringType, Elems: permissionValues},
+		PermissionSetId: getStringType(data.PermissionSetId),
+	}
+	return result
+}
+
+func mapOAuthSecurityClaim(ctx context.Context, remote *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse, local *OAuthSecurityClaim) OAuthSecurityClaim {
+	provider := *remote.Provider
+
+	providerAuthScheme := provider.AuthenticationScheme.Get()
+	claimValue := remote.ClaimValue.Get()
+
+	if local != nil {
+		// In rare cases (like "unknown"), the remote scheme value may differ from local value.
+		providerAuthScheme = &local.ProviderAuthenticationScheme.Value
+
+		// For Active Directory, claim values may resolve on the remote side with domain prefixes / different casing.
+		// If we ignore the domain prefix and the claim value matches, that's good.
+		// Otherwise, let Terraform handle the discrepancy (update, inconsistent state, etc.)
+		if *providerAuthScheme == "Active Directory" {
+
+			localClaimValue := strings.ToLower(local.ClaimValue.Value)
+			remoteClaimValue := strings.ToLower(*claimValue)
+
+			// If value from remote == local (case insensitive), great.
+			// Otherwise, do some comparison on username value (without domain)
+			if localClaimValue == remoteClaimValue {
+				claimValue = &local.ClaimValue.Value
+			} else {
+				sep := "\\"
+				split := strings.Split(remoteClaimValue, sep)
+
+				if len(split) > 0 {
+					split = split[1:]
+					val := strings.Join(split, sep)
+
+					// At this point, we've confirmed the username matches (case insensitive).
+					// To prevent inconsistent state issues, store the Terraform plan value into the state.
+					if val == localClaimValue {
+						claimValue = &local.ClaimValue.Value
+					}
+				}
+			}
+		}
+	}
+
+	var result = OAuthSecurityClaim{
+		ID:                           types.Int64{Value: int64(*remote.Id)},
+		Description:                  getStringType(remote.Description.Get()),
+		ClaimType:                    getStringType(remote.ClaimType.Get()),
+		ClaimValue:                   getStringType(claimValue),
+		ProviderAuthenticationScheme: getStringType(providerAuthScheme),
+		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
+	}
+	return result
+}
+
+func mapOAuthSecurityRoleClaimAssociation(ctx context.Context, roleId int32, claimId int32) OAuthSecurityRoleClaimAssociation {
+	result := OAuthSecurityRoleClaimAssociation{
+		ID:      types.String{Value: fmt.Sprintf("%d/%d", roleId, claimId)},
+		RoleID:  types.Int64{Value: int64(roleId)},
+		ClaimID: types.Int64{Value: int64(claimId)},
+	}
+	return result
+}
+
+func mapOAuthSecurityClaimsFromRole(ctx context.Context, diagnostics *diag.Diagnostics, remoteState *kfv2.SecuritySecurityRolesSecurityRoleResponse, deletedClaimId *int32) (*[]kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest, bool) {
+	claims := []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{}
+	for _, claim := range remoteState.Claims {
+		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
+
+		// Skip adding claim to claims array -- delete the claim from the security role
+		if claim.Id != nil && deletedClaimId != nil && *claim.Id == *deletedClaimId {
+			continue
+		}
+
+		provider := *claim.Provider
+		claimTypeEnum, err := kfv2.ParseCSSCMSCoreEnumsClaimType(*claim.ClaimType.Get())
+
+		// This shouldn't happen since the claim type is coming from the API
+		// But just in case
+		if err != nil {
+			diagnostics.AddError(
+				"Error creating security identity.",
+				"Could not create identity role claim association, error parsing claim type "+err.Error(),
+			)
+			return nil, false
+		}
+
+		temp := kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
+			ClaimType:                    *claimTypeEnum,
+			ClaimValue:                   *claim.ClaimValue.Get(),
+			ProviderAuthenticationScheme: *provider.AuthenticationScheme.Get(),
+			Description:                  *claim.Description.Get(),
+		}
+		claims = append(claims, temp)
+	}
+
+	return &claims, true
+}
+
+// To fix an issue where duplicate claims on a security role corrupts a security role, perform a check that the new claim being added is not a duplicate
+func addOAuthSecurityClaimToRole(ctx context.Context, existingClaims []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest, newClaim kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest) []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest {
+	var result []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest
+	for _, claim := range existingClaims {
+		// If we detect that the claim is being duplicated, we will skip over that claim and add it toward the end
+		if claim.ClaimType == newClaim.ClaimType && claim.ClaimValue == newClaim.ClaimValue && claim.ProviderAuthenticationScheme == newClaim.ProviderAuthenticationScheme {
+			continue
+		}
+		result = append(result, claim)
+	}
+	result = append(result, newClaim)
 	return result
 }
 
@@ -1462,4 +1620,183 @@ func forceIfTrue(ctx context.Context, state attr.Value, config attr.Value, path 
 	}
 
 	return false, diags
+}
+
+// The v1 APIClient exposes a method to query security claims by type and value. To retrieve a unique security claim from Command
+// it is required to also find a claim with the matching authentication scheme, which is not queryable via the QueryString parameter. That must be done as a separate
+// operation from the API call. This function will query the security claims by type and value, then filter the results by the authentication scheme to return a unique claim if it exists.
+func getSecurityClaimByTypeAndValueAndScheme(ctx context.Context, apiClient *keyfactor.APIClient, claimType string, claimValue string, authenticationScheme string) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting security claim from remote source. ClaimType: %s, ClaimValue: %s, AuthenticationScheme: %s", claimType, claimValue, authenticationScheme))
+
+	claimTypeEnum, err := kfv1.ParseCSSCMSCoreEnumsClaimType(claimType)
+	if err != nil {
+		return nil, err
+	}
+
+	tflog.Debug(ctx, fmt.Sprintf("Claim type %s has been parsed to %d", claimType, *claimTypeEnum))
+
+	api := apiClient.V1.SecurityClaimsApi
+	req := api.
+		NewGetSecurityClaimsRequest(ctx).
+		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\" and ClaimType -eq %d))", claimValue, *claimTypeEnum))
+
+	response, _, err := api.GetSecurityClaimsExecute(req)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 {
+		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s", claimType, claimValue)
+	}
+
+	var result *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse
+
+	for _, claim := range response {
+		if claim.Provider != nil && claim.Provider.AuthenticationScheme.Get() != nil && *claim.Provider.AuthenticationScheme.Get() == authenticationScheme {
+			result = &claim
+			break
+		}
+	}
+
+	if result == nil {
+		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s and authenticationScheme %s", claimType, claimValue, authenticationScheme)
+	}
+
+	return result, nil
+}
+
+// The v2 APIClient exposes a method to query a role by name.  This function will query the security roles and filter security roles by name.
+func getSecurityRoleByName(ctx context.Context, apiClient *keyfactor.APIClient, roleName string) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting security role from remote source. Role Name: %s", roleName))
+
+	api := apiClient.V2.SecurityRolesApi
+	req := api.
+		NewGetSecurityRolesRequest(ctx).
+		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", roleName))
+
+	response, _, err := req.Execute()
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 {
+		return nil, fmt.Errorf("No security role found with name %s", roleName)
+	}
+
+	// Command should not allow multiple security roles with the same name. Not going to code logic around multiple results.
+
+	return &response[0], nil
+}
+
+// Queries security permissions by name and returns the first matching permission set.
+func getSecurityPermissionSetByName(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetName string) (*kfv1.PermissionSetsPermissionSetResponse, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting permission set ID by name from remote source. Permission set name: %s", permissionSetName))
+
+	api := apiClient.V1.PermissionSetApi
+	var model *kfv1.PermissionSetsPermissionSetResponse
+	pageNumber := 1
+	for model == nil {
+		tflog.Debug(ctx, fmt.Sprintf("Querying permission set page %d", pageNumber))
+		permissionSets, _, err := api.NewGetPermissionSetsRequest(ctx).ReturnLimit(50).PageReturned(int32(pageNumber)).Execute()
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to query permission sets: %w", err)
+		}
+
+		if len(permissionSets) == 0 {
+			return nil, fmt.Errorf("no permissions were found with name %s", permissionSetName)
+		}
+
+		pageNumber++
+
+		for _, permission := range permissionSets {
+			// Check if the permission set name matches the requested name
+			if permission.Name.Get() != nil && *permission.Name.Get() == permissionSetName {
+				tflog.Debug(ctx, fmt.Sprintf("Found permission set with name: %s", permissionSetName))
+				model = &permission
+				break
+			}
+		}
+	}
+
+	tflog.Debug(ctx, fmt.Sprintf("Found permission set with matching name %s. ID: %s", permissionSetName, *model.Id))
+
+	return model, nil
+}
+
+// Returns a pointer to the input object
+func ptr[T any](v T) *T {
+	return &v
+}
+
+// Converts a pointer to a string to a types.String object.
+// If the pointer is nil, it returns a types.String with Null set to true.
+func getStringType(value *string) types.String {
+	if value == nil {
+		return types.String{Value: "", Null: true}
+	}
+	return types.String{Value: *value}
+}
+
+// Gets Terraform plan for a given resource type. If there's an error retrieving the state, an error is appended to diagnostics.
+func getPlan[T any](ctx context.Context, plan *tfsdk.Plan, diagnostics *diag.Diagnostics) (*T, bool) {
+	var result T
+	diags := plan.Get(ctx, &result)
+	diagnostics.Append(diags...)
+	if diagnostics.HasError() {
+		return nil, false
+	}
+	return &result, true
+}
+
+// Gets Terraform state for a given resource type. If there's an error retrieving the state, an error is appended to diagnostics.
+func getState[T any](ctx context.Context, state *tfsdk.State, diagnostics *diag.Diagnostics) (*T, bool) {
+	var result T
+	diags := state.Get(ctx, &result)
+	diagnostics.Append(diags...)
+	if diagnostics.HasError() {
+		return nil, false
+	}
+	return &result, true
+}
+
+// Gets a data source from the config. If there's an error retrieving the configuration, an error is appended to diagnostics.
+func getDataSource[T any](ctx context.Context, config *tfsdk.Config, diagnostics *diag.Diagnostics) (*T, bool) {
+	var result T
+	diags := config.Get(ctx, &result)
+	diagnostics.Append(diags...)
+	if diagnostics.HasError() {
+		return nil, false
+	}
+	return &result, true
+}
+
+// Updates Terraform state with provided result type. If there's an error, it appends to diagnostics.
+func updateState[T any](ctx context.Context, state *tfsdk.State, diagnostics *diag.Diagnostics, result T) bool {
+	diags := state.Set(ctx, result)
+	diagnostics.Append(diags...)
+	return diagnostics.HasError()
+}
+
+// Determines if the provider has been configured. If not, adds an error to the diagnostics.
+func checkIfProviderIsConfigured(provider provider, diagnostics *diag.Diagnostics) bool {
+	if !provider.configured {
+		diagnostics.AddError(
+			"Provider not configured",
+			"The provider hasn't been configured before apply, likely because it depends on an unknown value from another resource. This leads to weird stuff happening, so we'd prefer if you didn't do that. Thanks!",
+		)
+		return false
+	}
+	return true
+}
+
+func getResourceIdFromTerraformState(state *terraform.State, resourcePath string) (string, error) {
+	// Use the known resource path to construct the import ID
+	rs, ok := state.RootModule().Resources[resourcePath]
+	if !ok {
+		return "", fmt.Errorf("not found")
+	}
+	return rs.Primary.Attributes["id"], nil
 }

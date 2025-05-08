@@ -13,13 +13,6 @@ Used to schedule a certificate deployment(/management) job on Keyfactor Command 
 ## Example Usage
 
 ```terraform
-provider "keyfactor" {
-  username = "COMMAND\\your_username"
-  password = "your_api_password"
-  hostname = "mykfinstance.kfdelivery.com"
-  domain   = "mydomain.com"
-}
-
 # Lookup existing cert store using the client machine's name and the store path
 data "keyfactor_certificate_store" "my_cert_store" {
   client_machine = "192.168.0.9"
@@ -67,5 +60,3 @@ resource "keyfactor_certificate_deployment" "ca_cert_deployment" {
 ### Read-Only
 
 - `id` (String) A unique identifier for this certificate deployment.
-
-

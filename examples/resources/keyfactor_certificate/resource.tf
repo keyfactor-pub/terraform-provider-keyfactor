@@ -1,11 +1,4 @@
-provider "keyfactor" {
-  username = "your_username"
-  password = "your_api_password"
-  hostname = "mykfinstance.kfdelivery.com"
-  domain   = "mydomain.com"
-}
-
-## PFX Enrollment
+# PFX Enrollment
 resource "keyfactor_certificate" "pkcs12_enrollment" {
   common_name           = "My PKCS12 Certificate"
   country               = "US"
@@ -36,7 +29,7 @@ resource "keyfactor_certificate" "pkcs12_enrollment" {
   }
 }
 
-## CSR Enrollment
+# CSR Enrollment
 resource "tls_private_key" "rsa_4096" {
   # Create a private key for the certificate request.
   algorithm = "RSA"

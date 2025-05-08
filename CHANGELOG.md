@@ -1,3 +1,24 @@
+# v2.5.0
+### OAuth Security Roles
+
+#### Features
+* feat(oauth_security_roles): Add support to read and manage security roles in Keyfactor Command (v2 API compatibility)
+
+### OAuth Security Claims
+
+#### Features
+* feat(oauth_security_claims): Add support to read and manage security claims in Keyfactor Command
+
+### OAuth Security Role Claims Association
+
+#### Features
+* feat(oauth_security_role_claim_association): Add support to associate an OAuth security claim to an OAuth security role resource.
+
+### Security Roles
+
+#### Chores
+* chore(roles): Update documentation for Security Roles to reference list of possible permission values.
+
 # v2.4.0
 
 ### Certificates

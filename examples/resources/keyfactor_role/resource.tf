@@ -1,10 +1,4 @@
-provider "keyfactor" {
-  username = "COMMAND\\your_username"
-  password = "your_api_password"
-  hostname = "mykfinstance.kfdelivery.com"
-  domain   = "mydomain.com"
-}
-
+# NOTE: This resource type is deprecated as of Keyfactor Command v11 please use `keyfactor_oauth_security_role resources`.
 resource "keyfactor_role" "kf_terraform_role" {
   name        = "Terraform" # Name of the role to create
   description = "Role used to demonstrate Keyfactor's ability to integrate with Terraform."

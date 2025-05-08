@@ -109,5 +109,3 @@ Optional:
 Read-Only:
 
 - `renew_eligible` (Boolean) Whether the certificate is eligible for renewal.
-
-

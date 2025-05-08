@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -25,6 +26,7 @@ func New() tfsdk.Provider {
 type provider struct {
 	configured bool
 	client     *api.Client
+	sdkClient  *keyfactor.APIClient
 }
 
 const (
@@ -217,6 +219,12 @@ Below are currently supported resources:
 | Certificate       | [Certificate](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Certificates.htm)                     | [keyfactor_certificate](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate)                       |
 | Certificate Store | [Certificate Store](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/CertificateStores.htm)          | [keyfactor_certificate_store](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_store)           |
 | Orchestration Job | [Orchestration Job](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/OrchestratorJobsPOSTCustom.htm) | [keyfactor_certificate_deployment](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_deployment) |
+| OAuth Security Role | [OAuth Security Role](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm) | [keyfactor_oauth_security_role](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role) 	|
+| OAuth Security Claim | [OAuth Security Claims](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm) 	 | [keyfactor_oauth_security_claim](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_claim) 			|
+| OAuth Security Role Claim Association | [OAuth Security Claim Roles](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaimsGETRoles.htm) | [keyfactor_oauth_security_role_claim_association](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role_claim_association) |
+| Certificate Template Role Binding | [Certificate Templates](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/TemplatesPut.htm) | [keyfactor_template_role_binding](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/template_role_binding) |
+| Security Identity (deprecated) | [Security Identity](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Security.htm) 	| [keyfactor_identity](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/identity) 									|
+| Security Roles (deprecated) | [Security Roles](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm) | [keyfactor_role](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/role) 								|
 
 ## Support
 
@@ -559,20 +567,46 @@ func (p *provider) Configure(
 		}
 		connected = true
 		p.client = c
+		continue
+	}
+
+	connected = false
+	connectionRetries = 0
+	for !connected && connectionRetries < 5 {
+		c, err := keyfactor.NewAPIClient(serverConfig)
+
+		if err != nil {
+			if connectionRetries == 4 {
+				resp.Diagnostics.AddError(
+					"Client error.",
+					"Unable to create client connection to Keyfactor Command (SDK client):\n\n"+err.Error(),
+				)
+				return
+			}
+			connectionRetries++
+			// Sleep for 5 seconds before retrying
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		connected = true
+		p.sdkClient = c
 		p.configured = true
-		return
+		continue
 	}
 }
 
 // GetResources - Defines provider resources
 func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceType, diag.Diagnostics) {
 	return map[string]tfsdk.ResourceType{
-		"keyfactor_identity":               resourceSecurityIdentityType{},
-		"keyfactor_certificate":            resourceCommandCertificateType{},
-		"keyfactor_certificate_store":      resourceCertificateStoreType{},
-		"keyfactor_certificate_deployment": resourceCommandCertificateDeploymentType{},
-		"keyfactor_role":                   resourceSecurityRoleType{},
-		"keyfactor_template_role_binding":  resourceCertificateTemplateRoleBindingType{},
+		"keyfactor_identity":                              resourceSecurityIdentityType{},
+		"keyfactor_certificate":                           resourceCommandCertificateType{},
+		"keyfactor_certificate_store":                     resourceCertificateStoreType{},
+		"keyfactor_certificate_deployment":                resourceCommandCertificateDeploymentType{},
+		"keyfactor_oauth_security_role_claim_association": resourceOAuthSecurityRoleClaimAssociationType{},
+		"keyfactor_oauth_security_claim":                  resourceOAuthSecurityClaimType{},
+		"keyfactor_oauth_security_role":                   resourceOAuthSecurityRoleType{},
+		"keyfactor_role":                                  resourceSecurityRoleType{},
+		"keyfactor_template_role_binding":                 resourceCertificateTemplateRoleBindingType{},
 	}, nil
 }
 
@@ -583,6 +617,9 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 		"keyfactor_certificate":          dataSourceCertificateType{},
 		"keyfactor_certificate_store":    dataSourceCertificateStoreType{},
 		"keyfactor_certificate_template": dataSourceCertificateTemplateType{},
+		"keyfactor_oauth_security_claim": dataSourceOAuthSecurityClaimType{},
+		"keyfactor_oauth_security_role":  dataSourceOAuthSecurityRoleType{},
+		"keyfactor_permission_set":       dataSourcePermissionSetType{},
 		"keyfactor_role":                 dataSourceSecurityRoleType{},
 		"keyfactor_identity":             dataSourceSecurityIdentityType{},
 	}, nil

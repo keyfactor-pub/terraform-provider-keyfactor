@@ -3,12 +3,12 @@
 page_title: "keyfactor_role Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource, keyfactor_oauth_security_role.
 ---
 
 # keyfactor_role (Data Source)
 
-
+IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource, `keyfactor_oauth_security_role`.
 
 ## Example Usage
 
@@ -36,5 +36,3 @@ data "keyfactor_role" "admin" {
 - `description` (String) A string containing the description of the role in Keyfactor
 - `id` (Number) Internal ID of the role.
 - `permissions` (List of String) An array containing the permissions assigned to the role in a list of Name:Value pairs
-
-

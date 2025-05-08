@@ -13,13 +13,6 @@ Used to manage Keyfactor Command certificate stores using the `/CertificateStore
 ## Example Usage
 
 ```terraform
-provider "keyfactor" {
-  username = "COMMAND\\your_username"
-  password = "your_api_password"
-  hostname = "mykfinstance.kfdelivery.com"
-  domain   = "mydomain.com"
-}
-
 resource "keyfactor_certificate_store" "k8scluster_w_container" {
   client_machine   = "my-k8s-host"    # ClientMachine
   store_path       = "test-cluster01" # Varies based on store type

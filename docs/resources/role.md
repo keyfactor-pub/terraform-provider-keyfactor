@@ -3,23 +3,17 @@
 page_title: "keyfactor_role Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource.
+  IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource, keyfactor_oauth_security_role.
 ---
 
 # keyfactor_role (Resource)
 
-IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource.
+IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource, `keyfactor_oauth_security_role`.
 
 ## Example Usage
 
 ```terraform
-provider "keyfactor" {
-  username = "COMMAND\\your_username"
-  password = "your_api_password"
-  hostname = "mykfinstance.kfdelivery.com"
-  domain   = "mydomain.com"
-}
-
+# NOTE: This resource type is deprecated as of Keyfactor Command v11 please use `keyfactor_oauth_security_role resources`.
 resource "keyfactor_role" "kf_terraform_role" {
   name        = "Terraform" # Name of the role to create
   description = "Role used to demonstrate Keyfactor's ability to integrate with Terraform."
@@ -60,7 +54,7 @@ resource "keyfactor_role" "kf_terraform_role" {
 
 ### Optional
 
-- `permissions` (List of String) An array containing the permissions assigned to the role in a list of Name:Value pairs
+- `permissions` (List of String) An array containing the permissions assigned to the role in a list of Name:Value pairs. For more information about allowed permission values, please refer to the Keyfactor Command [Version One Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version1).
 
 ### Read-Only
 

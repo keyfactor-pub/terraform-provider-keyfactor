@@ -1,6 +1,7 @@
 package keyfactor
 
 import (
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -33,12 +34,66 @@ type SecurityIdentity struct {
 	Valid        types.Bool   `tfsdk:"valid"`         // Indicates if the identity is valid.
 }
 
-// SecurityRole represents a security role in Keyfactor.
+// DEPRECATED: SecurityRole represents a security role in Keyfactor.
+// This struct is deprecated and should be used for backward compatibility only.
+// It is recommended to use the `OAuthSecurityClaim` struct.
 type SecurityRole struct {
 	ID          types.Int64  `tfsdk:"id"`          // Unique ID of the security role.
 	Name        types.String `tfsdk:"name"`        // Name of the security role.
 	Description types.String `tfsdk:"description"` // Description of the role.
 	Permissions types.List   `tfsdk:"permissions"` // List of permissions assigned to the role.
+}
+
+var OAuthSecurityClaimAuthenticationProviderType = map[string]attr.Type{
+	"id":                    types.StringType,
+	"authentication_scheme": types.StringType,
+	"display_name":          types.StringType,
+}
+
+var OAuthSecurityClaimType = types.ObjectType{
+	AttrTypes: map[string]attr.Type{
+		"id":          types.Int64Type,
+		"claim_type":  types.StringType,
+		"claim_value": types.StringType,
+		"description": types.StringType,
+		"provider": types.ObjectType{
+			AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
+		},
+	},
+}
+
+type PermissionSet struct {
+	ID          types.String `tfsdk:"id"`          // Unique ID for the permission set.
+	Name        types.String `tfsdk:"name"`        // Name of the permission set.
+	Permissions types.List   `tfsdk:"permissions"` // List of permissions associated with the permission set.
+}
+
+// OAuthSecurityClaim represents an OAuth security claim in Keyfactor.
+type OAuthSecurityClaim struct {
+	ID                           types.Int64  `tfsdk:"id"`                             // Unique ID of the OAuth security claim.
+	Description                  types.String `tfsdk:"description"`                    // Description of the OAuth security claim.
+	ClaimType                    types.String `tfsdk:"claim_type"`                     // Type of the OAuth security claim.
+	ClaimValue                   types.String `tfsdk:"claim_value"`                    // Value of the OAuth security claim.
+	Provider                     types.Object `tfsdk:"provider"`                       // Authentication Provider of the OAuth security claim.
+	ProviderAuthenticationScheme types.String `tfsdk:"provider_authentication_scheme"` // Authentication Provider of the OAuth security claim.
+}
+
+// OAuthSecurityRole represents an OAuth security role in Keyfactor.
+type OAuthSecurityRole struct {
+	ID              types.Int64  `tfsdk:"id"`                // Unique ID of the OAuth security role.
+	Name            types.String `tfsdk:"name"`              // Name of the OAuth security role.
+	Description     types.String `tfsdk:"description"`       // Description of the OAuth security role.
+	EmailAddress    types.String `tfsdk:"email_address"`     // Email address associated with the OAuth security role.
+	Immutable       types.Bool   `tfsdk:"immutable"`         // Indicates if the OAuth security role is immutable.
+	Permissions     types.Set    `tfsdk:"permissions"`       // List of permissions assigned to the OAuth security role.
+	PermissionSetId types.String `tfsdk:"permission_set_id"` // Permission Set ID associated with the OAuth security role.
+}
+
+// OAuthSecurityRoleClaimAssociation represents an association between an OAuth security role and an OAuth security claim.
+type OAuthSecurityRoleClaimAssociation struct {
+	ID      types.String `tfsdk:"id"`       // Unique ID of the association between the OAuth security role and the OAuth security claim. This is computed when the role claim association is created.
+	RoleID  types.Int64  `tfsdk:"role_id"`  // ID of the OAuth security role.
+	ClaimID types.Int64  `tfsdk:"claim_id"` // ID of the OAuth security claim to be associated with the OAuth security role.
 }
 
 // CommandCertificate represents a certificate entity in Keyfactor.

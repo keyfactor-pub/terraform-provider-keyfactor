@@ -17,6 +17,7 @@ import (
 	rsa2 "crypto/rsa"
 	"crypto/sha1"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -270,7 +271,11 @@ func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesS
 	return result
 }
 
-func mapOAuthSecurityClaim(ctx context.Context, remote *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse, local *OAuthSecurityClaim) OAuthSecurityClaim {
+func mapOAuthSecurityClaim(
+	ctx context.Context,
+	remote *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse,
+	local *OAuthSecurityClaim,
+) OAuthSecurityClaim {
 	provider := *remote.Provider
 
 	providerAuthScheme := provider.AuthenticationScheme.Get()
@@ -316,12 +321,20 @@ func mapOAuthSecurityClaim(ctx context.Context, remote *kfv1.SecurityRoleClaimDe
 		ClaimType:                    getStringType(remote.ClaimType.Get()),
 		ClaimValue:                   getStringType(claimValue),
 		ProviderAuthenticationScheme: getStringType(providerAuthScheme),
-		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
+		Provider: mapAuthenticationProviderType(
+			*provider.Id,
+			*provider.AuthenticationScheme.Get(),
+			*provider.DisplayName.Get(),
+		),
 	}
 	return result
 }
 
-func mapOAuthSecurityRoleClaimAssociation(ctx context.Context, roleId int32, claimId int32) OAuthSecurityRoleClaimAssociation {
+func mapOAuthSecurityRoleClaimAssociation(
+	ctx context.Context,
+	roleId int32,
+	claimId int32,
+) OAuthSecurityRoleClaimAssociation {
 	result := OAuthSecurityRoleClaimAssociation{
 		ID:      types.String{Value: fmt.Sprintf("%d/%d", roleId, claimId)},
 		RoleID:  types.Int64{Value: int64(roleId)},
@@ -330,7 +343,12 @@ func mapOAuthSecurityRoleClaimAssociation(ctx context.Context, roleId int32, cla
 	return result
 }
 
-func mapOAuthSecurityClaimsFromRole(ctx context.Context, diagnostics *diag.Diagnostics, remoteState *kfv2.SecuritySecurityRolesSecurityRoleResponse, deletedClaimId *int32) (*[]kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest, bool) {
+func mapOAuthSecurityClaimsFromRole(
+	ctx context.Context,
+	diagnostics *diag.Diagnostics,
+	remoteState *kfv2.SecuritySecurityRolesSecurityRoleResponse,
+	deletedClaimId *int32,
+) (*[]kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest, bool) {
 	claims := []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{}
 	for _, claim := range remoteState.Claims {
 		tflog.Debug(ctx, fmt.Sprintf("Claim ID: %d", *claim.Id))
@@ -366,7 +384,11 @@ func mapOAuthSecurityClaimsFromRole(ctx context.Context, diagnostics *diag.Diagn
 }
 
 // To fix an issue where duplicate claims on a security role corrupts a security role, perform a check that the new claim being added is not a duplicate
-func addOAuthSecurityClaimToRole(ctx context.Context, existingClaims []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest, newClaim kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest) []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest {
+func addOAuthSecurityClaimToRole(
+	ctx context.Context,
+	existingClaims []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest,
+	newClaim kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest,
+) []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest {
 	var result []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest
 	for _, claim := range existingClaims {
 		// If we detect that the claim is being duplicated, we will skip over that claim and add it toward the end
@@ -772,16 +794,49 @@ func encodeCertificate(ctx context.Context, leaf any, certId int) (string, error
 	case *x509.Certificate:
 		tflog.Debug(ctx, "Leaf certificate provided as *x509.Certificate.")
 		rawBytes = v.Raw
+		break
+	case x509.Certificate:
+		tflog.Debug(ctx, "Leaf certificate provided as x509.Certificate.")
+		rawBytes = v.Raw
+		break
 	case *string:
 		tflog.Debug(ctx, "Leaf certificate provided as *string.")
 		if v != nil && *v != "" {
-			return *v, nil // Return as-is, assuming it's already in PEM format
+			// check if already in PEM format by looking for the PEM header and footer
+			if strings.Contains(*v, "-----BEGIN CERTIFICATE-----") && strings.Contains(
+				*v,
+				"-----END CERTIFICATE-----",
+			) {
+				tflog.Debug(ctx, "Leaf certificate is already in PEM format.")
+				return *v, nil // Return as-is, assuming it's already a PEM formatted string
+			} else {
+				tflog.Debug(ctx, "Leaf certificate is not in PEM format, encoding to PEM.")
+				rawBytes = []byte(*v) // Convert string to byte slice for PEM encoding
+			}
+		}
+		break
+	case string:
+		if v != "" {
+			// check if already in PEM format by looking for the PEM header and footer
+			if strings.Contains(v, "-----BEGIN CERTIFICATE-----") && strings.Contains(v, "-----END CERTIFICATE-----") {
+				tflog.Debug(ctx, "Leaf certificate is already in PEM format.")
+				return v, nil // Return as-is, assuming it's already a PEM formatted string
+			} else {
+				tflog.Debug(ctx, "Leaf certificate is not in PEM format, encoding to PEM.")
+				rawBytes = []byte(v) // Convert string to byte slice for PEM encoding
+			}
 		}
 	case *[]byte:
 		tflog.Debug(ctx, "Leaf certificate provided as *[]byte.")
 		if v != nil && len(*v) > 0 {
 			rawBytes = *v
 		}
+	case []byte:
+		tflog.Debug(ctx, "Leaf certificate provided as []byte.")
+		if len(v) > 0 {
+			rawBytes = v
+		}
+		break
 	default:
 		err := fmt.Errorf("invalid leaf type provided for certificate %v", certId)
 		tflog.Warn(ctx, err.Error())
@@ -792,6 +847,10 @@ func encodeCertificate(ctx context.Context, leaf any, certId int) (string, error
 		err := fmt.Errorf("empty or invalid data for certificate %v", certId)
 		tflog.Warn(ctx, err.Error())
 		return "", err
+	}
+
+	if decoded, err := base64.StdEncoding.DecodeString(string(rawBytes)); err == nil && len(decoded) > 0 {
+		rawBytes = decoded
 	}
 
 	pemString := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rawBytes}))
@@ -1625,8 +1684,22 @@ func forceIfTrue(ctx context.Context, state attr.Value, config attr.Value, path 
 // The v1 APIClient exposes a method to query security claims by type and value. To retrieve a unique security claim from Command
 // it is required to also find a claim with the matching authentication scheme, which is not queryable via the QueryString parameter. That must be done as a separate
 // operation from the API call. This function will query the security claims by type and value, then filter the results by the authentication scheme to return a unique claim if it exists.
-func getSecurityClaimByTypeAndValueAndScheme(ctx context.Context, apiClient *keyfactor.APIClient, claimType string, claimValue string, authenticationScheme string) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
-	tflog.Debug(ctx, fmt.Sprintf("Getting security claim from remote source. ClaimType: %s, ClaimValue: %s, AuthenticationScheme: %s", claimType, claimValue, authenticationScheme))
+func getSecurityClaimByTypeAndValueAndScheme(
+	ctx context.Context,
+	apiClient *keyfactor.APIClient,
+	claimType string,
+	claimValue string,
+	authenticationScheme string,
+) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
+	tflog.Debug(
+		ctx,
+		fmt.Sprintf(
+			"Getting security claim from remote source. ClaimType: %s, ClaimValue: %s, AuthenticationScheme: %s",
+			claimType,
+			claimValue,
+			authenticationScheme,
+		),
+	)
 
 	claimTypeEnum, err := kfv1.ParseCSSCMSCoreEnumsClaimType(claimType)
 	if err != nil {
@@ -1660,14 +1733,23 @@ func getSecurityClaimByTypeAndValueAndScheme(ctx context.Context, apiClient *key
 	}
 
 	if result == nil {
-		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s and authenticationScheme %s", claimType, claimValue, authenticationScheme)
+		return nil, fmt.Errorf(
+			"No security claim found with claimType %s and claimValue %s and authenticationScheme %s",
+			claimType,
+			claimValue,
+			authenticationScheme,
+		)
 	}
 
 	return result, nil
 }
 
 // The v2 APIClient exposes a method to query a role by name.  This function will query the security roles and filter security roles by name.
-func getSecurityRoleByName(ctx context.Context, apiClient *keyfactor.APIClient, roleName string) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
+func getSecurityRoleByName(
+	ctx context.Context,
+	apiClient *keyfactor.APIClient,
+	roleName string,
+) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting security role from remote source. Role Name: %s", roleName))
 
 	api := apiClient.V2.SecurityRolesApi
@@ -1691,8 +1773,15 @@ func getSecurityRoleByName(ctx context.Context, apiClient *keyfactor.APIClient, 
 }
 
 // Queries security permissions by name and returns the first matching permission set.
-func getSecurityPermissionSetByName(ctx context.Context, apiClient *keyfactor.APIClient, permissionSetName string) (*kfv1.PermissionSetsPermissionSetResponse, error) {
-	tflog.Debug(ctx, fmt.Sprintf("Getting permission set ID by name from remote source. Permission set name: %s", permissionSetName))
+func getSecurityPermissionSetByName(
+	ctx context.Context,
+	apiClient *keyfactor.APIClient,
+	permissionSetName string,
+) (*kfv1.PermissionSetsPermissionSetResponse, error) {
+	tflog.Debug(
+		ctx,
+		fmt.Sprintf("Getting permission set ID by name from remote source. Permission set name: %s", permissionSetName),
+	)
 
 	api := apiClient.V1.PermissionSetApi
 	var model *kfv1.PermissionSetsPermissionSetResponse

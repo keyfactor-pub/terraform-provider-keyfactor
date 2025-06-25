@@ -341,7 +341,7 @@ func (r resourceCommandCertificate) Create(
 	if !plan.CSR.IsNull() && csr != "" { //Enroll CSR
 		tflog.Debug(ctx, "Calling enrollCSR()")
 		result, csrErr := r.enrollCSR(ctx, csr, &plan)
-		if csrErr != nil {
+		if csrErr != nil && len(csrErr) > 0 {
 			response.Diagnostics.Append(csrErr...)
 			return
 		}
@@ -516,13 +516,13 @@ func (r resourceCommandCertificate) Read(
 			tflog.Info(ctx, "Checking if certificate is eligible for renewal.")
 			renewDays := int(state.RenewalConfig.RenewDays.Value)
 			renewEligible, _, _ := isExpiring(ctx, leaf, renewDays)
-			if renewEligible {
-				renewalConfig.RenewEligible = types.Bool{
-					Unknown: false,
-					Null:    false,
-					Value:   renewEligible,
-				}
+			renewalConfig.RenewEligible = types.Bool{
+				Unknown: false,
+				Null:    false,
+				Value:   renewEligible,
 			}
+		} else {
+			renewalConfig.RenewEligible = state.RenewalConfig.RenewEligible
 		}
 	}
 
@@ -565,9 +565,19 @@ func (r resourceCommandCertificate) Read(
 			Value: revoked,
 		},
 		IsPendingRevocation: types.Bool{
-			Null: true,
+			Null: true, // todo: implement pending revocation check
 		},
 		RenewalConfig: renewalConfig,
+	}
+
+	if !state.CSR.IsNull() {
+		result.CommonName = state.CommonName
+		result.Locality = state.Locality
+		result.State = state.State
+		result.Country = state.Country
+		result.Organization = state.Organization
+		result.OrganizationalUnit = state.OrganizationalUnit
+
 	}
 
 	// Set state
@@ -683,12 +693,10 @@ func (r resourceCommandCertificate) Update(
 			tflog.Info(ctx, "Checking if certificate is eligible for renewal.")
 			renewDays := int(plan.RenewalConfig.RenewDays.Value)
 			renewEligible, _, _ := isExpiring(ctx, leaf, renewDays)
-			if renewEligible {
-				renewalConfig.RenewEligible = types.Bool{
-					Unknown: false,
-					Null:    false,
-					Value:   renewEligible,
-				}
+			renewalConfig.RenewEligible = types.Bool{
+				Unknown: false,
+				Null:    false,
+				Value:   renewEligible,
 			}
 		}
 	}
@@ -759,13 +767,13 @@ func (r resourceCommandCertificate) Update(
 			DNSSANs:              plan.DNSSANs,
 			IPSANs:               plan.IPSANs,
 			URISANs:              plan.URISANs,
-			SerialNumber:         plan.SerialNumber,
-			IssuerDN:             plan.IssuerDN,
-			Thumbprint:           plan.Thumbprint,
-			PEM:                  plan.PEM,
-			PEMCACert:            plan.PEMChain,
-			PEMChain:             types.String{Value: fmt.Sprintf("%s%s", plan.PEM.Value, plan.PEMChain.Value)},
-			PrivateKey:           plan.PrivateKey,
+			SerialNumber:         state.SerialNumber,
+			IssuerDN:             state.IssuerDN,
+			Thumbprint:           state.Thumbprint,
+			PEM:                  state.PEM,
+			PEMCACert:            state.PEMCACert,
+			PEMChain:             state.PEMChain,
+			PrivateKey:           state.PrivateKey,
 			KeyPassword:          plan.KeyPassword,
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
@@ -865,7 +873,7 @@ func (r resourceCommandCertificate) Update(
 				Value: revoked,
 			},
 			IsPendingRevocation: types.Bool{
-				Null: true,
+				Null: true, // This is always null for updates, as we don't support pending revocation on updates.
 			},
 			RenewalConfig: renewalConfig,
 		}
@@ -1669,9 +1677,6 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 	)
 	tflog.Debug(ctx, "Creating state object")
 
-	plan.IsPendingRevocation.Unknown = false
-	plan.IsExpired.Unknown = false
-	plan.IsRevoked.Unknown = false
 	var result = CommandCertificate{
 		ID:                   types.String{Value: fmt.Sprintf("%v", enrolledId)},
 		CSR:                  plan.CSR,
@@ -1701,9 +1706,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		FriendlyName:         plan.FriendlyName,
 		UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
 		ExpiryWarningDays:    plan.ExpiryWarningDays,
-		IsExpired:            plan.IsExpired,
-		IsRevoked:            plan.IsRevoked,
-		IsPendingRevocation:  plan.IsPendingRevocation,
+		IsExpired:            types.Bool{Value: false}, // Set to false as we just enrolled the certificate
+		IsRevoked:            types.Bool{Value: false}, // Set to false as we just enrolled the certificate
+		IsPendingRevocation:  types.Bool{Null: true},   // Set to false as we just enrolled the certificate
 		RenewalConfig:        plan.RenewalConfig,
 	}
 
@@ -1811,18 +1816,23 @@ func (r resourceCommandCertificate) enrollCSR(
 
 	for i, cert := range enrollResponse.CertificateInformation.Certificates {
 		// split by \r\n and remove first line if '#' is present
+		tflog.Trace(ctx, fmt.Sprintf("Processing certificate %d: %s", i, cert))
 		if strings.Contains(cert, "#") {
-			cert = strings.Join(strings.Split(cert, "\r\n")[1:], "\r\n")
+			tflog.Debug(ctx, "Certificate contains '#', removing first line.")
+			cert = strings.Join(strings.SplitN(cert, "\n", 2)[1:], "")
 		}
 
 		fullChain += cert
+		tflog.Trace(ctx, fmt.Sprintf("Full chain after adding certificate %d: %s", i, fullChain))
 		if i > 0 { //caCert returns full chain minus leaf
+			tflog.Trace(ctx, fmt.Sprintf("Adding certificate %d to CA cert chain.", i))
 			caCert += cert
 		} else {
-			// split by \r\n and remove first line
-
+			// assume 0th certificate is the leaf
 			leaf = cert
+			tflog.Trace(ctx, fmt.Sprintf("Leaf certificate: %s", leaf))
 		}
+
 	}
 
 	//fetch certificate from Keyfactor
@@ -1842,6 +1852,7 @@ func (r resourceCommandCertificate) enrollCSR(
 	//}
 
 	// Set state
+	plan.RenewalConfig.RenewEligible = types.Bool{Null: true} // Assume not eligible for renewal as this is a new certificate
 	var result = CommandCertificate{
 		ID: types.String{
 			Value: fmt.Sprintf(
@@ -1849,24 +1860,30 @@ func (r resourceCommandCertificate) enrollCSR(
 				enrollResponse.CertificateInformation.KeyfactorID,
 			),
 		},
-		CSR:                  types.String{Value: csr},
-		CommonName:           plan.CommonName,
-		Organization:         plan.Organization,
-		OrganizationalUnit:   plan.OrganizationalUnit,
-		Locality:             plan.Locality,
-		State:                plan.State,
-		Country:              plan.Country,
-		DNSSANs:              plan.DNSSANs,
-		IPSANs:               plan.IPSANs,
-		URISANs:              plan.URISANs,
-		SerialNumber:         types.String{Value: enrollResponse.CertificateInformation.SerialNumber},
-		IssuerDN:             types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
-		Thumbprint:           types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
-		PEM:                  types.String{Value: leaf},
-		PEMCACert:            types.String{Value: caCert},
-		PEMChain:             types.String{Value: fullChain},
-		PrivateKey:           types.String{Value: plan.PrivateKey.Value, Null: true},
-		KeyPassword:          types.String{Value: plan.KeyPassword.Value, Null: true},
+		CSR:                types.String{Value: csr},
+		CommonName:         plan.CommonName,
+		Organization:       plan.Organization,
+		OrganizationalUnit: plan.OrganizationalUnit,
+		Locality:           plan.Locality,
+		State:              plan.State,
+		Country:            plan.Country,
+		DNSSANs:            plan.DNSSANs,
+		IPSANs:             plan.IPSANs,
+		URISANs:            plan.URISANs,
+		SerialNumber:       types.String{Value: enrollResponse.CertificateInformation.SerialNumber},
+		IssuerDN:           types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
+		Thumbprint:         types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
+		PEM:                types.String{Value: leaf},
+		PEMCACert:          types.String{Value: caCert},
+		PEMChain:           types.String{Value: fullChain},
+		PrivateKey: types.String{
+			Value: plan.PrivateKey.Value,
+			Null:  true,
+		}, // Null because CSR enrollment does not provide a private key
+		KeyPassword: types.String{
+			Value: plan.KeyPassword.Value,
+			Null:  true,
+		}, // Null because CSR enrollment does not provide a private key
 		CertificateAuthority: plan.CertificateAuthority,
 		CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
 		CertificateTemplate:  plan.CertificateTemplate,
@@ -1875,10 +1892,11 @@ func (r resourceCommandCertificate) enrollCSR(
 		FriendlyName:         plan.FriendlyName,
 		UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
 		ExpiryWarningDays:    plan.ExpiryWarningDays,
-		IsExpired:            plan.IsExpired,
-		IsRevoked:            plan.IsRevoked,
-		IsPendingRevocation:  plan.IsPendingRevocation,
-		RenewalConfig:        plan.RenewalConfig,
+		IsExpired:            types.Bool{Value: false}, //Assuming the certificate is not expired as it should be newly created
+		IsRevoked:            types.Bool{Value: false}, //Assuming the certificate is not revoked as it should be newly created
+		IsPendingRevocation:  types.Bool{Null: true},
+		//Assuming the certificate is not pending revocation as it should be newly created
+		RenewalConfig: plan.RenewalConfig,
 	}
 
 	return &result, diags

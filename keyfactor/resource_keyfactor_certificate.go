@@ -972,7 +972,7 @@ func (r resourceCommandCertificate) Delete(
 		if strings.Contains(err.Error(), "has previously been revoked") { // EJBCA specific?
 			response.Diagnostics.AddWarning(
 				"Certificate previously revoked",
-				fmt.Sprintf(err.Error()),
+				fmt.Sprintf("%s", err.Error()),
 			)
 		} else {
 			tflog.Error(ctx, fmt.Sprintf("Error revoking certificate '%d' on Keyfactor Command", certificateIdInt))
@@ -1265,9 +1265,9 @@ func (r resourceCommandCertificate) HandlePendingCert(
 
 		if lpErr != nil || lpeErr != nil {
 			if lpErr != nil {
-				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: " + lpErr.Error())
+				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: %s", lpErr.Error())
 			}
-			return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: " + lpeErr.Error())
+			return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: %s", lpeErr.Error())
 		}
 
 		if isPending {
@@ -1412,7 +1412,7 @@ func (r resourceCommandCertificate) HandlePendingCert(
 						cn,
 					)
 					tflog.Error(ctx, errMsg)
-					return nil, fmt.Errorf(errMsg)
+					return nil, fmt.Errorf("%s", errMsg)
 				}
 			}
 			tflog.Info(

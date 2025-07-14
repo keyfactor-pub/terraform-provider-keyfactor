@@ -1,3 +1,20 @@
+# v2.5.1
+
+### Certificates
+
+#### Fixes
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment response not parsing certificates properly.
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment does not fail on empty `[]Diagnotic`
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment sets `IsExpired,IsRevoked,IsPendingRevocation` explicitly to `false`
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment sets subject fields to state values to prevent inconsistent state.
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment sets `renew_eligible` to known on update.
+- fix(certificates): `keyfactor_certificate` resource updates use state values for immutable fields.
+
+### Authentication
+
+#### Fixes
+- fix(deps): Bump `keyfactor-go-client-sdk` to `v24.0.2` to fix scopes not being set on OAuth requests.
+
 # v2.5.0
 ### OAuth Security Roles
 

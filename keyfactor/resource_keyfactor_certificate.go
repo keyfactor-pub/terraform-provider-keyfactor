@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -248,14 +250,6 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 							Type:        types.BoolType,
 							Description: "Will force certificate to be renewed",
 							Optional:    true,
-							PlanModifiers: []tfsdk.AttributePlanModifier{
-								tfsdk.RequiresReplaceIf(
-									// The conditional function
-									forceIfTrue,
-									"Triggers resource replacement when 'force_renewal' is set to 'true'.", // Description
-									"Triggers resource replacement when `force_renewal` is set to `true`.", // Markdown Description
-								),
-							},
 						},
 						"renew_days": {
 							Type:        types.Int64Type,
@@ -263,10 +257,9 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 							Description: "The number of days before the certificate expires to renew.",
 						},
 						"renew_eligible": {
-							Type:          types.BoolType,
-							Computed:      true,
-							PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-							Description:   "Whether the certificate is eligible for renewal.",
+							Type:        types.BoolType,
+							Computed:    true,
+							Description: "Whether the certificate is eligible for renewal.",
 						},
 						"revoke_on_renew": {
 							Type:        types.BoolType,
@@ -275,7 +268,57 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 						},
 					},
 				),
-				Optional:    true,
+				Optional: true,
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.RequiresReplaceIf(
+						// The conditional function
+						func(
+							ctx context.Context,
+							state attr.Value,
+							config attr.Value,
+							path path.Path,
+						) (bool, diag.Diagnostics) {
+							tflog.Debug(ctx, "Checking if 'renew_eligible' is set to true")
+							if state == nil {
+								tflog.Debug(ctx, "State is nil, returning false for 'renew_eligible'")
+								return false, nil
+							}
+							renewConfig, ok := config.(types.Object)
+							if !ok {
+								tflog.Debug(
+									ctx,
+									"State is not an Object, returning false for 'renew_eligible'",
+								)
+								return false, nil
+							}
+							//get attrs
+							ctx = tflog.SetField(ctx, "renewConfig", renewConfig)
+
+							forceRenewalAttr, ok := renewConfig.Attrs["force_renewal"]
+							if ok {
+								ctx = tflog.SetField(ctx, "force_renewal", forceRenewalAttr.String())
+								if forceRenewalAttr.Type(ctx) == types.BoolType && forceRenewalAttr.(types.Bool).Value {
+									tflog.Debug(ctx, "force_renewal is true, returning true for 'force_renewal'")
+									return true, nil
+								}
+							}
+
+							renewEligibleAttr, ok := renewConfig.Attrs["renew_eligible"]
+							if ok {
+								ctx = tflog.SetField(ctx, "renew_eligible", renewEligibleAttr.String())
+								if renewEligibleAttr.Type(ctx) == types.BoolType && renewEligibleAttr.(types.Bool).Value {
+									tflog.Debug(ctx, "renew_eligible is true, returning true for 'renew_eligible'")
+									return true, nil
+								}
+							}
+
+							return false, nil
+						},
+						"Triggers resource replacement when 'renew_eligible' is set to 'true'.", // Description
+						"Triggers resource replacement when `renew_eligible` is set to `true`.", // Markdown Description
+					),
+				},
 				Computed:    false,
 				Description: "Configuration for certificate auto renewal. Includes whether auto-renewal is enabled and the number of days before expiry.",
 			},
@@ -789,12 +832,24 @@ func (r resourceCommandCertificate) Update(
 				Value: revoked,
 			},
 			IsPendingRevocation: types.Bool{
-				Null: true,
+				Null: true, // todo: implement pending revocation check
 			},
 			RenewalConfig: renewalConfig,
 		}
 
-		diags = response.State.Set(ctx, result)
+		if !state.CSR.IsNull() {
+			result.CommonName = state.CommonName
+			result.Locality = state.Locality
+			result.State = state.State
+			result.Country = state.Country
+			result.Organization = state.Organization
+			result.OrganizationalUnit = state.OrganizationalUnit
+
+		}
+
+		// Set state
+		tflog.Debug(ctx, "Setting state")
+		diags = response.State.Set(ctx, &result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
 			return
@@ -1265,7 +1320,10 @@ func (r resourceCommandCertificate) HandlePendingCert(
 
 		if lpErr != nil || lpeErr != nil {
 			if lpErr != nil {
-				return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: %s", lpErr.Error())
+				return nil, fmt.Errorf(
+					"Could not retrieve pending certificates from Keyfactor Command: %s",
+					lpErr.Error(),
+				)
 			}
 			return nil, fmt.Errorf("Could not retrieve pending certificates from Keyfactor Command: %s", lpeErr.Error())
 		}
@@ -1852,7 +1910,12 @@ func (r resourceCommandCertificate) enrollCSR(
 	//}
 
 	// Set state
-	plan.RenewalConfig.RenewEligible = types.Bool{Null: true} // Assume not eligible for renewal as this is a new certificate
+	if plan.RenewalConfig != nil {
+		plan.RenewalConfig.RenewEligible = types.Bool{
+			Value: false, // Assume not eligible for renewal as this is a new certificate
+		} // Assume not eligible for renewal as this is a new certificate
+	}
+
 	var result = CommandCertificate{
 		ID: types.String{
 			Value: fmt.Sprintf(
@@ -1894,9 +1957,8 @@ func (r resourceCommandCertificate) enrollCSR(
 		ExpiryWarningDays:    plan.ExpiryWarningDays,
 		IsExpired:            types.Bool{Value: false}, //Assuming the certificate is not expired as it should be newly created
 		IsRevoked:            types.Bool{Value: false}, //Assuming the certificate is not revoked as it should be newly created
-		IsPendingRevocation:  types.Bool{Null: true},
-		//Assuming the certificate is not pending revocation as it should be newly created
-		RenewalConfig: plan.RenewalConfig,
+		IsPendingRevocation:  types.Bool{Null: true},   // Set to false as we just enrolled the certificate
+		RenewalConfig:        plan.RenewalConfig,
 	}
 
 	return &result, diags

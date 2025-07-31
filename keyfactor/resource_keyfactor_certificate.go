@@ -2117,7 +2117,12 @@ func (r resourceCommandCertificate) enrollCSR(
 		tflog.Trace(ctx, fmt.Sprintf("Processing certificate %d: %s", i, cert))
 		if strings.Contains(cert, "#") {
 			tflog.Debug(ctx, "Certificate contains '#', removing first line.")
-			cert = strings.Join(strings.SplitN(cert, "\n", 2)[1:], "")
+			parts := strings.SplitN(cert, "\n", 2)
+			if len(parts) > 1 {
+				cert = strings.Join(parts[1:], "")
+			} else {
+				tflog.Warn(ctx, "Certificate contains '#' but no newline character. Skipping first line removal.")
+			}
 		}
 
 		fullChain += cert

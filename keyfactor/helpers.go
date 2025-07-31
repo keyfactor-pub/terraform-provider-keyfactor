@@ -1528,27 +1528,42 @@ func isExpired(ctx context.Context, c *x509.Certificate) (bool, *string) {
 	return false, nil
 }
 
-func isExpiring(ctx context.Context, c *x509.Certificate, numDays int) (bool, *string, *int) {
+func isExpiring(ctx context.Context, c *x509.Certificate, renewalNumberOfDays int) (bool, *string, *int) {
+	eligible := false
+	tflog.Debug(ctx, "Checking expiration of certificate.")
+	var expDateStr *string
+	var numDaysRemaining *int
 	if c != nil {
 		// Determine the expiration threshold date
-		expirationThreshold := time.Now().AddDate(0, 0, numDays)
-
+		//expirationThreshold := time.Now().AddDate(0, 0, renewalNumberOfDays)
+		expDate := c.NotAfter.String()
+		expDateStr = &expDate
 		// Check if the certificate expiration date is before the threshold
-		if c.NotAfter.Before(expirationThreshold) {
-			// Calculate the number of days remaining until expiration
-			numDaysRemaining := int(c.NotAfter.Sub(time.Now()).Hours() / 24)
+		if c.NotAfter.IsZero() {
+			tflog.Warn(ctx, "Certificate NotAfter date is zero, cannot determine expiration.")
+			return false, nil, nil
+		}
 
-			// Set context fields for logging
-			ctx = tflog.SetField(ctx, "certificate_expiration_date", c.NotAfter)
-			ctx = tflog.SetField(ctx, "certificate_expiration_days", numDays)
-			ctx = tflog.SetField(ctx, "certificate_expiration_days_remaining", numDaysRemaining)
+		eligible = c.NotAfter.Before(time.Now().AddDate(0, 0, renewalNumberOfDays))
 
-			// Prepare the expiration date string
-			expDateStr := c.NotAfter.String()
-			return true, &expDateStr, &numDaysRemaining
+		ctx = tflog.SetField(ctx, "certificate_expiration_eligible", eligible)
+
+		// Calculate the number of days remaining until expiration
+		remDays := int(c.NotAfter.Sub(time.Now()).Hours() / 24)
+		numDaysRemaining = &remDays
+
+		// Set context fields for logging
+		ctx = tflog.SetField(ctx, "certificate_expiration_date", c.NotAfter)
+		ctx = tflog.SetField(ctx, "certificate_expiration_date_str", expDateStr)
+		ctx = tflog.SetField(ctx, "certificate_expiration_days", renewalNumberOfDays)
+		ctx = tflog.SetField(ctx, "certificate_expiration_days_remaining", numDaysRemaining)
+
+		if remDays <= renewalNumberOfDays || remDays <= 0 {
+			eligible = true
 		}
 	}
-	return false, nil, nil
+	tflog.Debug(ctx, "Certificate expiration check completed.")
+	return eligible, expDateStr, numDaysRemaining
 }
 
 func checkCertDiags(

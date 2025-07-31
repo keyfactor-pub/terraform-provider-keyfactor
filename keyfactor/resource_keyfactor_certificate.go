@@ -406,8 +406,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 								tflog.Debug(ctx, "`force_renewal` is set in state, checking value")
 								if stateForceRenewalAttr.Type(ctx) == types.BoolType && stateForceRenewalAttr.(types.Bool).Value {
 									tflog.Debug(ctx, "`force_renewal` is true in state, checking plan value is false")
-									if planForceRenewalAttr != nil && !planForceRenewalAttr.IsNull() && !planForceRenewalAttr.(types.
-										Bool).Value {
+									if planForceRenewalAttr != nil && !planForceRenewalAttr.IsNull() && 
+										!planForceRenewalAttr.(types.Bool).Value {
 										tflog.Debug(
 											ctx, "force_renewal is true in state and false in plan, "+
 												"plan value takes precedence, returning false plan modifier",

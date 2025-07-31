@@ -4,7 +4,10 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -83,10 +86,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type:          types.StringType,
 				Required:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-				//	return strings.EqualFold(old, new)
-				//},
-				Description: "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
+				Description:   "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
 			},
 			"certificate_template": {
 				Type:          types.StringType,
@@ -98,18 +98,21 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of DNS names to use as subjects of the certificate. ",
-				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-				//	// For some reason Terraform detects this particular function as having drift; this function
-				//	// gives us a definitive answer.
-				//	return !d.HasChange(k)
-				//},
+				Description: "List of DNS names to use as subjects of the certificate. " +
+					"NOTE: This field **does not work with CSR enrollments**, " +
+					"all SANs should be included in the CSR. " +
+					"Additional SANs added by the CA during enrollment **will" +
+					" not** be reflected in this field",
 			},
 			"uri_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of URIs to use as subjects of the certificate. ",
+				Description: "List of URIs to use as subjects of the certificate. " +
+					"NOTE: This field **does not work with CSR enrollments**, " +
+					"all SANs should be included in the CSR. " +
+					"Additional SANs added by the CA during enrollment **will" +
+					" not** be reflected in this field",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -120,7 +123,11 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "List of DNS names to use as subjects of the certificate. ",
+				Description: "List of DNS names to use as subjects of the certificate. " +
+					"NOTE: This field **does not work with CSR enrollments**, " +
+					"all SANs should be included in the CSR. " +
+					"Additional SANs added by the CA during enrollment **will" +
+					" not** be reflected in this field",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -250,6 +257,40 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 							Type:        types.BoolType,
 							Description: "Will force certificate to be renewed",
 							Optional:    true,
+							PlanModifiers: []tfsdk.AttributePlanModifier{
+								tfsdk.RequiresReplaceIf(
+									// The conditional function
+									func(
+										ctx context.Context,
+										state attr.Value,
+										config attr.Value,
+										path path.Path,
+									) (bool, diag.Diagnostics) {
+										tflog.Debug(ctx, "Checking if 'force_renewal' is set to true")
+										if state == nil {
+											tflog.Debug(ctx, "State is nil, returning false for 'force_renewal'")
+											return false, nil
+										}
+										forceRenewal, ok := config.(types.Bool)
+										if ok && forceRenewal.Value {
+											tflog.Debug(
+												ctx, "force_renewal is true, "+
+													"this resource will be forced to replace",
+											)
+											return true, nil
+										}
+										return false, nil
+									},
+									"Triggers resource replacement when 'force_renewal' is set to 'true'. "+
+										"This will only trigger once when set to true, "+
+										"if you need to trigger it again you'll need to unset or set the value to"+
+										" `false` and then back to `true`.",
+									`Triggers replacement of resource when true. 
+> [!IMPORTANT] 
+> This field will automatically be set to "true" when the certificate is eligible for renewal.
+`,
+								),
+							},
 						},
 						"renew_days": {
 							Type:        types.Int64Type,
@@ -260,6 +301,36 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 							Type:        types.BoolType,
 							Computed:    true,
 							Description: "Whether the certificate is eligible for renewal.",
+							PlanModifiers: []tfsdk.AttributePlanModifier{
+								tfsdk.RequiresReplaceIf(
+									// The conditional function
+									func(
+										ctx context.Context,
+										state attr.Value,
+										config attr.Value,
+										path path.Path,
+									) (bool, diag.Diagnostics) {
+										tflog.Debug(ctx, "Checking if 'renew_eligible' is set to true")
+										if state == nil {
+											tflog.Debug(ctx, "State is nil, returning false for 'renew_eligible'")
+											return false, nil
+										}
+										forceRenewal, ok := state.(types.Bool)
+										if ok && forceRenewal.Value {
+											return true, nil
+										}
+										return false, nil
+									},
+									"Calculated based on current date and certificate expiry date. Triggers resource"+
+										" replacement when calculated to"+
+										" `true`."+
+										"IMPORTANT: Periodic `terraform refresh` needs to be re-run to force"+
+										" recalculation of this value.",
+									""+
+										// Description
+										"Triggers resource replacement when `renew_eligible` is set to `true`.", // Markdown Description
+								),
+							},
 						},
 						"revoke_on_renew": {
 							Type:        types.BoolType,
@@ -276,51 +347,108 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 						func(
 							ctx context.Context,
 							state attr.Value,
-							config attr.Value,
+							plan attr.Value,
 							path path.Path,
 						) (bool, diag.Diagnostics) {
 							tflog.Debug(ctx, "Checking if 'renew_eligible' is set to true")
 							if state == nil {
-								tflog.Debug(ctx, "State is nil, returning false for 'renew_eligible'")
-								return false, nil
-							}
-							renewConfig, ok := config.(types.Object)
-							if !ok {
 								tflog.Debug(
 									ctx,
-									"State is not an Object, returning false for 'renew_eligible'",
+									"State does not contain `renewal_config`, returning false for plan modifier",
 								)
 								return false, nil
 							}
-							//get attrs
-							ctx = tflog.SetField(ctx, "renewConfig", renewConfig)
+							if plan == nil {
+								tflog.Debug(
+									ctx,
+									"Plan does not contain `renewal_config`, returning false for plan modifier",
+								)
+								return false, nil
+							}
+							stateRenewConfig, stateRenewConfigOk := state.(types.Object)
+							if !stateRenewConfigOk {
+								tflog.Debug(
+									ctx,
+									"State `renewal_config` is not an Object, returning false for plan modifier",
+								)
+								return false, nil
+							}
 
-							forceRenewalAttr, ok := renewConfig.Attrs["force_renewal"]
-							if ok {
-								ctx = tflog.SetField(ctx, "force_renewal", forceRenewalAttr.String())
-								if forceRenewalAttr.Type(ctx) == types.BoolType && forceRenewalAttr.(types.Bool).Value {
-									tflog.Debug(ctx, "force_renewal is true, returning true for 'force_renewal'")
+							tflog.Debug(ctx, "Parsing plan `renewal_config`")
+							planObj, planRenewConfigOk := plan.(types.Object)
+							if !planRenewConfigOk {
+								tflog.Debug(
+									ctx,
+									"Plan `renewal_config` is not an Object, returning false for plan modifier",
+								)
+								return false, nil
+							} else if planObj.IsNull() {
+								tflog.Debug(ctx, "`renewal_config` is null in plan, returning false for plan modifier")
+								return false, nil
+							}
+
+							tflog.Debug(ctx, "Parsing plan `force_renewal`")
+							planForceRenewalAttr, planForceRenewalOk := planObj.Attrs["force_renewal"]
+							if planForceRenewalOk {
+								tflog.Debug(ctx, "`force_renewal` is set in plan, checking value")
+								if planForceRenewalAttr.Type(ctx) == types.BoolType && planForceRenewalAttr.(types.Bool).Value {
+									tflog.Debug(
+										ctx,
+										"`force_renewal` is true in plan, returning true for plan modifier",
+									)
 									return true, nil
 								}
 							}
 
-							renewEligibleAttr, ok := renewConfig.Attrs["renew_eligible"]
-							if ok {
-								ctx = tflog.SetField(ctx, "renew_eligible", renewEligibleAttr.String())
+							tflog.Debug(ctx, "Parsing state `renewal_config`")
+							stateForceRenewalAttr, stateRenewConfigOk := stateRenewConfig.Attrs["force_renewal"]
+							if stateRenewConfigOk {
+								tflog.Debug(ctx, "`force_renewal` is set in state, checking value")
+								if stateForceRenewalAttr.Type(ctx) == types.BoolType && stateForceRenewalAttr.(types.Bool).Value {
+									tflog.Debug(ctx, "`force_renewal` is true in state, checking plan value is false")
+									if planForceRenewalAttr != nil && !planForceRenewalAttr.IsNull() && !planForceRenewalAttr.(types.
+										Bool).Value {
+										tflog.Debug(
+											ctx, "force_renewal is true in state and false in plan, "+
+												"plan value takes precedence, returning false plan modifier",
+										)
+										return false, nil
+									}
+									tflog.Debug(ctx, "`force_renewal` is true, returning true for plan modifier")
+									return true, nil
+								}
+							}
+
+							tflog.Debug(ctx, "Parsing state `renew_eligible`")
+							renewEligibleAttr, stateRenewEligibleOk := stateRenewConfig.Attrs["renew_eligible"]
+							if stateRenewEligibleOk {
+								tflog.Debug(ctx, "`renew_eligible` is set in state, checking value")
 								if renewEligibleAttr.Type(ctx) == types.BoolType && renewEligibleAttr.(types.Bool).Value {
-									tflog.Debug(ctx, "renew_eligible is true, returning true for 'renew_eligible'")
+									tflog.Debug(ctx, "renew_eligible is true, returning true for plan modifier")
 									return true, nil
 								}
 							}
-
+							tflog.Debug(ctx, "No conditions met for plan modifier, returning false")
 							return false, nil
 						},
-						"Triggers resource replacement when 'renew_eligible' is set to 'true'.", // Description
-						"Triggers resource replacement when `renew_eligible` is set to `true`.", // Markdown Description
+						"Triggers resource replacement when 'renew_eligible' or `force_renewal` are"+
+							" calculated or set to `true`.",
+						"Triggers resource replacement when 'renew_eligible' or `force_renewal` are"+
+							" set to `true`.",
 					),
 				},
-				Computed:    false,
-				Description: "Configuration for certificate auto renewal. Includes whether auto-renewal is enabled and the number of days before expiry.",
+				Computed: false,
+				Description: "Configuration for certificate renewal. " +
+					"IMPORTANT: This does not deploy the updated certificate to associated certificate store" +
+					" locations/endpoints. " +
+					"To deploy the updated certificate you must define a `keyfactor_certificate_deployment` resource" +
+					" or deploy via the Command UI.",
+				MarkdownDescription: `Configuration for certificate renewal.
+> [!IMPORTANT]
+> This does not deploy the updated certificate to associated certificate store locations. To deploy the updated 
+> certificate you must define a "keyfactor_certificate_deployment" Terraform resource that references this
+> certificate or deploy via the Command UI.
+`,
 			},
 		},
 		Description: "Manages a certificate in Keyfactor Command using the `/Enrollment` and `/Certificates` APIs",
@@ -386,7 +514,10 @@ func (r resourceCommandCertificate) Create(
 		result, csrErr := r.enrollCSR(ctx, csr, &plan)
 		if csrErr != nil && len(csrErr) > 0 {
 			response.Diagnostics.Append(csrErr...)
-			return
+			if csrErr.HasError() {
+				return
+			}
+
 		}
 
 		tflog.Debug(ctx, "Setting state")
@@ -546,6 +677,7 @@ func (r resourceCommandCertificate) Read(
 
 	renewalConfig := state.RenewalConfig
 	if state.RenewalConfig != nil {
+		tflog.Debug(ctx, "RenewalConfig is not nil, checking renewal eligibility")
 		renewalConfig = &CertificateAutoRenewConfig{
 			ForceRenewal: state.RenewalConfig.ForceRenewal,
 			RenewDays:    state.RenewalConfig.RenewDays,
@@ -564,8 +696,64 @@ func (r resourceCommandCertificate) Read(
 				Null:    false,
 				Value:   renewEligible,
 			}
+			if renewEligible {
+				tflog.Debug(ctx, "Certificate is eligible for renewal, setting `force_renewal` to true")
+				renewalConfig.ForceRenewal = types.Bool{
+					Unknown: false,
+					Null:    false,
+					Value:   true, // Force this to true to trigger plan modifier replacement on next run
+				}
+
+				if !state.CommonName.IsNull() {
+					diags.AddWarning(
+						"Certificate renewal eligible",
+						fmt.Sprintf(
+							"Certificate with common name '%s'(%s) is eligible for renewal, "+
+								"please run `terraform apply` to renew it.",
+							state.CommonName.Value, state.ID.Value,
+						),
+					)
+				} else {
+
+					diags.AddWarning(
+						"Certificate renewal eligible",
+						fmt.Sprintf(
+							"Certificate '%s' is eligible for renewal, please run `terraform apply` to renew it.",
+							state.ID.Value,
+						),
+					)
+
+				}
+
+			}
 		} else {
 			renewalConfig.RenewEligible = state.RenewalConfig.RenewEligible
+		}
+	}
+
+	if !state.CSR.IsNull() {
+		// Check if DNSSANs, IPSANs, and URISANs are empty and set them to null if they are
+		if len(state.DNSSANs.Elems) != 0 {
+			diags.AddWarning(
+				"`dns_sans` are set but not used in CSR enrollment.",
+				"The `dns_sans` field is not used in CSR enrollment, "+
+					"they will be ignored. Please include the SANs in the CSR instead.",
+			)
+		}
+		if len(state.IPSANs.Elems) != 0 {
+			diags.AddWarning(
+				"`ip_sans` are set but not used in CSR enrollment.",
+				"The `ip_sans` field is not used in CSR enrollment, "+
+					"they will be ignored. Please include the SANs in the CSR instead.",
+			)
+		}
+
+		if len(state.URISANs.Elems) != 0 {
+			diags.AddWarning(
+				"`uri_sans` are set but not used in CSR enrollment.",
+				"The `uri_sans` field is not used in CSR enrollment, "+
+					"they will be ignored. Please include the SANs in the CSR instead.",
+			)
 		}
 	}
 
@@ -579,9 +767,9 @@ func (r resourceCommandCertificate) Read(
 		Country:            c,
 		Organization:       o,
 		OrganizationalUnit: ou,
-		DNSSANs:            DNSSANStoTerraform(leaf.DNSNames, false),
-		IPSANs:             IPSANStoTerraform(leaf.IPAddresses, false),
-		URISANs:            URISANStoTerraform(leaf.URIs, false),
+		DNSSANs:            state.DNSSANs,
+		IPSANs:             state.IPSANs,
+		URISANs:            state.URISANs,
 		SerialNumber:       types.String{Value: sn, Null: isNullString(sn)},
 		IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
 		Thumbprint:         types.String{Value: tp, Null: isNullString(tp)},
@@ -627,6 +815,7 @@ func (r resourceCommandCertificate) Read(
 	tflog.Debug(ctx, "Setting state")
 	sDiags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(sDiags...)
+	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
@@ -721,7 +910,7 @@ func (r resourceCommandCertificate) Update(
 	//	metadata = flattenMetadata(certGetResp.Metadata)
 	//}
 
-	renewalConfig := state.RenewalConfig
+	renewalConfig := plan.RenewalConfig
 	if plan.RenewalConfig != nil {
 		renewalConfig = &CertificateAutoRenewConfig{
 			ForceRenewal: plan.RenewalConfig.ForceRenewal,
@@ -1773,6 +1962,57 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 	return &result, diags
 }
 
+// ParseCertSubjectAltNames parses a PEM-encoded X.509 certificate
+// and returns DNS names, IP addresses, and URIs from its SAN extension.
+func ParseCertSubjectAltNames(certPEM string) ([]string, []net.IP, []*url.URL, error) {
+	// Decode PEM block
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, nil, nil, fmt.Errorf("failed to decode PEM block containing certificate")
+	}
+
+	// Parse the certificate
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	// Extract SANs
+	dnsNames := cert.DNSNames
+	ipAddresses := cert.IPAddresses
+	uris := cert.URIs
+
+	return dnsNames, ipAddresses, uris, nil
+}
+
+// ParseCSRSubjectAltNames takes a PEM-encoded CSR and extracts the DNS names,
+// IP addresses, and URIs from the SAN extension.
+func (r resourceCommandCertificate) ParseCSRSubjectAltNames(csrPEM string) ([]string, []net.IP, []*url.URL, error) {
+	// Decode PEM block
+	block, _ := pem.Decode([]byte(csrPEM))
+	if block == nil || block.Type != "CERTIFICATE REQUEST" {
+		return nil, nil, nil, fmt.Errorf("failed to decode PEM block containing CSR")
+	}
+
+	// Parse the CSR
+	csr, err := x509.ParseCertificateRequest(block.Bytes)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse CSR: %w", err)
+	}
+
+	// Check for signature validity (optional but recommended)
+	if err := csr.CheckSignature(); err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid CSR signature: %w", err)
+	}
+
+	// Extract SANs
+	dnsNames := csr.DNSNames
+	ipAddresses := csr.IPAddresses
+	uris := csr.URIs
+
+	return dnsNames, ipAddresses, uris, nil
+}
+
 func (r resourceCommandCertificate) parseSans(ctx context.Context, plan *CommandCertificate) (
 	[]string, []string,
 	[]string, diag.Diagnostics,
@@ -1893,27 +2133,35 @@ func (r resourceCommandCertificate) enrollCSR(
 
 	}
 
-	//fetch certificate from Keyfactor
-	//leaf, chain, _, dErr := downloadCertificate(
-	//	enrollResponse.CertificateInformation.KeyfactorID,
-	//	int(collectionId),
-	//	r.p.client,
-	//	autoPassword,
-	//	csr != "",
-	//)
-	//if dErr != nil {
-	//	response.Diagnostics.AddError(
-	//		ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-	//		fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+dErr.Error(), certificateId),
-	//	)
-	//	return
-	//}
-
 	// Set state
 	if plan.RenewalConfig != nil {
 		plan.RenewalConfig.RenewEligible = types.Bool{
 			Value: false, // Assume not eligible for renewal as this is a new certificate
 		} // Assume not eligible for renewal as this is a new certificate
+	}
+
+	// Check if DNSSANs, IPSANs, and URISANs are empty and set them to null if they are
+	if len(plan.DNSSANs.Elems) != 0 {
+		diags.AddWarning(
+			"`dns_sans` are set but not used in CSR enrollment.",
+			"The `dns_sans` field is not used in CSR enrollment, "+
+				"they will be ignored. Please include the SANs in the CSR instead.",
+		)
+	}
+	if len(plan.IPSANs.Elems) != 0 {
+		diags.AddWarning(
+			"`ip_sans` are set but not used in CSR enrollment.",
+			"The `ip_sans` field is not used in CSR enrollment, "+
+				"they will be ignored. Please include the SANs in the CSR instead.",
+		)
+	}
+
+	if len(plan.URISANs.Elems) != 0 {
+		diags.AddWarning(
+			"`uri_sans` are set but not used in CSR enrollment.",
+			"The `uri_sans` field is not used in CSR enrollment, "+
+				"they will be ignored. Please include the SANs in the CSR instead.",
+		)
 	}
 
 	var result = CommandCertificate{

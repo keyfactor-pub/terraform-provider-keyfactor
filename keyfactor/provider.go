@@ -463,9 +463,9 @@ func (p *provider) getServerConfig(c *providerData, ctx context.Context) (*auth_
 		LogFunctionReturned(ctx, "basicAuthNoParamsConfig.Authenticate")
 
 		if bErr != nil {
-			errMsg := fmt.Sprintf("unable to authenticate with provided basic auth credentials: %s", bErr.Error())
-			tflog.Error(ctx, errMsg)
-			d.AddError("basic auth authentication error", errMsg)
+			errMsg := fmt.Errorf("unable to authenticate with provided basic auth credentials: %w", bErr)
+			tflog.Error(ctx, errMsg.Error())
+			d.AddError("basic auth authentication error", errMsg.Error())
 			return nil, d
 		}
 		LogFunctionExit(ctx, "getServerConfigFromEnv()")

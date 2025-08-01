@@ -281,13 +281,14 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 										}
 										return false, nil
 									},
-									"Triggers resource replacement when 'force_renewal' is set to 'true'. "+
-										"This will only trigger once when set to true, "+
-										"if you need to trigger it again you'll need to unset or set the value to"+
-										" `false` and then back to `true`.",
-									`Triggers replacement of resource when true. 
+									"Triggers resource replacement when 'force_renewal' is set to true.",
+									`
+Triggers replacement of resource when true.
+
 > [!IMPORTANT] 
-> This field will automatically be set to "true" when the certificate is eligible for renewal.
+> This field will automatically be set to "true" when the certificate is eligible for renewal. If you do not wish to 
+> auto renew the certificate, you must explicitly set this to "false".
+
 `,
 								),
 							},
@@ -406,7 +407,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 								tflog.Debug(ctx, "`force_renewal` is set in state, checking value")
 								if stateForceRenewalAttr.Type(ctx) == types.BoolType && stateForceRenewalAttr.(types.Bool).Value {
 									tflog.Debug(ctx, "`force_renewal` is true in state, checking plan value is false")
-									if planForceRenewalAttr != nil && !planForceRenewalAttr.IsNull() && 
+									if planForceRenewalAttr != nil && !planForceRenewalAttr.IsNull() &&
 										!planForceRenewalAttr.(types.Bool).Value {
 										tflog.Debug(
 											ctx, "force_renewal is true in state and false in plan, "+
@@ -1923,6 +1924,14 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		fmt.Sprintf("Setting state for certificate '%s'(%d).", PFXArgs.Subject.SubjectCommonName, enrolledId),
 	)
 	tflog.Debug(ctx, "Creating state object")
+
+	if plan.RenewalConfig != nil {
+		tflog.Debug(ctx, "RenewalConfig is not nil, setting renewal_eligible to false.")
+		plan.RenewalConfig.RenewEligible = types.Bool{
+			Unknown: false,
+			Value:   false,
+		} // Set to false as we just enrolled the certificate
+	}
 
 	var result = CommandCertificate{
 		ID:                   types.String{Value: fmt.Sprintf("%v", enrolledId)},

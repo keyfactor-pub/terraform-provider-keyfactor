@@ -40,6 +40,7 @@ resource "keyfactor_certificate" "pkcs12_enrollment" {
   renewal_config = {
     renew_days      = 30
     revoke_on_renew = true
+    force_renewal   = false
   }
 }
 
@@ -70,18 +71,23 @@ resource "keyfactor_certificate" "kf_csr_cert" {
   csr                   = tls_cert_request.csr.cert_request_pem
   certificate_authority = "COMMAND\\MY_CA_01"
   certificate_template  = "2yrWebServer"
-  
+
+  dns_sans = ["mycsr.kfdelivery.com"]         # Optional DNS SANs
+  ip_sans  = ["172.16.0.2", "192.168.0.2"]    # Optional IP SANs
+  uri_sans = ["https://mycsr.kfdelivery.com"] # Optional URI SANs
   metadata = {
     "Email-Contact" = "my_username@mydomain.com"
     # Note: metadata keys must be defined in Keyfactor and cannot just be arbitrarily added
   }
 
   collection_id = 2
+
   expiry_warn_days = 90
 
   renewal_config = {
     renew_days      = 30
     revoke_on_renew = true
+    force_renewal   = false
   }
 }
 ```

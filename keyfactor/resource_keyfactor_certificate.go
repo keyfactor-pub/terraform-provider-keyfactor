@@ -296,12 +296,13 @@ Triggers replacement of resource when true.
 						"renew_days": {
 							Type:        types.Int64Type,
 							Required:    true,
-							Description: "The number of days before the certificate expires to renew.",
+							Description: "The number of days before the certificate expires to trigger renewal.",
 						},
 						"renew_eligible": {
-							Type:        types.BoolType,
-							Computed:    true,
-							Description: "Whether the certificate is eligible for renewal.",
+							Type:     types.BoolType,
+							Computed: true,
+							Description: "Calculated value indicating whether the certificate is eligible for renewal" +
+								" based on `renew_days`, current date, and certificate expiry date.",
 							PlanModifiers: []tfsdk.AttributePlanModifier{
 								tfsdk.RequiresReplaceIf(
 									// The conditional function

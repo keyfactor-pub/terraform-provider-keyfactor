@@ -71,10 +71,6 @@ resource "keyfactor_certificate" "kf_csr_cert" {
   csr                   = tls_cert_request.csr.cert_request_pem
   certificate_authority = "COMMAND\\MY_CA_01"
   certificate_template  = "2yrWebServer"
-
-  dns_sans = ["mycsr.kfdelivery.com"]         # Optional DNS SANs
-  ip_sans  = ["172.16.0.2", "192.168.0.2"]    # Optional IP SANs
-  uri_sans = ["https://mycsr.kfdelivery.com"] # Optional URI SANs
   metadata = {
     "Email-Contact" = "my_username@mydomain.com"
     # Note: metadata keys must be defined in Keyfactor and cannot just be arbitrarily added
@@ -145,7 +141,7 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 
 Required:
 
-- `renew_days` (Number) The number of days before the certificate expires to renew.
+- `renew_days` (Number) The number of days before the certificate expires to trigger renewal.
 
 Optional:
 
@@ -154,7 +150,7 @@ Optional:
 
 Read-Only:
 
-- `renew_eligible` (Boolean) Whether the certificate is eligible for renewal.
+- `renew_eligible` (Boolean) Calculated value indicating whether the certificate is eligible for renewal based on `renew_days`, current date, and certificate expiry date.
 
 ## Import
 

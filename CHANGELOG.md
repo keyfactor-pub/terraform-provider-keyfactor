@@ -1,3 +1,26 @@
+# v2.5.1
+
+### Certificates
+
+#### Fixes
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment response not parsing certificates properly.
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment does not fail on empty `[]Diagnotic`
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment sets `IsExpired,IsRevoked,IsPendingRevocation` explicitly to `false`
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment sets subject fields to state values to prevent inconsistent state.
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment sets `renew_eligible` to known on update.
+- fix(certificates): `keyfactor_certificate` resource updates use state values for immutable fields.
+- fix(certificates): `keyfactor_certificate` resource `renewal_config` block correctly triggers based on `renew_days`
+- fix(certificates): `keyfactor_certificate` resource PFX enrollments w/ `renewal_config` block now correctly sets `renew_eligible` to `false` on create.
+- fix(certificates): `keyfactor_certificate` resource `renew_eligible` calculation correction.
+
+#### Chores
+- chore(certificates): Update documentation for `keyfactor_certificate` `renewal_config` verbiage to be more clear on how it works.
+
+### Authentication
+
+#### Fixes
+- fix(deps): Bump `keyfactor-go-client-sdk` to `v24.0.2` to fix scopes not being set on OAuth requests.
+
 # v2.5.0
 ### OAuth Security Roles
 

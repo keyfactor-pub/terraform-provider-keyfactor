@@ -12,7 +12,10 @@ require (
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.27.0
 	github.com/spbsoluble/go-pkcs12 v0.3.3
 	github.com/stretchr/testify v1.10.0
+	golang.org/x/crypto v0.39.0
 )
+
+require github.com/pavlo-v-chernykh/keystore-go/v4 v4.5.0
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0 // indirect
@@ -65,7 +68,6 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/zclconf/go-cty v1.15.0 // indirect
 	go.mozilla.org/pkcs7 v0.9.0 // indirect
-	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/mod v0.25.0 // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect

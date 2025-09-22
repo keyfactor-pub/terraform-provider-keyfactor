@@ -1,0 +1,57 @@
+{
+  "Stores": [
+    {
+      "StoreId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "Alias": "string",
+      "Overwrite": true,
+      "Properties": {
+        "additionalProp1": "string",
+        "additionalProp2": "string",
+        "additionalProp3": "string"
+      }
+    }
+  ],
+  "CustomFriendlyName": "string",
+  "Password": "string",
+  "Subject": "string",
+  "IncludeChain": true,
+  "IncludeSubjectHeader": true,
+  "RenewalCertificateId": 0,
+  "CertificateAuthority": "string",
+  "Metadata": {
+    "additionalProp1": "string",
+    "additionalProp2": "string",
+    "additionalProp3": "string"
+  },
+  "AdditionalEnrollmentFields": {
+    "additionalProp1": "string",
+    "additionalProp2": "string",
+    "additionalProp3": "string"
+  },
+  "Timestamp": "2025-09-21T18:05:44.994Z",
+  "Template": "string",
+  "SANs": {
+    "additionalProp1": [
+      "string"
+    ],
+    "additionalProp2": [
+      "string"
+    ],
+    "additionalProp3": [
+      "string"
+    ]
+  },
+  "InstallIntoExistingCertificateStores": true,
+  "JobTime": "2025-09-21T18:05:44.994Z",
+  "ChainOrder": "string",
+  "UseLegacyEncryption": true,
+  "KeyType": "string",
+  "KeyLength": 0,
+  "Curve": "string",
+  "AlternativeKeyType": "string",
+  "AlternativeKeyLength": 0,
+  "MicrosoftTargetCSP": "string",
+  "OwnerRoleId": 0,
+  "OwnerRoleName": "string",
+  "EnrollmentPatternId": 0
+}

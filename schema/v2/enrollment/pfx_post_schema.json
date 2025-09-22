@@ -1,0 +1,169 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Keyfactor PFX Enrollment Request Schema",
+  "description": "Schema for PFX certificate enrollment in Keyfactor Command",
+  "type": "object",
+  "properties": {
+    "Stores": {
+      "type": "array",
+      "description": "Stores to deploy the certificate to during enrollment",
+      "items": {
+        "type": "object",
+        "properties": {
+          "StoreId": {
+            "type": "string",
+            "description": "Unique identifier for the certificate store",
+            "format": "uuid"
+          },
+          "Alias": {
+            "type": "string",
+            "description": "Alias for the certificate in the store"
+          },
+          "Overwrite": {
+            "type": "boolean",
+            "description": "Whether to overwrite an existing certificate with the same alias",
+            "default": true
+          },
+          "Properties": {
+            "type": "object",
+            "description": "Additional properties for the store deployment",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["StoreId"]
+      }
+    },
+    "CustomFriendlyName": {
+      "type": "string",
+      "description": "Custom friendly name for the certificate"
+    },
+    "Password": {
+      "type": "string",
+      "description": "Password for the PFX file"
+    },
+    "Subject": {
+      "type": "string",
+      "description": "Certificate subject distinguished name"
+    },
+    "IncludeChain": {
+      "type": "boolean",
+      "description": "Whether to include the certificate chain in the response",
+      "default": true
+    },
+    "IncludeSubjectHeader": {
+      "type": "boolean",
+      "description": "Whether to include the subject header in the response",
+      "default": true
+    },
+    "RenewalCertificateId": {
+      "type": "integer",
+      "description": "ID of the certificate to renew",
+      "minimum": 0
+    },
+    "CertificateAuthority": {
+      "type": "string",
+      "description": "Name of the certificate authority to use for enrollment"
+    },
+    "Metadata": {
+      "type": "object",
+      "description": "Metadata to associate with the certificate",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "AdditionalEnrollmentFields": {
+      "type": "object",
+      "description": "Additional enrollment fields required by the template",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "Timestamp": {
+      "type": "string",
+      "description": "Timestamp for the enrollment request",
+      "format": "date-time"
+    },
+    "Template": {
+      "type": "string",
+      "description": "Name of the certificate template to use for enrollment"
+    },
+    "SANs": {
+      "type": "object",
+      "description": "Subject Alternative Names to include in the certificate",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "InstallIntoExistingCertificateStores": {
+      "type": "boolean",
+      "description": "Whether to install the certificate into existing certificate stores",
+      "default": false
+    },
+    "JobTime": {
+      "type": "string",
+      "description": "Scheduled time for the job to run",
+      "format": "date-time"
+    },
+    "ChainOrder": {
+      "type": "string",
+      "description": "Order of certificates in the chain",
+      "enum": ["EndEntityFirst", "RootFirst"]
+    },
+    "UseLegacyEncryption": {
+      "type": "boolean",
+      "description": "Whether to use legacy encryption",
+      "default": false
+    },
+    "KeyType": {
+      "type": "string",
+      "description": "Type of key to generate",
+      "enum": ["RSA", "ECC"]
+    },
+    "KeyLength": {
+      "type": "integer",
+      "description": "Length of the key in bits for RSA keys",
+      "enum": [1024, 2048, 3072, 4096]
+    },
+    "Curve": {
+      "type": "string",
+      "description": "Curve to use for ECC keys",
+      "enum": ["P256", "P384", "P521"]
+    },
+    "AlternativeKeyType": {
+      "type": "string",
+      "description": "Alternative key type if the primary is not available",
+      "enum": ["RSA", "ECC"]
+    },
+    "AlternativeKeyLength": {
+      "type": "integer",
+      "description": "Alternative key length if the primary is not available",
+      "enum": [1024, 2048, 3072, 4096]
+    },
+    "MicrosoftTargetCSP": {
+      "type": "string",
+      "description": "Microsoft CSP target for certificate enrollment"
+    },
+    "OwnerRoleId": {
+      "type": "integer",
+      "description": "ID of the role that will own the certificate",
+      "minimum": 0
+    },
+    "OwnerRoleName": {
+      "type": "string",
+      "description": "Name of the role that will own the certificate"
+    },
+    "EnrollmentPatternId": {
+      "type": "integer",
+      "description": "ID of the enrollment pattern to use",
+      "minimum": 0
+    }
+  },
+  "required": ["Subject", "Template"],
+  "additionalProperties": false
+}
+

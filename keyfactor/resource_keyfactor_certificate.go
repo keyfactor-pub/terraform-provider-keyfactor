@@ -1036,7 +1036,7 @@ func (r resourceCommandCertificate) Update(
 
 	leaf, lDiags := parseLeafCert(
 		ctx,
-		state.PEM.Value,
+		state.PEM.Value, //TODO: should we use certGetResp.ContentBytes instead?
 	)
 	if lDiags.HasError() {
 		//this should never happen unless state has been manually manipulated
@@ -1074,6 +1074,31 @@ func (r resourceCommandCertificate) Update(
 				Null:    false,
 				Value:   renewEligible,
 			}
+		}
+	}
+
+	// Check if ownerrolename has changed
+	if plan.OwnerRoleName.Value != state.OwnerRoleName.Value {
+		tflog.Debug(ctx, "OwnerRoleName has changed, updating certificate owner role.")
+		// Check if rolename is an integer ID or string name
+		ownerInt, convErr := strconv.Atoi(plan.OwnerRoleName.Value)
+		ownerRequest := &api.OwnerRequest{}
+		if convErr != nil {
+			ownerRequest.NewRoleName = &plan.OwnerRoleName.Value
+		} else {
+			ownerRequest.NewRoleId = &ownerInt
+		}
+
+		oErr := r.p.client.ChangeCertificateOwnerRole(certificateID, ownerRequest)
+		if oErr != nil {
+			response.Diagnostics.AddError(
+				"Certificate owner update error.",
+				fmt.Sprintf(
+					"Could not update cert '%s''s owner role to %s on Keyfactor: "+oErr.Error(),
+					state.ID.Value, plan.OwnerRoleName.Value,
+				),
+			)
+			return
 		}
 	}
 
@@ -1127,7 +1152,6 @@ func (r resourceCommandCertificate) Update(
 				)
 				return
 			}
-
 		}
 
 		// Set state
@@ -1168,6 +1192,13 @@ func (r resourceCommandCertificate) Update(
 				Null: true, // todo: implement pending revocation check
 			},
 			RenewalConfig: renewalConfig,
+
+			CertificateFormat: plan.CertificateFormat, //TODO: this might need to force replacement if changed
+			EnrollmentPattern: state.EnrollmentPattern,
+			OwnerRoleName:     plan.OwnerRoleName,
+			PFX:               state.PFX,
+			JKS:               state.JKS,
+			Zip:               state.Zip,
 		}
 
 		if !state.CSR.IsNull() {
@@ -1264,6 +1295,13 @@ func (r resourceCommandCertificate) Update(
 				Null: true, // This is always null for updates, as we don't support pending revocation on updates.
 			},
 			RenewalConfig: renewalConfig,
+
+			CertificateFormat: plan.CertificateFormat,
+			EnrollmentPattern: state.EnrollmentPattern,
+			OwnerRoleName:     plan.OwnerRoleName,
+			PFX:               state.PFX,
+			JKS:               state.JKS,
+			Zip:               state.Zip,
 		}
 
 		diags = response.State.Set(ctx, result)

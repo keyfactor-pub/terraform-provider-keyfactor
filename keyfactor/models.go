@@ -126,11 +126,15 @@ type CommandCertificate struct {
 	Thumbprint   types.String `tfsdk:"thumbprint"`    // Thumbprint of the certificate.
 
 	// Certificate Data Fields
-	PEM         types.String `tfsdk:"certificate_pem"`   // Certificate data in PEM format.
-	PEMCACert   types.String `tfsdk:"ca_certificate"`    // CA Certificate in PEM format.
-	PEMChain    types.String `tfsdk:"certificate_chain"` // Certificate chain in PEM format.
-	PrivateKey  types.String `tfsdk:"private_key"`       // Private key in PEM format.
-	KeyPassword types.String `tfsdk:"key_password"`      // Password for the private key.
+	PEM       types.String `tfsdk:"certificate_pem"`   // Certificate data in PEM format.
+	PEMCACert types.String `tfsdk:"ca_certificate"`    // CA Certificate in PEM format.
+	PEMChain  types.String `tfsdk:"certificate_chain"` // Certificate chain in PEM format.
+	PFX       types.String `tfsdk:"pfx"`               // Certificate data in PFX format (Base64 encoded).
+	JKS       types.String `tfsdk:"jks"`               // Certificate data in JKS format (Base64 encoded).
+	Zip       types.String `tfsdk:"zip"`               // Certificate data in ZIP format (Base64 encoded).
+
+	PrivateKey  types.String `tfsdk:"private_key"`  // Private key in PEM format.
+	KeyPassword types.String `tfsdk:"key_password"` // Password for the private key.
 
 	// Keyfactor Fields
 	CertificateAuthority types.String                `tfsdk:"certificate_authority"` // CertificateAuthority defines the CA name used for certificate issuance in Keyfactor Command
@@ -145,7 +149,16 @@ type CommandCertificate struct {
 	IsPendingRevocation  types.Bool                  `tfsdk:"is_pending_revocation"` // IsPendingRevocation indicates whether the certificate is waiting to be revoked.
 	RenewalConfig        *CertificateAutoRenewConfig `tfsdk:"renewal_config"`
 
-	// automatically renewing certificates.
+	// v11.0.0+ Fields
+	CertificateFormat types.String `tfsdk:"certificate_format"` // CertificateFormat defines the format of the certificate. Valid values are "PFX", "PEM", "JKS", "ZIP".
+
+	// v12.3.0+ Fields
+	OwnerRoleName types.String `tfsdk:"owner_role_name"` // OwnerRoleName either the internal ID or name of the role that will own the certificate.
+
+	// v25.1.0+ Fields
+	EnrollmentPattern types.String `tfsdk:"certificate_enrollment_pattern"` // EnrollmentPattern is either the internal ID
+	// or the name of the enrollment pattern to be used for certificate issuance.
+
 }
 
 type CertificateAutoRenewConfig struct {

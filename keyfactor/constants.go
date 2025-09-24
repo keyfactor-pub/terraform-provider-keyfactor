@@ -11,6 +11,7 @@ const (
 	DEFAULT_PFX_PASSWORD_SPECIAL_CHAR_COUNT  = 0
 	DEFAULT_PFX_PASSWORD_NUMBER_COUNT        = 4
 	DEFAULT_PFX_PASSWORD_UPPER_COUNT         = 4
+	DEFAULT_CERTIFICATE_ENROLLMENT_FORMAT    = "STORE"
 	ERR_SUMMARY_INVALID_CERTIFICATE_RESOURCE = "Invalid certificate resource definition."
 	ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE  = "Unable to create Keyfactor Command certificate."
 	ERR_SUMMARY_CERTIFICATE_RESOURCE_READ    = "Unable to read Keyfactor Command certificate."
@@ -30,3 +31,5 @@ const (
 	//EnvCommandTimeout  = "KEYFACTOR_TIMEOUT"
 	//DefaultAPIPath     = "KeyfactorAPI"
 )
+
+var VALID_CERTIFICATE_FORMATS = []string{"PFX", "PEM", "JKS", "Zip"}

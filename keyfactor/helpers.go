@@ -11,9 +11,11 @@
 package keyfactor
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/rand"
 	rsa2 "crypto/rsa"
 	"crypto/sha1"
 	"crypto/x509"
@@ -22,7 +24,8 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"math/rand"
+	mathRand "math/rand"
+
 	"net"
 	"net/url"
 	"os"
@@ -46,6 +49,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"github.com/spbsoluble/go-pkcs12"
+	"golang.org/x/crypto/ssh"
+
+	"github.com/pavlo-v-chernykh/keystore-go/v4"
 )
 
 var (
@@ -71,29 +77,29 @@ func generatePassword(passwordLength, minSpecialChar, minNum, minUpperCase int) 
 
 	//Set special character
 	for i := 0; i < minSpecialChar; i++ {
-		random := rand.Intn(len(specialCharSet))
+		random := mathRand.Intn(len(specialCharSet))
 		password.WriteString(string(specialCharSet[random]))
 	}
 
 	//Set numeric
 	for i := 0; i < minNum; i++ {
-		random := rand.Intn(len(numberSet))
+		random := mathRand.Intn(len(numberSet))
 		password.WriteString(string(numberSet[random]))
 	}
 
 	//Set uppercase
 	for i := 0; i < minUpperCase; i++ {
-		random := rand.Intn(len(upperCharSet))
+		random := mathRand.Intn(len(upperCharSet))
 		password.WriteString(string(upperCharSet[random]))
 	}
 
 	remainingLength := passwordLength - minSpecialChar - minNum - minUpperCase
 	for i := 0; i < remainingLength; i++ {
-		random := rand.Intn(len(allCharSet))
+		random := mathRand.Intn(len(allCharSet))
 		password.WriteString(string(allCharSet[random]))
 	}
 	inRune := []rune(password.String())
-	rand.Shuffle(
+	mathRand.Shuffle(
 		len(inRune), func(i, j int) {
 			inRune[i], inRune[j] = inRune[j], inRune[i]
 		},
@@ -1903,4 +1909,196 @@ func getResourceIdFromTerraformState(state *terraform.State, resourcePath string
 		return "", fmt.Errorf("not found")
 	}
 	return rs.Primary.Attributes["id"], nil
+}
+
+func pemToPkcs12(privateKeyPEM, certificatePEM string, caCertificatesPEM []string, password string) ([]byte, error) {
+	// Decode the private key PEM block
+	keyBlock, _ := pem.Decode([]byte(privateKeyPEM))
+	if keyBlock == nil {
+		return nil, fmt.Errorf("failed to decode private key PEM block")
+	}
+
+	// Parse the private key
+	var privateKey interface{}
+	var err error
+	switch keyBlock.Type {
+	case "RSA PRIVATE KEY":
+		privateKey, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse RSA private key: %v", err)
+		}
+	case "EC PRIVATE KEY":
+		privateKey, err = x509.ParseECPrivateKey(keyBlock.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse ECDSA private key: %v", err)
+		}
+	//case "DSA PRIVATE KEY":
+	//	privateKey, err = x509.ParseDSAPrivateKey(keyBlock.Bytes)
+	//	if err != nil {
+	//		return nil, fmt.Errorf("failed to parse DSA private key: %v", err)
+	//	}
+	case "PRIVATE KEY":
+		privateKey, err = x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse PKCS#8 private key: %v", err)
+		}
+	case "OPENSSH PRIVATE":
+		privateKey, err = ssh.ParseRawPrivateKey(keyBlock.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse OpenSSH private key: %v", err)
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported private key type: %s", keyBlock.Type)
+	}
+
+	// Decode the certificate PEM block
+	certBlock, _ := pem.Decode([]byte(certificatePEM))
+	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("failed to decode certificate PEM block")
+	}
+
+	// Parse the certificate
+	certificate, certErr := x509.ParseCertificate(certBlock.Bytes)
+	if certErr != nil {
+		return nil, fmt.Errorf("failed to parse certificate: %v", certErr)
+	}
+
+	// Parse CA certificates
+	var caCertificates []*x509.Certificate
+	for _, caPEM := range caCertificatesPEM {
+		caBlock, _ := pem.Decode([]byte(caPEM))
+		if caBlock == nil || caBlock.Type != "CERTIFICATE" {
+			return nil, fmt.Errorf("failed to decode CA certificate PEM block")
+		}
+		caCert, caErr := x509.ParseCertificate(caBlock.Bytes)
+		if caErr != nil {
+			return nil, fmt.Errorf("failed to parse CA certificate: %v", caErr)
+		}
+		caCertificates = append(caCertificates, caCert)
+	}
+
+	// Create the PKCS#12 data
+	pfxData, pfxErr := pkcs12.Encode(rand.Reader, privateKey, certificate, caCertificates, password)
+	if pfxErr != nil {
+		return nil, fmt.Errorf("failed to encode PKCS#12 data: %v", pfxErr)
+	}
+
+	return pfxData, nil
+}
+
+// CreateJKS creates a JKS keystore containing the private key and certificate chain.
+// Instead of writing to an io.Writer, it returns the keystore as a base64-encoded string.
+func pemToJKS(alias string, certPEM string, keyPEM string, chainPEM []string, password string) (string, error) {
+	// parse end-entity cert and optional chain certs
+	certsDer, derErr := parseCertificatesFromPEM(certPEM)
+	if derErr != nil {
+		return "", fmt.Errorf("parse cert: %w", derErr)
+	}
+
+	// optionally append chain if provided
+	if len(chainPEM) > 0 {
+		chainDer, chainErr := parseCertificatesFromPEM(strings.Join(chainPEM, "\n"))
+		if chainErr != nil {
+			return "", fmt.Errorf("parse chain: %w", chainErr)
+		}
+		certsDer = append(certsDer, chainDer...)
+	}
+
+	// parse private key (RSA/EC/PKCS8/OpenSSH)
+	priv, err := parsePrivateKeyFromPEM(keyPEM)
+	if err != nil {
+		return "", fmt.Errorf("parse private key: %w", err)
+	}
+
+	// Marshal private key to PKCS#8 DER (required by JKS)
+	pkcs8Der, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return "", fmt.Errorf("marshal pkcs8: %w", err)
+	}
+
+	// Build keystore
+	ks := keystore.New()
+
+	// Map certificates to keystore.Certificate items
+	chain := make([]keystore.Certificate, 0, len(certsDer))
+	for _, c := range certsDer {
+		chain = append(chain, keystore.Certificate{Type: "X509", Content: c})
+	}
+
+	entry := keystore.PrivateKeyEntry{
+		CreationTime:     time.Now(),
+		PrivateKey:       pkcs8Der,
+		CertificateChain: chain,
+	}
+
+	// Set the private key entry (the 3rd arg is the per-entry password, usually same as keystore password)
+	if setPkeyErr := ks.SetPrivateKeyEntry(alias, entry, []byte(password)); setPkeyErr != nil {
+		return "", fmt.Errorf("set private key entry: %w", setPkeyErr)
+	}
+
+	// Create a buffer to store the keystore
+	buf := new(bytes.Buffer)
+
+	// Write the keystore to the buffer
+	if ksErr := ks.Store(buf, []byte(password)); ksErr != nil {
+		return "", fmt.Errorf("store keystore: %w", ksErr)
+	}
+
+	// Return keystore as base64 encoded string
+	return base64.StdEncoding.EncodeToString(buf.Bytes()), nil
+}
+
+// parsePrivateKeyFromPEM takes a PEM-encoded private key string
+// and returns the decoded bytes of the private key.
+func parsePrivateKeyFromPEM(pemStr string) ([]byte, error) {
+	block, _ := pem.Decode([]byte(pemStr))
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block")
+	}
+	if block.Type != "PRIVATE KEY" && block.Type != "RSA PRIVATE KEY" && block.Type != "EC PRIVATE KEY" {
+		return nil, fmt.Errorf("unsupported PEM type: " + block.Type)
+	}
+	return block.Bytes, nil
+}
+
+// parseCertificatesFromPEM takes a PEM-encoded certificate string
+// and returns the raw DER-encoded bytes of the certificate(s).
+func parseCertificatesFromPEM(pemStr string) ([][]byte, error) {
+	var certs [][]byte
+	data := []byte(pemStr)
+
+	for {
+		block, rest := pem.Decode(data)
+		if block == nil {
+			break // no more PEM blocks
+		}
+
+		if block.Type != "CERTIFICATE" {
+			return nil, fmt.Errorf("found non-certificate PEM block: " + block.Type)
+		}
+
+		// Validate the certificate
+		if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+			return nil, err
+		}
+
+		certs = append(certs, block.Bytes)
+		data = rest
+	}
+
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("no certificates found in PEM")
+	}
+
+	return certs, nil
+}
+
+func stringContains(slice []string, str string) bool {
+	for _, v := range slice {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }

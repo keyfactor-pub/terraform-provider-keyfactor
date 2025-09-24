@@ -26,11 +26,14 @@ resource "keyfactor_certificate" "pkcs12_enrollment" {
   uri_sans              = sort(["my.pkcs12.io"])
   key_password          = "Don't put this in your production code!"
   certificate_authority = "COMMAND\\MY_CA_01"
-  certificate_template  = "2yrWebServer"
+  # certificate_template  = "2yrWebServer" // Deprecated as of Keyfactor 25.x in favor of certificate_enrollment_pattern
+  certificate_enrollment_pattern  = "2yrWebServer"
   metadata = {
     "Email-Contact" = "kfadmin@keyfactor.com"
     "Owner"         = "integrations@keyfactor.com"
   }
+
+  owner_role_name = "integrations"
 
   friendly_name = "friend"
   collection_id = 6
@@ -70,11 +73,14 @@ resource "tls_cert_request" "csr" {
 resource "keyfactor_certificate" "kf_csr_cert" {
   csr                   = tls_cert_request.csr.cert_request_pem
   certificate_authority = "COMMAND\\MY_CA_01"
-  certificate_template  = "2yrWebServer"
+  # certificate_template  = "2yrWebServer" // Deprecated as of Keyfactor 25.x in favor of certificate_enrollment_pattern
+  certificate_enrollment_pattern  = "2yrWebServer"
   metadata = {
     "Email-Contact" = "my_username@mydomain.com"
     # Note: metadata keys must be defined in Keyfactor and cannot just be arbitrarily added
   }
+
+  owner_role_name = "my_role_name"
 
   collection_id = 2
 
@@ -94,10 +100,19 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 ### Required
 
 - `certificate_authority` (String) Name of certificate authority to deploy certificate with Ex: Example Company CA 1
-- `certificate_template` (String) Short name of certificate template to be deployed
 
 ### Optional
 
+- `certificate_enrollment_pattern` (String) Either the `name` or internal `ID` (integer) indicating the enrollment pattern to use when requesting the certificate. If this value is not provided, the default enrollment pattern defined for the template provided in the request (see the Template parameter) will be used.
+
+One of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern. IMPORTANT: Requires Keyfactor Command v25.1.0+
+- `certificate_format` (String) Optional: The output format to return the enrolled certificate in. Valid options are: `PEM, PFX, JKS,Zip` Defaults to: `PEM`
+- `certificate_template` (String) A string that sets the name of the certificate template that should be used to issue the certificate. The template short name should be used. See also EnrollmentPatternId.
+
+One of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern.
+
+Important:  The template must be configured with at least one enrollment pattern in order to be used for enrollment (see POST Enrollment Patterns).
+Note:  This parameter is considered deprecated as for Keyfactor Command v25.1.0 and may be removed in a future release.
 - `collection_id` (Number) Optional certificate collection ID. This is required if enrollment permissions have been granted at the collection level. NOTE: This will *not* assign the cert to the specified collection ID; assignment is based the collection's associated query. For more information on collection permissions see the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions
 - `common_name` (String) Subject common name (CN) of the certificate.
 - `country` (String) Subject country of the certificate
@@ -111,6 +126,18 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
 - `organization` (String) Subject organization (O) of the certificate
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate
+- `owner_role_name` (String) A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
+
+Expanded Change Owner Permission: A user who holds the Certificates > Expanded Change Owner permission can set the certificate owner to any role within the permission sets they are a member of. This permission setting overrides the Certificates > Collections > Change Owner permission (both Global and Collection-level) if both are set.
+
+Collections > Change Owner Permission:
+
+Global or Collection Level—No Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can set the certificate owner to any role they belong to if there is not a default value populated from the enrollment pattern or existing certificate on a renewal.
+Global or Collection Level—Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can change the default certificate owner to any role they belong to. If the default value populated from the enrollment pattern or existing certificate on a renewal is not a role held by the acting user, the this value will not be populated in the Certificate Owner Role field. The user will still be allowed to add a new owner value.
+Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is required, not both. A certificate owner is required if the enrollment pattern or system-wide settings Certificate Owner Role policy has been configured as Required.
+
+> [!IMPORTANT]
+> Only compatible with Keyfactor Command versions v12.3.0 and later.
 - `renewal_config` (Attributes) Configuration for certificate renewal.
 > [!IMPORTANT]
 > This does not deploy the updated certificate to associated certificate store locations. To deploy the updated 
@@ -132,9 +159,12 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 - `is_pending_revocation` (Boolean) Whether the certificate is pending revocation
 - `is_revoked` (Boolean) Whether the certificate is revoked
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
+- `jks` (String, Sensitive) Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
+- `pfx` (String, Sensitive) Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.
 - `private_key` (String, Sensitive) PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
 - `serial_number` (String) Serial number of newly enrolled certificate
 - `thumbprint` (String) Thumbprint of newly enrolled certificate
+- `zip` (String, Sensitive) Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.
 
 <a id="nestedatt--renewal_config"></a>
 ### Nested Schema for `renewal_config`

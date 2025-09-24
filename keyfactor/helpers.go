@@ -11,11 +11,9 @@
 package keyfactor
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/rand"
 	rsa2 "crypto/rsa"
 	"crypto/sha1"
 	"crypto/x509"
@@ -30,7 +28,6 @@ import (
 	"net/url"
 	"os"
 	"reflect"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,9 +46,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"github.com/spbsoluble/go-pkcs12"
-	"golang.org/x/crypto/ssh"
-
-	"github.com/pavlo-v-chernykh/keystore-go/v4"
 )
 
 var (
@@ -987,7 +981,7 @@ func downloadCertificateFromKeyfactorCommand(
 	}
 
 	tflog.Debug(ctx, "Downloading certificate and chain from Keyfactor Command.")
-	leaf, chain, dErr := client.DownloadCertificate(certId, "", "", "", collectionId) // TODO: Add collection ID support
+	leaf, chain, dErr := client.DownloadCertificate(certId, "", "", "", collectionId)
 	if dErr != nil {
 		errMsg := "Error downloading certificate from Keyfactor Command: " + dErr.Error()
 		if leaf == nil && chain == nil {
@@ -1081,8 +1075,6 @@ func parseProperties(properties string) (types.Map, types.String, types.String, 
 				val = true // Default to true if we can't convert
 			}
 			serverUseSsl = types.Bool{Value: val}
-		//case "StorePassword":
-		//	storePassword = types.String{Value: v.(string)} //TODO: Command doesn't seem to return anything for this as of 10.x
 		default:
 			propElems[k] = types.String{Value: v.(string)}
 		}
@@ -1108,77 +1100,6 @@ func parseStorePassword(sPassword *api.StorePasswordConfig) types.String {
 			return types.String{Value: ""}
 		}
 	}
-}
-
-// isGUID checks if the input string is a valid GUID (Globally Unique Identifier).
-//
-// Parameters:
-//   - input: A string to be checked for GUID format.
-//
-// Returns:
-//   - A boolean value: true if the input is a valid GUID, false otherwise.
-func isGUID(input string) bool {
-	guidPattern := `^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$`
-	match, _ := regexp.MatchString(guidPattern, input)
-	return match
-}
-
-// isNullList checks if the input Terraform types.List is null or empty.
-//
-// Parameters:
-//   - input: A Terraform types.List to be checked for null or empty state.
-//
-// Returns:
-//   - A boolean value: true if the input is null or empty, false otherwise.
-func isNullList(input types.List) bool {
-	if input.Elems == nil || len(input.Elems) == 0 {
-		return true
-	}
-	return false
-}
-
-// checkListNull checks if the input Terraform types.List is null or empty.
-//
-// Parameters:
-//   - tfList: A Terraform types.List to be checked for null or empty state.
-//   - apiResponseList: A slice of interface{} representing the API response list.
-//
-// Returns:
-//   - A boolean value: true if the input is null or empty, false otherwise.
-func checkListNull(tfList types.List, apiResponseList []interface{}) bool {
-	if tfList.IsNull() && len(apiResponseList) == 0 {
-		return true
-	}
-	return false
-}
-
-// sortInSameOrder sorts the unsortedList in the same order as sortedList.
-//
-// Parameters:
-//   - unsortedList: A slice of strings representing the unsorted list.
-//   - sortedList: A slice of strings representing the sorted list.
-//
-// Returns:
-//   - A slice of strings representing the sorted list in the same order as sortedList.
-func sortInSameOrder(unsortedList, sortedList []string) []string {
-	// Sort unsortedList in the same order as sortedList
-	// This is needed because the API returns the list in a different order than the order we sent it in
-	// This is needed for the terraform import command to work
-	var sorted []string
-
-	//if lists are not the same length don't waste the effort and return unsortedList
-	if len(unsortedList) != len(sortedList) {
-		return unsortedList
-	}
-
-	for _, v := range sortedList {
-		for _, u := range unsortedList {
-			if v == u {
-				sorted = append(sorted, u)
-			}
-		}
-	}
-	return sorted
 }
 
 // LogFunctionEntry logs the entry of a function.
@@ -1480,29 +1401,6 @@ func parseSubjectToTfState(cert x509.Certificate) (
 	}
 
 	return
-}
-
-//func escapeCommas(input string) string {
-//	//return strings.ReplaceAll(input, ",", `\,`)
-//	return input
-//}
-
-// parseX509Subject parses an X.509 certificate subject string into a map of attributes,
-// handling escaped commas within values correctly.
-func parseX509Subject(subject string) map[string]string {
-	// Regular expression to capture key-value pairs while respecting escaped commas
-	re := regexp.MustCompile(`(\w+)=((?:[^,\\]|\\.)+)`)
-
-	attributes := make(map[string]string)
-	matches := re.FindAllStringSubmatch(subject, -1)
-
-	for _, match := range matches {
-		key := match[1]
-		value := strings.ReplaceAll(match[2], `\,`, `,`) // Unescape commas
-		attributes[key] = value
-	}
-
-	return attributes
 }
 
 func isRevoked(c *api.GetCertificateResponse) bool {
@@ -1911,189 +1809,8 @@ func getResourceIdFromTerraformState(state *terraform.State, resourcePath string
 	return rs.Primary.Attributes["id"], nil
 }
 
-func pemToPkcs12(privateKeyPEM, certificatePEM string, caCertificatesPEM []string, password string) ([]byte, error) {
-	// Decode the private key PEM block
-	keyBlock, _ := pem.Decode([]byte(privateKeyPEM))
-	if keyBlock == nil {
-		return nil, fmt.Errorf("failed to decode private key PEM block")
-	}
-
-	// Parse the private key
-	var privateKey interface{}
-	var err error
-	switch keyBlock.Type {
-	case "RSA PRIVATE KEY":
-		privateKey, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse RSA private key: %v", err)
-		}
-	case "EC PRIVATE KEY":
-		privateKey, err = x509.ParseECPrivateKey(keyBlock.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse ECDSA private key: %v", err)
-		}
-	//case "DSA PRIVATE KEY":
-	//	privateKey, err = x509.ParseDSAPrivateKey(keyBlock.Bytes)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("failed to parse DSA private key: %v", err)
-	//	}
-	case "PRIVATE KEY":
-		privateKey, err = x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse PKCS#8 private key: %v", err)
-		}
-	case "OPENSSH PRIVATE":
-		privateKey, err = ssh.ParseRawPrivateKey(keyBlock.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse OpenSSH private key: %v", err)
-		}
-
-	default:
-		return nil, fmt.Errorf("unsupported private key type: %s", keyBlock.Type)
-	}
-
-	// Decode the certificate PEM block
-	certBlock, _ := pem.Decode([]byte(certificatePEM))
-	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
-		return nil, fmt.Errorf("failed to decode certificate PEM block")
-	}
-
-	// Parse the certificate
-	certificate, certErr := x509.ParseCertificate(certBlock.Bytes)
-	if certErr != nil {
-		return nil, fmt.Errorf("failed to parse certificate: %v", certErr)
-	}
-
-	// Parse CA certificates
-	var caCertificates []*x509.Certificate
-	for _, caPEM := range caCertificatesPEM {
-		caBlock, _ := pem.Decode([]byte(caPEM))
-		if caBlock == nil || caBlock.Type != "CERTIFICATE" {
-			return nil, fmt.Errorf("failed to decode CA certificate PEM block")
-		}
-		caCert, caErr := x509.ParseCertificate(caBlock.Bytes)
-		if caErr != nil {
-			return nil, fmt.Errorf("failed to parse CA certificate: %v", caErr)
-		}
-		caCertificates = append(caCertificates, caCert)
-	}
-
-	// Create the PKCS#12 data
-	pfxData, pfxErr := pkcs12.Encode(rand.Reader, privateKey, certificate, caCertificates, password)
-	if pfxErr != nil {
-		return nil, fmt.Errorf("failed to encode PKCS#12 data: %v", pfxErr)
-	}
-
-	return pfxData, nil
-}
-
-// CreateJKS creates a JKS keystore containing the private key and certificate chain.
-// Instead of writing to an io.Writer, it returns the keystore as a base64-encoded string.
-func pemToJKS(alias string, certPEM string, keyPEM string, chainPEM []string, password string) (string, error) {
-	// parse end-entity cert and optional chain certs
-	certsDer, derErr := parseCertificatesFromPEM(certPEM)
-	if derErr != nil {
-		return "", fmt.Errorf("parse cert: %w", derErr)
-	}
-
-	// optionally append chain if provided
-	if len(chainPEM) > 0 {
-		chainDer, chainErr := parseCertificatesFromPEM(strings.Join(chainPEM, "\n"))
-		if chainErr != nil {
-			return "", fmt.Errorf("parse chain: %w", chainErr)
-		}
-		certsDer = append(certsDer, chainDer...)
-	}
-
-	// parse private key (RSA/EC/PKCS8/OpenSSH)
-	priv, err := parsePrivateKeyFromPEM(keyPEM)
-	if err != nil {
-		return "", fmt.Errorf("parse private key: %w", err)
-	}
-
-	// Marshal private key to PKCS#8 DER (required by JKS)
-	pkcs8Der, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		return "", fmt.Errorf("marshal pkcs8: %w", err)
-	}
-
-	// Build keystore
-	ks := keystore.New()
-
-	// Map certificates to keystore.Certificate items
-	chain := make([]keystore.Certificate, 0, len(certsDer))
-	for _, c := range certsDer {
-		chain = append(chain, keystore.Certificate{Type: "X509", Content: c})
-	}
-
-	entry := keystore.PrivateKeyEntry{
-		CreationTime:     time.Now(),
-		PrivateKey:       pkcs8Der,
-		CertificateChain: chain,
-	}
-
-	// Set the private key entry (the 3rd arg is the per-entry password, usually same as keystore password)
-	if setPkeyErr := ks.SetPrivateKeyEntry(alias, entry, []byte(password)); setPkeyErr != nil {
-		return "", fmt.Errorf("set private key entry: %w", setPkeyErr)
-	}
-
-	// Create a buffer to store the keystore
-	buf := new(bytes.Buffer)
-
-	// Write the keystore to the buffer
-	if ksErr := ks.Store(buf, []byte(password)); ksErr != nil {
-		return "", fmt.Errorf("store keystore: %w", ksErr)
-	}
-
-	// Return keystore as base64 encoded string
-	return base64.StdEncoding.EncodeToString(buf.Bytes()), nil
-}
-
-// parsePrivateKeyFromPEM takes a PEM-encoded private key string
-// and returns the decoded bytes of the private key.
-func parsePrivateKeyFromPEM(pemStr string) ([]byte, error) {
-	block, _ := pem.Decode([]byte(pemStr))
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block")
-	}
-	if block.Type != "PRIVATE KEY" && block.Type != "RSA PRIVATE KEY" && block.Type != "EC PRIVATE KEY" {
-		return nil, fmt.Errorf("unsupported PEM type: " + block.Type)
-	}
-	return block.Bytes, nil
-}
-
-// parseCertificatesFromPEM takes a PEM-encoded certificate string
-// and returns the raw DER-encoded bytes of the certificate(s).
-func parseCertificatesFromPEM(pemStr string) ([][]byte, error) {
-	var certs [][]byte
-	data := []byte(pemStr)
-
-	for {
-		block, rest := pem.Decode(data)
-		if block == nil {
-			break // no more PEM blocks
-		}
-
-		if block.Type != "CERTIFICATE" {
-			return nil, fmt.Errorf("found non-certificate PEM block: " + block.Type)
-		}
-
-		// Validate the certificate
-		if _, err := x509.ParseCertificate(block.Bytes); err != nil {
-			return nil, err
-		}
-
-		certs = append(certs, block.Bytes)
-		data = rest
-	}
-
-	if len(certs) == 0 {
-		return nil, fmt.Errorf("no certificates found in PEM")
-	}
-
-	return certs, nil
-}
-
+// stringContains
+// checks if a string slice contains a specific string.
 func stringContains(slice []string, str string) bool {
 	for _, v := range slice {
 		if v == str {

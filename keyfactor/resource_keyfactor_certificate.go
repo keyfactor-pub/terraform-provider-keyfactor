@@ -1998,6 +1998,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		IncludeChain:                true,              //TODO: Add support for this
 		CertFormat:                  certificateFormat, // Get certificate from data source
 		EnrollmentPatternId:         enrollmentPatternId,
+		OwnerRoleName:               plan.OwnerRoleName.Value,
 		SANs: &api.SANs{
 			IP4: ipSANs,
 			IP6: nil, //TODO: ipv6 SANs support
@@ -2402,20 +2403,68 @@ func (r resourceCommandCertificate) enrollCSR(
 		diags.Append(metadataDiags...)
 	}
 
+	certificateFormat := DEFAULT_CERTIFICATE_ENROLLMENT_FORMAT
+	if !plan.CertificateFormat.IsNull() {
+		certificateFormat = strings.ToUpper(fmt.Sprintf("%s", plan.CertificateFormat.Value))
+		//check if certificate format is valid by seeing if it's in the list of valid formats
+		if !stringContains(VALID_CERTIFICATE_FORMATS, certificateFormat) {
+			diags.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+				fmt.Sprintf(
+					"Invalid certificate format '%s'. Valid formats are: %s",
+					certificateFormat,
+					strings.Join(VALID_CERTIFICATE_FORMATS, ", "),
+				),
+			)
+			return nil, diags
+		}
+	}
+	ctx = tflog.SetField(ctx, "certificate_format", certificateFormat)
+
+	var enrollmentPatternId int
+	if !plan.EnrollmentPattern.IsNull() {
+		// try to convert string to int
+		var erpErr error
+		var convErr error
+
+		enrollmentPatternId, convErr = strconv.Atoi(plan.EnrollmentPattern.Value)
+		if convErr != nil {
+			tflog.Debug(ctx, "Enrollment pattern is not an integer, looking up by name.")
+			enrollmentPatternId, erpErr = r.LookupEnrollmentPatternIDByName(
+				ctx,
+				plan.EnrollmentPattern.Value,
+			) // API PERMISSIONS: Enrollment Pattern - READ
+			if erpErr != nil {
+				diags.AddError(
+					ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+					fmt.Sprintf(
+						"Could not find enrollment pattern '%s' on Keyfactor: %s",
+						plan.EnrollmentPattern.Value,
+						erpErr.Error(),
+					),
+				)
+				return nil, diags
+			}
+		}
+
+	}
+
 	tflog.Debug(ctx, "Creating certificate from CSR.")
 	CSRArgs := &api.EnrollCSRFctArgs{
 		CSR:                  csr,
 		CertificateAuthority: plan.CertificateAuthority.Value,
 		Template:             plan.CertificateTemplate.Value,
+		EnrollmentPatternId:  enrollmentPatternId,
 		IncludeChain:         true,
-		CertFormat:           "PEM", // Retrieve certificate in READ
+		CertFormat:           certificateFormat,
 		SANs: &api.SANs{
 			IP4: ipSANs,
 			IP6: nil, //TODO: ipv6 SANs support
 			DNS: dnsSANs,
 			URI: uriSANs,
 		},
-		Metadata: metadata,
+		Metadata:      metadata,
+		OwnerRoleName: plan.OwnerRoleName.Value,
 	}
 	tflog.Trace(
 		ctx, "Passing args to Keyfactor API.", map[string]interface{}{

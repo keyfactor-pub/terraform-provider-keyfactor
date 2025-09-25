@@ -851,12 +851,9 @@ func (r resourceCommandCertificate) Read(
 	}
 
 	var ownerRoleName string
-	if certGetResp.OwnerRoleName != "" {
+	if certGetResp != nil && certGetResp.OwnerRoleName != "" {
 		ownerRoleName = certGetResp.OwnerRoleName
-	} else if !state.OwnerRoleName.Unknown && !state.OwnerRoleName.Null {
-		ownerRoleName = state.OwnerRoleName.Value
 	}
-
 	tflog.Debug(ctx, "Creating state object for certificate.")
 	result := CommandCertificate{
 		ID:                 state.ID,

@@ -402,17 +402,23 @@ func (r dataSourceCertificate) Read(
 	}
 
 	// Attempt to recover or download certificate from Command
-	leafPEM, chainPEM, pKeyPEM, rDiags := recoverOrDownloadCertificate(
+	leafPEM, chainPEM, pKeyPEM, rawData, rDiags := recoverOrDownloadCertificate(
 		ctx,
 		certificateID,
 		collectionIdInt,
 		state.KeyPassword.Value,
 		r.p.client,
+		state.CertificateFormat.Value,
 	)
 
 	// Handle leaf PEM encoding for certificates without private keys
 	if certGetResp != nil && leafPEM == "" {
-		leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certificateID)
+		if certGetResp.ContentBytes == "" && rawData != nil {
+			leafPEM, _ = encodeCertificate(ctx, *rawData, certificateID)
+		} else {
+			leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certificateID)
+		}
+
 	}
 
 	if leafPEM == "" {

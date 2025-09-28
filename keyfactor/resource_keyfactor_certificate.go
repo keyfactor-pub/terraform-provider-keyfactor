@@ -159,7 +159,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Optional: true,
 				Description: "Optional: The output format to return the enrolled certificate in. " +
 					"Valid options are: `PEM, PFX, JKS,Zip` Defaults to: `PEM`",
-				Validators: []tfsdk.AttributeValidator{},
+				//Validators: []tfsdk.AttributeValidator{},
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"metadata": {
 				Type: types.MapType{
@@ -254,6 +255,22 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Computed:    true,
 				Sensitive:   true,
 				Description: "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+			},
+			"enrollment_password": {
+				Type:      types.StringType,
+				Computed:  true,
+				Sensitive: true,
+				Description: "The password used during certificate issuance. Also used to unlock PFX/PKCS12 and JKS" +
+					" keystores. Only returned if the certificate template has KeyRetention set to a value other than" +
+					" None. Will use `key_password` value if specified else will generate a random password of length" +
+					fmt.Sprintf("%d", DEFAULT_PFX_PASSWORD_LEN) + " with a minimum of " + fmt.Sprintf(
+					"%d",
+					DEFAULT_PFX_PASSWORD_UPPER_COUNT,
+				) +
+					" uppercase, " + fmt.Sprintf("%d", DEFAULT_PFX_PASSWORD_NUMBER_COUNT) + " numeric, and " +
+					fmt.Sprintf("%d", DEFAULT_PFX_PASSWORD_SPECIAL_CHAR_COUNT) + " special characters." +
+					" Review this provider's schema docs for more details: https://registry.terraform." +
+					"io/providers/keyfactor-pub/keyfactor/latest/docs#schema",
 			},
 			"jks": {
 				Type:        types.StringType,
@@ -663,18 +680,25 @@ func (r resourceCommandCertificate) Read(
 		tflog.Warn(ctx, fmt.Sprintf("Failed to retrieve certificate from GET /Certificates/%d", certificateID))
 	}
 
+	certificateFormat := state.CertificateFormat.Value
+	if certificateFormat == "" {
+		certificateFormat = DEFAULT_CERTIFICATE_ENROLLMENT_FORMAT
+	}
 	// Attempt to recover or download certificate from Command
-	leafPEM, chainPEM, pKeyPEM, rDiags := recoverOrDownloadCertificate(
+	leafPEM, chainPEM, pKeyPEM, rawData, rDiags := recoverOrDownloadCertificate(
 		ctx,
 		certificateID,
 		collectionIdInt,
 		state.KeyPassword.Value,
 		r.p.client,
+		certificateFormat,
 	)
 
 	// Handle leaf PEM encoding for certificates without private keys
 	if certGetResp != nil && leafPEM == "" {
 		leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certificateID)
+	} else if rawData != nil && leafPEM == "" {
+		leafPEM, _ = encodeCertificate(ctx, rawData, certificateID)
 	}
 
 	if leafPEM == "" {
@@ -870,11 +894,18 @@ func (r resourceCommandCertificate) Read(
 		SerialNumber:       types.String{Value: sn, Null: isNullString(sn)},
 		IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
 		Thumbprint:         types.String{Value: tp, Null: isNullString(tp)},
-		PEM:                types.String{Value: leafPEM, Null: isNullString(leafPEM)},
-		PEMCACert:          types.String{Value: chainPEM, Null: isNullString(chainPEM)},
-		PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
-		PrivateKey:         types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
+		//PEM:                types.String{Value: leafPEM, Null: isNullString(leafPEM) || certificateFormat == "PEM"},
+		//PEMCACert:          types.String{Value: chainPEM, Null: isNullString(chainPEM) || certificateFormat == "PEM"},
+		//PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain) || certificateFormat == "PEM"},
+		//PrivateKey:         types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM) || certificateFormat == "PEM"},
+		PEM:                types.String{Null: true},
+		PEMCACert:          types.String{Null: true},
+		PEMChain:           types.String{Null: true},
+		PrivateKey:         types.String{Null: true},
+		PFX:                types.String{Null: true},
+		Zip:                types.String{Null: true},
 		KeyPassword:        state.KeyPassword,
+		EnrollmentPassword: state.EnrollmentPassword,
 		CertificateAuthority: types.String{
 			Value: caName,
 			Null:  isNullString(caName),
@@ -950,6 +981,27 @@ func (r resourceCommandCertificate) Read(
 		result.Organization = state.Organization
 		result.OrganizationalUnit = state.OrganizationalUnit
 
+	}
+
+	switch certificateFormat {
+	case "PEM":
+		result.PEM = types.String{Value: leafPEM, Null: isNullString(leafPEM)}
+		result.PEMCACert = types.String{Value: chainPEM, Null: isNullString(chainPEM)}
+		result.PEMChain = types.String{Value: fullChain, Null: isNullString(fullChain)}
+		result.PrivateKey = types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)}
+	case "JKS":
+		result.JKS = types.String{Value: *rawData, Null: isNullString(*rawData)}
+	case "PFX":
+		result.PFX = types.String{Value: *rawData, Null: isNullString(*rawData)}
+	case "ZIP":
+		result.Zip = types.String{Value: *rawData, Null: isNullString(*rawData)}
+	default:
+		// should never happen due to validation
+		tflog.Warn(ctx, fmt.Sprintf("Unknown certificate format '%s'", certificateFormat))
+		result.PEM = types.String{Value: leafPEM, Null: isNullString(leafPEM)}
+		result.PEMCACert = types.String{Value: chainPEM, Null: isNullString(chainPEM)}
+		result.PEMChain = types.String{Value: fullChain, Null: isNullString(fullChain)}
+		result.PrivateKey = types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)}
 	}
 
 	// Set state
@@ -1033,7 +1085,7 @@ func (r resourceCommandCertificate) Update(
 
 	leaf, lDiags := parseLeafCert(
 		ctx,
-		state.PEM.Value, //TODO: should we use certGetResp.ContentBytes instead?
+		certGetResp.ContentBytes,
 	)
 	if lDiags.HasError() {
 		//this should never happen unless state has been manually manipulated
@@ -1172,6 +1224,7 @@ func (r resourceCommandCertificate) Update(
 			PEMChain:             state.PEMChain,
 			PrivateKey:           state.PrivateKey,
 			KeyPassword:          plan.KeyPassword,
+			EnrollmentPassword:   state.EnrollmentPassword,
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             plan.Metadata,
@@ -1253,7 +1306,7 @@ func (r resourceCommandCertificate) Update(
 		}
 
 		// Set state
-		tflog.Debug(ctx, "Creating CommandCertificate state object")
+		tflog.Debug(ctx, "Updating CommandCertificate state object")
 		var result = CommandCertificate{
 			ID:                   state.ID,
 			CSR:                  state.CSR,
@@ -1274,6 +1327,7 @@ func (r resourceCommandCertificate) Update(
 			PEMChain:             state.PEMChain,
 			PrivateKey:           state.PrivateKey,
 			KeyPassword:          plan.KeyPassword,
+			EnrollmentPassword:   state.EnrollmentPassword,
 			CertificateId:        state.CertificateId,
 			CertificateAuthority: state.CertificateAuthority,
 			CertificateTemplate:  state.CertificateTemplate,
@@ -1442,12 +1496,13 @@ func (r resourceCommandCertificate) ImportState(
 
 	tflog.Info(ctx, fmt.Sprintf("Attempting to retrieve certificate '%s' from Keyfactor Command.", state.ID.Value))
 	tflog.Debug(ctx, "Calling recoverOrDownloadCertificate")
-	leafPEM, chainPEM, pKeyPEM, rDiags := recoverOrDownloadCertificate(
+	leafPEM, chainPEM, pKeyPEM, rawData, rDiags := recoverOrDownloadCertificate(
 		ctx,
 		certificateIdInt,
 		int(state.CollectionId.Value),
 		state.KeyPassword.Value,
 		r.p.client,
+		"PFX",
 	)
 
 	if rDiags.HasError() {
@@ -1472,6 +1527,8 @@ func (r resourceCommandCertificate) ImportState(
 		ownerRoleName = certGetResp.OwnerRoleName
 		requestId = certGetResp.CertRequestId
 		leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certGetResp.Id)
+	} else if rawData != nil && leafPEM == "" {
+		leafPEM, _ = encodeCertificate(ctx, rawData, certGetResp.Id)
 	}
 
 	if leafPEM == "" {
@@ -1538,6 +1595,7 @@ func (r resourceCommandCertificate) ImportState(
 		PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
 		PrivateKey:         types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
 		KeyPassword:        state.KeyPassword,
+		EnrollmentPassword: state.KeyPassword,
 		CertificateAuthority: types.String{
 			Value: caName,
 			Null:  isNullString(caName),
@@ -1897,6 +1955,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		leafPEM        string
 		chainPEM       string
 		pChain         []string
+		//rawData        *string
 	)
 
 	collectionId := plan.CollectionId.Value
@@ -1905,7 +1964,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 	tflog.Info(ctx, "Resource is PFX certificate enrollment.")
 	diags := diag.Diagnostics{}
 	if plan.KeyPassword.Value == "" {
-		tflog.Debug(ctx, "No password provided, generating random password.")
+		tflog.Debug(ctx, "No password provided, generating random enrollment password.")
 
 		autoPassword = generatePassword(
 			PFXPasswordLength,
@@ -1915,7 +1974,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		)
 		lookupPassword = autoPassword
 	} else {
-		tflog.Debug(ctx, "Password provided, using provided password.")
+		tflog.Debug(ctx, "Password provided, using provided password as enrollment password.")
 		lookupPassword = plan.KeyPassword.Value
 	}
 
@@ -1953,6 +2012,12 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 				),
 			)
 			return nil, diags
+		} else if certificateFormat == "PEM" {
+			tflog.Warn(
+				ctx, "PEM format selected for PFX enrollment. "+
+					"But Golang can't decrypt the response so force PFX and decode later.",
+			)
+			certificateFormat = DEFAULT_CERTIFICATE_ENROLLMENT_FORMAT
 		}
 	}
 	ctx = tflog.SetField(ctx, "certificate_format", certificateFormat)
@@ -2176,6 +2241,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		//PEMChain:             types.String{Value: chainPEM}, //This is set below depending out output format
 		//PrivateKey:           types.String{Value: pKeyPEM}, //This is set below depending out output format
 		KeyPassword:          plan.KeyPassword,
+		EnrollmentPassword:   types.String{Value: autoPassword, Null: isNullString(autoPassword)},
 		CertificateAuthority: plan.CertificateAuthority,
 		CertificateTemplate:  plan.CertificateTemplate,
 		CertificateId:        types.Int64{Value: int64(enrolledId)},
@@ -2215,18 +2281,25 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		result.PEMCACert = types.String{Null: true}
 		result.PEMChain = types.String{Null: true}
 		result.PrivateKey = types.String{Null: true}
-	case "PFX":
-		tflog.Debug(ctx, "Certificate format is PFX, setting PFX as the content of the PKCS12 blob.")
-		result.PFX = types.String{
-			Value: enrollResponse.CertificateInformation.PKCS12Blob,
-			Null:  isNullString(enrollResponse.CertificateInformation.PKCS12Blob),
-		}
+	case "PFX", DEFAULT_CERTIFICATE_ENROLLMENT_FORMAT:
 		result.PEM = types.String{Null: true}
 		result.PEMCACert = types.String{Null: true}
 		result.PEMChain = types.String{Null: true}
 		result.PrivateKey = types.String{Null: true}
-	default:
-		// Recover private key
+
+		result.JKS = types.String{Null: true}
+		result.Zip = types.String{Null: true}
+		result.PFX = types.String{Null: true}
+
+		if certificateFormat == "PFX" {
+			tflog.Debug(ctx, "Certificate format is PFX, setting PFX as the content of the PKCS12 blob.")
+			result.PFX = types.String{
+				Value: enrollResponse.CertificateInformation.PKCS12Blob,
+				Null:  isNullString(enrollResponse.CertificateInformation.PKCS12Blob),
+			}
+			return &result, diags
+		}
+
 		tflog.Debug(ctx, "Unpacking PKCS12 blob to PEM")
 		var (
 			pfxErr error
@@ -2241,9 +2314,13 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			tflog.Error(ctx, "Error unpacking PKCS12 blob, attempting to recover private key.")
 			//attempt to recover private key
 			rErr := diag.Diagnostics{}
-			pKeyPEM, leafPEM, chainPEM, rErr = recoverPrivateKeyFromKeyfactorCommand(
-				ctx, enrolledId,
-				collectionIdInt, lookupPassword, r.p.client,
+			pKeyPEM, leafPEM, chainPEM, _, rErr = recoverPrivateKeyFromKeyfactorCommand(
+				ctx,
+				enrolledId,
+				collectionIdInt,
+				lookupPassword,
+				r.p.client,
+				"PFX",
 			)
 			diags.Append(rErr...)
 			if diags.HasError() {
@@ -2259,9 +2336,17 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		result.PEMCACert = types.String{Value: chainPEM, Null: isNullString(chainPEM)}
 		result.PEMChain = types.String{Value: leafPEM + "\n" + chainPEM, Null: isNullString(leafPEM + "\n" + chainPEM)}
 		result.PrivateKey = types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)}
-		result.PFX = types.String{Null: true}
-		result.JKS = types.String{Null: true}
-		result.Zip = types.String{Null: true}
+	default:
+		tflog.Error(ctx, "Invalid certificate format, this should have been caught earlier.")
+		diags.AddError(
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+			fmt.Sprintf(
+				"Invalid certificate format '%s'. Valid formats are: %s",
+				certificateFormat,
+				strings.Join(VALID_CERTIFICATE_FORMATS, ", "),
+			),
+		)
+		return nil, diags
 	}
 
 	return &result, diags
@@ -2534,7 +2619,6 @@ func (r resourceCommandCertificate) enrollCSR(
 				"they will be ignored. Please include the SANs in the CSR instead.",
 		)
 	}
-
 	if len(plan.URISANs.Elems) != 0 {
 		diags.AddWarning(
 			"`uri_sans` are set but not used in CSR enrollment.",
@@ -2581,6 +2665,7 @@ func (r resourceCommandCertificate) enrollCSR(
 			Value: plan.KeyPassword.Value,
 			Null:  true,
 		}, // Null because CSR enrollment does not provide a private key
+		EnrollmentPassword:   types.String{Null: true}, // Null because CSR enrollment does not provide an enrollment password
 		CertificateAuthority: plan.CertificateAuthority,
 		CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
 		CertificateTemplate:  plan.CertificateTemplate,

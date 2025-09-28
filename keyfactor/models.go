@@ -133,8 +133,9 @@ type CommandCertificate struct {
 	JKS       types.String `tfsdk:"jks"`               // Certificate data in JKS format (Base64 encoded).
 	Zip       types.String `tfsdk:"zip"`               // Certificate data in ZIP format (Base64 encoded).
 
-	PrivateKey  types.String `tfsdk:"private_key"`  // Private key in PEM format.
-	KeyPassword types.String `tfsdk:"key_password"` // Password for the private key.
+	PrivateKey         types.String `tfsdk:"private_key"`         // PrivateKey in PEM format.
+	KeyPassword        types.String `tfsdk:"key_password"`        // KeyPassword for the private key.
+	EnrollmentPassword types.String `tfsdk:"enrollment_password"` // EnrollmentPassword used during certificate issuance.
 
 	// Keyfactor Fields
 	CertificateAuthority types.String                `tfsdk:"certificate_authority"` // CertificateAuthority defines the CA name used for certificate issuance in Keyfactor Command

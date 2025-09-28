@@ -32,4 +32,4 @@ const (
 	//DefaultAPIPath     = "KeyfactorAPI"
 )
 
-var VALID_CERTIFICATE_FORMATS = []string{"PFX", "PEM", "JKS", "Zip"}
+var VALID_CERTIFICATE_FORMATS = []string{"PFX", "PEM", "JKS", "ZIP", "STORE"}

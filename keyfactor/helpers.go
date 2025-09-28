@@ -11,6 +11,7 @@
 package keyfactor
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -684,7 +685,8 @@ func recoverPrivateKeyFromKeyfactorCommand(
 	collectionId int,
 	lookupPassword string,
 	client *api.Client,
-) (string, string, string, diag.Diagnostics) {
+	certificateFormat string,
+) (string, string, string, *string, diag.Diagnostics) {
 	diags := diag.Diagnostics{}
 
 	if client == nil {
@@ -693,11 +695,19 @@ func recoverPrivateKeyFromKeyfactorCommand(
 			"Error recovering private key from Keyfactor Command",
 			"Keyfactor Command client is nil.",
 		)
-		return "", "", "", diags
+		return "", "", "", nil, diags
 	}
 
 	tflog.Info(ctx, "Attempting to recover private key from Keyfactor Command.")
-	pkey, leaf, certChain, recErr := client.RecoverCertificate(certId, "", "", "", lookupPassword, collectionId)
+	pkey, leaf, certChain, rawBytes, recErr := client.RecoverCertificate(
+		certId,
+		"",
+		"",
+		"",
+		lookupPassword,
+		collectionId,
+		certificateFormat,
+	)
 	if recErr != nil {
 		errMsg := fmt.Sprintf(
 			"Unable to recover private key for certificate '%v' from Keyfactor Command: %v",
@@ -706,7 +716,7 @@ func recoverPrivateKeyFromKeyfactorCommand(
 		)
 		tflog.Error(ctx, errMsg)
 		diags.AddError("Error recovering private key from Keyfactor Command", errMsg)
-		return "", "", "", diags
+		return "", "", "", rawBytes, diags
 	}
 
 	if pkey == nil {
@@ -715,7 +725,7 @@ func recoverPrivateKeyFromKeyfactorCommand(
 		)
 		tflog.Error(ctx, errMsg)
 		diags.AddError("No private key returned", errMsg)
-		return "", "", "", diags
+		return "", "", "", rawBytes, diags
 	}
 
 	tflog.Info(ctx, "Private key successfully recovered from Keyfactor Command.")
@@ -724,14 +734,14 @@ func recoverPrivateKeyFromKeyfactorCommand(
 		errMsg := "Error parsing private key from Keyfactor Command."
 		tflog.Error(ctx, errMsg)
 		diags.AddError(errMsg, errMsg)
-		return "", "", "", diags
+		return "", "", "", rawBytes, diags
 	}
 
 	certPEM, _ := encodeCertificate(ctx, leaf, certId)
 
 	chainPEM := encodeCertificateChain(ctx, certChain, certId)
 
-	return pkeyPEM, certPEM, chainPEM, diags
+	return pkeyPEM, certPEM, chainPEM, rawBytes, diags
 }
 
 // encodeCertificate encodes a provided certificate into a PEM-formatted string and returns it.
@@ -972,22 +982,29 @@ func downloadCertificateFromKeyfactorCommand(
 	certId int,
 	collectionId int,
 	client *api.Client,
-) (string, string, diag.Diagnostics) {
+) (string, string, *string, diag.Diagnostics) {
 	diags := diag.Diagnostics{}
 	if client == nil {
 		tflog.Error(ctx, "Keyfactor Command client is nil. Unable to download the certificate.")
 		diags.AddError(ERR_SUMMARY_CERTIFICATE_DOWNLOAD, "Keyfactor Command client is nil.")
-		return "", "", diags
+		return "", "", nil, diags
 	}
 
 	tflog.Debug(ctx, "Downloading certificate and chain from Keyfactor Command.")
-	leaf, chain, dErr := client.DownloadCertificate(certId, "", "", "", collectionId)
+	leaf, chain, rawData, dErr := client.DownloadCertificate(
+		certId,
+		"",
+		"",
+		"",
+		collectionId,
+		"P7B",
+	)
 	if dErr != nil {
 		errMsg := "Error downloading certificate from Keyfactor Command: " + dErr.Error()
 		if leaf == nil && chain == nil {
 			tflog.Error(ctx, errMsg)
 			diags.AddError(ERR_SUMMARY_CERTIFICATE_DOWNLOAD, errMsg)
-			return "", "", diags
+			return "", "", rawData, diags
 		}
 		tflog.Warn(ctx, errMsg)
 		diags.AddWarning("Certificate download warning", errMsg)
@@ -999,14 +1016,14 @@ func downloadCertificateFromKeyfactorCommand(
 		if chain == nil {
 			tflog.Error(ctx, errMsg)
 			diags.AddError(ERR_SUMMARY_CERTIFICATE_DOWNLOAD, errMsg)
-			return "", "", diags
+			return "", "", rawData, diags
 		}
 
 		tflog.Warn(ctx, errMsg)
 	}
 	chainPEM := encodeCertificateChain(ctx, chain, certId)
 
-	return leafPEM, chainPEM, diags
+	return leafPEM, chainPEM, rawData, diags
 }
 
 // terraformBoolToGoBool converts a Terraform boolean string to a Go boolean.
@@ -1159,9 +1176,17 @@ func unpackPkcs12(pfxData interface{}, password string) (
 ) {
 	// Convert pfxData to []byte, if necessary
 	var pfxBytes []byte
+
 	switch v := pfxData.(type) {
 	case string:
+		// attempt to base64 decode first
 		pfxBytes = []byte(v) // Convert string to []byte
+		decoded, decodeErr := base64.StdEncoding.DecodeString(v)
+		if decodeErr == nil && len(decoded) > 0 {
+			pfxBytes = decoded
+			break
+		}
+
 	case []byte:
 		pfxBytes = v
 	default:
@@ -1275,7 +1300,8 @@ func recoverOrDownloadCertificate(
 	id, collectionID int,
 	password string,
 	client *api.Client,
-) (leafPEM, chainPEM, pKeyPEM string, diagnostics diag.Diagnostics) {
+	certificateFormat string,
+) (leafPEM, chainPEM, pKeyPEM string, rawBytes *string, diagnostics diag.Diagnostics) {
 	// Attempt private key recovery
 	diags := diag.Diagnostics{}
 	if password == "" {
@@ -1287,19 +1313,20 @@ func recoverOrDownloadCertificate(
 		)
 	}
 	tflog.Debug(ctx, "Calling recoverPrivateKeyFromKeyfactorCommand()")
-	pKeyPEM, leafPEM, chainPEM, diags = recoverPrivateKeyFromKeyfactorCommand(
+	pKeyPEM, leafPEM, chainPEM, rawBytes, diags = recoverPrivateKeyFromKeyfactorCommand(
 		ctx,
 		id,
 		collectionID,
 		password,
 		client,
+		certificateFormat,
 	)
 	if leafPEM == "" || diags.HasError() {
 		// Attempt to download certificate as a fallback
 		tflog.Debug(ctx, "Unable to recover private key. Attempting to download certificate from Keyfactor Command.")
-		leafPEM, chainPEM, diags = downloadCertificateFromKeyfactorCommand(ctx, id, collectionID, client)
+		leafPEM, chainPEM, rawBytes, diags = downloadCertificateFromKeyfactorCommand(ctx, id, collectionID, client)
 	}
-	return leafPEM, chainPEM, pKeyPEM, diags
+	return leafPEM, chainPEM, pKeyPEM, rawBytes, diags
 }
 
 // logInitialCertificateFields logs common certificate fields.
@@ -1538,8 +1565,63 @@ func checkCertDiags(
 	return revoked, expiring, expired, diags
 }
 
+// decodeToPEM decodes a base64-encoded DER blob and returns PEM-encoded certificate(s).
+// If the DER contains one or more X.509 certs they will be emitted individually;
+// otherwise the raw DER will be emitted inside a single CERTIFICATE PEM block.
+func decodeToPEM(b64 string) (string, error) {
+	// remove any whitespace/newlines that might be in the input
+	clean := strings.Map(
+		func(r rune) rune {
+			if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
+				return -1
+			}
+			return r
+		}, b64,
+	)
+
+	der, err := base64.StdEncoding.DecodeString(clean)
+	if err != nil {
+		return "", fmt.Errorf("base64 decode: %w", err)
+	}
+
+	var buf bytes.Buffer
+
+	// Try parsing as one or more X.509 certificates
+	if certs, err := x509.ParseCertificates(der); err == nil && len(certs) > 0 {
+		for _, c := range certs {
+			if err := pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: c.Raw}); err != nil {
+				return "", fmt.Errorf("pem encode: %w", err)
+			}
+		}
+		return buf.String(), nil
+	}
+
+	// Fallback: emit raw DER in a single CERTIFICATE block
+	if err := pem.Encode(&buf, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
+		return "", fmt.Errorf("pem encode fallback: %w", err)
+	}
+
+	return buf.String(), nil
+}
+
 func parseLeafCert(ctx context.Context, leafPEM string) (*x509.Certificate, diag.Diagnostics) {
 	diags := diag.Diagnostics{}
+
+	// check if is in base64 format and decode if so
+	decoded, decodeErr := base64.StdEncoding.DecodeString(leafPEM)
+	if decodeErr == nil && len(decoded) > 0 {
+		leafPEM, decodeErr = decodeToPEM(leafPEM)
+		if decodeErr == nil {
+			leaf, err := x509.ParseCertificate(
+				decoded,
+			)
+			if err == nil && leaf != nil {
+				tflog.Debug(ctx, "Leaf certificate was base64-encoded DER, successfully decoded.")
+				return leaf, diags
+			}
+		}
+	}
+
 	block, extra := pem.Decode([]byte(leafPEM))
 	if block == nil && extra == nil {
 		diags.AddError(
@@ -1553,6 +1635,13 @@ func parseLeafCert(ctx context.Context, leafPEM string) (*x509.Certificate, diag
 			"Certificate PEM is missing a block header, and contains extra data. Attempting to decode the extra data.",
 		)
 		block, _ = pem.Decode(extra)
+	}
+	if block == nil {
+		diags.AddError(
+			"PEM Decoding Failed",
+			"Failed to decode the PEM-encoded certificate.",
+		)
+		return nil, diags
 	}
 
 	leaf, err := x509.ParseCertificate(block.Bytes)

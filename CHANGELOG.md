@@ -1,3 +1,17 @@
+# v2.6.0
+
+### Enrollment Patterns
+
+#### Features
+- feat(enrollment_patterns): Add new data source `keyfactor_enrollment_pattern` to look up enrollment patterns by name or id.
+
+### Certificates
+
+#### Features
+- feat(certificates): `keyfactor_certificate` Add support for `owner_role_name`.
+- feat(certificates): `keyfactor_certificate` Add support for `enrollment_pattern`.
+- feat(certificates): `keyfactor_certificate` Add support for `certificate_format`.
+
 # v2.5.1
 
 ### Certificates

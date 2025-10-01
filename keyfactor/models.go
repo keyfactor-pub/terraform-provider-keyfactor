@@ -284,11 +284,11 @@ type CertificateEnrollmentPattern struct {
 	UseADPermissions       types.Bool                         `tfsdk:"use_ad_permissions"`
 	AssociatedRoles        *[]EnrollmentPatternAssociatedRole `tfsdk:"associated_roles"`
 	CertificateAuthorities *[]EnrollmentPatternCA             `tfsdk:"certificate_authorities"`
-	AllowedEnrollmentTypes types.Int64                        `tfsdk:"allowed_enrollment_types"` // todo ENUMS
+	AllowedEnrollmentTypes types.Int64                        `tfsdk:"allowed_enrollment_types"`
 	Regexes                *[]EnrollmentPatternRegexes        `tfsdk:"regexes"`
 	MetadataFields         *[]EnrollmentPatternMetadataField  `tfsdk:"metadata_fields"`
 	RestrictCAs            types.Bool                         `tfsdk:"restrict_cas"`
-	Policies               *EnrollmentPatternPolicyResponse   `tfsdk:"policies"` //todo double check if this is an array
+	Policies               *EnrollmentPatternPolicyResponse   `tfsdk:"policies"`
 	Defaults               *[]EnrollmentPatternDefault        `tfsdk:"defaults"`
 	EnrollmentFields       *[]EnrollmentPatternField          `tfsdk:"enrollment_fields"`
 }
@@ -325,7 +325,7 @@ type EnrollmentPatternMetadataField struct {
 	MetadataId    types.Int64  `tfsdk:"metadata_id"`
 	DefaultValue  types.String `tfsdk:"default_value"`
 	Validation    types.String `tfsdk:"validation"`
-	Enrollment    types.Int64  `tfsdk:"enrollment"` // todo enums
+	Enrollment    types.Int64  `tfsdk:"enrollment"`
 	Message       types.String `tfsdk:"message"`
 	CaseSensitive types.Bool   `tfsdk:"case_sensitive"`
 }

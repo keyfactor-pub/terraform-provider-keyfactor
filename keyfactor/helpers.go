@@ -1908,3 +1908,34 @@ func stringContains(slice []string, str string) bool {
 	}
 	return false
 }
+
+// convertStringArrayToTerraform converts a slice of strings to a slice of Terraform attr.Value objects.
+func convertStringArrayToTerraform(options []string) []attr.Value {
+	var output []attr.Value
+	for _, option := range options {
+		output = append(output, types.String{Value: option})
+	}
+	return output
+}
+
+// convertIntArrayToTerraform converts a slice of integers (int, int32, int64) to a slice of Terraform attr.Value objects.
+func convertIntArrayToTerraform(lengths any) []attr.Value {
+	var result []attr.Value
+	if lengths != nil {
+		switch v := lengths.(type) {
+		case []int:
+			for _, length := range v {
+				result = append(result, types.Int64{Value: int64(length)})
+			}
+		case []int32:
+			for _, length := range v {
+				result = append(result, types.Int64{Value: int64(length)})
+			}
+		case []int64:
+			for _, length := range v {
+				result = append(result, types.Int64{Value: length})
+			}
+		}
+	}
+	return result
+}

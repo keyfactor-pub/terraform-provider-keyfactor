@@ -5,17 +5,15 @@ go 1.24.0
 require (
 	github.com/Keyfactor/keyfactor-auth-client-go v1.3.0
 	github.com/Keyfactor/keyfactor-go-client-sdk/v24 v24.0.2
-	github.com/Keyfactor/keyfactor-go-client/v3 v3.3.0-rc.5
+	github.com/Keyfactor/keyfactor-go-client/v3 v3.3.0-rc.6
 	github.com/hashicorp/terraform-plugin-framework v0.10.0
 	github.com/hashicorp/terraform-plugin-go v0.18.0
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.27.0
 	github.com/spbsoluble/go-pkcs12 v0.3.3
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.42.0 // indirect
 )
-
-require github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0 // indirect

@@ -273,3 +273,96 @@ type CertificateTemplateRoleBinding struct {
 	RoleName      types.String `tfsdk:"role_name"`
 	TemplateNames types.List   `tfsdk:"template_short_names"`
 }
+
+type CertificateEnrollmentPattern struct {
+	Identifier             types.String                       `tfsdk:"identifier"`
+	ID                     types.Int64                        `tfsdk:"id"`
+	Name                   types.String                       `tfsdk:"name"`
+	Description            types.String                       `tfsdk:"description"`
+	Template               *EnrollmentPatternTemplate         `tfsdk:"template"`
+	TemplateDefault        types.Bool                         `tfsdk:"template_default"`
+	UseADPermissions       types.Bool                         `tfsdk:"use_ad_permissions"`
+	AssociatedRoles        *[]EnrollmentPatternAssociatedRole `tfsdk:"associated_roles"`
+	CertificateAuthorities *[]EnrollmentPatternCA             `tfsdk:"certificate_authorities"`
+	AllowedEnrollmentTypes types.Int64                        `tfsdk:"allowed_enrollment_types"` // todo ENUMS
+	Regexes                *[]EnrollmentPatternRegexes        `tfsdk:"regexes"`
+	MetadataFields         *[]EnrollmentPatternMetadataField  `tfsdk:"metadata_fields"`
+	RestrictCAs            types.Bool                         `tfsdk:"restrict_cas"`
+	Policies               *EnrollmentPatternPolicyResponse   `tfsdk:"policies"` //todo double check if this is an array
+	Defaults               *[]EnrollmentPatternDefault        `tfsdk:"defaults"`
+	EnrollmentFields       *[]EnrollmentPatternField          `tfsdk:"enrollment_fields"`
+}
+
+type EnrollmentPatternTemplate struct {
+	Id                  types.Int64  `tfsdk:"id"`
+	TemplateName        types.String `tfsdk:"template_name"`
+	CommonName          types.String `tfsdk:"common_name"`
+	ConfigurationTenant types.String `tfsdk:"configuration_tenant"`
+	RequiresApproval    types.Bool   `tfsdk:"requires_approval"`
+	FriendlyName        types.String `tfsdk:"friendly_name"`
+}
+
+type EnrollmentPatternAssociatedRole struct {
+	Id   types.Int64  `tfsdk:"id"`   // Role ID
+	Name types.String `tfsdk:"name"` // Role Name
+}
+
+type EnrollmentPatternCA struct {
+	Id                  types.Int64  `tfsdk:"id"`
+	LogicalName         types.String `tfsdk:"logical_name"`
+	HostName            types.String `tfsdk:"host_name"`
+	ConfigurationTenant types.String `tfsdk:"configuration_tenant"`
+}
+
+type EnrollmentPatternRegexes struct {
+	SubjectPart   types.String `tfsdk:"subject_part"`
+	Regex         types.String `tfsdk:"regex"`
+	Error         types.String `tfsdk:"error"`
+	CaseSensitive types.Bool   `tfsdk:"case_sensitive"`
+}
+
+type EnrollmentPatternMetadataField struct {
+	MetadataId    types.Int64  `tfsdk:"metadata_id"`
+	DefaultValue  types.String `tfsdk:"default_value"`
+	Validation    types.String `tfsdk:"validation"`
+	Enrollment    types.Int64  `tfsdk:"enrollment"` // todo enums
+	Message       types.String `tfsdk:"message"`
+	CaseSensitive types.Bool   `tfsdk:"case_sensitive"`
+}
+
+type EnrollmentPatternPolicyResponse struct {
+	AllowKeyReuse                   types.Bool                                  `tfsdk:"allow_key_reuse"`
+	AllowWildcards                  types.Bool                                  `tfsdk:"allow_wildcards"`
+	RFCEnforcement                  types.Bool                                  `tfsdk:"rfc_enforcement"`
+	CertificateOwnerRole            types.Int64                                 `tfsdk:"certificate_owner_role"` // enums 0-3
+	DefaultCertificateOwnerRoleId   types.Int64                                 `tfsdk:"default_certificate_owner_role_id"`
+	DefaultCertificateOwnerRoleName types.String                                `tfsdk:"default_certificate_owner_role_name"`
+	DefaultCertificateOwnerOverride types.Bool                                  `tfsdk:"default_certificate_owner_override"`
+	PrimaryKeyAlgorithms            []EnrollmentPatternsAlgorithmsAlgorithmData `tfsdk:"primary_key_algorithms"`
+	AlternativeKeyAlgorithms        []EnrollmentPatternsAlgorithmsAlgorithmData `tfsdk:"alternative_key_algorithms"`
+}
+
+type EnrollmentPatternsAlgorithmsAlgorithmData struct {
+	Name       types.String `tfsdk:"name"`
+	BitLengths types.List   `tfsdk:"bit_lengths"`
+	CurveName  types.List   `tfsdk:"curves"`
+}
+
+type EnrollmentPatternDefault struct {
+	SubjectPart types.String `tfsdk:"subject_part"`
+	Value       types.String `tfsdk:"value"`
+}
+
+type EnrollmentPatternField struct {
+	Id             types.Int64  `tfsdk:"id"`
+	Name           types.String `tfsdk:"name"`
+	DefaultValue   types.String `tfsdk:"default_value"`
+	Validation     types.String `tfsdk:"validation"`
+	Enrollment     types.Int64  `tfsdk:"enrollment"`
+	Message        types.String `tfsdk:"message"`
+	Options        types.List   `tfsdk:"options"`
+	DependsOn      types.String `tfsdk:"depends_on"`
+	DependsOnValue types.String `tfsdk:"depends_on_value"`
+	DataType       types.Int64  `tfsdk:"data_type"`
+	Hint           types.String `tfsdk:"hint"`
+}

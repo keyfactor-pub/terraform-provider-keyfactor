@@ -511,8 +511,8 @@ func (r dataSourceCertificate) Read(
 		ownerRoleName = certGetResp.OwnerRoleName
 		enrollmentPattern = fmt.Sprintf("%d", certGetResp.EnrollmentPatternId)
 		enrollmentPatternName, epErr := r.p.client.GetEnrollmentPattern(certGetResp.EnrollmentPatternId)
-		if epErr == nil && enrollmentPatternName != nil && enrollmentPatternName.Name != nil {
-			enrollmentPattern = *enrollmentPatternName.Name
+		if epErr == nil && enrollmentPatternName != nil && enrollmentPatternName.Name != "" {
+			enrollmentPattern = enrollmentPatternName.Name
 		}
 	}
 

@@ -864,8 +864,8 @@ func (r resourceCommandCertificate) Read(
 			}
 		} else {
 			enrollmentPatternNamePtr := enrollmentPatternResp.Name
-			if enrollmentPatternNamePtr != nil {
-				enrollmentPatternName = *enrollmentPatternNamePtr
+			if enrollmentPatternNamePtr != "" {
+				enrollmentPatternName = enrollmentPatternNamePtr
 			} else {
 				enrollmentPatternName = fmt.Sprintf("%d", enrollmentPatternId)
 			}
@@ -2432,7 +2432,7 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByName(
 		return 0, fmt.Errorf("could not list enrollment patterns: %w", err)
 	}
 	for _, pattern := range patterns {
-		if pattern.Name != nil && *pattern.Name == patternName {
+		if pattern.Name != "" && pattern.Name == patternName {
 			tflog.Debug(
 				ctx,
 				fmt.Sprintf("Found enrollment pattern ID %d for pattern name: %s", pattern.ID, patternName),

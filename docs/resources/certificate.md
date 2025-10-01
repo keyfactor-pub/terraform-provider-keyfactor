@@ -27,7 +27,7 @@ resource "keyfactor_certificate" "pkcs12_enrollment" {
   key_password          = "Don't put this in your production code!"
   certificate_authority = "COMMAND\\MY_CA_01"
   # certificate_template  = "2yrWebServer" // Deprecated as of Keyfactor 25.x in favor of certificate_enrollment_pattern
-  certificate_enrollment_pattern  = "2yrWebServer"
+  certificate_enrollment_pattern = "2yrWebServer"
   metadata = {
     "Email-Contact" = "kfadmin@keyfactor.com"
     "Owner"         = "integrations@keyfactor.com"
@@ -74,7 +74,7 @@ resource "keyfactor_certificate" "kf_csr_cert" {
   csr                   = tls_cert_request.csr.cert_request_pem
   certificate_authority = "COMMAND\\MY_CA_01"
   # certificate_template  = "2yrWebServer" // Deprecated as of Keyfactor 25.x in favor of certificate_enrollment_pattern
-  certificate_enrollment_pattern  = "2yrWebServer"
+  certificate_enrollment_pattern = "2yrWebServer"
   metadata = {
     "Email-Contact" = "my_username@mydomain.com"
     # Note: metadata keys must be defined in Keyfactor and cannot just be arbitrarily added
@@ -154,6 +154,7 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 - `certificate_id` (Number) Keyfactor Command certificate ID.
 - `certificate_pem` (String) PEM formatted certificate
 - `command_request_id` (Number) Keyfactor request ID.
+- `enrollment_password` (String, Sensitive) The password used during certificate issuance. Also used to unlock PFX/PKCS12 and JKS keystores. Only returned if the certificate template has KeyRetention set to a value other than None. Will use `key_password` value if specified else will generate a random password of length12 with a minimum of 4 uppercase, 4 numeric, and 0 special characters. Review this provider's schema docs for more details: https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs#schema
 - `identifier` (String) Keyfactor certificate identifier. This can be any of the following values: thumbprint, CN, or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must be an exact match and if multiple certificates are returned the certificate that was most recently issued will be returned.
 - `is_expired` (Boolean) Whether the certificate is expired
 - `is_pending_revocation` (Boolean) Whether the certificate is pending revocation

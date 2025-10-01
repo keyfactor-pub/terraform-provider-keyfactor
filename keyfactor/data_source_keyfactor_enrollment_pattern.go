@@ -29,12 +29,12 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 			"name": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "A string containing the name of the enrollment pattern.",
+				Description: "A string indicating the Keyfactor Command reference name of the enrollment pattern.",
 			},
 			"description": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "A string containing the description of the enrollment pattern.",
+				Description: "A string indicating the Keyfactor Command description of the enrollment pattern.",
 			},
 			"template": {
 				Type: types.ObjectType{
@@ -48,17 +48,17 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 					},
 				},
 				Computed:    true,
-				Description: "Template configuration for the enrollment pattern.",
+				Description: "An object containing information for the template associated with the enrollment pattern.",
 			},
 			"template_default": {
 				Type:        types.BoolType,
 				Computed:    true,
-				Description: "A boolean indicating whether this is the default template for the enrollment pattern.",
+				Description: "A Boolean indicating whether this enrollment pattern is the default pattern for the associated template (true) or not (false). A certificate template can have only one default enrollment pattern, which is required for the template to be used for enrollment. If no other enrollment pattern for the template exists or is marked as default, this option will automatically be enabled when a new pattern is created.",
 			},
 			"use_ad_permissions": {
 				Type:        types.BoolType,
 				Computed:    true,
-				Description: "A boolean indicating whether to use Active Directory permissions.",
+				Description: "A Boolean indicating whether Active Directory permissions should be used for certificate enrollment authorization (true) or whether Keyfactor Command security roles should be used (false). If set to false, at least one value must be provided for AssociatedRoles.",
 			},
 			"associated_roles": {
 				Type: types.ListType{
@@ -70,7 +70,7 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 					},
 				},
 				Computed:    true,
-				Description: "List of roles associated with this enrollment pattern.",
+				Description: "An array of objects indicating the security roles associated with the enrollment pattern. Only users holding ones of these roles will be able to use the enrollment pattern if UseADPermissions is false.",
 			},
 			"certificate_authorities": {
 				Type: types.ListType{
@@ -83,13 +83,14 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 						},
 					},
 				},
-				Computed:    true,
-				Description: "List of certificate authorities associated with this enrollment pattern.",
+				Computed: true,
+				Description: "An array of objects indicating the certificate authorities to which the enrollment" +
+					" pattern is restricted, if applicable (see the RestrictCAs parameter).",
 			},
 			"allowed_enrollment_types": {
 				Type:        types.Int64Type,
 				Computed:    true,
-				Description: "An integer indicating the type of enrollment allowed for the enrollment pattern.",
+				Description: "An integer indicating the type of enrollment allowed for the enrollment pattern. Setting these options causes the enrollment pattern to appear in dropdowns in the corresponding section of the Management Portal. In the case of CSR Enrollment and PFX Enrollment, the enrollment patterns only appear in dropdowns on the enrollment pages if they are available for enrollment from a CA also configured for enrollment within Keyfactor Command. See HTTPS CAs - Enrollment Section or DCOM CAs - Enrollment Section for more information.",
 			},
 			"regexes": {
 				Type: types.ListType{
@@ -103,7 +104,7 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 					},
 				},
 				Computed:    true,
-				Description: "List of regular expressions for the enrollment pattern.",
+				Description: "An array of objects containing regular expressions specific to an individual enrollment pattern, used to validate the subject data. Regular expressions defined on an enrollment pattern apply to enrollments made with that enrollment pattern only. Regular expressions defined for enrollment patterns take precedence over system-wide regular expressions.",
 			},
 			"metadata_fields": {
 				Type: types.ListType{
@@ -119,12 +120,22 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 					},
 				},
 				Computed:    true,
-				Description: "List of metadata fields for the enrollment pattern.",
+				Description: "An array of objects containing metadata field settings specific to an individual enrollment pattern.",
+				MarkdownDescription: `
+An array of objects containing metadata field settings specific to an individual enrollment pattern. These metadata field configurations can override global metadata field configurations in these possible ways:
+
+- Configuration on the metadata field of required, optional or hidden.
+- The default value for the metadata field.
+- A regular expression defined for the field (string fields only) against which entered data will be validated along with its associated message.
+- For fields of data type multiple choice, the list of values that appear in multiple choice dropdowns.
+
+Metadata field settings defined on an enrollment pattern apply to enrollments made with that enrollment pattern only and take precedence over global-level metadata field settings.
+`,
 			},
 			"restrict_cas": {
 				Type:        types.BoolType,
 				Computed:    true,
-				Description: "A boolean indicating whether to restrict certificate authorities.",
+				Description: "A Boolean indicating whether the enrollment pattern should be restricted to use with a specified list of certificate authorities (true) or not (false). If set to true, at least one CA must be configured using the CertificateAuthorities parameter.",
 			},
 			"policies": {
 				Type: types.ObjectType{
@@ -157,7 +168,7 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 					},
 				},
 				Computed:    true,
-				Description: "Policy configuration for the enrollment pattern.",
+				Description: "An object containing the individual policy settings for the enrollment pattern. Policies defined on an enrollment pattern apply to enrollments made with that enrollment pattern only and take precedence over system-wide policies. For more information about system-wide enrollment pattern policies, see GET Enrollment Patterns Settings.",
 			},
 			"defaults": {
 				Type: types.ListType{
@@ -168,8 +179,9 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 						},
 					},
 				},
-				Computed:    true,
-				Description: "List of default values for the enrollment pattern.",
+				Computed: true,
+				Description: "An array of objects containing default subject settings specific to an individual" +
+					" enrollment pattern. Default subjects defined on an enrollment pattern apply to enrollments made with that enrollment pattern only and take precedence over system-wide default subject settings. For more information about system-wide defaults, see GET Enrollment Patterns Settings",
 			},
 			"enrollment_fields": {
 				Type: types.ListType{
@@ -191,8 +203,31 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 				},
 				Computed:    true,
 				Description: "List of enrollment fields for the enrollment pattern.",
+				MarkdownDescription: `
+An object containing custom enrollment fields. These are configured for each enrollment pattern to allow you to submit custom fields with CSR enrollments and PFX enrollments, supplying custom request attributes to the CA during the enrollment process. This functionality offers benefits such as:
+
+- Preventing users from requesting invalid certificates, based on your specific certificate requirements per enrollment pattern.
+- Providing additional information to the CA with the CSR.
+
+Once created for the enrollment pattern, these values are shown in Keyfactor Command on the PFX and CSR enrollment pages in the Additional Enrollment Fields section. The fields are mandatory during enrollment. The data will appear on the CA / Issued Certificates attribute tab for certificates enrolled with an enrollment pattern configured with Keyfactor Command enrollment fields.
+
+> [!NOTE]: 
+> These are not metadata fields, so they are not stored in the Keyfactor Command database, but simply passed through to the CA. The CA in turn could, via a gateway or policy module, use this data to perform required actions.
+`,
 			},
 		},
+		MarkdownDescription: `
+Reads an existing certificate from Keyfactor Command using the "/EnrollmentPatterns" API. 
+> [!NOTE]
+> The enrollment pattern can be identified by its name or internal ID.
+
+Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
+
+> [!IMPORTANT]
+> Enrollment Patterns are only available in Keyfactor Command v12.0+
+
+For full information on enrollment patterns view the [product documentation](https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern)
+`,
 	}, nil
 }
 

@@ -59,6 +59,7 @@ data "keyfactor_certificate" "cert_wo_pkey_id" {
 
 ### Optional
 
+- `certificate_format` (String) Optional: The output format to return the enrolled certificate in. Valid options are: `PEM, PFX, JKS, Zip` Defaults to: `PEM`
 - `collection_id` (Number) Optional certificate collection identifier used to ensure user access to the certificate.
 - `expiry_warn_days` (Number) Number of days before expiry to warn about the certificate. Defaults to 30 days.
 - `friendly_name` (String) Only applicable for PFX enrollments. A friendly name for the certificate. If not provided, the common name will be used unless `use_cn_as_friendly_name` is set to `false`.
@@ -72,6 +73,9 @@ data "keyfactor_certificate" "cert_wo_pkey_id" {
 - `ca_certificate` (String) PEM formatted CA certificate
 - `certificate_authority` (String) Name of certificate authority (CA) to deploy certificate with Ex: Example Company CA 1
 - `certificate_chain` (String) PEM formatted full certificate chain
+- `certificate_enrollment_pattern` (String) Either the `name` or internal `ID` (integer) indicating the enrollment pattern to use when requesting the certificate. If this value is not provided, the default enrollment pattern defined for the template provided in the request (see the Template parameter) will be used.
+
+One of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern. IMPORTANT: Requires Keyfactor Command v25.1.0+
 - `certificate_id` (Number) Keyfactor Command certificate ID.
 - `certificate_pem` (String) PEM formatted certificate
 - `certificate_template` (String) Short name of certificate template to be used. Ex: Server Authentication
@@ -80,19 +84,35 @@ data "keyfactor_certificate" "cert_wo_pkey_id" {
 - `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
 - `dns_sans` (List of String) List of DNS subject alternative names (DNS SANs) of the certificate. Ex: www.example.com
+- `enrollment_password` (String, Sensitive) The password used during certificate issuance. Also used to unlock PFX/PKCS12 and JKS keystores. Only returned if the certificate template has KeyRetention set to a value other than None. Will use `key_password` value if specified else will generate a random password of length12 with a minimum of 4 uppercase, 4 numeric, and 0 special characters. Review this provider's schema docs for more details: https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs#schema
 - `ip_sans` (List of String) List of IP subject alternative names (IP SANs) of the certificate. Ex: 192.168.0.200
 - `is_expired` (Boolean) Whether the certificate is expired
 - `is_pending_revocation` (Boolean) Whether the certificate is pending revocation
 - `is_revoked` (Boolean) Whether the certificate is revoked
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
+- `jks` (String, Sensitive) Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
 - `locality` (String) Subject locality (L) of the certificate
 - `organization` (String) Subject organization (O) of the certificate
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate
+- `owner_role_name` (String) A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
+
+Expanded Change Owner Permission: A user who holds the Certificates > Expanded Change Owner permission can set the certificate owner to any role within the permission sets they are a member of. This permission setting overrides the Certificates > Collections > Change Owner permission (both Global and Collection-level) if both are set.
+
+Collections > Change Owner Permission:
+
+Global or Collection Level—No Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can set the certificate owner to any role they belong to if there is not a default value populated from the enrollment pattern or existing certificate on a renewal.
+Global or Collection Level—Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can change the default certificate owner to any role they belong to. If the default value populated from the enrollment pattern or existing certificate on a renewal is not a role held by the acting user, the this value will not be populated in the Certificate Owner Role field. The user will still be allowed to add a new owner value.
+Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is required, not both. A certificate owner is required if the enrollment pattern or system-wide settings Certificate Owner Role policy has been configured as Required.
+
+> [!IMPORTANT]
+> Only compatible with Keyfactor Command versions v12.3.0 and later.
+- `pfx` (String, Sensitive) Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.
 - `private_key` (String, Sensitive) PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
 - `serial_number` (String) Serial number of newly enrolled certificate
 - `state` (String) Subject state (ST) of the certificate
 - `thumbprint` (String) Thumbprint of newly enrolled certificate
 - `uri_sans` (List of String) List of URI subject alternative names (URI SANs) of the certificate. Ex: https://www.example.com
+- `zip` (String, Sensitive) Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.
 
 <a id="nestedatt--renewal_config"></a>
 ### Nested Schema for `renewal_config`

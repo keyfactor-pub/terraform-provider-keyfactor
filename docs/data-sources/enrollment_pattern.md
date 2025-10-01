@@ -8,7 +8,7 @@ description: |-
   > The enrollment pattern can be identified by its name or internal ID.
   Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
   [!IMPORTANT]
-  Enrollment Patterns are only available in Keyfactor Command v12.0+
+  Enrollment Patterns are only available in Keyfactor Command v25.0+
   For full information on enrollment patterns view the product documentation https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern
 ---
 
@@ -21,7 +21,7 @@ Reads an existing certificate from Keyfactor Command using the "/EnrollmentPatte
 Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
 
 > [!IMPORTANT]
-> Enrollment Patterns are only available in Keyfactor Command v12.0+
+> Enrollment Patterns are only available in Keyfactor Command v25.0+
 
 For full information on enrollment patterns view the [product documentation](https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern)
 

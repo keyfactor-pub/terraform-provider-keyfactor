@@ -124,7 +124,7 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Computed: true,
 				Description: "Optional owner role name. " +
 					"This is required if the certificate template being used requires an owner role to be set during" +
-					" enrollment. Only compatible with Keyfactor Command versions v12.3.0 and later.",
+					" enrollment. Only compatible with Keyfactor Command versions v12.3.0+ and later.",
 				MarkdownDescription: `
 A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
 
@@ -137,7 +137,7 @@ Global or Collection Level—Default Value: A user who holds only the Certificat
 Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is required, not both. A certificate owner is required if the enrollment pattern or system-wide settings Certificate Owner Role policy has been configured as Required.
 
 > [!IMPORTANT]
-> Only compatible with Keyfactor Command versions v12.3.0 and later.
+> Only compatible with Keyfactor Command versions v12.3.0+ and later.
 `,
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},

@@ -11,11 +11,14 @@ resource "keyfactor_certificate" "pkcs12_enrollment" {
   uri_sans              = sort(["my.pkcs12.io"])
   key_password          = "Don't put this in your production code!"
   certificate_authority = "COMMAND\\MY_CA_01"
-  certificate_template  = "2yrWebServer"
+  # certificate_template  = "2yrWebServer" // Deprecated as of Keyfactor 25.x in favor of certificate_enrollment_pattern
+  certificate_enrollment_pattern = "2yrWebServer"
   metadata = {
     "Email-Contact" = "kfadmin@keyfactor.com"
     "Owner"         = "integrations@keyfactor.com"
   }
+
+  owner_role_name = "integrations"
 
   friendly_name = "friend"
   collection_id = 6
@@ -55,11 +58,14 @@ resource "tls_cert_request" "csr" {
 resource "keyfactor_certificate" "kf_csr_cert" {
   csr                   = tls_cert_request.csr.cert_request_pem
   certificate_authority = "COMMAND\\MY_CA_01"
-  certificate_template  = "2yrWebServer"
+  # certificate_template  = "2yrWebServer" // Deprecated as of Keyfactor 25.x in favor of certificate_enrollment_pattern
+  certificate_enrollment_pattern = "2yrWebServer"
   metadata = {
     "Email-Contact" = "my_username@mydomain.com"
     # Note: metadata keys must be defined in Keyfactor and cannot just be arbitrarily added
   }
+
+  owner_role_name = "my_role_name"
 
   collection_id = 2
 

@@ -1,45 +1,77 @@
+# v2.6.0
+
+## Enrollment Patterns
+
+### Features
+
+- feat(enrollment_patterns): Add new data source `keyfactor_enrollment_pattern` to look up enrollment patterns by name
+  or ID.
+
+## Certificates
+
+### Features
+
+- feat(certificates): `keyfactor_certificate` Add support for `owner_role_name` which can be referenced by name or ID.
+- feat(certificates): `keyfactor_certificate` Add support for `enrollment_pattern` which can be referenced by name or
+  ID.
+- feat(certificates): `keyfactor_certificate` Add support for `certificate_format`, supported formats are
+  `[PEM, JKS, PFX, ZIP]`, and defaults to `PEM`.
+
 # v2.5.1
 
 ### Certificates
 
 #### Fixes
+
 - fix(certificates): `keyfactor_certificate` resource CSR enrollment response not parsing certificates properly.
 - fix(certificates): `keyfactor_certificate` resource CSR enrollment does not fail on empty `[]Diagnotic`
-- fix(certificates): `keyfactor_certificate` resource CSR enrollment sets `IsExpired,IsRevoked,IsPendingRevocation` explicitly to `false`
-- fix(certificates): `keyfactor_certificate` resource CSR enrollment sets subject fields to state values to prevent inconsistent state.
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment sets `IsExpired,IsRevoked,IsPendingRevocation`
+  explicitly to `false`
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment sets subject fields to state values to prevent
+  inconsistent state.
 - fix(certificates): `keyfactor_certificate` resource CSR enrollment sets `renew_eligible` to known on update.
 - fix(certificates): `keyfactor_certificate` resource updates use state values for immutable fields.
 - fix(certificates): `keyfactor_certificate` resource `renewal_config` block correctly triggers based on `renew_days`
-- fix(certificates): `keyfactor_certificate` resource PFX enrollments w/ `renewal_config` block now correctly sets `renew_eligible` to `false` on create.
+- fix(certificates): `keyfactor_certificate` resource PFX enrollments w/ `renewal_config` block now correctly sets
+  `renew_eligible` to `false` on create.
 - fix(certificates): `keyfactor_certificate` resource `renew_eligible` calculation correction.
 
 #### Chores
-- chore(certificates): Update documentation for `keyfactor_certificate` `renewal_config` verbiage to be more clear on how it works.
+
+- chore(certificates): Update documentation for `keyfactor_certificate` `renewal_config` verbiage to be more clear on
+  how it works.
 
 ### Authentication
 
 #### Fixes
+
 - fix(deps): Bump `keyfactor-go-client-sdk` to `v24.0.2` to fix scopes not being set on OAuth requests.
 
 # v2.5.0
+
 ### OAuth Security Roles
 
 #### Features
+
 * feat(oauth_security_roles): Add support to read and manage security roles in Keyfactor Command (v2 API compatibility)
 
 ### OAuth Security Claims
 
 #### Features
+
 * feat(oauth_security_claims): Add support to read and manage security claims in Keyfactor Command
 
 ### OAuth Security Role Claims Association
 
 #### Features
-* feat(oauth_security_role_claim_association): Add support to associate an OAuth security claim to an OAuth security role resource.
+
+* feat(oauth_security_role_claim_association): Add support to associate an OAuth security claim to an OAuth security
+  role resource.
 
 ### Security Roles
 
 #### Chores
+
 * chore(roles): Update documentation for Security Roles to reference list of possible permission values.
 
 # v2.4.0
@@ -54,12 +86,18 @@
 ### Certificate Deployments
 
 #### Features
-* feat(deployments): Add support `overwrite` flag. *NOTE*: As of Keyfactor Command v12.0 if `overwrite=true` then the API will check if the certificate alias exists before scheduling a job.
-* feat(deployments): Add support for `redeploy` flag. Which will force a certificate to be `undeployed` and then `redeployed`.
+
+* feat(deployments): Add support `overwrite` flag. *NOTE*: As of Keyfactor Command v12.0 if `overwrite=true` then the
+  API will check if the certificate alias exists before scheduling a job.
+* feat(deployments): Add support for `redeploy` flag. Which will force a certificate to be `undeployed` and then
+  `redeployed`.
 
 ### Roles
-* chore(docs): Add deprecation notice to `keyfactor_role` resources to be replaced with `keyfactor_security_role` resource.
-* chore(docs): Add deprecation notice to `keyfactor_identity` resource to be replaced with `keyfactor_security_claim` resource.
+
+* chore(docs): Add deprecation notice to `keyfactor_role` resources to be replaced with `keyfactor_security_role`
+  resource.
+* chore(docs): Add deprecation notice to `keyfactor_identity` resource to be replaced with `keyfactor_security_claim`
+  resource.
 
 # v2.3.0
 

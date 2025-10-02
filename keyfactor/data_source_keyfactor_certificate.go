@@ -111,6 +111,36 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 				Description:   "Short name of certificate template to be used. Ex: Server Authentication",
 			},
+			"certificate_enrollment_pattern": {
+				Type:          types.StringType,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Description: "Either the `name` or internal `ID` (" +
+					"integer) indicating the enrollment pattern to use when" +
+					" requesting the certificate. If this value is not provided, the default enrollment pattern defined for the template provided in the request (see the Template parameter) will be used.\n\nOne of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern. IMPORTANT: Requires Keyfactor Command v25.1.0+",
+			},
+			"owner_role_name": {
+				Type:     types.StringType,
+				Computed: true,
+				Description: "Optional owner role name. " +
+					"This is required if the certificate template being used requires an owner role to be set during" +
+					" enrollment. Only compatible with Keyfactor Command versions v12.3.0+ and later.",
+				MarkdownDescription: `
+A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
+
+Expanded Change Owner Permission: A user who holds the Certificates > Expanded Change Owner permission can set the certificate owner to any role within the permission sets they are a member of. This permission setting overrides the Certificates > Collections > Change Owner permission (both Global and Collection-level) if both are set.
+
+Collections > Change Owner Permission:
+
+Global or Collection Level—No Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can set the certificate owner to any role they belong to if there is not a default value populated from the enrollment pattern or existing certificate on a renewal.
+Global or Collection Level—Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can change the default certificate owner to any role they belong to. If the default value populated from the enrollment pattern or existing certificate on a renewal is not a role held by the acting user, the this value will not be populated in the Certificate Owner Role field. The user will still be allowed to add a new owner value.
+Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is required, not both. A certificate owner is required if the enrollment pattern or system-wide settings Certificate Owner Role policy has been configured as Required.
+
+> [!IMPORTANT]
+> Only compatible with Keyfactor Command versions v12.3.0+ and later.
+`,
+				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+			},
 			"dns_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Computed:      true,
@@ -143,6 +173,14 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				//	// gives us a definitive answer.
 				//	return !d.HasChange(k)
 				//},
+			},
+			"certificate_format": {
+				Type:     types.StringType,
+				Optional: true,
+				Description: "Optional: The output format to return the enrolled certificate in. " +
+					"Valid options are: `PEM, PFX, JKS, Zip` Defaults to: `PEM`",
+				//Validators: []tfsdk.AttributeValidator{},
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"metadata": {
 				Type: types.MapType{
@@ -210,6 +248,40 @@ func (r dataSourceCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Computed:    true,
 				Sensitive:   true,
 				Description: "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+			},
+			"enrollment_password": {
+				Type:      types.StringType,
+				Computed:  true,
+				Sensitive: true,
+				Description: "The password used during certificate issuance. Also used to unlock PFX/PKCS12 and JKS" +
+					" keystores. Only returned if the certificate template has KeyRetention set to a value other than" +
+					" None. Will use `key_password` value if specified else will generate a random password of length" +
+					fmt.Sprintf("%d", DEFAULT_PFX_PASSWORD_LEN) + " with a minimum of " + fmt.Sprintf(
+					"%d",
+					DEFAULT_PFX_PASSWORD_UPPER_COUNT,
+				) +
+					" uppercase, " + fmt.Sprintf("%d", DEFAULT_PFX_PASSWORD_NUMBER_COUNT) + " numeric, and " +
+					fmt.Sprintf("%d", DEFAULT_PFX_PASSWORD_SPECIAL_CHAR_COUNT) + " special characters." +
+					" Review this provider's schema docs for more details: https://registry.terraform." +
+					"io/providers/keyfactor-pub/keyfactor/latest/docs#schema",
+			},
+			"jks": {
+				Type:        types.StringType,
+				Computed:    true,
+				Sensitive:   true,
+				Description: "Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+			},
+			"pfx": {
+				Type:        types.StringType,
+				Computed:    true,
+				Sensitive:   true,
+				Description: "Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.",
+			},
+			"zip": {
+				Type:        types.StringType,
+				Computed:    true,
+				Sensitive:   true,
+				Description: "Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.",
 			},
 			"use_cn_as_friendly_name": {
 				Type:     types.BoolType,
@@ -402,17 +474,46 @@ func (r dataSourceCertificate) Read(
 	}
 
 	// Attempt to recover or download certificate from Command
-	leafPEM, chainPEM, pKeyPEM, rDiags := recoverOrDownloadCertificate(
+
+	keyPassword := state.KeyPassword.Value
+	if state.KeyPassword.Null || state.KeyPassword.Value == "" {
+		keyPassword = generatePassword(
+			PFXPasswordLength,
+			PFXPasswordSpecialChars,
+			PFXPasswordDigits,
+			PFXPasswordUpperCases,
+		)
+	}
+
+	leafPEM, chainPEM, pKeyPEM, rawData, rDiags := recoverOrDownloadCertificate(
 		ctx,
 		certificateID,
 		collectionIdInt,
 		state.KeyPassword.Value,
 		r.p.client,
+		keyPassword,
 	)
 
 	// Handle leaf PEM encoding for certificates without private keys
-	if certGetResp != nil && leafPEM == "" {
-		leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certificateID)
+	var (
+		ownerRoleName     string
+		enrollmentPattern string
+	)
+	if certGetResp != nil {
+		if leafPEM == "" {
+			if certGetResp.ContentBytes == "" && rawData != nil {
+				leafPEM, _ = encodeCertificate(ctx, *rawData, certificateID)
+			} else {
+				leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certificateID)
+			}
+		}
+
+		ownerRoleName = certGetResp.OwnerRoleName
+		enrollmentPattern = fmt.Sprintf("%d", certGetResp.EnrollmentPatternId)
+		enrollmentPatternName, epErr := r.p.client.GetEnrollmentPattern(certGetResp.EnrollmentPatternId)
+		if epErr == nil && enrollmentPatternName != nil && enrollmentPatternName.Name != "" {
+			enrollmentPattern = enrollmentPatternName.Name
+		}
 	}
 
 	if leafPEM == "" {
@@ -522,22 +623,30 @@ func (r dataSourceCertificate) Read(
 			Value: strings.Join(leaf.Subject.OrganizationalUnit, ","),
 			Null:  false,
 		},
-		DNSSANs:      DNSSANStoTerraform(leaf.DNSNames, false),
-		IPSANs:       IPSANStoTerraform(leaf.IPAddresses, false),
-		URISANs:      URISANStoTerraform(leaf.URIs, false),
-		SerialNumber: types.String{Value: sn, Null: isNullString(sn)},
-		IssuerDN:     types.String{Value: issuerDN, Null: isNullString(issuerDN)},
-		Thumbprint:   types.String{Value: tp, Null: isNullString(tp)},
-		PEM:          types.String{Value: leafPEM, Null: isNullString(leafPEM)},
-		PEMCACert:    types.String{Value: chainPEM, Null: isNullString(chainPEM)},
-		PEMChain:     types.String{Value: fullChain, Null: isNullString(fullChain)},
-		PrivateKey:   types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
-		KeyPassword:  state.KeyPassword,
+		DNSSANs:            DNSSANStoTerraform(leaf.DNSNames, false),
+		IPSANs:             IPSANStoTerraform(leaf.IPAddresses, false),
+		URISANs:            URISANStoTerraform(leaf.URIs, false),
+		SerialNumber:       types.String{Value: sn, Null: isNullString(sn)},
+		IssuerDN:           types.String{Value: issuerDN, Null: isNullString(issuerDN)},
+		Thumbprint:         types.String{Value: tp, Null: isNullString(tp)},
+		PEM:                types.String{Null: true},
+		PEMCACert:          types.String{Null: true},
+		PEMChain:           types.String{Null: true},
+		PrivateKey:         types.String{Null: true},
+		JKS:                types.String{Null: true},
+		PFX:                types.String{Null: true},
+		Zip:                types.String{Null: true},
+		CertificateFormat:  state.CertificateFormat,
+		KeyPassword:        state.KeyPassword,
+		EnrollmentPassword: state.KeyPassword,
 		CertificateAuthority: types.String{
 			Value: caName,
 			Null:  isNullString(caName),
 		},
-		CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
+		CertificateTemplate: types.String{
+			Value: templateName,
+			Null:  isNullString(templateName) || enrollmentPattern != "",
+		},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(certificateID), Null: isNullId(certificateID)},
 		CollectionId:        state.CollectionId,
@@ -553,7 +662,32 @@ func (r dataSourceCertificate) Read(
 		IsPendingRevocation: types.Bool{
 			Null: true,
 		},
-		RenewalConfig: renewalConfig,
+		RenewalConfig:     renewalConfig,
+		OwnerRoleName:     types.String{Value: ownerRoleName, Null: isNullString(ownerRoleName)},
+		EnrollmentPattern: types.String{Value: enrollmentPattern, Null: isNullString(enrollmentPattern)},
+	}
+
+	switch state.CertificateFormat.Value {
+	case "PEM", "":
+		result.PEM = types.String{Value: leafPEM, Null: isNullString(leafPEM)}
+		result.PEMCACert = types.String{Value: chainPEM, Null: isNullString(chainPEM)}
+		result.PEMChain = types.String{Value: fullChain, Null: isNullString(fullChain)}
+		result.PrivateKey = types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)}
+	case "PFX", "Pfx", "pfx":
+		if rawData != nil {
+			result.PFX = types.String{Value: *rawData, Null: isNullString(*rawData)}
+			result.EnrollmentPassword = types.String{Value: keyPassword, Null: isNullString(keyPassword)}
+		}
+	case "JKS", "jks":
+		if rawData != nil {
+			result.JKS = types.String{Value: *rawData, Null: isNullString(*rawData)}
+			result.EnrollmentPassword = types.String{Value: keyPassword, Null: isNullString(keyPassword)}
+		}
+	case "ZIP", "Zip", "zip":
+		if rawData != nil {
+			result.Zip = types.String{Value: *rawData, Null: isNullString(*rawData)}
+			result.EnrollmentPassword = types.String{Value: keyPassword, Null: isNullString(keyPassword)}
+		}
 	}
 
 	// Set state

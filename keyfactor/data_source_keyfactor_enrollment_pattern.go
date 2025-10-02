@@ -587,9 +587,13 @@ func (r dataSourceEnrollmentPattern) Read(
 							},
 							BitLengths: types.List{
 								ElemType: types.Int64Type,
+								Elems:    convertIntArrayToTerraform(algo.BitLengths),
+								Null:     len(algo.BitLengths) == 0,
 							},
 							CurveName: types.List{
 								ElemType: types.StringType,
+								Elems:    convertStringArrayToTerraform(algo.Curves),
+								Null:     len(algo.Curves) == 0,
 							},
 						}
 						policies.AlternativeKeyAlgorithms = append(

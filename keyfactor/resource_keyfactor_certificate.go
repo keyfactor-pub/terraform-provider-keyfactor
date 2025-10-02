@@ -23,10 +23,6 @@ import (
 
 type resourceCommandCertificateType struct{}
 
-func (r resourceCommandCertificateType) ValidateConfig() {
-
-}
-
 func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
@@ -1243,7 +1239,7 @@ func (r resourceCommandCertificate) Update(
 			},
 			RenewalConfig: renewalConfig,
 
-			CertificateFormat: plan.CertificateFormat, //TODO: this might need to force replacement if changed
+			CertificateFormat: plan.CertificateFormat,
 			EnrollmentPattern: state.EnrollmentPattern,
 			OwnerRoleName:     plan.OwnerRoleName,
 			PFX:               state.PFX,

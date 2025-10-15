@@ -2,10 +2,11 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
 	"strconv"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 type certificateTestCase struct {
@@ -308,7 +309,12 @@ func TestAccKeyfactorCertificateResource(t *testing.T) {
 		},
 	})
 }
+
 func TestAccKeyfactorCertificateResource_DV_55177(t *testing.T) {
+	if os.Getenv("TF_ACC") != "1" {
+		t.Skip("Acceptance tests skipped unless env 'TF_ACC' set")
+	}
+
 	collectionIdStr := os.Getenv("KEYFACTOR_CERTIFICATE_COLLECTION_ID")
 	metadata := make(map[string]string)
 	metadata["Email-Contact"] = os.Getenv("KEYFACTOR_CERTIFICATE_EMAIL_CONTACT")

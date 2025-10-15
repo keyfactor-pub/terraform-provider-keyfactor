@@ -53,5 +53,3 @@ data "keyfactor_certificate_template" "webserver_template" {
 - `requires_approval` (Boolean) A Boolean indicating whether certificate enrollments require approval (true) or not (false).
 - `rfc_enforcement` (Boolean) A Boolean indicating whether certificate enrollments made through Keyfactor Command for this template must include at least one DNS SAN (true) or not (false). In the Keyfactor Command Management Portal, this causes the CN entered in PFX enrollment to automatically be replicated as a SAN, which the user can either change or accept.
 - `template_regexes` (List of String) List of regexes that the template will be matched against during enrollment.
-
-

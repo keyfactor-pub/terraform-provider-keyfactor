@@ -36,5 +36,3 @@ data "keyfactor_role" "admin" {
 - `description` (String) A string containing the description of the role in Keyfactor
 - `id` (Number) Internal ID of the role.
 - `permissions` (List of String) An array containing the permissions assigned to the role in a list of Name:Value pairs
-
-

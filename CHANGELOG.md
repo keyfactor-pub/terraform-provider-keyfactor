@@ -1,3 +1,10 @@
+# v2.6.1
+### Features
+- feat(oauth_security_role_claim_association): Add retry logic when creating a security role claim association to handle errors caused by concurrency issues.
+
+### Chores
+- Updated documetnation on the `oauth_security_role_claim_association` indicating a possible concurrency issue caused by simultaneous updates on the same security role.
+
 # v2.6.0
 
 ## Enrollment Patterns

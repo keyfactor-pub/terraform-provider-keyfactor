@@ -1831,11 +1831,6 @@ func getSecurityPermissionSetByName(
 	return model, nil
 }
 
-// Returns a pointer to the input object
-func ptr[T any](v T) *T {
-	return &v
-}
-
 // Converts a pointer to a string to a types.String object.
 // If the pointer is nil, it returns a types.String with Null set to true.
 func getStringType(value *string) types.String {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
 	"github.com/stretchr/testify/assert"
@@ -159,19 +160,19 @@ func TestMapOAuthSecurityClaim(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			claim := kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse{
-				Id:          ptr(int32(1234)),
-				Description: *kfv1.NewNullableString(ptr("Test")),
+				Id:          to.Ptr(int32(1234)),
+				Description: *kfv1.NewNullableString(to.Ptr("Test")),
 				ClaimType:   *kfv1.NewNullableString(&tt.claimType),
 				ClaimValue:  *kfv1.NewNullableString(&tt.remoteClaimValue),
-				Provider: ptr(kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionProviderResponse{
-					Id:                   ptr("cd0a5d39-ffeb-42ff-bd59-a791c1dbd8a5"),
+				Provider: to.Ptr(kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionProviderResponse{
+					Id:                   to.Ptr("cd0a5d39-ffeb-42ff-bd59-a791c1dbd8a5"),
 					AuthenticationScheme: *kfv1.NewNullableString(&tt.remoteProviderAuthScheme),
-					DisplayName:          *kfv1.NewNullableString(ptr("Test")),
+					DisplayName:          *kfv1.NewNullableString(to.Ptr("Test")),
 				}),
 			}
 
 			local := OAuthSecurityClaim{
-				Description:                  getStringType(ptr("Test")),
+				Description:                  getStringType(to.Ptr("Test")),
 				ClaimType:                    getStringType(&tt.claimType),
 				ClaimValue:                   getStringType(&tt.localClaimValue),
 				ProviderAuthenticationScheme: getStringType(&tt.localProviderAuthScheme),

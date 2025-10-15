@@ -617,6 +617,7 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 		"keyfactor_certificate":          dataSourceCertificateType{},
 		"keyfactor_certificate_store":    dataSourceCertificateStoreType{},
 		"keyfactor_certificate_template": dataSourceCertificateTemplateType{},
+		"keyfactor_enrollment_pattern":   dataSourceEnrollmentPatternType{},
 		"keyfactor_oauth_security_claim": dataSourceOAuthSecurityClaimType{},
 		"keyfactor_oauth_security_role":  dataSourceOAuthSecurityRoleType{},
 		"keyfactor_permission_set":       dataSourcePermissionSetType{},

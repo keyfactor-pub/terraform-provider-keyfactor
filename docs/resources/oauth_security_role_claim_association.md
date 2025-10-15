@@ -3,12 +3,22 @@
 page_title: "keyfactor_oauth_security_role_claim_association Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 /Security/Claims/ and V2 /Security/Roles APIs. This resource is compatible with Keyfactor Command versions 11+
+  Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 "/Security/Claims/" and V2 "/Security/Roles" APIs. 
+  		This resource is compatible with Keyfactor Command versions 11+. 
+  		
+  		---
+  		> [!IMPORTANT]
+  		> Creating / deleting multiple security role claim associations to the same security role simultaneously may lead to concurrency issues. Adding a "depends_on" block to the security role claim association can help prevent concurrent writes. A future version of Command will add concurrency protections.
 ---
 
 # keyfactor_oauth_security_role_claim_association (Resource)
 
-Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+
+Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 "/Security/Claims/" and V2 "/Security/Roles" APIs. 
+			This resource is compatible with Keyfactor Command versions 11+. 
+			
+			---
+			> [!IMPORTANT]
+			> Creating / deleting multiple security role claim associations to the same security role simultaneously may lead to concurrency issues. Adding a "depends_on" block to the security role claim association can help prevent concurrent writes. A future version of Command will add concurrency protections.
 
 ## Example Usage
 
@@ -17,10 +27,17 @@ data "keyfactor_permission_set" "global_permission_set" {
   name = "Global"
 }
 
-resource "keyfactor_oauth_security_claim" "subject_system_claim" {
+resource "keyfactor_oauth_security_claim" "subject_system_claim_1" {
   claim_type                     = "OAuthSubject"
-  claim_value                    = "example_username" # Format will vary by identity provider
-  description                    = "Example oAuth subject claim"
+  claim_value                    = "example_username_1" # Format will vary by identity provider
+  description                    = "Example 1 oAuth Subject claim"
+  provider_authentication_scheme = "System"
+}
+
+resource "keyfactor_oauth_security_claim" "subject_system_claim_2" {
+  claim_type                     = "OAuthSubject"
+  claim_value                    = "example_username_2" # Format will vary by identity provider
+  description                    = "Example 2 oAuth Subject claim"
   provider_authentication_scheme = "System"
 }
 
@@ -34,9 +51,15 @@ resource "keyfactor_oauth_security_role" "certificate_admin_role" {
   ]
 }
 
-resource "keyfactor_oauth_security_role_claim_association" "subject_system_claim_bind_certificate_admin_role" {
+resource "keyfactor_oauth_security_role_claim_association" "subject_system_claim_bind_certificate_admin_role_1" {
   role_id  = keyfactor_oauth_security_role.certificate_admin_role.id
-  claim_id = keyfactor_oauth_security_claim.subject_system_claim.id
+  claim_id = keyfactor_oauth_security_claim.subject_system_claim_1.id
+}
+
+resource "keyfactor_oauth_security_role_claim_association" "subject_system_claim_bind_certificate_admin_role_2" {
+  role_id    = keyfactor_oauth_security_role.certificate_admin_role.id
+  claim_id   = keyfactor_oauth_security_claim.subject_system_claim_2.id
+  depends_on = [keyfactor_oauth_security_role_claim_association.subject_system_claim_bind_certificate_admin_role_1] # Optional
 }
 ```
 
@@ -51,5 +74,3 @@ resource "keyfactor_oauth_security_role_claim_association" "subject_system_claim
 ### Read-Only
 
 - `id` (String) Internal ID of the OAuth security role claim association.
-
-

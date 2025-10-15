@@ -32,7 +32,7 @@ resource "keyfactor_oauth_security_role_claim_association" "subject_system_claim
 }
 
 resource "keyfactor_oauth_security_role_claim_association" "subject_system_claim_bind_certificate_admin_role_2" {
-  role_id  = keyfactor_oauth_security_role.certificate_admin_role.id
-  claim_id = keyfactor_oauth_security_claim.subject_system_claim_2.id
+  role_id    = keyfactor_oauth_security_role.certificate_admin_role.id
+  claim_id   = keyfactor_oauth_security_claim.subject_system_claim_2.id
   depends_on = [keyfactor_oauth_security_role_claim_association.subject_system_claim_bind_certificate_admin_role_1] # Optional
 }

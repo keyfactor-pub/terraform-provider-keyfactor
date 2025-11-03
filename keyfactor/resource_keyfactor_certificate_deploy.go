@@ -15,17 +15,36 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// Custom plan modifier
-type allowUpdateInPlaceOnCertIDChange struct{}
+// deploymentOverwriteOnCertIDChange is a plan modifier used by the certificate
+// deployment resource. It requires that the resource be replaced when the
+// `certificate_id` attribute changes unless the top-level `overwrite` attribute
+// in the plan is explicitly set to true.
+//
+// This modifier implements tfsdk.AttributePlanModifier and inspects both the
+// current state and the planned value for the attribute at req.AttributePath.
+// If both values are known and different and `overwrite` is not true, the
+// modifier sets resp.RequiresReplace = true so Terraform will plan a resource
+// replacement.
+type deploymentOverwriteOnCertIDChange struct{}
 
-func (m allowUpdateInPlaceOnCertIDChange) Description(ctx context.Context) string {
+// Description returns a brief plain-text description of the plan modifier.
+func (m deploymentOverwriteOnCertIDChange) Description(ctx context.Context) string {
 	return "Require replace when certificate_id changes unless `overwrite` is true."
 }
-func (m allowUpdateInPlaceOnCertIDChange) MarkdownDescription(ctx context.Context) string {
+
+// MarkdownDescription returns the description suitable for markdown rendering.
+func (m deploymentOverwriteOnCertIDChange) MarkdownDescription(ctx context.Context) string {
 	return m.Description(ctx)
 }
 
-func (m allowUpdateInPlaceOnCertIDChange) Modify(
+// Modify examines the plan and state for the target attribute and the top-level
+// `overwrite` attribute. If both the old and new certificate_id are known and
+// different, and `overwrite` is not set to true in the plan, this method marks
+// the attribute as requiring replacement by setting resp.RequiresReplace.
+//
+// The method is a no-op when either plan or state is missing, or when the
+// relevant values are unknown or null.
+func (m deploymentOverwriteOnCertIDChange) Modify(
 	ctx context.Context,
 	req tfsdk.ModifyAttributePlanRequest,
 	resp *tfsdk.ModifyAttributePlanResponse,
@@ -71,12 +90,10 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 				Description: "A unique identifier for this certificate deployment.",
 			},
 			"certificate_id": {
-				Type:        types.Int64Type,
-				Required:    true,
-				Description: "Keyfactor certificate ID",
-				PlanModifiers: []tfsdk.AttributePlanModifier{
-					allowUpdateInPlaceOnCertIDChange{},
-				},
+				Type:          types.Int64Type,
+				Required:      true,
+				Description:   "Keyfactor certificate ID",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"certificate_store_id": {
 				Type:          types.StringType,
@@ -121,6 +138,11 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 						"Triggers resource replacement when `redeploy` is set to `true`.", // Markdown Description
 					),
 				},
+			},
+			"skip_removal": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Description: "If set to `true`, deleting the resource will not remove the certificate from the store. Defaults to `false`.",
 			},
 		},
 		Description: "Used to schedule a certificate deployment(" +
@@ -288,6 +310,7 @@ func (r resourceCommandCertificateDeployment) Create(
 		JobParameters:    plan.JobParameters,
 		Redeploy:         plan.Redeploy,
 		Overwrite:        plan.Overwrite,
+		SkipRemoval:      plan.SkipRemoval,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -357,6 +380,7 @@ func (r resourceCommandCertificateDeployment) Read(
 		JobParameters:    state.JobParameters,
 		Redeploy:         state.Redeploy,
 		Overwrite:        state.Overwrite,
+		SkipRemoval:      state.SkipRemoval,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -497,6 +521,7 @@ func (r resourceCommandCertificateDeployment) Update(
 		JobParameters:    plan.JobParameters,
 		Redeploy:         plan.Redeploy,
 		Overwrite:        plan.Overwrite,
+		SkipRemoval:      plan.SkipRemoval,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -560,6 +585,13 @@ func (r resourceCommandCertificateDeployment) Delete(
 	//convert int64 to int
 	certId := int(certificateId)
 
+	if !state.SkipRemoval.Null && state.SkipRemoval.Value {
+		tflog.Info(ctx, "Skipping removal of certificate from store 'skip_removal' set to `true`.")
+		response.State.RemoveResource(ctx)
+		return
+	}
+
+	tflog.Info(ctx, "Removing certificate from store.")
 	err := removeCertificateAliasFromStore(ctx, kfClient, &diff, certId, certificateAlias)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {

@@ -2602,17 +2602,17 @@ func (r resourceCommandCertificate) enrollCSR(
 		diags.Append(metadataDiags...)
 	}
 
-	certificateFormat := DEFAULT_CERTIFICATE_ENROLLMENT_FORMAT
+	certificateFormat := DEFAULT_CERTIFICATE_CSR_ENROLLMENT_FORMAT
 	if !plan.CertificateFormat.IsNull() {
 		certificateFormat = strings.ToUpper(fmt.Sprintf("%s", plan.CertificateFormat.Value))
 		//check if certificate format is valid by seeing if it's in the list of valid formats
-		if !stringContains(VALID_CERTIFICATE_FORMATS, certificateFormat) {
+		if !stringContains(VALID_CSR_CERTIFICATE_FORMATS, certificateFormat) {
 			diags.AddError(
 				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 				fmt.Sprintf(
 					"Invalid certificate format '%s'. Valid formats are: %s",
 					certificateFormat,
-					strings.Join(VALID_CERTIFICATE_FORMATS, ", "),
+					strings.Join(VALID_CSR_CERTIFICATE_FORMATS, ", "),
 				),
 			)
 			return nil, diags
@@ -2744,13 +2744,6 @@ func (r resourceCommandCertificate) enrollCSR(
 		)
 	}
 
-	if !plan.CertificateFormat.IsNull() && plan.CertificateFormat.Value != "PEM" {
-		diags.AddWarning(
-			"`certificate_format` is set but not used in CSR enrollment.",
-			"The `certificate_format` field is not used in CSR enrollment, "+
-				"it will be ignored. The certificate will be returned in PEM format.",
-		)
-	}
 	var result = CommandCertificate{
 		ID: types.String{
 			Value: fmt.Sprintf(

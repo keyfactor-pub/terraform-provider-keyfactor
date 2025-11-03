@@ -2356,7 +2356,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		//PEMChain:             types.String{Value: chainPEM}, //This is set below depending out output format
 		//PrivateKey:           types.String{Value: pKeyPEM}, //This is set below depending out output format
 		KeyPassword:          plan.KeyPassword,
-		EnrollmentPassword:   types.String{Value: autoPassword, Null: isNullString(autoPassword)},
+		EnrollmentPassword:   types.String{Value: lookupPassword, Null: isNullString(lookupPassword)},
 		CertificateAuthority: plan.CertificateAuthority,
 		CertificateTemplate:  plan.CertificateTemplate,
 		CertificateId:        types.Int64{Value: int64(enrolledId)},

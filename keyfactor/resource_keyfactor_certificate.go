@@ -219,7 +219,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Optional: true,
 				Description: "Optional: The output format to return the enrolled certificate in. " +
 					"Valid PFX enrollment options are: `PEM, PFX, JKS, " +
-					"Zip`. Valid CSR enrollment opetions are `PEM, DER`. Defaults to: `PEM`",
+					"Zip`. Valid CSR enrollment options are `PEM, DER`. Defaults to: `PEM`",
 				//Validators: []tfsdk.AttributeValidator{},
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},

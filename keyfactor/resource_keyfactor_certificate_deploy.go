@@ -434,7 +434,7 @@ func (r resourceCommandCertificateDeployment) Update(
 	//ctx = tflog.SetField(ctx, "key_password", keyPassword)
 	ctx = tflog.SetField(ctx, "overwrite", overwrite)
 	ctx = tflog.SetField(ctx, "redeploy", forceRedploy)
-	tflog.Info(ctx, "Create called on certificate deployment resource")
+	tflog.Info(ctx, "Update called on certificate deployment resource")
 
 	//Read cert from Keyfactor Command
 	args := &api.GetCertificateContextArgs{
@@ -446,7 +446,7 @@ func (r resourceCommandCertificateDeployment) Update(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unknown error during read status of deployment of certificate '%s' to store '%s (%s)': "+err.Error(),
+				"Unknown error during read status of deployment of certificate '%d' to store '%s (%s)': "+err.Error(),
 				certificateId,
 				storeId,
 				certificateAlias,
@@ -498,7 +498,7 @@ func (r resourceCommandCertificateDeployment) Update(
 			response.Diagnostics.AddError(
 				"Deployment validation error.",
 				fmt.Sprintf(
-					"Unknown error during validation of deploy of certificate '%s' to store '%s (%s)': "+vErr2.Error(),
+					"Unknown error during validation of deploy of certificate '%d' to store '%s (%s)': "+vErr2.Error(),
 					certificateId,
 					storeId,
 					certificateAlias,

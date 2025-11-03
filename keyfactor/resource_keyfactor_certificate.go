@@ -21,6 +21,70 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
+// Plan modifier instance used in the schema:
+// PlanModifiers: []tfsdk.AttributePlanModifier{ replaceIfNotAfterWithinRenewalDays },
+var replaceIfNotAfterWithinRenewalDays tfsdk.AttributePlanModifier = renewEligibleReplaceOnExpiryWindow{}
+
+// Custom plan modifier for renewal eligibility window
+type renewEligibleReplaceOnExpiryWindow struct{}
+
+func (m renewEligibleReplaceOnExpiryWindow) Description(ctx context.Context) string {
+	return "Require replace when time until not_after is within or exceeds renew_days."
+}
+
+func (m renewEligibleReplaceOnExpiryWindow) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m renewEligibleReplaceOnExpiryWindow) Modify(
+	ctx context.Context,
+	req tfsdk.ModifyAttributePlanRequest,
+	resp *tfsdk.ModifyAttributePlanResponse,
+) {
+	// Need existing state to evaluate current certificate expiry
+	if req.State.Raw.IsNull() {
+		return
+	}
+
+	// Read not_after (RFC3339) from state
+	var notAfter types.String
+	if diags := req.State.GetAttribute(ctx, path.Root("not_after"), &notAfter); diags.HasError() {
+		return
+	}
+	if notAfter.Unknown || notAfter.Null || notAfter.Value == "" {
+		return
+	}
+
+	// Read renew_days from plan; if unknown/null, fallback to state
+	var renewDays types.Int64
+	if diags := req.Plan.GetAttribute(
+		ctx,
+		path.Root("renewal_config").AtName("renew_days"),
+		&renewDays,
+	); diags.HasError() {
+		// ignore and fallback to state below
+	}
+	if renewDays.Unknown || renewDays.Null || renewDays.Value <= 0 {
+		_ = req.State.GetAttribute(ctx, path.Root("renewal_config").AtName("renew_days"), &renewDays)
+	}
+	if renewDays.Unknown || renewDays.Null || renewDays.Value <= 0 {
+		return
+	}
+
+	// Parse not_after and compute time remaining
+	na, err := time.Parse(time.RFC3339, notAfter.Value)
+	if err != nil {
+		return
+	}
+	timeRemaining := time.Until(na)
+	renewWindow := time.Duration(renewDays.Value) * 24 * time.Hour
+
+	// Force replacement if within or past the renewal window
+	if timeRemaining <= renewWindow {
+		resp.RequiresReplace = true
+	}
+}
+
 type resourceCommandCertificateType struct{}
 
 func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
@@ -180,6 +244,16 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Computed:    true,
 				Description: "Thumbprint of newly enrolled certificate",
 			},
+			"not_before": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Not Before date of enrolled certificate",
+			},
+			"not_after": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Not After date of enrolled certificate",
+			},
 			"identifier": {
 				Type:     types.StringType,
 				Required: false,
@@ -322,6 +396,11 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Computed:    true,
 				Description: "Whether the certificate is pending revocation",
 			},
+			"revocation_effective_date": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "The effective date of the certificate revocation",
+			},
 			"expiry_warn_days": {
 				Type:     types.Int64Type,
 				Optional: true,
@@ -377,6 +456,7 @@ Triggers replacement of resource when true.
 							Type:        types.Int64Type,
 							Required:    true,
 							Description: "The number of days before the certificate expires to trigger renewal.",
+							//PlanModifiers:,
 						},
 						"renew_eligible": {
 							Type:     types.BoolType,
@@ -384,34 +464,7 @@ Triggers replacement of resource when true.
 							Description: "Calculated value indicating whether the certificate is eligible for renewal" +
 								" based on `renew_days`, current date, and certificate expiry date.",
 							PlanModifiers: []tfsdk.AttributePlanModifier{
-								tfsdk.RequiresReplaceIf(
-									// The conditional function
-									func(
-										ctx context.Context,
-										state attr.Value,
-										config attr.Value,
-										path path.Path,
-									) (bool, diag.Diagnostics) {
-										tflog.Debug(ctx, "Checking if 'renew_eligible' is set to true")
-										if state == nil {
-											tflog.Debug(ctx, "State is nil, returning false for 'renew_eligible'")
-											return false, nil
-										}
-										forceRenewal, ok := state.(types.Bool)
-										if ok && forceRenewal.Value {
-											return true, nil
-										}
-										return false, nil
-									},
-									"Calculated based on current date and certificate expiry date. Triggers resource"+
-										" replacement when calculated to"+
-										" `true`."+
-										"IMPORTANT: Periodic `terraform refresh` needs to be re-run to force"+
-										" recalculation of this value.",
-									""+
-										// Description
-										"Triggers resource replacement when `renew_eligible` is set to `true`.", // Markdown Description
-								),
+								replaceIfNotAfterWithinRenewalDays,
 							},
 						},
 						"revoke_on_renew": {
@@ -423,102 +476,102 @@ Triggers replacement of resource when true.
 				),
 				Optional: true,
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				PlanModifiers: []tfsdk.AttributePlanModifier{
-					tfsdk.RequiresReplaceIf(
-						// The conditional function
-						func(
-							ctx context.Context,
-							state attr.Value,
-							plan attr.Value,
-							path path.Path,
-						) (bool, diag.Diagnostics) {
-							tflog.Debug(ctx, "Checking if 'renew_eligible' is set to true")
-							if state == nil {
-								tflog.Debug(
-									ctx,
-									"State does not contain `renewal_config`, returning false for plan modifier",
-								)
-								return false, nil
-							}
-							if plan == nil {
-								tflog.Debug(
-									ctx,
-									"Plan does not contain `renewal_config`, returning false for plan modifier",
-								)
-								return false, nil
-							}
-							stateRenewConfig, stateRenewConfigOk := state.(types.Object)
-							if !stateRenewConfigOk {
-								tflog.Debug(
-									ctx,
-									"State `renewal_config` is not an Object, returning false for plan modifier",
-								)
-								return false, nil
-							}
-
-							tflog.Debug(ctx, "Parsing plan `renewal_config`")
-							planObj, planRenewConfigOk := plan.(types.Object)
-							if !planRenewConfigOk {
-								tflog.Debug(
-									ctx,
-									"Plan `renewal_config` is not an Object, returning false for plan modifier",
-								)
-								return false, nil
-							} else if planObj.IsNull() {
-								tflog.Debug(ctx, "`renewal_config` is null in plan, returning false for plan modifier")
-								return false, nil
-							}
-
-							tflog.Debug(ctx, "Parsing plan `force_renewal`")
-							planForceRenewalAttr, planForceRenewalOk := planObj.Attrs["force_renewal"]
-							if planForceRenewalOk {
-								tflog.Debug(ctx, "`force_renewal` is set in plan, checking value")
-								if planForceRenewalAttr.Type(ctx) == types.BoolType && planForceRenewalAttr.(types.Bool).Value {
-									tflog.Debug(
-										ctx,
-										"`force_renewal` is true in plan, returning true for plan modifier",
-									)
-									return true, nil
-								}
-							}
-
-							tflog.Debug(ctx, "Parsing state `renewal_config`")
-							stateForceRenewalAttr, stateRenewConfigOk := stateRenewConfig.Attrs["force_renewal"]
-							if stateRenewConfigOk {
-								tflog.Debug(ctx, "`force_renewal` is set in state, checking value")
-								if stateForceRenewalAttr.Type(ctx) == types.BoolType && stateForceRenewalAttr.(types.Bool).Value {
-									tflog.Debug(ctx, "`force_renewal` is true in state, checking plan value is false")
-									if planForceRenewalAttr != nil && !planForceRenewalAttr.IsNull() &&
-										!planForceRenewalAttr.(types.Bool).Value {
-										tflog.Debug(
-											ctx, "force_renewal is true in state and false in plan, "+
-												"plan value takes precedence, returning false plan modifier",
-										)
-										return false, nil
-									}
-									tflog.Debug(ctx, "`force_renewal` is true, returning true for plan modifier")
-									return true, nil
-								}
-							}
-
-							tflog.Debug(ctx, "Parsing state `renew_eligible`")
-							renewEligibleAttr, stateRenewEligibleOk := stateRenewConfig.Attrs["renew_eligible"]
-							if stateRenewEligibleOk {
-								tflog.Debug(ctx, "`renew_eligible` is set in state, checking value")
-								if renewEligibleAttr.Type(ctx) == types.BoolType && renewEligibleAttr.(types.Bool).Value {
-									tflog.Debug(ctx, "renew_eligible is true, returning true for plan modifier")
-									return true, nil
-								}
-							}
-							tflog.Debug(ctx, "No conditions met for plan modifier, returning false")
-							return false, nil
-						},
-						"Triggers resource replacement when 'renew_eligible' or `force_renewal` are"+
-							" calculated or set to `true`.",
-						"Triggers resource replacement when 'renew_eligible' or `force_renewal` are"+
-							" set to `true`.",
-					),
-				},
+				//PlanModifiers: []tfsdk.AttributePlanModifier{
+				//	tfsdk.RequiresReplaceIf(
+				//		// The conditional function
+				//		func(
+				//			ctx context.Context,
+				//			state attr.Value,
+				//			plan attr.Value,
+				//			path path.Path,
+				//		) (bool, diag.Diagnostics) {
+				//			tflog.Debug(ctx, "Checking if 'renew_eligible' is set to true")
+				//			if state == nil {
+				//				tflog.Debug(
+				//					ctx,
+				//					"State does not contain `renewal_config`, returning false for plan modifier",
+				//				)
+				//				return false, nil
+				//			}
+				//			if plan == nil {
+				//				tflog.Debug(
+				//					ctx,
+				//					"Plan does not contain `renewal_config`, returning false for plan modifier",
+				//				)
+				//				return false, nil
+				//			}
+				//			stateRenewConfig, stateRenewConfigOk := state.(types.Object)
+				//			if !stateRenewConfigOk {
+				//				tflog.Debug(
+				//					ctx,
+				//					"State `renewal_config` is not an Object, returning false for plan modifier",
+				//				)
+				//				return false, nil
+				//			}
+				//
+				//			tflog.Debug(ctx, "Parsing plan `renewal_config`")
+				//			planObj, planRenewConfigOk := plan.(types.Object)
+				//			if !planRenewConfigOk {
+				//				tflog.Debug(
+				//					ctx,
+				//					"Plan `renewal_config` is not an Object, returning false for plan modifier",
+				//				)
+				//				return false, nil
+				//			} else if planObj.IsNull() {
+				//				tflog.Debug(ctx, "`renewal_config` is null in plan, returning false for plan modifier")
+				//				return false, nil
+				//			}
+				//
+				//			tflog.Debug(ctx, "Parsing plan `force_renewal`")
+				//			planForceRenewalAttr, planForceRenewalOk := planObj.Attrs["force_renewal"]
+				//			if planForceRenewalOk {
+				//				tflog.Debug(ctx, "`force_renewal` is set in plan, checking value")
+				//				if planForceRenewalAttr.Type(ctx) == types.BoolType && planForceRenewalAttr.(types.Bool).Value {
+				//					tflog.Debug(
+				//						ctx,
+				//						"`force_renewal` is true in plan, returning true for plan modifier",
+				//					)
+				//					return true, nil
+				//				}
+				//			}
+				//
+				//			tflog.Debug(ctx, "Parsing state `renewal_config`")
+				//			stateForceRenewalAttr, stateRenewConfigOk := stateRenewConfig.Attrs["force_renewal"]
+				//			if stateRenewConfigOk {
+				//				tflog.Debug(ctx, "`force_renewal` is set in state, checking value")
+				//				if stateForceRenewalAttr.Type(ctx) == types.BoolType && stateForceRenewalAttr.(types.Bool).Value {
+				//					tflog.Debug(ctx, "`force_renewal` is true in state, checking plan value is false")
+				//					if planForceRenewalAttr != nil && !planForceRenewalAttr.IsNull() &&
+				//						!planForceRenewalAttr.(types.Bool).Value {
+				//						tflog.Debug(
+				//							ctx, "force_renewal is true in state and false in plan, "+
+				//								"plan value takes precedence, returning false plan modifier",
+				//						)
+				//						return false, nil
+				//					}
+				//					tflog.Debug(ctx, "`force_renewal` is true, returning true for plan modifier")
+				//					return true, nil
+				//				}
+				//			}
+				//
+				//			tflog.Debug(ctx, "Parsing state `renew_eligible`")
+				//			renewEligibleAttr, stateRenewEligibleOk := stateRenewConfig.Attrs["renew_eligible"]
+				//			if stateRenewEligibleOk {
+				//				tflog.Debug(ctx, "`renew_eligible` is set in state, checking value")
+				//				if renewEligibleAttr.Type(ctx) == types.BoolType && renewEligibleAttr.(types.Bool).Value {
+				//					tflog.Debug(ctx, "renew_eligible is true, returning true for plan modifier")
+				//					return true, nil
+				//				}
+				//			}
+				//			tflog.Debug(ctx, "No conditions met for plan modifier, returning false")
+				//			return false, nil
+				//		},
+				//		"Triggers resource replacement when 'renew_eligible' or `force_renewal` are"+
+				//			" calculated or set to `true`.",
+				//		"Triggers resource replacement when 'renew_eligible' or `force_renewal` are"+
+				//			" set to `true`.",
+				//	),
+				//},
 				Computed: false,
 				Description: "Configuration for certificate renewal. " +
 					"IMPORTANT: This does not deploy the updated certificate to associated certificate store" +
@@ -728,6 +781,8 @@ func (r resourceCommandCertificate) Read(
 		return
 	}
 
+	notBeforeStr := leaf.NotBefore.UTC().Format(time.RFC3339)
+	notAfterStr := leaf.NotAfter.UTC().Format(time.RFC3339)
 	sn := leaf.SerialNumber.String()
 	issuerDN := leaf.Issuer.String()
 	tp, _ := GetCertificateThumbprint(leaf)
@@ -930,6 +985,25 @@ func (r resourceCommandCertificate) Read(
 		},
 		EnrollmentPattern:   state.EnrollmentPattern,   // This may be mutated below
 		CertificateTemplate: state.CertificateTemplate, // This may be mutated below
+		NotBefore: types.String{
+			Value: notBeforeStr,
+			Null:  isNullString(notBeforeStr),
+		},
+		NotAfter: types.String{
+			Value: notAfterStr,
+			Null:  isNullString(notAfterStr),
+		},
+		RevocationEffDate: state.RevocationEffDate,
+	}
+
+	if certGetResp != nil {
+		if certGetResp.RevocationEffDate != "" {
+			result.RevocationEffDate = types.String{
+				Value: certGetResp.RevocationEffDate,
+				Null:  isNullString(certGetResp.RevocationEffDate),
+			}
+		}
+
 	}
 
 	// handle template name + enrollment pattern sets
@@ -1245,6 +1319,16 @@ func (r resourceCommandCertificate) Update(
 			PFX:               state.PFX,
 			JKS:               state.JKS,
 			Zip:               state.Zip,
+			NotBefore:         state.NotBefore,
+			NotAfter:          state.NotAfter,
+			RevocationEffDate: state.RevocationEffDate,
+		}
+
+		if (certGetResp != nil) && (certGetResp.RevocationEffDate != "") {
+			result.RevocationEffDate = types.String{
+				Value: certGetResp.RevocationEffDate,
+				Null:  isNullString(certGetResp.RevocationEffDate),
+			}
 		}
 
 		if !state.CSR.IsNull() {
@@ -1349,6 +1433,16 @@ func (r resourceCommandCertificate) Update(
 			PFX:               state.PFX,
 			JKS:               state.JKS,
 			Zip:               state.Zip,
+			NotBefore:         state.NotBefore,
+			NotAfter:          state.NotAfter,
+			RevocationEffDate: state.RevocationEffDate,
+		}
+
+		if (certGetResp != nil) && (certGetResp.RevocationEffDate != "") {
+			result.RevocationEffDate = types.String{
+				Value: certGetResp.RevocationEffDate,
+				Null:  isNullString(certGetResp.RevocationEffDate),
+			}
 		}
 
 		diags = response.State.Set(ctx, result)
@@ -1614,6 +1708,30 @@ func (r resourceCommandCertificate) ImportState(
 			Value: fmt.Sprintf("%d", enrollmentPatternId),
 			Null:  isNullId(enrollmentPatternId),
 		},
+		NotBefore:         state.NotBefore,
+		NotAfter:          state.NotAfter,
+		RevocationEffDate: state.RevocationEffDate,
+	}
+
+	if certGetResp != nil {
+		if certGetResp.RevocationEffDate != "" {
+			result.RevocationEffDate = types.String{
+				Value: certGetResp.RevocationEffDate,
+				Null:  isNullString(certGetResp.RevocationEffDate),
+			}
+		}
+		if certGetResp.NotBefore != "" {
+			result.NotBefore = types.String{
+				Value: certGetResp.NotBefore,
+				Null:  isNullString(certGetResp.NotBefore),
+			}
+		}
+		if certGetResp.NotAfter != "" {
+			result.NotAfter = types.String{
+				Value: certGetResp.NotAfter,
+				Null:  isNullString(certGetResp.NotAfter),
+			}
+		}
 	}
 
 	// Set state
@@ -2254,6 +2372,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		CertificateFormat:    plan.CertificateFormat,
 		OwnerRoleName:        plan.OwnerRoleName,
 		EnrollmentPattern:    plan.EnrollmentPattern,
+		NotBefore:            types.String{Null: true}, // Not provided in enroll response
+		NotAfter:             types.String{Null: true}, // Not provided in enroll response
+		RevocationEffDate:    types.String{Null: true}, // Not provided in enroll response
 	}
 
 	switch certificateFormat {
@@ -2676,9 +2797,20 @@ func (r resourceCommandCertificate) enrollCSR(
 		RenewalConfig:        plan.RenewalConfig,
 		EnrollmentPattern:    plan.EnrollmentPattern,
 		CertificateFormat:    plan.CertificateFormat,
+		OwnerRoleName:        plan.OwnerRoleName,
 		PFX:                  types.String{Null: true}, // Null because CSR enrollment does not provide a PFX
 		JKS:                  types.String{Null: true}, // Null because CSR enrollment does not provide a JKS
 		Zip:                  types.String{Null: true}, // Null because CSR enrollment does not provide a ZIP
+		NotBefore:            types.String{Null: true}, // Null because CSR enrollment does not provide NotBefore
+		NotAfter:             types.String{Null: true}, // Null because CSR enrollment does not provide NotAfter
+		RevocationEffDate:    types.String{Null: true}, // Not provided in enroll response
+	}
+
+	leafObj, leafErr := parseLeafCert(ctx, leaf)
+	if leafErr == nil {
+		result.NotBefore = types.String{Value: leafObj.NotBefore.Format(time.RFC3339)}
+		result.NotAfter = types.String{Value: leafObj.NotAfter.Format(time.RFC3339)}
+		result.IsExpired = types.Bool{Value: time.Now().After(leafObj.NotAfter)}
 	}
 
 	return &result, diags

@@ -160,6 +160,10 @@ type CommandCertificate struct {
 	EnrollmentPattern types.String `tfsdk:"certificate_enrollment_pattern"` // EnrollmentPattern is either the internal ID
 	// or the name of the enrollment pattern to be used for certificate issuance.
 
+	NotBefore         types.String `tfsdk:"not_before"`                // NotBefore represents the start date and time from which the certificate is valid.
+	NotAfter          types.String `tfsdk:"not_after"`                 // NotAfter represents the end date and time after which the certificate is no longer valid.
+	RevocationEffDate types.String `tfsdk:"revocation_effective_date"` // RevocationEffDate represents the date and time when the revocation of the certificate becomes effective.
+
 }
 
 type CertificateAutoRenewConfig struct {
@@ -182,6 +186,7 @@ type CommandCertificateDeployment struct {
 	JobParameters    types.Map    `tfsdk:"job_parameters"`       // JobParameters represents additional parameters for the certificate deployment job as a map of key-value pairs.
 	Overwrite        types.Bool   `tfsdk:"overwrite"`            // Overwrite specifies whether an existing certificate should be overwritten during deployment.
 	Redeploy         types.Bool   `tfsdk:"redeploy"`             // Redeploy specifies whether a certificate should be redeployed to the store during the deployment process.
+	SkipRemoval      types.Bool   `tfsdk:"skip_removal"`         // SkipRemoval specifies whether the removal of the certificate from the store should be skipped during undeployment.
 }
 
 // CSRCertificate represents a certificate provisioned via a CSR in Keyfactor.

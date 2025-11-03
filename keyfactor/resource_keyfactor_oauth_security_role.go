@@ -149,35 +149,77 @@ func (r resourceOAuthSecurityRole) Update(
 
 	roleName := plan.Name.Value
 	roleId := int32(state.ID.Value)
+	roleApi := r.p.sdkClient.V2.SecurityRolesApi
 
 	var permissions []string
 	plan.Permissions.ElementsAs(ctx, &permissions, false)
 	sort.Strings(permissions)
 
-	api := r.p.sdkClient.V2.SecurityRolesApi
-	req := api.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
-		Id:              roleId,
-		Name:            roleName,
-		Description:     plan.Description.Value,
-		EmailAddress:    *v2.NewNullableString(&plan.EmailAddress.Value),
-		PermissionSetId: plan.PermissionSetId.Value,
-		Permissions:     permissions,
-	})
+	numberOfAttempts := 0
 
-	tflog.Debug(ctx, fmt.Sprintf("Updating OAuth security role with ID: %d, name: %s;\n\tDescription: %s;\n\tEmailAddress: %s;\nt\tPermissionSetId: %s", roleId, roleName, plan.Description.Value, plan.EmailAddress.Value, plan.PermissionSetId.Value))
+	var updateResponse *v2.SecuritySecurityRolesSecurityRoleResponse
 
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role..."))
+	for {
+		if numberOfAttempts >= maxRoleUpdateAttempts {
+			response.Diagnostics.AddError(
+				"Error updating security role.",
+				fmt.Sprintf("Could not update OAuth security role ID %d after %d attempts. Please verify the role exists and try again.", roleId, maxRoleUpdateAttempts),
+			)
+			return
+		}
 
-	updateResponse, http, err := req.Execute()
-	if err != nil {
-		defer http.Body.Close()
-		body, _ := io.ReadAll(http.Body)
+		numberOfAttempts++
 
-		response.Diagnostics.AddError(
-			"Error updating security role",
-			fmt.Sprintf("Could not update OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
-		)
-		return
+		tflog.Debug(ctx, fmt.Sprintf("Attempt %d to update OAuth security role ID %d...", numberOfAttempts, roleId))
+
+		// We need to retrieve the current state of the role to get existing claims assigned to role
+		remoteState, httpResp, err := getSecurityRole(ctx, roleApi, roleId, response.Diagnostics)
+
+		// If security role is no longer found, remove role claim association from Terraform state
+		if httpResp.StatusCode == 404 {
+			tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+			response.State.RemoveResource(ctx)
+			return
+		}
+
+		// If we encounter an error trying to read the role, return error
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Unknown OAuth security role error.",
+				fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. "+err.Error(), roleId),
+			)
+
+			return
+		}
+
+		roleData := v2.SecuritySecurityRolesSecurityRoleResponse{
+			Id:              &roleId,
+			Name:            *v2.NewNullableString(&roleName),
+			Description:     *v2.NewNullableString(&plan.Description.Value),
+			EmailAddress:    *v2.NewNullableString(&plan.EmailAddress.Value),
+			PermissionSetId: &plan.PermissionSetId.Value,
+			Permissions:     permissions,
+			Claims:          remoteState.Claims,
+		}
+
+		req, err := buildSecurityRoleUpdateRequest(ctx, roleApi, &roleData, nil, &response.Diagnostics)
+
+		tflog.Debug(ctx, fmt.Sprintf("Updating OAuth security role with ID: %d, name: %s;\n\tDescription: %s;\n\tEmailAddress: %s;\nt\tPermissionSetId: %s", roleId, roleName, plan.Description.Value, plan.EmailAddress.Value, plan.PermissionSetId.Value))
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role..."))
+
+		updateResponse, httpResp, err = req.Execute()
+		// If security role is no longer found, remove role claim association from Terraform state
+		if httpResp.StatusCode == 404 {
+			tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+			response.State.RemoveResource(ctx)
+			return
+		}
+
+		if err == nil {
+			break
+		}
+
+		handleRoleUpdateError(ctx, httpResp, err, roleId)
 	}
 
 	var result = mapOAuthSecurityRole(ctx, updateResponse)

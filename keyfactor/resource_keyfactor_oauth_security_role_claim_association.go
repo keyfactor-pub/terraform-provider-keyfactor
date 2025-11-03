@@ -3,9 +3,8 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"io"
 
-	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
+	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -35,7 +34,14 @@ func (r resourceOAuthSecurityRoleClaimAssociationType) GetSchema(_ context.Conte
 				Description:   "Internal ID of the OAuth security claim. Changing this value forces a new resource.",
 			},
 		},
-		Description: "Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+",
+		MarkdownDescription: `
+			Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 "/Security/Claims/" and V2 "/Security/Roles" APIs. 
+			This resource is compatible with Keyfactor Command versions 11+. 
+			
+			---
+			> [!IMPORTANT]
+			> Creating / deleting multiple security role claim associations to the same security role simultaneously may lead to concurrency issues. Adding a "depends_on" block to the security role claim association can help prevent concurrent writes. A future version of Command will add concurrency protections.
+			`,
 	}, nil
 }
 
@@ -152,72 +158,65 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 	tflog.Debug(ctx, fmt.Sprintf("Deleting OAuth security role claim association. Role ID %d, Claim ID %d...", roleId, claimId))
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
-	req := api.NewGetSecurityRolesByIdRequest(ctx, int32(roleId))
 
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security role ID %d...", roleId))
+	numberOfAttempts := 0
 
-	remoteState, httpReq, err := req.Execute()
+	for {
+		if numberOfAttempts >= maxRoleUpdateAttempts {
+			response.Diagnostics.AddError(
+				"Error deleting security role claim association.",
+				fmt.Sprintf("Could not delete OAuth security role assocation on role ID %d to remove claim ID %d after %d attempts. Please verify the claim and role exist and try again.", roleId, claimId, maxRoleUpdateAttempts),
+			)
+			return
+		}
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+		numberOfAttempts++
 
-	if httpReq.StatusCode == 404 {
-		tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
-		response.State.RemoveResource(ctx)
-		return
+		tflog.Debug(ctx, fmt.Sprintf("Attempt %d to remove OAuth security role claim association on role ID %d to remove claim ID %d...", numberOfAttempts, roleId, claimId))
+
+		remoteState, httpResp, err := getSecurityRole(ctx, api, roleId, response.Diagnostics)
+
+		// If security role is no longer found, remove role claim association from Terraform state
+		if httpResp.StatusCode == 404 {
+			tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+			response.State.RemoveResource(ctx)
+			return
+		}
+
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Unknown OAuth security role error.",
+				fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. "+err.Error(), roleId),
+			)
+
+			return
+		}
+
+		updateReq, err := buildSecurityRoleUpdateRequest(ctx, api, remoteState, nil, &response.Diagnostics)
+
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to remove claim ID %d...", roleId, claimId))
+
+		_, httpResp, err = updateReq.Execute()
+
+		// If security role is no longer found, remove role claim association from Terraform state
+		if httpResp.StatusCode == 404 {
+			tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+			response.State.RemoveResource(ctx)
+			return
+		}
+
+		if err == nil {
+			break
+		}
+
+		handleRoleUpdateError(ctx, httpResp, err, roleId)
 	}
 
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Unknown OAuth security role error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. "+err.Error(), roleId),
-		)
-
-		return
-	}
-
-	updatedClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteState, &claimId)
-	if !ok {
-		return
-	}
-	claims := *updatedClaims
-
-	tflog.Debug(ctx, "Data source was able to import state of OAuth security role resource from remote source using ID")
-
-	updateReq := api.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
-		Id:              int32(roleId),
-		Name:            *remoteState.Name.Get(),
-		Description:     *remoteState.Description.Get(),
-		EmailAddress:    remoteState.EmailAddress,
-		PermissionSetId: *remoteState.PermissionSetId,
-		Permissions:     remoteState.Permissions,
-		Claims:          claims,
-	})
-
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to remove claim ID %d...", roleId, claimId))
-
-	_, httpResp, err := updateReq.Execute()
-
-	if httpResp.StatusCode == 404 {
-		tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
-		response.State.RemoveResource(ctx)
-		return
-	}
-
-	if err != nil {
-		defer httpResp.Body.Close()
-		body, _ := io.ReadAll(httpResp.Body)
-
-		response.Diagnostics.AddError(
-			"Error updating security role claim association.",
-			fmt.Sprintf("Could not update OAuth security role assocation on role ID %d to delete claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), string(body)),
-		)
-		return
-	}
-
-	tflog.Debug(ctx, "OAuth security role claim associated deleted successfully.")
+	tflog.Info(ctx, "OAuth security role claim associated deleted successfully.")
 
 	// Remove resource from state
 	response.State.RemoveResource(ctx)
+	return
 }
 
 func (r resourceOAuthSecurityRoleClaimAssociation) Create(
@@ -246,89 +245,52 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 	tflog.Debug(ctx, fmt.Sprintf("Creating OAuth security role claim association. Role ID: %d, Claim ID: %d", roleId, claimId))
 
 	roleApi := r.p.sdkClient.V2.SecurityRolesApi
-	roleRequest := roleApi.NewGetSecurityRolesByIdRequest(ctx, int32(roleId))
-
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security role ID %d...", roleId))
-
-	remoteRoleState, httpResp, err := roleRequest.Execute()
-
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpResp.StatusCode))
-
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Unknown OAuth security role error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. "+err.Error(), roleId),
-		)
-
-		return
-	}
-
 	claimsApi := r.p.sdkClient.V1.SecurityClaimsApi
-	claimRequest := claimsApi.NewGetSecurityClaimsByIdRequest(ctx, claimId)
 
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security claim ID %d...", claimId))
-
-	remoteClaimState, httpReq, err := claimRequest.Execute()
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+	remoteClaimState, err := getSecurityClaim(ctx, claimsApi, claimId, response.Diagnostics)
 
 	if err != nil {
-		response.Diagnostics.AddError(
-			"Unknown OAuth security claim error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security claim ID %d from Keyfactor. Read failed. "+err.Error(), claimId),
-		)
-	}
-
-	existingClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteRoleState, nil)
-	if !ok {
-		return
-	}
-	claims := *existingClaims
-
-	provider := *remoteClaimState.Provider
-	claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(*remoteClaimState.ClaimType.Get())
-
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Error creating security identity.",
-			"Could not create identity role claim association, error parsing claim type "+err.Error(),
-		)
 		return
 	}
 
-	// Add remote claim to request
-	temp := v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
-		ClaimType:                    *claimTypeEnum,
-		ClaimValue:                   *remoteClaimState.ClaimValue.Get(),
-		ProviderAuthenticationScheme: *provider.AuthenticationScheme.Get(),
-		Description:                  *remoteClaimState.Description.Get(),
-	}
+	numberOfAttempts := 0
 
-	updatedClaims := addOAuthSecurityClaimToRole(ctx, claims, temp)
+	for {
+		if numberOfAttempts >= maxRoleUpdateAttempts {
+			response.Diagnostics.AddError(
+				"Error creating security role claim association.",
+				fmt.Sprintf("Could not create OAuth security role assocation on role ID %d to add claim ID %d after %d attempts. Please verify the claim and role exist and try again.", roleId, claimId, maxRoleUpdateAttempts),
+			)
+			return
+		}
 
-	tflog.Debug(ctx, "Data source was able to import state of OAuth security claim from remote source using ID")
+		numberOfAttempts++
 
-	updateReq := roleApi.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
-		Id:              int32(roleId),
-		Name:            *remoteRoleState.Name.Get(),
-		Description:     *remoteRoleState.Description.Get(),
-		EmailAddress:    remoteRoleState.EmailAddress,
-		PermissionSetId: *remoteRoleState.PermissionSetId,
-		Permissions:     remoteRoleState.Permissions,
-		Claims:          updatedClaims,
-	})
+		tflog.Debug(ctx, fmt.Sprintf("Attempt %d to create OAuth security role claim association on role ID %d to add claim ID %d...", numberOfAttempts, roleId, claimId))
 
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to add security claim id %d...", roleId, claimId))
+		remoteRoleState, httpResp, err := getSecurityRole(ctx, roleApi, roleId, response.Diagnostics)
 
-	_, httpResp, err = updateReq.Execute()
-	if err != nil {
-		defer httpResp.Body.Close()
-		body, _ := io.ReadAll(httpResp.Body)
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Unknown OAuth security role error.",
+				fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. "+err.Error(), roleId),
+			)
 
-		response.Diagnostics.AddError(
-			"Error creating security role claim association.",
-			fmt.Sprintf("Could not create OAuth security role assocation on role ID %d to add claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), string(body)),
-		)
-		return
+			return
+		}
+
+		updateReq, err := buildSecurityRoleUpdateRequest(ctx, roleApi, remoteRoleState, remoteClaimState, &response.Diagnostics)
+
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to add security claim id %d...", roleId, claimId))
+
+		_, httpResp, err = updateReq.Execute()
+
+		if err == nil {
+			tflog.Debug(ctx, fmt.Sprintf("Successfully updated OAuth security role ID %d to add security claim id %d...", roleId, claimId))
+			break
+		}
+
+		handleRoleUpdateError(ctx, httpResp, err, roleId)
 	}
 
 	result := mapOAuthSecurityRoleClaimAssociation(ctx, roleId, claimId)
@@ -340,5 +302,23 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 		return
 	}
 
-	tflog.Debug(ctx, "OAuth security role claim association created successfully.")
+	tflog.Info(ctx, "OAuth security role claim association created successfully.")
+}
+
+func getSecurityClaim(ctx context.Context, claimsApi *v1.SecurityClaimsApiService, claimId int32, diagnostics diag.Diagnostics) (*v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse, error) {
+	claimRequest := claimsApi.NewGetSecurityClaimsByIdRequest(ctx, claimId)
+
+	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security claim ID %d...", claimId))
+
+	remoteClaimState, httpReq, err := claimRequest.Execute()
+	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+
+	if err != nil {
+		diagnostics.AddError(
+			"Unknown OAuth security claim error.",
+			fmt.Sprintf("Unknown error while trying to import OAuth security claim ID %d from Keyfactor. Read failed. "+err.Error(), claimId),
+		)
+	}
+
+	return remoteClaimState, err
 }

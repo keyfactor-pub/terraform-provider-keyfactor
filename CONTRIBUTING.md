@@ -66,6 +66,14 @@ The following environment variables must exist to run acceptance tests for Certi
 * ```KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2``` - Note: the container must exist in Keyfactor and be compatible with the store type.
 * ```KEYFACTOR_CERTIFICATE_STORE_PASS``` - Should be an actions secret.
 
+#### Security Claim resource acceptance tests
+The following environment variable must exist to run acceptance tests for Security Claim resources:
+* ```KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME``` - This is the `Authentication Scheme` of an **existing** identity provider in Keyfactor. The identity provider ***must exist*** in Keyfactor before running this test.
+
+#### Security Role Claim Association resource acceptance tests
+The following environment variable must exist to run acceptance tests for Security Role Claim Association resources:
+* ```KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME``` - This is the `Authentication Scheme` of an **existing** identity provider in Keyfactor. The identity provider ***must exist*** in Keyfactor before running this test.
+
 #### Security Role resource acceptance tests
 The following environment variable must exist to run acceptance tests for Security Role resources:
 * ```KEYFACTOR_SECURITY_ROLE_NAME``` - Note: the role must *NOT* exist in Keyfactor.
@@ -82,6 +90,17 @@ allowed requesters as Keyfactor roles.
 * ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1``` - Note: the template must exist in Keyfactor.
 * ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2``` - Note: the template must exist in Keyfactor.
 * ```KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3``` - Note: the template must exist in Keyfactor.
+
+### Updating the Terraform resource docs
+This project utilizes [tfplugindocs](https://github.com/hashicorp/terraform-plugin-docs) to generate the documentation hosted under the `docs` directory. The documentation is generated using the description / markdown description in the resource and data source components.
+
+To generate the docs, run the following command from the project root:
+
+```bash
+make tfdocs
+```
+
+> **NOTE**: If you do not have `tfplugindocs` installed, use the above tfplugindocs link to install the plugin.
 
 ### Referencing private go repos in import() statement
 * The best way to clone private repositories in the import statement is to use SSH. Create an SSH key, import the private

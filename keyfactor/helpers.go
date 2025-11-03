@@ -22,10 +22,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"io"
 	mathRand "math/rand"
 
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"reflect"
@@ -37,7 +40,9 @@ import (
 
 	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
+	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -56,6 +61,9 @@ var (
 	numberSet      = "0123456789"
 	allCharSet     = lowerCharSet + upperCharSet + numberSet
 )
+
+// Max number of times to attempt to update a role to add/remove a claim before failing
+const maxRoleUpdateAttempts = 3
 
 // generatePassword creates a random password with specified requirements.
 //
@@ -1823,11 +1831,6 @@ func getSecurityPermissionSetByName(
 	return model, nil
 }
 
-// Returns a pointer to the input object
-func ptr[T any](v T) *T {
-	return &v
-}
-
 // Converts a pointer to a string to a types.String object.
 // If the pointer is nil, it returns a types.String with Null set to true.
 func getStringType(value *string) types.String {
@@ -1896,6 +1899,87 @@ func getResourceIdFromTerraformState(state *terraform.State, resourcePath string
 		return "", fmt.Errorf("not found")
 	}
 	return rs.Primary.Attributes["id"], nil
+}
+
+func getSecurityRole(ctx context.Context, roleApi *kfv2.SecurityRolesApiService, roleId int32, diagnostics diag.Diagnostics) (*v2.SecuritySecurityRolesSecurityRoleResponse, *http.Response, error) {
+	roleRequest := roleApi.NewGetSecurityRolesByIdRequest(ctx, int32(roleId))
+
+	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security role ID %d...", roleId))
+
+	remoteRoleState, httpResp, err := roleRequest.Execute()
+
+	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpResp.StatusCode))
+
+	return remoteRoleState, httpResp, err
+}
+
+func buildSecurityRoleUpdateRequest(ctx context.Context, roleApi *v2.SecurityRolesApiService, remoteRoleState *v2.SecuritySecurityRolesSecurityRoleResponse, remoteClaimState *v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse, diagnostics *diag.Diagnostics) (*v2.ApiUpdateSecurityRolesRequest, error) {
+	existingClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, diagnostics, remoteRoleState, nil)
+	if !ok {
+		return nil, errors.New("Failed to map existing OAuth security claims from role")
+	}
+	claims := *existingClaims
+
+	if remoteClaimState != nil {
+		provider := *remoteClaimState.Provider
+		claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(*remoteClaimState.ClaimType.Get())
+
+		if err != nil {
+			diagnostics.AddError(
+				"Error creating security identity.",
+				"Could not create identity role claim association, error parsing claim type "+err.Error(),
+			)
+			return nil, err
+		}
+
+		// Add remote claim to request
+		temp := v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
+			ClaimType:                    *claimTypeEnum,
+			ClaimValue:                   *remoteClaimState.ClaimValue.Get(),
+			ProviderAuthenticationScheme: *provider.AuthenticationScheme.Get(),
+			Description:                  *remoteClaimState.Description.Get(),
+		}
+
+		claims = addOAuthSecurityClaimToRole(ctx, claims, temp)
+	}
+
+	tflog.Debug(ctx, "Data source was able to import state of OAuth security claim from remote source using ID")
+
+	updateBody := v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
+		Id:              *remoteRoleState.Id,
+		Name:            *remoteRoleState.Name.Get(),
+		Description:     *remoteRoleState.Description.Get(),
+		EmailAddress:    remoteRoleState.EmailAddress,
+		PermissionSetId: *remoteRoleState.PermissionSetId,
+		Permissions:     remoteRoleState.Permissions,
+		Claims:          claims,
+	}
+
+	updateReq := roleApi.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(updateBody)
+
+	// Marshal to JSON
+	jsonBytes, err := json.MarshalIndent(updateBody, "", "  ")
+	if err == nil {
+		// Convert bytes to string
+		jsonString := string(jsonBytes)
+		tflog.Debug(ctx, fmt.Sprintf("Built update request for OAuth security role ID %d: %v", *remoteRoleState.Id, jsonString))
+	}
+
+	return &updateReq, nil
+}
+
+func handleRoleUpdateError(ctx context.Context, httpResp *http.Response, err error, roleId int32) {
+	// Some concurrency issues on the API may cause a 400 or 500 error. Retry a few times if that happens.
+	defer httpResp.Body.Close()
+	body, _ := io.ReadAll(httpResp.Body)
+	tflog.Warn(ctx, fmt.Sprintf("Error updating OAuth security role ID %d. Error: %s, Details: %s. Retrying request...", roleId, err.Error(), string(body)))
+
+	if httpResp.StatusCode == 400 {
+		tflog.Warn(ctx, "Received 400 error from server. This may indicate the security role is corrupted. If this error continues, manual removal of the security claim from your Keyfactor Command portal may be required.")
+	}
+
+	// Sleep for a few seconds before retrying
+	time.Sleep(5 * time.Second)
 }
 
 // stringContains

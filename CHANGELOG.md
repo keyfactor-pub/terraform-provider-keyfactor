@@ -18,6 +18,14 @@
 - fix(certificates): `keyfactor_certificate` resource CSR enrollment now correctly passes default `certificate_format` as `PEM` when not specified.
 - fix(certificates): `keyfactor_certificate` will now use `not_after` for calculating expiry.
 
+## OAuth Security Role Claims Association
+
+### Features
+- feat(oauth_security_role_claim_association): `keyfactor_oauth_security_role_claim_association` Add retry logic when creating a security role claim association to handle errors caused by concurrency issues.
+
+### Chores
+- chore(keyfactor_oauth_security_role_claim_association): Updated documetnation indicating a possible concurrency issue caused by simultaneous updates on the same security role.
+
 # v2.6.0
 
 ## Enrollment Patterns

@@ -161,8 +161,11 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 - `is_revoked` (Boolean) Whether the certificate is revoked
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
 - `jks` (String, Sensitive) Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
+- `not_after` (String) Not After date of enrolled certificate
+- `not_before` (String) Not Before date of enrolled certificate
 - `pfx` (String, Sensitive) Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.
 - `private_key` (String, Sensitive) PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
+- `revocation_effective_date` (String) The effective date of the certificate revocation
 - `serial_number` (String) Serial number of newly enrolled certificate
 - `thumbprint` (String) Thumbprint of newly enrolled certificate
 - `zip` (String, Sensitive) Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.

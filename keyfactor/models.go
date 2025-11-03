@@ -163,6 +163,7 @@ type CommandCertificate struct {
 	NotBefore         types.String `tfsdk:"not_before"`                // NotBefore represents the start date and time from which the certificate is valid.
 	NotAfter          types.String `tfsdk:"not_after"`                 // NotAfter represents the end date and time after which the certificate is no longer valid.
 	RevocationEffDate types.String `tfsdk:"revocation_effective_date"` // RevocationEffDate represents the date and time when the revocation of the certificate becomes effective.
+	RevokeOnDestroy   types.Bool   `tfsdk:"revoke_on_destroy"`         // RevokeOnDestroy indicates whether the certificate should be revoked when the resource is destroyed.
 
 }
 

@@ -402,6 +402,11 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Computed:    true,
 				Description: "The effective date of the certificate revocation",
 			},
+			"revoke_on_destroy": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Description: "Whether to revoke the certificate on resource `destroy`. IMPORTANT: If set to `false` the certificate will not be revoked on `destroy`ing operations. This means the certificate will need to be revoked outside of Terraform. Defaults to `true`.",
+			},
 			"expiry_warn_days": {
 				Type:     types.Int64Type,
 				Optional: true,
@@ -995,6 +1000,7 @@ func (r resourceCommandCertificate) Read(
 			Null:  isNullString(notAfterStr),
 		},
 		RevocationEffDate: state.RevocationEffDate,
+		RevokeOnDestroy:   state.RevokeOnDestroy,
 	}
 
 	if certGetResp != nil {
@@ -1323,6 +1329,7 @@ func (r resourceCommandCertificate) Update(
 			NotBefore:         state.NotBefore,
 			NotAfter:          state.NotAfter,
 			RevocationEffDate: state.RevocationEffDate,
+			RevokeOnDestroy:   plan.RevokeOnDestroy,
 		}
 
 		if (certGetResp != nil) && (certGetResp.RevocationEffDate != "") {
@@ -1437,6 +1444,7 @@ func (r resourceCommandCertificate) Update(
 			NotBefore:         state.NotBefore,
 			NotAfter:          state.NotAfter,
 			RevocationEffDate: state.RevocationEffDate,
+			RevokeOnDestroy:   plan.RevokeOnDestroy,
 		}
 
 		if (certGetResp != nil) && (certGetResp.RevocationEffDate != "") {
@@ -1531,6 +1539,13 @@ func (r resourceCommandCertificate) Delete(
 	if collectionIdInt > 0 {
 		tflog.Debug(ctx, "Setting collection ID on API request")
 		revokeArgs.CollectionId = collectionIdInt
+	}
+
+	if !state.RevokeOnDestroy.Null && state.RevokeOnDestroy.Value == false {
+		tflog.Debug(ctx, "RevokeOnDestroy is false, skipping revocation for certificate.")
+		response.State.RemoveResource(ctx)
+		tflog.Info(ctx, fmt.Sprintf("Certificate '%s' removed from state.", certificateId))
+		return
 	}
 
 	tflog.Debug(ctx, "Calling RevokeCert")
@@ -1712,6 +1727,7 @@ func (r resourceCommandCertificate) ImportState(
 		NotBefore:         state.NotBefore,
 		NotAfter:          state.NotAfter,
 		RevocationEffDate: state.RevocationEffDate,
+		RevokeOnDestroy:   state.RevokeOnDestroy,
 	}
 
 	if certGetResp != nil {
@@ -2376,6 +2392,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		NotBefore:            types.String{Null: true}, // Not provided in enroll response
 		NotAfter:             types.String{Null: true}, // Not provided in enroll response
 		RevocationEffDate:    types.String{Null: true}, // Not provided in enroll response
+		RevokeOnDestroy:      plan.RevokeOnDestroy,
 	}
 
 	switch certificateFormat {
@@ -2798,6 +2815,7 @@ func (r resourceCommandCertificate) enrollCSR(
 		NotBefore:            types.String{Null: true}, // Null because CSR enrollment does not provide NotBefore
 		NotAfter:             types.String{Null: true}, // Null because CSR enrollment does not provide NotAfter
 		RevocationEffDate:    types.String{Null: true}, // Not provided in enroll response
+		RevokeOnDestroy:      plan.RevokeOnDestroy,
 	}
 
 	leafObj, leafErr := parseLeafCert(ctx, leaf)

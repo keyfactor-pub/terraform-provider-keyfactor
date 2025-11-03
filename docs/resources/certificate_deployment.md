@@ -65,8 +65,9 @@ resource "keyfactor_certificate_deployment" "ca_cert_deployment" {
 - `certificate_alias` (String) A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type. Please ensure that the alias is lowercase, or problems can arise in Terraform Plan. If not provided deployment validation will be done by Command certificate ID.
 - `job_parameters` (Map of String) A map of entry parameters to be passed to the deployment job. These will only be used if the orchestrator extension supports them.
 - `key_password` (String, Sensitive) Password that protects PFX certificate, if the certificate was enrolled using PFX enrollment, or is password protected in general. This value cannot change, and Terraform will throw an error if a change is attempted.
-- `overwrite` (Boolean) If true, any existing certificate with the same alias will be overwritten. If false, an error will be returned if a certificate with the same alias already exists. Default value is `true`.
+- `overwrite` (Boolean) If set to `true`, updating the `certificate_id` to a different certificate will overwrite the existing certificate in the store. If set to `false` or not set, updating the `certificate_id` will cause the resource to be replaced, and the existing certificate will be removed from the store before the new certificate is added.
 - `redeploy` (Boolean) If true, the certificate will be redeployed to the store. If false, the certificate will be deployed only if it is not already deployed to the store.
+- `skip_removal` (Boolean) If set to `true`, deleting the resource will not remove the certificate from the store. Defaults to `false`.
 
 ### Read-Only
 

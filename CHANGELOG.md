@@ -1,9 +1,30 @@
-# v2.6.1
+# v2.7.0
+
+## Certificate Deployments
+
 ### Features
-- feat(oauth_security_role_claim_association): Add retry logic when creating a security role claim association to handle errors caused by concurrency issues.
+
+- feat(deployments): `keyfactor_certificate_deployment` Add support for `skip_removal` parameter to skip removal of
+  existing certificates during a renewal/replacement of a certificate. Defaults to `false`.
+
+## Certificates
+
+### Features
+- feat(certificates): `keyfactor_certificate` Add calculated fields `not_before`, `not_after` and `revocation_effective_date` to represent the
+  certificate validity period.
+- feat(certificates): `keyfactor_certificate` Add `revoke_on_destroy` parameter to allow for renew/`destroy` operations without revoking the certificate. Defaults to `true`.
+
+### Fixes
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment now correctly passes default `certificate_format` as `PEM` when not specified.
+- fix(certificates): `keyfactor_certificate` will now use `not_after` for calculating expiry.
+
+## OAuth Security Role Claims Association
+
+### Features
+- feat(oauth_security_role_claim_association): `keyfactor_oauth_security_role_claim_association` Add retry logic when creating a security role claim association to handle errors caused by concurrency issues.
 
 ### Chores
-- Updated documetnation on the `oauth_security_role_claim_association` indicating a possible concurrency issue caused by simultaneous updates on the same security role.
+- chore(keyfactor_oauth_security_role_claim_association): Updated documetnation indicating a possible concurrency issue caused by simultaneous updates on the same security role.
 
 # v2.6.0
 

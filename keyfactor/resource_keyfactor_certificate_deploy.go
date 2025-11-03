@@ -9,10 +9,75 @@ import (
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
+
+// deploymentOverwriteOnCertIDChange is a plan modifier used by the certificate
+// deployment resource. It requires that the resource be replaced when the
+// `certificate_id` attribute changes unless the top-level `overwrite` attribute
+// in the plan is explicitly set to true.
+//
+// This modifier implements tfsdk.AttributePlanModifier and inspects both the
+// current state and the planned value for the attribute at req.AttributePath.
+// If both values are known and different and `overwrite` is not true, the
+// modifier sets resp.RequiresReplace = true so Terraform will plan a resource
+// replacement.
+type deploymentOverwriteOnCertIDChange struct{}
+
+// Description returns a brief plain-text description of the plan modifier.
+func (m deploymentOverwriteOnCertIDChange) Description(ctx context.Context) string {
+	return "Require replace when certificate_id changes unless `overwrite` is true."
+}
+
+// MarkdownDescription returns the description suitable for markdown rendering.
+func (m deploymentOverwriteOnCertIDChange) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+// Modify examines the plan and state for the target attribute and the top-level
+// `overwrite` attribute. If both the old and new certificate_id are known and
+// different, and `overwrite` is not set to true in the plan, this method marks
+// the attribute as requiring replacement by setting resp.RequiresReplace.
+//
+// The method is a no-op when either plan or state is missing, or when the
+// relevant values are unknown or null.
+func (m deploymentOverwriteOnCertIDChange) Modify(
+	ctx context.Context,
+	req tfsdk.ModifyAttributePlanRequest,
+	resp *tfsdk.ModifyAttributePlanResponse,
+) {
+	// Only act when both plan and state exist
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+
+	// Read overwrite from plan
+	var allow types.Bool
+	if diags := req.Plan.GetAttribute(ctx, path.Root("overwrite"), &allow); diags.HasError() {
+		allow = types.Bool{Null: true}
+	}
+
+	// Read old/new certificate_id
+	var oldID, newID types.Int64
+	_ = req.State.GetAttribute(ctx, req.AttributePath, &oldID)
+	_ = req.Plan.GetAttribute(ctx, req.AttributePath, &newID)
+
+	// If either is unknown/null, bail
+	if oldID.Unknown || newID.Unknown || oldID.Null || newID.Null {
+		return
+	}
+
+	changed := oldID.Value != newID.Value
+	allowed := !allow.Unknown && !allow.Null && allow.Value
+
+	if changed && !allowed {
+		// Older framework: this is a bool, not a slice
+		resp.RequiresReplace = true
+	}
+}
 
 type resourceCommandCertificateDeploymentType struct{}
 
@@ -58,7 +123,7 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 			"overwrite": {
 				Type:        types.BoolType,
 				Optional:    true,
-				Description: "If true, any existing certificate with the same alias will be overwritten. If false, an error will be returned if a certificate with the same alias already exists. Default value is `true`.",
+				Description: "If set to `true`, updating the `certificate_id` to a different certificate will overwrite the existing certificate in the store. If set to `false` or not set, updating the `certificate_id` will cause the resource to be replaced, and the existing certificate will be removed from the store before the new certificate is added.",
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"redeploy": {
@@ -73,6 +138,11 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 						"Triggers resource replacement when `redeploy` is set to `true`.", // Markdown Description
 					),
 				},
+			},
+			"skip_removal": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Description: "If set to `true`, deleting the resource will not remove the certificate from the store. Defaults to `false`.",
 			},
 		},
 		Description: "Used to schedule a certificate deployment(" +
@@ -240,6 +310,7 @@ func (r resourceCommandCertificateDeployment) Create(
 		JobParameters:    plan.JobParameters,
 		Redeploy:         plan.Redeploy,
 		Overwrite:        plan.Overwrite,
+		SkipRemoval:      plan.SkipRemoval,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -309,6 +380,7 @@ func (r resourceCommandCertificateDeployment) Read(
 		JobParameters:    state.JobParameters,
 		Redeploy:         state.Redeploy,
 		Overwrite:        state.Overwrite,
+		SkipRemoval:      state.SkipRemoval,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -323,8 +395,8 @@ func (r resourceCommandCertificateDeployment) Update(
 	request tfsdk.UpdateResourceRequest,
 	response *tfsdk.UpdateResourceResponse,
 ) {
-	// Get plan values
-	var plan CommandCertificate
+	// Retrieve values from plan
+	var plan CommandCertificateDeployment
 	diags := request.Plan.Get(ctx, &plan)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -332,21 +404,128 @@ func (r resourceCommandCertificateDeployment) Update(
 	}
 
 	// Get current state
-	var state CommandCertificate
+	var state CommandCertificateDeployment
 	diags = request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	// API Actions
+	// Generate API request body from plan
+
+	kfClient := r.p.client
+
+	certificateId := plan.CertificateId.Value
+	certificateIdInt := int(certificateId)
+	storeId := plan.StoreId.Value
+	certificateAlias := plan.CertificateAlias.Value
+	//keyPassword := plan.KeyPassword.Value
+
+	overwrite := plan.Overwrite.Value
+	forceRedploy := plan.Redeploy.Value
+
+	var jobParams map[string]string
+	_ = plan.JobParameters.ElementsAs(ctx, &jobParams, false)
+	hid := fmt.Sprintf("%v-%s-%s", certificateId, storeId, certificateAlias)
+
+	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
+	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
+	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
+	//ctx = tflog.SetField(ctx, "key_password", keyPassword)
+	ctx = tflog.SetField(ctx, "overwrite", overwrite)
+	ctx = tflog.SetField(ctx, "redeploy", forceRedploy)
+	tflog.Info(ctx, "Update called on certificate deployment resource")
+
+	//Read cert from Keyfactor Command
+	args := &api.GetCertificateContextArgs{
+		IncludeLocations: boolToPointer(true),
+		Id:               certificateIdInt,
+	}
+	certificateData, err := kfClient.GetCertificateContext(args)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Deployment read error.",
+			fmt.Sprintf(
+				"Unknown error during read status of deployment of certificate '%d' to store '%s (%s)': "+err.Error(),
+				certificateId,
+				storeId,
+				certificateAlias,
+			),
+		)
+	}
+
+	vErr := validateDeployment(
+		ctx,
+		kfClient,
+		storeId,
+		certificateAlias,
+		certificateData,
+		1,
+	) // Initial check to see if the cert is already deployed
+
+	if vErr != nil {
+		addErr := addCertificateToStore(
+			ctx,
+			kfClient,
+			jobParams,
+			&plan,
+		)
+		if addErr != nil {
+			response.Diagnostics.AddError(
+				"Certificate deployment error",
+				fmt.Sprintf(
+					"Unknown error during deploy of certificate '%v'(%s) to store '%s': "+addErr.Error(),
+					certificateId,
+					certificateAlias,
+					storeId,
+				),
+			)
+		}
+
+		if response.Diagnostics.HasError() {
+			return
+		}
+
+		vErr2 := validateDeployment(
+			ctx,
+			kfClient,
+			storeId,
+			certificateAlias,
+			certificateData,
+			1000000,
+		) // Check if the cert is deployed
+		if vErr2 != nil {
+			response.Diagnostics.AddError(
+				"Deployment validation error.",
+				fmt.Sprintf(
+					"Unknown error during validation of deploy of certificate '%d' to store '%s (%s)': "+vErr2.Error(),
+					certificateId,
+					storeId,
+					certificateAlias,
+				),
+			)
+		}
+	}
+
+	if response.Diagnostics.HasError() {
+		return
+	}
 
 	// Set state
-	tflog.Error(ctx, "Update called on certificate deployment resource")
-	response.Diagnostics.AddError(
-		"Certificate deployment updates not implemented.",
-		fmt.Sprintf("Error, only create and delete actions are supported for certificate deployments."),
-	)
+	var result = CommandCertificateDeployment{
+		ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
+		CertificateId:    plan.CertificateId,
+		StoreId:          plan.StoreId,
+		CertificateAlias: plan.CertificateAlias,
+		KeyPassword:      plan.KeyPassword,
+		JobParameters:    plan.JobParameters,
+		Redeploy:         plan.Redeploy,
+		Overwrite:        plan.Overwrite,
+		SkipRemoval:      plan.SkipRemoval,
+	}
+
+	diags = response.State.Set(ctx, result)
+	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
@@ -406,6 +585,13 @@ func (r resourceCommandCertificateDeployment) Delete(
 	//convert int64 to int
 	certId := int(certificateId)
 
+	if !state.SkipRemoval.Null && state.SkipRemoval.Value {
+		tflog.Info(ctx, "Skipping removal of certificate from store 'skip_removal' set to `true`.")
+		response.State.RemoveResource(ctx)
+		return
+	}
+
+	tflog.Info(ctx, "Removing certificate from store.")
 	err := removeCertificateAliasFromStore(ctx, kfClient, &diff, certId, certificateAlias)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {

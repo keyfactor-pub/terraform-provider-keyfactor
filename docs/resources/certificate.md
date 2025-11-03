@@ -106,7 +106,7 @@ resource "keyfactor_certificate" "kf_csr_cert" {
 - `certificate_enrollment_pattern` (String) Either the `name` or internal `ID` (integer) indicating the enrollment pattern to use when requesting the certificate. If this value is not provided, the default enrollment pattern defined for the template provided in the request (see the Template parameter) will be used.
 
 One of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern. IMPORTANT: Requires Keyfactor Command v25.1.0+
-- `certificate_format` (String) Optional: The output format to return the enrolled certificate in. Valid options are: `PEM, PFX, JKS,Zip` Defaults to: `PEM`
+- `certificate_format` (String) Optional: The output format to return the enrolled certificate in. Valid PFX enrollment options are: `PEM, PFX, JKS, Zip`. Valid CSR enrollment opetions are `PEM, DER`. Defaults to: `PEM`
 - `certificate_template` (String) A string that sets the name of the certificate template that should be used to issue the certificate. The template short name should be used. See also EnrollmentPatternId.
 
 One of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern.

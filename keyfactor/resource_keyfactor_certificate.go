@@ -1519,9 +1519,16 @@ func (r resourceCommandCertificate) Delete(
 	ctx = tflog.SetField(ctx, "certificate_cn", certificateCN)
 	ctx = tflog.SetField(ctx, "certificate_thumbprint", certificateThumbprint)
 
-	if state.RenewalConfig != nil && !state.RenewalConfig.RevokeOnRenew.Value {
+	if state.RenewalConfig != nil && !state.RenewalConfig.RevokeOnRenew.Null && !state.RenewalConfig.RevokeOnRenew.Value {
 		// Remove resource from state without revocation
 		tflog.Debug(ctx, "RevokeOnRenew is false, skipping revocation for certificate.")
+		response.State.RemoveResource(ctx)
+		tflog.Info(ctx, fmt.Sprintf("Certificate '%s' removed from state.", certificateId))
+		return
+	}
+
+	if !state.RevokeOnDestroy.Null && !state.RevokeOnDestroy.Value {
+		tflog.Debug(ctx, "RevokeOnDestroy is false, skipping revocation for certificate.")
 		response.State.RemoveResource(ctx)
 		tflog.Info(ctx, fmt.Sprintf("Certificate '%s' removed from state.", certificateId))
 		return
@@ -1539,13 +1546,6 @@ func (r resourceCommandCertificate) Delete(
 	if collectionIdInt > 0 {
 		tflog.Debug(ctx, "Setting collection ID on API request")
 		revokeArgs.CollectionId = collectionIdInt
-	}
-
-	if !state.RevokeOnDestroy.Null && state.RevokeOnDestroy.Value == false {
-		tflog.Debug(ctx, "RevokeOnDestroy is false, skipping revocation for certificate.")
-		response.State.RemoveResource(ctx)
-		tflog.Info(ctx, fmt.Sprintf("Certificate '%s' removed from state.", certificateId))
-		return
 	}
 
 	tflog.Debug(ctx, "Calling RevokeCert")

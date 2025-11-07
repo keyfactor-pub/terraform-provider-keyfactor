@@ -4,10 +4,10 @@ page_title: "keyfactor_certificate_deployment Resource - terraform-provider-keyf
 subcategory: ""
 description: |-
   Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
-  API to deploy certificates to "keyfactorcertificatestore" resources.
+  API to deploy certificates to "keyfactor_certificate_store" resources.
   [!IMPORTANT]
   Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules.
-  A "keyfactorcertificatedeployment" will not finish successfully until the destination certificate store's certificate
+  A "keyfactor_certificate_deployment" will not finish successfully until the destination certificate store's certificate
   inventory has been updated to include the deployed certificate.
 ---
 
@@ -67,6 +67,7 @@ resource "keyfactor_certificate_deployment" "ca_cert_deployment" {
 - `key_password` (String, Sensitive) Password that protects PFX certificate, if the certificate was enrolled using PFX enrollment, or is password protected in general. This value cannot change, and Terraform will throw an error if a change is attempted.
 - `overwrite` (Boolean) If true, any existing certificate with the same alias will be overwritten. If false, an error will be returned if a certificate with the same alias already exists. Default value is `true`.
 - `redeploy` (Boolean) If true, the certificate will be redeployed to the store. If false, the certificate will be deployed only if it is not already deployed to the store.
+- `skip_removal` (Boolean) If set to `true`, deleting the resource will not remove the certificate from the store. Defaults to `false`.
 
 ### Read-Only
 

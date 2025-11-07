@@ -1,3 +1,23 @@
+# v2.7.0
+
+## Certificate Deployments
+
+### Features
+
+- feat(deployments): `keyfactor_certificate_deployment` Add support for `skip_removal` parameter to skip removal of
+  existing certificates during a renewal/replacement of a certificate. Defaults to `false`.
+
+## Certificates
+
+### Features
+- feat(certificates): `keyfactor_certificate` Add calculated fields `not_before`, `not_after` and `revocation_effective_date` to represent the
+  certificate validity period.
+- feat(certificates): `keyfactor_certificate` Add `revoke_on_destroy` parameter to allow for renew/`destroy` operations without revoking the certificate. Defaults to `true`.
+
+### Fixes
+- fix(certificates): `keyfactor_certificate` resource CSR enrollment now correctly passes default `certificate_format` as `PEM` when not specified.
+- fix(certificates): `keyfactor_certificate` will now use `not_after` for calculating expiry.
+
 # v2.6.0
 
 ## Enrollment Patterns

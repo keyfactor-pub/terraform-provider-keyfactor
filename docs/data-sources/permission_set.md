@@ -23,5 +23,3 @@ Reads an existing permission set from Keyfactor Command using the V1 `/Permissio
 
 - `id` (String) Internal ID of the permission set
 - `permissions` (List of String) A list of permissions associated with the permission set
-
-

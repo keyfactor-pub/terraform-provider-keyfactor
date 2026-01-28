@@ -15,6 +15,8 @@ require (
 	golang.org/x/crypto v0.47.0 // indirect
 )
 
+require github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1 // indirect

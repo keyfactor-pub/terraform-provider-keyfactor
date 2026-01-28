@@ -730,7 +730,7 @@ func recoverPrivateKeyFromKeyfactorCommand(
 
 	if (certificateFormat == "PEM" || certificateFormat == "pem") && pkey == nil {
 		tflog.Debug(ctx, "Unpacking PEM data to extract private key.")
-		-pemPrivateKey, pemLeaf, pemChain, unpackErr := api.UnpackPEM(rawBytes, lookupPassword)
+		pemPrivateKey, pemLeaf, pemChain, unpackErr := api.UnpackPEM(rawBytes, lookupPassword)
 		if unpackErr != nil {
 			errMsg := fmt.Sprintf("Unable to unpack PEM data for certificate '%v': %v", certId, unpackErr.Error())
 			tflog.Error(ctx, errMsg)

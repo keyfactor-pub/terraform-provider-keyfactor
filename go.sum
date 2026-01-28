@@ -20,8 +20,8 @@ github.com/Keyfactor/keyfactor-auth-client-go v1.4.0-rc.0 h1:xy9knPEO6G7N6Emf/PH
 github.com/Keyfactor/keyfactor-auth-client-go v1.4.0-rc.0/go.mod h1:rFBZPMSHWwWuUwE1kXhLsDaOxjGiHMbXTTEni8Dmufo=
 github.com/Keyfactor/keyfactor-go-client-sdk/v24 v24.0.2 h1:y5PjSGVwNvuBS4AXKN6h5L+pwO2eqhYMP550MWSFsgk=
 github.com/Keyfactor/keyfactor-go-client-sdk/v24 v24.0.2/go.mod h1:xRxSLR87Uz6SNYjkK6ezXTLGoOjHfqtZ2kwYgUfz0Bk=
-github.com/Keyfactor/keyfactor-go-client/v3 v3.3.0 h1:2uJ1BmX6xETSyshiTEFHxvWNDAIoQ/Sn+P37KftcnTM=
-github.com/Keyfactor/keyfactor-go-client/v3 v3.3.0/go.mod h1:a7voCNCgvf+TbQxEno/xQ3wRJ+wlJRJKruhNco50GV8=
+github.com/Keyfactor/keyfactor-go-client/v3 v3.4.0-rc.5 h1:FujeDl76rUCPMMlAo99Msy/KDP4/FnDbDUfzfg42qng=
+github.com/Keyfactor/keyfactor-go-client/v3 v3.4.0-rc.5/go.mod h1:WUW+fZElmrKsLlB29HCC6P2PyEyseOvaSeUs0gvrru0=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/ProtonMail/go-crypto v1.1.6 h1:ZcV+Ropw6Qn0AX9brlQLAUXfqLBc7Bl+f/DmNxpLfdw=
@@ -115,8 +115,8 @@ github.com/hashicorp/terraform-plugin-framework v0.10.0 h1:LGYcnvNdVaZA1ZHe53BHL
 github.com/hashicorp/terraform-plugin-framework v0.10.0/go.mod h1:CK7Opzukfu/2CPJs+HzUdfHrFlp+ZIQeSxjF0x8k464=
 github.com/hashicorp/terraform-plugin-go v0.18.0 h1:IwTkOS9cOW1ehLd/rG0y+u/TGLK9y6fGoBjXVUquzpE=
 github.com/hashicorp/terraform-plugin-go v0.18.0/go.mod h1:l7VK+2u5Kf2y+A+742GX0ouLut3gttudmvMgN0PA74Y=
-github.com/hashicorp/terraform-plugin-log v0.9.0 h1:i7hOA+vdAItN1/7UrfBqBwvYPQ9TFvymaRGZED3FCV0=
-github.com/hashicorp/terraform-plugin-log v0.9.0/go.mod h1:rKL8egZQ/eXSyDqzLUuwUYLVdlYeamldAHSxjUFADow=
+github.com/hashicorp/terraform-plugin-log v0.10.0 h1:eu2kW6/QBVdN4P3Ju2WiB2W3ObjkAsyfBsL3Wh1fj3g=
+github.com/hashicorp/terraform-plugin-log v0.10.0/go.mod h1:/9RR5Cv2aAbrqcTSdNmY1NRHP4E3ekrXRGjqORpXyB0=
 github.com/hashicorp/terraform-plugin-sdk/v2 v2.27.0 h1:I8efBnjuDrgPjNF1MEypHy48VgcTIUY4X6rOFunrR3Y=
 github.com/hashicorp/terraform-plugin-sdk/v2 v2.27.0/go.mod h1:cUEP4ly/nxlHy5HzD6YRrHydtlheGvGRJDhiWqqVik4=
 github.com/hashicorp/terraform-registry-address v0.4.0 h1:S1yCGomj30Sao4l5BMPjTGZmCNzuv7/GDTDX99E9gTk=

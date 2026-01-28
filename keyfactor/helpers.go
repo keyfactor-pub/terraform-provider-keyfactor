@@ -719,6 +719,18 @@ func recoverPrivateKeyFromKeyfactorCommand(
 		return "", "", "", rawBytes, diags
 	}
 
+	if (certificateFormat == "PFX" || certificateFormat == "pfx") && pkey == nil {
+		tflog.Debug(ctx, "Unpacking PFX data to extract private key.")
+		pfxPrivateKey, pfxLeaf, pfxChain, unpackErr := unpackPkcs12(rawBytes, lookupPassword)
+		if unpackErr != nil {
+			errMsg := fmt.Sprintf("Unable to unpack PFX data for certificate '%v': %v", certId, unpackErr.Error())
+			tflog.Error(ctx, errMsg)
+			diags.AddError("Error unpacking PFX data", errMsg)
+			return "", "", "", rawBytes, diags
+		}
+		return pfxPrivateKey, pfxLeaf, strings.Join(pfxChain, "\n"), rawBytes, diags
+	}
+
 	if pkey == nil {
 		errMsg := fmt.Sprintf(
 			"Private key not available for certificate '%v' from Keyfactor Command.", certId,
@@ -1187,6 +1199,19 @@ func unpackPkcs12(pfxData interface{}, password string) (
 			break
 		}
 
+	case *string:
+		if v == nil {
+			err = fmt.Errorf("pfxData pointer is nil")
+			return
+		}
+		// attempt to base64 decode first
+		pfxBytes = []byte(*v) // Convert *string to []byte
+		decoded, decodeErr := base64.StdEncoding.DecodeString(*v)
+		if decodeErr == nil && len(decoded) > 0 {
+			pfxBytes = decoded
+			break
+		}
+		break
 	case []byte:
 		pfxBytes = v
 	default:
@@ -1321,11 +1346,25 @@ func recoverOrDownloadCertificate(
 		client,
 		certificateFormat,
 	)
+	if (certificateFormat == "PFX" || certificateFormat == "pfx") && pKeyPEM == "" {
+		tflog.Debug(ctx, "Unpacking PFX data to extract private key.")
+		pfxPrivateKey, pfxLeaf, pfxChain, unpackErr := unpackPkcs12(rawBytes, password)
+		if unpackErr != nil {
+			errMsg := fmt.Sprintf("Unable to unpack PFX data for certificate '%v': %v", id, unpackErr.Error())
+			tflog.Error(ctx, errMsg)
+			diags.AddError("Error unpacking PFX data", errMsg)
+			return leafPEM, chainPEM, pKeyPEM, rawBytes, diags
+		}
+		pKeyPEM = pfxPrivateKey
+		leafPEM = pfxLeaf
+		chainPEM = strings.Join(pfxChain, ",")
+	}
 	if leafPEM == "" || diags.HasError() {
 		// Attempt to download certificate as a fallback
 		tflog.Debug(ctx, "Unable to recover private key. Attempting to download certificate from Keyfactor Command.")
-		leafPEM, chainPEM, rawBytes, diags = downloadCertificateFromKeyfactorCommand(ctx, id, collectionID, client)
+		leafPEM, chainPEM, _, diags = downloadCertificateFromKeyfactorCommand(ctx, id, collectionID, client)
 	}
+
 	return leafPEM, chainPEM, pKeyPEM, rawBytes, diags
 }
 

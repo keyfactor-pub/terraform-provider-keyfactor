@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -502,10 +503,10 @@ func (r dataSourceCertificate) Read(
 
 	sn := leaf.SerialNumber.String()
 	issuerDN := leaf.Issuer.String()
-	tp, _ := GetCertificateThumbprint(leaf)
+	tp, _ := api.GetCertificateThumbprint(leaf)
 	fullChain := chainPEM
 	if !strings.Contains(fullChain, leafPEM) {
-		fullChain = leafPEM + "\n" + chainPEM
+		fullChain = leafPEM + chainPEM
 	}
 
 	caName := state.CertificateAuthority.Value

@@ -1,3 +1,12 @@
+# 2.7.1
+
+## Certificates
+
+### Fixes:
+
+- fix(data): `keyfactor_certificate` data source schema updated and properly unpacks PFX format recovery.
+- fix(data): `keyfactor_certificate` data source handles `certificate_format="PEM"` properly.
+
 # v2.7.0
 
 ## Certificate Deployments

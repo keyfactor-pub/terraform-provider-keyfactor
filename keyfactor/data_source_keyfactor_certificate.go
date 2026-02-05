@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -204,6 +204,16 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Computed:    true,
 				Description: "Thumbprint of newly enrolled certificate",
 			},
+			"not_before": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Not Before date of enrolled certificate",
+			},
+			"not_after": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Not After date of enrolled certificate",
+			},
 			"identifier": {
 				Type:     types.StringType,
 				Required: true,
@@ -319,6 +329,11 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Computed:    true,
 				Description: "Whether the certificate is pending revocation",
 			},
+			"revocation_effective_date": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "The effective date of the certificate revocation",
+			},
 			"expiry_warn_days": {
 				Type:     types.Int64Type,
 				Optional: true,
@@ -326,84 +341,6 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 					"Number of days before expiry to warn about the certificate. "+
 						"Defaults to %d days.", DEFAULT_EXPIRY_WARNING_DAYS,
 				),
-			},
-			"renewal_config": {
-				Attributes: tfsdk.SingleNestedAttributes(
-					map[string]tfsdk.Attribute{
-						"force_renewal": {
-							Type:        types.BoolType,
-							Description: "Will force certificate to be renewed",
-							Optional:    true,
-							PlanModifiers: []tfsdk.AttributePlanModifier{
-								tfsdk.RequiresReplaceIf(
-									// The conditional function
-									func(ctx context.Context, state attr.Value, config attr.Value, path path.Path) (
-										bool,
-										diag.Diagnostics,
-									) {
-										var diags diag.Diagnostics
-
-										// Check if the planned value (config) is valid and known
-										//plannedValue, _ := config.ToTerraformValue(ctx)
-										//var stateValue bool
-										//pErr := plannedValue.As(&stateValue)
-										//if pErr != nil {
-										//	diags.AddError(
-										//		"Value conversion error",
-										//		"Unable to convert value to bool",
-										//	)
-										//	return false, diags
-										//}
-										planVal, err := config.ToTerraformValue(ctx)
-										if err != nil {
-											diags.AddError(
-												"Value conversion error",
-												"Unable to convert value to bool",
-											)
-										}
-
-										var forceRenewal bool
-										convErr := planVal.As(&forceRenewal)
-										if convErr != nil {
-											diags.AddError(
-												"Value conversion error",
-												"Unable to convert value to bool",
-											)
-											return false, diags
-										}
-
-										if forceRenewal {
-											return true, diags
-										}
-
-										return false, diags
-									},
-									"Triggers resource replacement when force_renewal is set to true.",     // Description
-									"Triggers resource replacement when `force_renewal` is set to `true`.", // Markdown Description
-								),
-							},
-						},
-						"renew_days": {
-							Type:        types.Int64Type,
-							Required:    true,
-							Description: "The number of days before the certificate expires to renew.",
-						},
-						"renew_eligible": {
-							Type:          types.BoolType,
-							Computed:      true,
-							PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-							Description:   "Whether the certificate is eligible for renewal.",
-						},
-						"revoke_on_renew": {
-							Type:        types.BoolType,
-							Optional:    true,
-							Description: "Whether the existing certificate should be revoked on renewal.",
-						},
-					},
-				),
-				Optional:    true,
-				Computed:    false,
-				Description: "Configuration for certificate auto renewal. Includes whether auto-renewal is enabled and the number of days before expiry.",
 			},
 		},
 		Description:         "Reads an existing certificate from Keyfactor Command using the `/Certificates` API",
@@ -442,7 +379,7 @@ func (r dataSourceCertificate) Read(
 	request tfsdk.ReadDataSourceRequest,
 	response *tfsdk.ReadDataSourceResponse,
 ) {
-	var state CommandCertificate
+	var state DataCommandCertificate
 	tflog.Info(ctx, "Reading terraform data resource 'certificate'.")
 
 	// Extract initial config into state and append errors if necessary
@@ -474,6 +411,20 @@ func (r dataSourceCertificate) Read(
 	}
 
 	// Attempt to recover or download certificate from Command
+	certificateFormat := state.CertificateFormat.Value
+
+	if certificateFormat == "" {
+		certificateFormat = DEFAULT_CERTIFICATE_RECOVER_FORMAT
+	} else if !stringContains(VALID_CERTIFICATE_FORMATS, certificateFormat) {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf(
+				"Certificate format '%s' is not valid. Valid formats are: %s.",
+				certificateFormat,
+				strings.Join(VALID_CERTIFICATE_FORMATS, ", "),
+			),
+		)
+	}
 
 	keyPassword := state.KeyPassword.Value
 	if state.KeyPassword.Null || state.KeyPassword.Value == "" {
@@ -491,7 +442,7 @@ func (r dataSourceCertificate) Read(
 		collectionIdInt,
 		state.KeyPassword.Value,
 		r.p.client,
-		keyPassword,
+		certificateFormat,
 	)
 
 	// Handle leaf PEM encoding for certificates without private keys
@@ -552,10 +503,10 @@ func (r dataSourceCertificate) Read(
 
 	sn := leaf.SerialNumber.String()
 	issuerDN := leaf.Issuer.String()
-	tp, _ := GetCertificateThumbprint(leaf)
+	tp, _ := api.GetCertificateThumbprint(leaf)
 	fullChain := chainPEM
 	if !strings.Contains(fullChain, leafPEM) {
-		fullChain = leafPEM + "\n" + chainPEM
+		fullChain = leafPEM + chainPEM
 	}
 
 	caName := state.CertificateAuthority.Value
@@ -578,40 +529,19 @@ func (r dataSourceCertificate) Read(
 	revoked, expired, _, cDiags = checkCertDiags(ctx, certGetResp, warningDays, leaf)
 	response.Diagnostics.Append(cDiags...)
 
+	var revEffDate string
 	if certGetResp != nil {
 		caName = certGetResp.CertificateAuthorityName
 		certificateID = certGetResp.Id
 		templateName = certGetResp.TemplateName
 		metadata = flattenMetadata(certGetResp.Metadata)
-	}
-
-	renewalConfig := state.RenewalConfig
-	if state.RenewalConfig != nil {
-		renewalConfig = &CertificateAutoRenewConfig{
-			ForceRenewal: state.RenewalConfig.ForceRenewal,
-			RenewDays:    state.RenewalConfig.RenewDays,
-			//RenewEligible: types.Bool{
-			//	Value: renewEligible,
-			//},
-			RevokeOnRenew: state.RenewalConfig.RevokeOnRenew,
-		}
-		if state.RenewalConfig.RenewDays.Value != 0 {
-			ctx = tflog.SetField(ctx, "renew_days", state.RenewalConfig.RenewDays.Value)
-			tflog.Info(ctx, "Checking if certificate is eligible for renewal.")
-			renewDays := int(state.RenewalConfig.RenewDays.Value)
-			renewEligible, _, _ := isExpiring(ctx, leaf, renewDays)
-			if renewEligible {
-				renewalConfig.RenewEligible = types.Bool{
-					Unknown: false,
-					Null:    false,
-					Value:   renewEligible,
-				}
-			}
-		}
+		revEffDate = certGetResp.RevocationEffDate
 	}
 
 	tflog.Debug(ctx, "Creating state object for certificate.")
-	result := CommandCertificate{
+	notBeforeStr := leaf.NotBefore.UTC().Format(time.RFC3339)
+	notAfterStr := leaf.NotAfter.UTC().Format(time.RFC3339)
+	result := DataCommandCertificate{
 		ID:           state.ID,
 		CSR:          state.CSR,
 		CommonName:   types.String{Value: leaf.Subject.CommonName, Null: false},
@@ -662,9 +592,20 @@ func (r dataSourceCertificate) Read(
 		IsPendingRevocation: types.Bool{
 			Null: true,
 		},
-		RenewalConfig:     renewalConfig,
 		OwnerRoleName:     types.String{Value: ownerRoleName, Null: isNullString(ownerRoleName)},
 		EnrollmentPattern: types.String{Value: enrollmentPattern, Null: isNullString(enrollmentPattern)},
+		RevocationEffDate: types.String{
+			Value: revEffDate,
+			Null:  isNullString(revEffDate),
+		},
+		NotBefore: types.String{
+			Value: notBeforeStr,
+			Null:  isNullString(notBeforeStr),
+		},
+		NotAfter: types.String{
+			Value: notAfterStr,
+			Null:  isNullString(notAfterStr),
+		},
 	}
 
 	switch state.CertificateFormat.Value {

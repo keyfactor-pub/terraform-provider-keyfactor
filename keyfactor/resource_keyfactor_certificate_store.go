@@ -258,7 +258,7 @@ func (r resourceCertificateStore) Create(
 		return
 	}
 
-	var storePassFormatted *api.StorePasswordConfig
+	var storePassFormatted *api.UpdateStorePasswordConfig
 	if plan.StorePassword.Null {
 		storePassFormatted = nil
 	} else {
@@ -796,10 +796,10 @@ func (r resourceCertificateStore) ImportState(
 	}
 }
 
-func createPasswordConfig(p string) *api.StorePasswordConfig {
+func createPasswordConfig(p string) *api.UpdateStorePasswordConfig {
 	password := stringToPointer(p)
-	res := &api.StorePasswordConfig{
-		Value: password,
+	res := &api.UpdateStorePasswordConfig{
+		SecretValue: password,
 	}
 
 	return res

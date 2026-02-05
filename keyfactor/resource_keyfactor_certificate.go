@@ -791,7 +791,7 @@ func (r resourceCommandCertificate) Read(
 	notAfterStr := leaf.NotAfter.UTC().Format(time.RFC3339)
 	sn := leaf.SerialNumber.String()
 	issuerDN := leaf.Issuer.String()
-	tp, _ := GetCertificateThumbprint(leaf)
+	tp, _ := api.GetCertificateThumbprint(leaf)
 	fullChain := chainPEM
 	if !strings.Contains(fullChain, leafPEM) {
 		fullChain = leafPEM + chainPEM
@@ -1654,7 +1654,7 @@ func (r resourceCommandCertificate) ImportState(
 	}
 	sn := leaf.SerialNumber.String()
 	issuerDN := leaf.Issuer.String()
-	tp, _ := GetCertificateThumbprint(&leaf)
+	tp, _ := api.GetCertificateThumbprint(&leaf)
 	fullChain := chainPEM
 	if !strings.Contains(fullChain, leafPEM) {
 		fullChain = leafPEM + chainPEM
@@ -2439,7 +2439,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		var (
 			pfxErr error
 		)
-		pKeyPEM, leafPEM, pChain, pfxErr = unpackPkcs12(
+		pKeyPEM, leafPEM, pChain, pfxErr = api.UnpackPkcs12(
 			enrollResponse.CertificateInformation.PKCS12Blob,
 			lookupPassword,
 		)

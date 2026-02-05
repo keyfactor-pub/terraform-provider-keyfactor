@@ -16,10 +16,8 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	rsa2 "crypto/rsa"
-	"crypto/sha1"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -46,7 +44,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/spbsoluble/go-pkcs12"
 )
 
 var (
@@ -719,6 +716,30 @@ func recoverPrivateKeyFromKeyfactorCommand(
 		return "", "", "", rawBytes, diags
 	}
 
+	if (certificateFormat == "PFX" || certificateFormat == "pfx") && pkey == nil {
+		tflog.Debug(ctx, "Unpacking PFX data to extract private key.")
+		pfxPrivateKey, pfxLeaf, pfxChain, unpackErr := api.UnpackPkcs12(rawBytes, lookupPassword)
+		if unpackErr != nil {
+			errMsg := fmt.Sprintf("Unable to unpack PFX data for certificate '%v': %v", certId, unpackErr.Error())
+			tflog.Error(ctx, errMsg)
+			diags.AddError("Error unpacking PFX data", errMsg)
+			return "", "", "", rawBytes, diags
+		}
+		return pfxPrivateKey, pfxLeaf, strings.Join(pfxChain, "\n"), rawBytes, diags
+	}
+
+	if (certificateFormat == "PEM" || certificateFormat == "pem") && pkey == nil {
+		tflog.Debug(ctx, "Unpacking PEM data to extract private key.")
+		pemPrivateKey, pemLeaf, pemChain, unpackErr := api.UnpackPEM(rawBytes, lookupPassword)
+		if unpackErr != nil {
+			errMsg := fmt.Sprintf("Unable to unpack PEM data for certificate '%v': %v", certId, unpackErr.Error())
+			tflog.Error(ctx, errMsg)
+			diags.AddError("Error unpacking PEM data", errMsg)
+			return "", "", "", rawBytes, diags
+		}
+		return pemPrivateKey, pemLeaf, strings.Join(pemChain, ""), rawBytes, diags
+	}
+
 	if pkey == nil {
 		errMsg := fmt.Sprintf(
 			"Private key not available for certificate '%v' from Keyfactor Command.", certId,
@@ -1159,141 +1180,6 @@ func LogFunctionReturned(ctx context.Context, methodName string) {
 	return
 }
 
-// unpackPkcs12 extracts the private key, certificate, and CA certificates from a PKCS#12/PFX file.
-// Parameters:
-//   - pfxData: The byte slice containing the PKCS#12/PFX file data.
-//   - password: The password used for decrypting the PKCS#12/PFX file.
-//
-// Returns:
-//   - privateKey: The private key extracted from the PFX file, in PEM format.
-//   - certificate: The certificate extracted from the PFX file, in PEM format.
-//   - caCertificates: A slice of CA certificates extracted from the PFX file, in PEM format (if any).
-//   - err: An error that describes why the unpacking failed, if any.
-func unpackPkcs12(pfxData interface{}, password string) (
-	privateKey, certificate string,
-	caCertificates []string,
-	err error,
-) {
-	// Convert pfxData to []byte, if necessary
-	var pfxBytes []byte
-
-	switch v := pfxData.(type) {
-	case string:
-		// attempt to base64 decode first
-		pfxBytes = []byte(v) // Convert string to []byte
-		decoded, decodeErr := base64.StdEncoding.DecodeString(v)
-		if decodeErr == nil && len(decoded) > 0 {
-			pfxBytes = decoded
-			break
-		}
-
-	case []byte:
-		pfxBytes = v
-	default:
-		err = fmt.Errorf(
-			"invalid pfxData type: expected string or []byte, got %s (type %T)",
-			reflect.ValueOf(pfxData),
-			pfxData,
-		)
-		return
-	}
-
-	// Decode the PKCS#12 data
-	parsedKey, parsedCert, parsedCAs, pkcs12Err := pkcs12.DecodeChain(pfxBytes, password)
-	if pkcs12Err != nil {
-		err = fmt.Errorf("failed to decode PKCS#12 data: %v", pkcs12Err)
-		return
-	}
-
-	// PEM-encode the private key
-	privateKeyBlock, keyErr := encodePrivateKey(parsedKey)
-	if keyErr != nil {
-		err = fmt.Errorf("failed to encode private key: %v", keyErr)
-		return
-	}
-	privateKey = string(pem.EncodeToMemory(privateKeyBlock))
-
-	// PEM-encode the certificate
-	certificateBlock := &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: parsedCert.Raw,
-	}
-	certificate = string(pem.EncodeToMemory(certificateBlock))
-
-	// PEM-encode the CA certificates (if any)
-	for _, caCert := range parsedCAs {
-		caCertBlock := &pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: caCert.Raw,
-		}
-		caCertificates = append(caCertificates, string(pem.EncodeToMemory(caCertBlock)))
-	}
-
-	return privateKey, certificate, caCertificates, nil
-}
-
-// encodePrivateKey determines the type of private key (RSA or ECDSA) and encodes it as a PEM block.
-// Parameters:
-//   - key: The private key to encode.
-//
-// Returns:
-//   - pemBlock: The PEM block representation of the private key.
-//   - err: An error if the private key type is unsupported or invalid.
-func encodePrivateKey(key interface{}) (*pem.Block, error) {
-	switch k := key.(type) {
-	case *rsa2.PrivateKey:
-		return &pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: x509.MarshalPKCS1PrivateKey(k),
-		}, nil
-	case *ecdsa.PrivateKey:
-		encodedKey, err := x509.MarshalECPrivateKey(k)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode ECDSA private key: %v", err)
-		}
-		return &pem.Block{
-			Type:  "EC PRIVATE KEY",
-			Bytes: encodedKey,
-		}, nil
-	case ed25519.PrivateKey:
-		return &pem.Block{
-			Type:  "PRIVATE KEY",
-			Bytes: k,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported private key type: %T", key)
-	}
-}
-
-// GetCertificateThumbprint computes the thumbprint (SHA-1 hash) of an x509 certificate.
-//
-// The thumbprint is calculated by hashing the raw DER-encoded certificate data
-// using the SHA-1 algorithm.
-//
-// Parameters:
-//   - cert: A pointer to an x509.Certificate object.
-//
-// Returns:
-//   - A string representing the hexadecimal-encoded thumbprint of the certificate.
-//   - An error, which will be nil if the computation succeeds.
-//
-// Example:
-//
-//	thumbprint, err := GetCertificateThumbprint(cert)
-//	if err != nil {
-//	    log.Fatalf("error computing thumbprint: %v", err)
-//	}
-//	fmt.Println("Certificate Thumbprint:", thumbprint)
-func GetCertificateThumbprint(cert *x509.Certificate) (string, error) {
-	// Compute the SHA-1 hash of the certificate's raw DER data
-	hash := sha1.Sum(cert.Raw)
-
-	// Convert the hash to a hexadecimal string
-	thumbprint := hex.EncodeToString(hash[:])
-
-	return thumbprint, nil
-}
-
 // recoverOrDownloadCertificate attempts to recover/download the certificate when context is unavailable.
 func recoverOrDownloadCertificate(
 	ctx context.Context,
@@ -1324,8 +1210,9 @@ func recoverOrDownloadCertificate(
 	if leafPEM == "" || diags.HasError() {
 		// Attempt to download certificate as a fallback
 		tflog.Debug(ctx, "Unable to recover private key. Attempting to download certificate from Keyfactor Command.")
-		leafPEM, chainPEM, rawBytes, diags = downloadCertificateFromKeyfactorCommand(ctx, id, collectionID, client)
+		leafPEM, chainPEM, _, diags = downloadCertificateFromKeyfactorCommand(ctx, id, collectionID, client)
 	}
+
 	return leafPEM, chainPEM, pKeyPEM, rawBytes, diags
 }
 

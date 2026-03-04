@@ -18,9 +18,11 @@ import (
 	rsa2 "crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"math/big"
 	mathRand "math/rand"
 
 	"net"
@@ -1825,4 +1827,45 @@ func convertIntArrayToTerraform(lengths any) []attr.Value {
 		}
 	}
 	return result
+}
+
+// normalizeSerialNumber converts a serial number to a canonical uppercase hex format.
+// It handles both hex strings (from the Keyfactor API) and decimal strings (from big.Int.String()).
+func normalizeSerialNumber(sn string) string {
+	if sn == "" || sn == "<nil>" {
+		return ""
+	}
+
+	// Strip any separators like colons or spaces
+	cleaned := strings.ReplaceAll(strings.ReplaceAll(sn, ":", ""), " ", "")
+
+	// Check if the string contains any hex letter characters (a-f, A-F).
+	// If it does, it's unambiguously a hex string.
+	hasHexLetters := strings.ContainsAny(cleaned, "abcdefABCDEF")
+
+	if hasHexLetters {
+		// Validate it's actually valid hex
+		if _, err := hex.DecodeString(cleaned); err == nil && len(cleaned)%2 == 0 {
+			return strings.ToUpper(cleaned)
+		}
+	}
+
+	// Try to parse as decimal (big.Int.String() output or digit-only serial)
+	n := new(big.Int)
+	if _, ok := n.SetString(cleaned, 10); ok {
+		return strings.ToUpper(fmt.Sprintf("%X", n))
+	}
+
+	// Fallback for hex strings with odd length or other edge cases
+	if _, err := hex.DecodeString(cleaned); err == nil {
+		return strings.ToUpper(cleaned)
+	}
+
+	// Last resort: return uppercased as-is
+	return strings.ToUpper(sn)
+}
+
+// normalizeThumbprint normalizes a certificate thumbprint to lowercase hex.
+func normalizeThumbprint(tp string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(tp, ":", ""), " ", ""))
 }

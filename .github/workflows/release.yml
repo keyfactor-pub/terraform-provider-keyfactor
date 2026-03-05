@@ -37,7 +37,7 @@ jobs:
           echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
           echo "Version extracted: ${GITHUB_REF#refs/tags/}"
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v4
+        uses: goreleaser/goreleaser-action@v7
         with:
           args: release --clean
         env:

@@ -90,6 +90,11 @@ type resourceCommandCertificateType struct{}
 func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
+			"id": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Read-only alias of `identifier` for Terraform framework compatibility.",
+			},
 			"csr": {
 				Type:          types.StringType,
 				Optional:      true,
@@ -662,6 +667,7 @@ func (r resourceCommandCertificate) Create(
 		}
 
 		tflog.Debug(ctx, "Setting state")
+		result.syncTfId()
 		diags = response.State.Set(ctx, result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -687,6 +693,7 @@ func (r resourceCommandCertificate) Create(
 		}
 
 		tflog.Debug(ctx, "Setting state")
+		result.syncTfId()
 		diags = response.State.Set(ctx, *result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -820,7 +827,21 @@ func (r resourceCommandCertificate) Read(
 	revoked, _, expired, cDiags = checkCertDiags(ctx, certGetResp, warningDays, leaf)
 	response.Diagnostics.Append(cDiags...)
 	if certGetResp != nil {
-		caName = certGetResp.CertificateAuthorityName
+		// Preserve the user's original certificate_authority value when the server
+		// returns a fully-qualified name (e.g. "hostname\\LogicalName") but the user
+		// specified only the logical name.  This prevents spurious plan drift on
+		// an attribute that carries RequiresReplace semantics.
+		remoteCaName := certGetResp.CertificateAuthorityName
+		if remoteCaName != "" && caName != "" && remoteCaName != caName {
+			// Check if the remote CA name ends with the state value (logical name match)
+			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
+				tflog.Debug(ctx, fmt.Sprintf("Preserving user-supplied certificate_authority %q (remote returned %q)", caName, remoteCaName))
+			} else {
+				caName = remoteCaName
+			}
+		} else if remoteCaName != "" {
+			caName = remoteCaName
+		}
 		certificateID = certGetResp.Id
 		//templateName = certGetResp.TemplateName
 		metadata = flattenMetadata(certGetResp.Metadata)
@@ -1084,6 +1105,7 @@ func (r resourceCommandCertificate) Read(
 
 	// Set state
 	tflog.Debug(ctx, "Setting state")
+	result.syncTfId()
 	sDiags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(sDiags...)
 	response.Diagnostics.Append(diags...)
@@ -1352,6 +1374,7 @@ func (r resourceCommandCertificate) Update(
 
 		// Set state
 		tflog.Debug(ctx, "Setting state")
+		result.syncTfId()
 		diags = response.State.Set(ctx, &result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -1455,6 +1478,7 @@ func (r resourceCommandCertificate) Update(
 			}
 		}
 
+		result.syncTfId()
 		diags = response.State.Set(ctx, result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -1676,7 +1700,16 @@ func (r resourceCommandCertificate) ImportState(
 	metadata := state.Metadata
 	if certGetResp != nil {
 		// Info that can only be retrieved with `Read Certificates` permissions
-		caName = certGetResp.CertificateAuthorityName
+		remoteCaName := certGetResp.CertificateAuthorityName
+		if remoteCaName != "" && caName != "" && remoteCaName != caName {
+			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
+				tflog.Debug(ctx, fmt.Sprintf("Preserving user-supplied certificate_authority %q (remote returned %q)", caName, remoteCaName))
+			} else {
+				caName = remoteCaName
+			}
+		} else if remoteCaName != "" {
+			caName = remoteCaName
+		}
 		certificateIdInt = certGetResp.Id
 		templateName = certGetResp.TemplateName
 		metadata = flattenMetadata(certGetResp.Metadata)
@@ -1764,6 +1797,7 @@ func (r resourceCommandCertificate) ImportState(
 
 	// Set state
 	tflog.Debug(ctx, "Setting state")
+	result.syncTfId()
 	diags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {

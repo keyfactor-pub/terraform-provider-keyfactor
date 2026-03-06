@@ -98,23 +98,31 @@ func (r resourceOAuthSecurityRole) Read(
 
 	remoteState, httpReq, err := req.Execute()
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
-
-	if httpReq.StatusCode == 404 {
-		tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
-		response.State.RemoveResource(ctx)
+	if err != nil {
+		if httpReq != nil {
+			tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+			if httpReq.StatusCode == 404 {
+				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+				response.State.RemoveResource(ctx)
+				return
+			}
+			defer httpReq.Body.Close()
+			body, _ := io.ReadAll(httpReq.Body)
+			response.Diagnostics.AddError(
+				"Error reading security role",
+				fmt.Sprintf("Could not read OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+			)
+		} else {
+			response.Diagnostics.AddError(
+				"Error reading security role",
+				fmt.Sprintf("Could not read OAuth security role ID %d , unexpected error: %s", roleId, err.Error()),
+			)
+		}
 		return
 	}
 
-	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
-
-		response.Diagnostics.AddError(
-			"Error reading security role",
-			fmt.Sprintf("Could not read OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
-		)
-		return
+	if httpReq != nil {
+		tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 	}
 
 	var result = mapOAuthSecurityRole(ctx, remoteState)
@@ -329,23 +337,31 @@ func (r resourceOAuthSecurityRole) ImportState(
 
 	remoteState, httpReq, err := req.Execute()
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
-
-	if httpReq.StatusCode == 404 {
-		tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
-		response.State.RemoveResource(ctx)
+	if err != nil {
+		if httpReq != nil {
+			tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+			if httpReq.StatusCode == 404 {
+				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+				response.State.RemoveResource(ctx)
+				return
+			}
+			defer httpReq.Body.Close()
+			body, _ := io.ReadAll(httpReq.Body)
+			response.Diagnostics.AddError(
+				"Error importing security role",
+				fmt.Sprintf("Could not import OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+			)
+		} else {
+			response.Diagnostics.AddError(
+				"Error importing security role",
+				fmt.Sprintf("Could not import OAuth security role ID %d , unexpected error: %s", roleId, err.Error()),
+			)
+		}
 		return
 	}
 
-	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
-
-		response.Diagnostics.AddError(
-			"Error importing security role",
-			fmt.Sprintf("Could not import OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
-		)
-		return
+	if httpReq != nil {
+		tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 	}
 
 	var result = mapOAuthSecurityRole(ctx, remoteState)

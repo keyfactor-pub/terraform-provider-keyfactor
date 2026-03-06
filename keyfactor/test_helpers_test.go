@@ -646,6 +646,19 @@ data "keyfactor_enrollment_pattern" "test" {
 `, identifier)
 }
 
+// testAccCertDeployConfig generates HCL for deploying a certificate to a store.
+// certResourceRef and storeResourceRef are Terraform resource references (e.g. "keyfactor_certificate.test").
+func testAccCertDeployConfig(certResourceRef, storeResourceRef string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_deployment" "test" {
+  certificate_id       = %s.identifier
+  certificate_store_id = %s.id
+  certificate_alias    = "tf-int-test-deploy"
+  overwrite            = true
+}
+`, certResourceRef, storeResourceRef)
+}
+
 // ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------

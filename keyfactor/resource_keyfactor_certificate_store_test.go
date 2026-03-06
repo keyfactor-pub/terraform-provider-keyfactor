@@ -5,6 +5,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
 	"testing"
+	"time"
 )
 
 type certificateStoreTestCase_v9 struct {
@@ -136,4 +137,36 @@ resource "keyfactor_certificate_store" "tf_k8s_acc_test" {
 }
 `, t.clientMachine, t.storePath, t.agentIdentifier, t.storeType, t.schedule, t.containerName, t.storePassword, t.serverUserName, t.serverPassword)
 	return output
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery, only need lab connection env vars)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorCertificateStoreResource(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	agentID, clientMachine := discoverAgent(t, client)
+
+	// Use a store type from the agent's capabilities for best compatibility
+	storeType := discoverStoreTypeForAgent(t, client, agentID)
+	storePath := fmt.Sprintf("/tf-int-test-%d", time.Now().UnixNano())
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertStoreConfig(storeType, clientMachine, agentID, storePath),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "store_path", storePath),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "store_type", storeType),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "client_machine", clientMachine),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "agent_id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "agent_identifier", agentID),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "approved"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "properties.%"),
+				),
+			},
+		},
+	})
 }

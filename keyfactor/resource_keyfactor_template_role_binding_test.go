@@ -3,9 +3,12 @@ package keyfactor
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
+	"regexp"
 	"testing"
+	"time"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 type roleBindingTestCase struct {
@@ -117,9 +120,55 @@ func TestAccKeyfactorTemplateRoleBindingResource(t *testing.T) {
 func testAccKeyfactorTemplateRoleBindingResourceConfig(t roleBindingTestCase) string {
 	output := fmt.Sprintf(`
 resource "keyfactor_template_role_binding" "terraform_test" {
-  role_name            = "%s" 
-  template_short_names = %s 
+  role_name            = "%s"
+  template_short_names = %s
 }
 `, t.roleName, t.templatesStr)
 	return output
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorTemplateRoleBindingResource(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+
+	// Template must be associated with an enrollment pattern for binding to work.
+	// If no enrollment patterns are available, skip this test.
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	if enrollmentPattern == "" {
+		t.Skip("Template role binding requires templates with enrollment patterns (Command v25+)")
+	}
+
+	// Use the template from the enrollment pattern — it's guaranteed to be linked
+	templateName := discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+	if templateName == "" {
+		templateName = discoverTemplate(t, client)
+	}
+	roleName := fmt.Sprintf("tf-int-test-binding-%d", time.Now().UnixNano())
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// Known limitation: the keyfactor-go-client v3 UpdateTemplateArg struct
+				// doesn't include a Policies field required by Command v25+.
+				// This test validates the expected error until the client library is updated.
+				Config: fmt.Sprintf(`
+resource "keyfactor_role" "int_binding_test" {
+	name        = "%s"
+	description = "Integration test role for binding"
+	permissions = []
+}
+
+resource "keyfactor_template_role_binding" "int_test" {
+	role_name            = keyfactor_role.int_binding_test.name
+	template_short_names = ["%s"]
+}
+`, roleName, templateName),
+				ExpectError: regexp.MustCompile(`(?i)Policies.*cannot be empty|Error updating template`),
+			},
+		},
+	})
 }

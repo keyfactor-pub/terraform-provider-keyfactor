@@ -551,3 +551,77 @@ resource "keyfactor_certificate" "PFXCertificate" {
 `, CsrContent, t.ipSans, t.dnsSans, t.keyPassword, t.ca, t.template, t.email)
 	return output
 }
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery, only need lab connection env vars)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorCertificateResource_PFX(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+
+	// Try enrollment pattern first (Command v25+), fall back to template+CA
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var config string
+	if enrollmentPattern != "" {
+		config = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca)
+	} else {
+		templateName := discoverTemplate(t, client)
+		config = testAccCertPFXConfig(templateName, ca)
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "identifier"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+				),
+			},
+		},
+	})
+}
+
+func TestIntKeyfactorCertificateResource_CSR(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+
+	// CSR enrollment via the go-client requires certificate_template (not enrollment_pattern)
+	// because the client library checks that Template is non-empty. When an enrollment pattern
+	// is available, discover the template from it; otherwise fall back to discoverTemplate.
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var templateName string
+	if enrollmentPattern != "" {
+		templateName = discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+	} else {
+		templateName = discoverTemplate(t, client)
+	}
+	// Generate a simple CSR with only a CN to avoid template subject field restrictions
+	csr := generateSimpleCSR(t, "tf-int-test-csr.example.com")
+	config := testAccCertCSRConfig(templateName, ca, csr)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_chain"),
+				),
+			},
+		},
+	})
+}

@@ -70,6 +70,62 @@ test:
 testacc:
 	TF_ACC=1 go test $(TEST) -v $(TESTARGS) -timeout 120m
 
+testunit:
+	go test ./keyfactor/ -run "TestUnit" -v $(TESTARGS) -timeout 30m
+
+testunit-record:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnit" -v -count=1 $(TESTARGS) -timeout 30m
+
+# Record a single unit test cassette. Usage: make testunit-record-one TEST_NAME=TestUnitFoo
+testunit-record-one:
+	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testunit-record-one TEST_NAME=TestUnitFoo"; exit 1; fi
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 30m
+
+testunit-record-csr:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_CSR" -v -count=1 -timeout 30m
+
+# Run unit tests and display only failures (quiet mode)
+testunit-check:
+	go test ./keyfactor/ -run "TestUnit" -count=1 $(TESTARGS) -timeout 30m
+
+KEYFACTOR_ENV_FILE ?= ~/.env_ses2541
+KEYFACTOR_K8S_CREDENTIALS_FILE ?= $(HOME)/GolandProjects/terraform-keyfactor-provider-testing/examples/certs/deployment/k8s-creds.json
+
+testint:
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 go test ./keyfactor/ -run "TestInt" -v $(TESTARGS) -timeout 120m
+
+testint-check:
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 go test ./keyfactor/ -run "TestInt" -v -count=1 -timeout 120m
+
+testint-run:
+	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-run TEST_NAME=TestIntFoo"; exit 1; fi
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m
+
+testint-debug:
+	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-debug TEST_NAME=TestIntFoo"; exit 1; fi
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_LOG=DEBUG TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m 2>&1 | tee /tmp/tf-debug.log
+
+# Run a single integration test with TF debug logging. Usage: make testint-debug-run TEST_NAME=TestIntFoo
+testint-debug-run:
+	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-debug-run TEST_NAME=TestIntFoo"; exit 1; fi
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_LOG=DEBUG TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m 2>&1 | tee /tmp/tf-debug.log
+
+# Run all tests (unit + int + acc). Requires lab connection.
+testall:
+	$(MAKE) testunit
+	$(MAKE) testint-check
+
+# Lint the provider code
+lint:
+	@which golangci-lint > /dev/null 2>&1 || (echo "golangci-lint not found, install from https://golangci-lint.run/usage/install/"; exit 1)
+	golangci-lint run ./...
+
+# Format Go files and check for issues
+check: fmt vet
+
+vet:
+	go vet ./...
+
 fmtcheck:
 	@./scripts/gofmtcheck.sh
 
@@ -84,9 +140,16 @@ setversion:
 	sed -i '' -e 's/VERSION = ".*"/VERSION = "$(VERSION)"/' keyfactor/version.go
 	@sed -i '' -e 's/TAG_VERSION=v*.*/TAG_VERSION=v$(VERSION)/' tag.sh
 
+tidy:
+	go mod tidy
+
 vendor:
 	rm -rf vendor
 	go mod vendor
+
+vendor-dev:
+	go mod tidy
+	./vendor_dev.sh
 
 tag:
 	git tag -d v$(VERSION) || true
@@ -94,4 +157,104 @@ tag:
 	git tag v$(VERSION) || true
 	git push origin v$(VERSION) || true
 
-.PHONY: build release install test testacc fmtcheck fmt tag setversion vendor
+showlines:
+	@if [ -z "$(FILE)" ] || [ -z "$(FROM)" ] || [ -z "$(TO)" ]; then \
+		echo "Usage: make showlines FILE=<path> FROM=<line> TO=<line>"; \
+		exit 1; \
+	fi
+	@sed -n '$(FROM),$(TO)p' $(FILE) | cat -v
+
+# ---------------------------------------------------------------------------
+# Applications API debugging targets (uses KEYFACTOR_ENV_FILE credentials)
+# Usage examples:
+#   make api-list-applications
+#   make api-get-application APP_ID=9
+#   make api-create-application APP_NAME=my-app
+#   make api-update-application APP_ID=9 APP_NAME=my-app APP_INTERVAL=30
+#   make api-delete-application APP_ID=9
+#   make api-options-application
+# ---------------------------------------------------------------------------
+APP_ID ?= 1
+APP_NAME ?= test-application
+APP_INTERVAL ?= 60
+APP_DAILY_TIME ?=
+APP_OVERWRITE ?= false
+
+# Internal helper: get OAuth token from env file
+define get_token
+	. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token')
+endef
+
+api-list-applications:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-get-application:
+	@if [ -z "$(APP_ID)" ]; then echo "Usage: make api-get-application APP_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications/$(APP_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-create-application:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X POST \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{\"Name\":\"$(APP_NAME)\",\"OverwriteSchedules\":$(APP_OVERWRITE),\"Schedule\":{\"Interval\":{\"Minutes\":$(APP_INTERVAL)}}}" | jq .
+
+api-update-application:
+	@if [ -z "$(APP_ID)" ]; then echo "Usage: make api-update-application APP_ID=<id> [APP_NAME=...] [APP_INTERVAL=...]"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X PUT \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{\"Id\":$(APP_ID),\"Name\":\"$(APP_NAME)\",\"OverwriteSchedules\":$(APP_OVERWRITE),\"Schedule\":{\"Interval\":{\"Minutes\":$(APP_INTERVAL)}}}" | jq .
+
+api-delete-application:
+	@if [ -z "$(APP_ID)" ]; then echo "Usage: make api-delete-application APP_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X DELETE \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications/$(APP_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN"
+
+api-options-application:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	echo "--- OPTIONS /Applications ---" && \
+	curl -sk -i -X OPTIONS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" 2>&1 | grep -i "^allow:" && \
+	echo "--- OPTIONS /Applications/$(APP_ID) ---" && \
+	curl -sk -i -X OPTIONS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications/$(APP_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" 2>&1 | grep -i "^allow:"
+
+.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-get-application api-create-application api-update-application api-delete-application api-options-application

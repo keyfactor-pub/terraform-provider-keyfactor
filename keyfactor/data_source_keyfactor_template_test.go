@@ -51,3 +51,34 @@ func testAccDataSourceKeyfactorCertificateTemplateBasic(resourceName string) str
 	}
 	`, resourceName)
 }
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorCertificateTemplateDataSource(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	shortName := discoverTemplate(t, client)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDataSourceKeyfactorCertificateTemplateBasic(shortName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.keyfactor_certificate_template.test", "short_name", shortName),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "id"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "name"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "oid"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "key_size"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "key_type"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "forest_root"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "requires_approval"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "key_usage"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "allowed_enrollment_types"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "template_regexes.#"),
+				),
+			},
+		},
+	})
+}

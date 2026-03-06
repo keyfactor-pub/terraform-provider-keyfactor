@@ -2,10 +2,12 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 type certificateTestCase struct {
@@ -26,7 +28,11 @@ type certificateTestCase struct {
 	collectionId int
 }
 
-const CsrContent = `-----BEGIN CERTIFICATE REQUEST-----\nMIIFMTCCAxkCAQAwgesxCzAJBgNVBAYTAlVTMQswCQYDVQQIEwJPSDEVMBMGA1UE\nBxMMSW5kZXBlbmRlbmNlMUcwEAYDVQQJEwlTdWl0ZSAyMDAwEwYDVQQJEwxTZWNv\nbmQgRmxvb3IwHgYDVQQJExc2MTUwIE9hayBUcmVlIEJvdWxldmFyZDEOMAwGA1UE\nERMFNDQxMzExFzAVBgNVBAoTDktleWZhY3RvciBJbmMuMSEwHwYDVQQLExhJbnRl\nZ3JhdGlvbnMgRW5naW5lZXJpbmcxIzAhBgNVBAMMGnRlcnJhZm9ybV90ZXN0X2Nl\ncnRpZmljYXRlMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAy4sTj1k2\n7rabAXphqKaA/vpr61BEDdVQ/7J2nx3riSDqZZjyCKAjXGLqWsJGvBb9hbfnhH7J\nw83QwZTJab89BAYGTnHE4KB7eBFleI0aEvI09CPaNnjoiFYXc6s/Yhgv8FNUnlbR\nvkaEbKW4A4Mz83b2fNCHfJY5NnE6jr/gMmYnDjXh50yBAR4HS3t7GPZLsar39xpG\ngnKlCC8LGDRJ8CcMilkvH2bNLTo0nsckTJV9ttuDsmWLd9rANu843Va8XZzmq9ej\noWLn65MQEhqAObD5sZPNnQkH8c+5IGL+fQJW3y+nqe4zu+9L8nNEgXa6ANNJRIwy\n+Mug7+0IWlLJf5EnIB1z2stJqWFf3kVaEO1BakN8Qkv1tugpKazVKl6rs2CC97Ww\nQgXpD4tvOyCZxHs+Ok3SK183Q+GkM7WjLuBP9ainY4nJ76SbTOwPw8JVQB+4EkDo\naff1X2zctcmK1/Ri5kyMGqIQw4vQ+YZKzNJIJokNNn5K+u6ppOfxswOp0bZ4fG/M\nc1BKjAHBGDE10GaLlYFBR6/HTwLHDF5t1LpdhqzqLx8OpsaSJCN3xRUTlu5TsZa+\nn5NEgJS9bDHgqjv1dF68loZ3ILu8pebznh6vV+q3Jc8b8HIMXJ+hEoKZ1ldBgSeB\nCzHSDwVbS9L8swwzAAP54I/RDQR83pM1xH8CAwEAAaAAMA0GCSqGSIb3DQEBCwUA\nA4ICAQCV3Zw86hug66jloFFks1D0pGT7StuSkIFeYm46i0jEorVuhc4MqKYb/4C3\nVh0TnYHaNqfqlYJRHln2909tk4FMlQss8w/RxhCrSzJpr5px1XOWNKIJVnEjQAXS\n4O5//pe/qOwK1jH8J8RMEEZLdfFyWpJtav9Js+xK7lH/aXCbxExxYPDRuZCTiH9S\n6rxCIGmKkq2wtm36Tw3UsPLHp6IFdGag3WiD/ye4OpIT+6Tl0AX1qC3GV2S46/jv\ndPtr1EXFIgFX6mRzlA6/J3QgTaxBhxFITaS6dyCHUlSgEcbaVJ0rWre9zfQ38VEa\nUwpLU58Bx1ysVF7goQxYQxnHz2lVClA9WCCZt1NU3IX+QLqk1WU5idu8AfmvZXNI\nhrhcF/PCvH9eAfsqwECt/VsY3ferRtrCEves2UX7r/c4s0L/ZvYS7X9w3MxaJikc\nsewMB3Sj5xVc5XR71C6we16RrpEZ/bTtl8MPSY3b+pPf6YAqQlaziM2swdoQrp1c\n1DQElo1YlICF2gPQH9tJZcgDclw1W+1o77q34hIwktTtKDcVIs4WYTNwo8fn1Xtn\n7fU9cUBMepaIgZQfSz9KpLWG+GwbEgCtahLOpH5FNv+2e8dP0VZeWBCCAkav27oh\nxwK1aZ8hvc2E//sbJT0Swx8hIhyS+EYKpg1DzEZbwBmRch8C/g==\n-----END CERTIFICATE REQUEST-----\n`
+// CsrContent is a fixed PEM-encoded CSR with only a CN subject field.
+// Using a simple CN-only CSR avoids EJBCA/template subject field restrictions
+// (e.g. "Wrong number of LOCALITY fields"). This constant is shared between
+// unit tests (VCR cassette recording/replay) and the legacy acceptance tests.
+const CsrContent = `-----BEGIN CERTIFICATE REQUEST-----\nMIICaDCCAVACAQAwIzEhMB8GA1UEAxMYdGYtdW5pdC10ZXN0LmV4YW1wbGUuY29t\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApgDKa9ldruZ0AL3rZDkG\nrsXXSihTcU3qB/OUUHoUHG1HMqVGm+jCVBWXm1z+hXmYq2DdesW82ESRQleBwZr5\nDyyKeoypY6ZfqRcmZoHo/sG7e3pYf3fmdn+MnHoNCA7GEipJEV92zYe28WZVCO0U\npe8LTnOt0Dep3F+4no2hO6rRKIYkvlAB58Rp88U/Fnj4xsMrADI0f71+rQPEWMaP\n5oMm+BFCG2m7mvKLciHCqj0oB3OU73ly6Xfw5ezdtDER3CrGSz6SJFBVkzpCqXeP\nfqk1a1o5Vp7kSe6LavaB/bPrPwLFazThZ9JOmaRItX8YVjEdB/oAEpcIFKycxBA3\n/wIDAQABoAAwDQYJKoZIhvcNAQELBQADggEBAGJy5PiPu5KCGDtCrmQxNXtlpmEI\n2u0uN/TxYsbpFof8OhqeW0A4JXaS4UZ19A0sIun2GGqTtTHKVbUGLNxWNt7JzOFV\ngA2TrKL1H8J20sXRzNZxZYptfspuAI5Z1BpYpguvGJU+AGA78pw80U5KJN7mFuCf\nX5k143EhCplvclf9FoEgnOXeXSifqTXNvJytNbxLK+RC1urHvg2FpWlRRdcTn+n2\nyxwcTV2W3DruoswVBhnOlvDyoKpjMLSElIhOHg+X3xPtf0RekAmp+wI4LSwf1N3R\ntmwlPVTD69bkiQay2yt0ZX6UZQvcY6QpOEol4MadEhrK6IoXKeZHT+CGzAM=\n-----END CERTIFICATE REQUEST-----\n`
 
 func TestAccKeyfactorCertificateResource(t *testing.T) {
 
@@ -550,4 +556,192 @@ resource "keyfactor_certificate" "PFXCertificate" {
 
 `, CsrContent, t.ipSans, t.dnsSans, t.keyPassword, t.ca, t.template, t.email)
 	return output
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery, only need lab connection env vars)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorCertificateResource_PFX(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+	cn := randomTestCN("tf-int-pfx")
+
+	// Try enrollment pattern first (Command v25+), fall back to template+CA
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var config string
+	if enrollmentPattern != "" {
+		config = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+	} else {
+		templateName := discoverTemplate(t, client)
+		config = testAccCertPFXConfig(templateName, ca, cn)
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "identifier"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes — no lab required)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorCertificateResource_PFX tests the full create/read/destroy
+// lifecycle of a PFX certificate resource using pre-recorded HTTP cassettes.
+//
+// To record cassettes against a live lab:
+//
+//	RECORD_CASSETTES=1 make testunit
+func TestUnitKeyfactorCertificateResource_PFX(t *testing.T) {
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_resource_pfx")
+	var config string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		ca := discoverCA(t, client)
+		cn := randomTestCN("tf-unit-pfx")
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		var templateName string
+		if enrollmentPattern != "" {
+			config = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+		} else {
+			templateName = discoverTemplate(t, client)
+			config = testAccCertPFXConfig(templateName, ca, cn)
+		}
+		writeCertPFXTestParams(cassettePath, certPFXTestParams{
+			TemplateName:      templateName,
+			CA:                ca,
+			EnrollmentPattern: enrollmentPattern,
+			CN:                cn,
+		})
+	} else {
+		params := readCertPFXTestParams(cassettePath)
+		if params.EnrollmentPattern != "" {
+			config = testAccCertPFXConfigEnrollmentPattern(params.EnrollmentPattern, params.CA, params.CN)
+		} else {
+			config = testAccCertPFXConfig(params.TemplateName, params.CA, params.CN)
+		}
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_pfx")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "identifier"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateResource_CSR tests the full create/read/destroy
+// lifecycle of a CSR-based certificate resource using pre-recorded cassettes.
+func TestUnitKeyfactorCertificateResource_CSR(t *testing.T) {
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_resource_csr")
+	var config string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		ca := discoverCA(t, client)
+		cn := randomTestCN("tf-unit-csr")
+		csr := generateSimpleCSR(t, cn)
+		// CSR enrollment requires a template (enrollment pattern alone is unsupported by the go-client).
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		var templateName string
+		if enrollmentPattern != "" {
+			templateName = discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+		}
+		if templateName == "" {
+			templateName = discoverTemplate(t, client)
+		}
+		config = testAccCertCSRConfig(templateName, ca, csr)
+		writeCertCSRTestParams(cassettePath, certCSRTestParams{
+			TemplateName: templateName,
+			CA:           ca,
+			CSRPem:       csr,
+		})
+	} else {
+		params := readCertCSRTestParams(cassettePath)
+		csr := params.CSRPem
+		if csr == "" {
+			// Fallback: generate a dummy CSR for replay (body is not matched by VCR)
+			csr = generateSimpleCSR(t, "tf-unit-csr-replay.example.com")
+		}
+		config = testAccCertCSRConfig(params.TemplateName, params.CA, csr)
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_csr")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+				),
+			},
+		},
+	})
+}
+
+func TestIntKeyfactorCertificateResource_CSR(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+
+	// CSR enrollment via the go-client requires certificate_template (not enrollment_pattern)
+	// because the client library checks that Template is non-empty. When an enrollment pattern
+	// is available, discover the template from it; otherwise fall back to discoverTemplate.
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var templateName string
+	if enrollmentPattern != "" {
+		templateName = discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+	} else {
+		templateName = discoverTemplate(t, client)
+	}
+	// Generate a simple CSR with a unique CN to avoid conflicts on re-runs
+	csr := generateSimpleCSR(t, randomTestCN("tf-int-csr"))
+	config := testAccCertCSRConfig(templateName, ca, csr)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_chain"),
+				),
+			},
+		},
+	})
 }

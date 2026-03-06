@@ -1,0 +1,55 @@
+---
+page_title: "keyfactor_application Data Source - terraform-provider-keyfactor"
+subcategory: ""
+description: |-
+  Reads an existing Keyfactor Command Application (certificate store container) by name or integer ID. Requires Keyfactor Command v25.0+.
+---
+
+# keyfactor_application (Data Source)
+
+Reads an existing Keyfactor Command Application (certificate store container).
+
+> [!NOTE]
+> Applications are only available in Keyfactor Command v25.0+
+
+## Example Usage
+
+```terraform
+# Look up an application by name
+data "keyfactor_application" "by_name" {
+  identifier = "My App"
+}
+
+# Look up an application by integer ID
+data "keyfactor_application" "by_id" {
+  identifier = "42"
+}
+
+# Reference a managed application resource via the data source
+resource "keyfactor_application" "example" {
+  name = "My App"
+}
+
+data "keyfactor_application" "example" {
+  identifier = keyfactor_application.example.name
+}
+
+output "store_ids" {
+  value = data.keyfactor_application.example.certificate_store_ids
+}
+```
+
+## Schema
+
+### Required
+
+- `identifier` (String) The name or integer ID of the application to look up.
+
+### Read-Only
+
+- `certificate_store_ids` (List of String) List of certificate store GUIDs (UUIDs) assigned to this application.
+- `id` (Number) Integer ID of the application in Keyfactor Command.
+- `name` (String) Name of the application.
+- `overwrite_schedules` (Boolean) Whether the application schedule overwrites member certificate store schedules.
+- `schedule_daily_time` (String) Inventory schedule daily time as an ISO 8601 datetime string, if a daily schedule is configured.
+- `schedule_interval_minutes` (Number) Inventory schedule interval in minutes, if an interval-based schedule is configured.

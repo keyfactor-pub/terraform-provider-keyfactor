@@ -214,6 +214,11 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Computed:    true,
 				Description: "Not After date of enrolled certificate",
 			},
+			"id": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Read-only alias of `identifier` for Terraform framework compatibility.",
+			},
 			"identifier": {
 				Type:     types.StringType,
 				Required: true,
@@ -633,6 +638,7 @@ func (r dataSourceCertificate) Read(
 
 	// Set state
 	tflog.Debug(ctx, "Setting state")
+	result.syncTfId()
 	diags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {

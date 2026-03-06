@@ -40,3 +40,29 @@ func testAccKeyfactorDataSourceSecurityIdentityBasic(identityName string) string
 	}
 	`, identityName)
 }
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorSecurityIdentityDataSource(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+
+	accountName := discoverSecurityIdentity(t, client)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKeyfactorDataSourceSecurityIdentityBasic(accountName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("data.keyfactor_identity.test", "id"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_identity.test", "account_name"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_identity.test", "roles.#"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_identity.test", "identity_type"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_identity.test", "valid"),
+				),
+			},
+		},
+	})
+}

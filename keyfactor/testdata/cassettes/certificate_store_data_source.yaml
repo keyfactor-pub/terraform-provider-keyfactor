@@ -1,0 +1,429 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStoreTypes/Name/K8STLSSecr
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 2077
+        body: '[{"Name":"K8STLSSecr","ShortName":"K8STLSSecr","Capability":"K8STLSSecr","StoreType":154,"ImportType":0,"LocalStore":false,"SupportedOperations":{"Add":true,"Create":true,"Discovery":true,"Enrollment":false,"Remove":true},"Properties":[{"Id":278,"StoreTypeId":154,"Name":"KubeNamespace","DisplayName":"KubeNamespace","Type":"String","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":279,"StoreTypeId":154,"Name":"KubeSecretName","DisplayName":"KubeSecretName","Type":"String","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":280,"StoreTypeId":154,"Name":"KubeSecretType","DisplayName":"KubeSecretType","Type":"String","DefaultValue":"tls_secret","Required":true,"ValidationOptions":{"OnCreation":1}},{"Id":281,"StoreTypeId":154,"Name":"IncludeCertChain","DisplayName":"Include Certificate Chain","Type":"Bool","DefaultValue":"true","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":282,"StoreTypeId":154,"Name":"SeparateChain","DisplayName":"Separate Chain","Type":"Bool","DefaultValue":"false","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":283,"StoreTypeId":154,"Name":"ServerUsername","DisplayName":"Server Username","Type":"Secret","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":284,"StoreTypeId":154,"Name":"ServerPassword","DisplayName":"Server Password","Type":"Secret","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":285,"StoreTypeId":154,"Name":"ServerUseSsl","DisplayName":"Use SSL","Type":"Bool","DefaultValue":"true","Required":true,"ValidationOptions":{"OnCreation":1}}],"EntryParameters":[],"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"PrivateKeyAllowed":"Optional","CertificateFormat":0,"JobProperties":[],"ServerRequired":true,"PowerShell":false,"BlueprintAllowed":false,"CustomAliasAllowed":"Forbidden","ServerRegistration":35,"InventoryEndpoint":"/AnyInventory/Update","InventoryJobType":"1826f5fd-68c5-45ec-856e-2c0209c2018d","ManagementJobType":"50431909-6488-4237-a9b0-1158429cf59c","DiscoveryJobType":"f40a4c55-085b-47a7-bd42-a4103f6c4bd0"}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "2077"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Sat, 07 Mar 2026 02:48:04 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "36"
+            X-Keyfactor-Correlation-Id:
+                - bf5a1387-9d78-4cba-b95c-019d354595a6
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 935.520469ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            pq.queryString:
+                - AgentId -eq "275bcd31-9e7b-4c4a-bce9-1719e0c2168d"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Agents?pq.queryString=AgentId%20-eq%20%22275bcd31-9e7b-4c4a-bce9-1719e0c2168d%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3577
+        body: '[{"AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","ClientMachine":"container_uo-25-4","Username":"alpha-rho-rho-alpha-82852","AgentPlatform":1,"Version":"25.4.1.0","Status":2,"LastSeen":"2026-03-07T02:47:35.493Z","Capabilities":["K8STLSSecr","K8SSecret","K8SCert","K8SNS","SSL","K8SJKS","K8SPKCS12","K8SCluster","LOGS"],"Blueprint":null,"Thumbprint":"","LegacyThumbprint":"","AuthCertificateReenrollment":"None","LastThumbprintUsed":"","LastErrorCode":null,"LastErrorMessage":null,"JobTypes":[{"Name":"K8STLSSecr Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"50431909-6488-4237-a9b0-1158429cf59c"},{"Name":"K8SSecret Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"7726a60a-2914-4577-a8c2-139afb7e5872"},{"Name":"K8SCert Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"6e5bd399-f98c-42f4-8f65-16810b51bac3"},{"Name":"K8SNS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"2fac1326-32b5-49b5-a844-193775c3079e"},{"Name":"K8STLSSecr Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1826f5fd-68c5-45ec-856e-2c0209c2018d"},{"Name":"SSL Endpoint Discovery","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"332abd4e-cf9a-4449-a550-3c984a2399f9"},{"Name":"K8SJKS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b74fb16a-ec56-42e6-9333-4359a1c89707"},{"Name":"K8SSecret Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"2eeeb374-7aed-45e6-aced-610ae85630e5"},{"Name":"K8SNS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"31dccc34-b00b-4541-a9a6-638618d417bd"},{"Name":"K8SPKCS12 Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"6370c8d7-7505-4b39-9c24-69d4bb48f09d"},{"Name":"K8SPKCS12 Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b1eb7f6c-3cfb-46a7-9a1d-6b2c10adc440"},{"Name":"K8SCert Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"475f1044-0d6b-4724-be4d-7fe79b579aa0"},{"Name":"K8STLSSecr Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"f40a4c55-085b-47a7-bd42-a4103f6c4bd0"},{"Name":"K8SNS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"2808b35e-a43f-42d3-8f92-b0c119095668"},{"Name":"K8SCluster Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"954b950e-e89e-4de9-a24a-b9e867826a1e"},{"Name":"K8SJKS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1b02d709-a2db-4590-a61a-bb318d06c30f"},{"Name":"K8SJKS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"de9d08dd-d64d-4c08-9aa0-c031945d020d"},{"Name":"Orchestrator Log Retrieval","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"0d8cf0c8-56ca-4b8a-b16a-c062018e170d"},{"Name":"K8SSecret Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"9a38a5da-d591-4ae5-9982-c6a41f74b5f6"},{"Name":"K8SPKCS12 Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"c82037f4-fc63-4884-91b3-d9baf21c4cf7"},{"Name":"SSL Endpoint Monitoring","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"ecd5758a-2f05-49b1-9373-d9bde7077f59"},{"Name":"K8SCluster Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"be50b19d-aeb8-48c5-b725-f8481b118fbe"}]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "3577"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Sat, 07 Mar 2026 02:48:05 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "45"
+            X-Keyfactor-Correlation-Id:
+                - 9eafb32a-8694-4f8e-873f-2822e2979932
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 164.326711ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 434
+        host: int25-4-1.kftestlab.com
+        body: '{"ClientMachine":"container_uo-25-4","StorePath":"default/tf-unit-test-ds-1000001","CertStoreType":154,"Approved":false,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"\\n\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"kubeconfig\"}","AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","AgentAssigned":false,"ContainerName":"","InventorySchedule":{},"SetNewPasswordAllowed":false,"Password":null}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 681
+        body: '{"Id":"93c91f03-7dda-4dc7-8100-312b553ac513","ContainerId":null,"DisplayName":"container_uo-25-4 - default/tf-unit-test-ds-1000001","ClientMachine":"container_uo-25-4","Storepath":"default/tf-unit-test-ds-1000001","CertStoreInventoryJobId":null,"CertStoreType":154,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"8d9e28ad-1e4c-4b35-bed6-42c65e358da0\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"27f0902e-1b7b-4040-a1cb-aa9a00b523cf\"}","AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","AgentAssigned":true,"ContainerName":null,"InventorySchedule":{},"ReenrollmentStatus":null,"SetNewPasswordAllowed":false,"Password":null}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "681"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Sat, 07 Mar 2026 02:48:06 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "656"
+            X-Keyfactor-Correlation-Id:
+                - 45b82794-211e-4c11-b7aa-6e97cca5b658
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 782.393377ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            certificateStoreQuery.queryString:
+                - StorePath -eq "default/tf-unit-test-ds-1000001" AND ClientMachine -eq "container_uo-25-4"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores?certificateStoreQuery.queryString=StorePath%20-eq%20%22default%2Ftf-unit-test-ds-1000001%22%20AND%20ClientMachine%20-eq%20%22container_uo-25-4%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 846
+        body: '[{"Id":"93c91f03-7dda-4dc7-8100-312b553ac513","ContainerId":null,"DisplayName":"container_uo-25-4 - default/tf-unit-test-ds-1000001","ClientMachine":"container_uo-25-4","Storepath":"default/tf-unit-test-ds-1000001","CertStoreInventoryJobId":null,"CertStoreType":154,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"8d9e28ad-1e4c-4b35-bed6-42c65e358da0\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"27f0902e-1b7b-4040-a1cb-aa9a00b523cf\"}","AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","AgentAssigned":true,"ContainerName":"","InventorySchedule":null,"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":null}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "846"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Sat, 07 Mar 2026 02:48:07 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "57"
+            X-Keyfactor-Correlation-Id:
+                - f8dbde72-432c-4038-8275-666b57997f4c
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 161.504822ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            certificateStoreQuery.queryString:
+                - StorePath -eq "default/tf-unit-test-ds-1000001" AND ClientMachine -eq "container_uo-25-4"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores?certificateStoreQuery.queryString=StorePath%20-eq%20%22default%2Ftf-unit-test-ds-1000001%22%20AND%20ClientMachine%20-eq%20%22container_uo-25-4%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 846
+        body: '[{"Id":"93c91f03-7dda-4dc7-8100-312b553ac513","ContainerId":null,"DisplayName":"container_uo-25-4 - default/tf-unit-test-ds-1000001","ClientMachine":"container_uo-25-4","Storepath":"default/tf-unit-test-ds-1000001","CertStoreInventoryJobId":null,"CertStoreType":154,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"8d9e28ad-1e4c-4b35-bed6-42c65e358da0\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"27f0902e-1b7b-4040-a1cb-aa9a00b523cf\"}","AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","AgentAssigned":true,"ContainerName":"","InventorySchedule":null,"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":null}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "846"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Sat, 07 Mar 2026 02:48:08 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "53"
+            X-Keyfactor-Correlation-Id:
+                - b9e24485-b302-41fd-9330-a1e8be28c225
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 166.846161ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/93c91f03-7dda-4dc7-8100-312b553ac513
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1566
+        body: '{"Id":"93c91f03-7dda-4dc7-8100-312b553ac513","ContainerId":null,"DisplayName":"container_uo-25-4 - default/tf-unit-test-ds-1000001","ClientMachine":"container_uo-25-4","Storepath":"default/tf-unit-test-ds-1000001","CertStoreInventoryJobId":null,"CertStoreType":154,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":{\"Value\":\"********************\",\"SecretTypeGuid\":\"00000000-0000-0000-0000-000000000000\",\"InstanceId\":null,\"InstanceGuid\":null,\"ProviderTypeParameterValues\":[],\"ProviderId\":null,\"IsManaged\":false,\"SecretType\":0,\"RemoteProviderName\":null,\"HasValue\":true},\"ServerUseSsl\":\"true\",\"ServerUsername\":{\"Value\":\"********************\",\"SecretTypeGuid\":\"00000000-0000-0000-0000-000000000000\",\"InstanceId\":null,\"InstanceGuid\":null,\"ProviderTypeParameterValues\":[],\"ProviderId\":null,\"IsManaged\":false,\"SecretType\":0,\"RemoteProviderName\":null,\"HasValue\":true}}","AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","AgentAssigned":true,"ContainerName":null,"InventorySchedule":null,"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":{"Value":"********************","SecretTypeGuid":"00000000-0000-0000-0000-000000000000","InstanceId":null,"InstanceGuid":null,"ProviderTypeParameterValues":[],"ProviderId":null,"IsManaged":false,"SecretType":0,"RemoteProviderName":null,"HasValue":true}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "1566"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Sat, 07 Mar 2026 02:48:08 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "61"
+            X-Keyfactor-Correlation-Id:
+                - bf40b0f8-795a-4dbc-be23-472bbf1b4655
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 166.813746ms
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            certificateStoreQuery.queryString:
+                - StorePath -eq "default/tf-unit-test-ds-1000001" AND ClientMachine -eq "container_uo-25-4"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores?certificateStoreQuery.queryString=StorePath%20-eq%20%22default%2Ftf-unit-test-ds-1000001%22%20AND%20ClientMachine%20-eq%20%22container_uo-25-4%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 846
+        body: '[{"Id":"93c91f03-7dda-4dc7-8100-312b553ac513","ContainerId":null,"DisplayName":"container_uo-25-4 - default/tf-unit-test-ds-1000001","ClientMachine":"container_uo-25-4","Storepath":"default/tf-unit-test-ds-1000001","CertStoreInventoryJobId":null,"CertStoreType":154,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"8d9e28ad-1e4c-4b35-bed6-42c65e358da0\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"27f0902e-1b7b-4040-a1cb-aa9a00b523cf\"}","AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","AgentAssigned":true,"ContainerName":"","InventorySchedule":null,"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":null}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "846"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Sat, 07 Mar 2026 02:48:09 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "50"
+            X-Keyfactor-Correlation-Id:
+                - ec93983f-cefe-4190-b70c-b16248ca4b75
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 160.467376ms
+    - id: 7
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            certificateStoreQuery.queryString:
+                - StorePath -eq "default/tf-unit-test-ds-1000001" AND ClientMachine -eq "container_uo-25-4"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores?certificateStoreQuery.queryString=StorePath%20-eq%20%22default%2Ftf-unit-test-ds-1000001%22%20AND%20ClientMachine%20-eq%20%22container_uo-25-4%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 846
+        body: '[{"Id":"93c91f03-7dda-4dc7-8100-312b553ac513","ContainerId":null,"DisplayName":"container_uo-25-4 - default/tf-unit-test-ds-1000001","ClientMachine":"container_uo-25-4","Storepath":"default/tf-unit-test-ds-1000001","CertStoreInventoryJobId":null,"CertStoreType":154,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"8d9e28ad-1e4c-4b35-bed6-42c65e358da0\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"27f0902e-1b7b-4040-a1cb-aa9a00b523cf\"}","AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","AgentAssigned":true,"ContainerName":"","InventorySchedule":null,"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":null}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "846"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Sat, 07 Mar 2026 02:48:09 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "54"
+            X-Keyfactor-Correlation-Id:
+                - 9a0d9cb1-9e30-4408-8d3b-7c9a54b6caed
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 166.926594ms
+    - id: 8
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/93c91f03-7dda-4dc7-8100-312b553ac513
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Date:
+                - Sat, 07 Mar 2026 02:48:10 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "149"
+            X-Keyfactor-Correlation-Id:
+                - d80e98a6-f9dc-47af-a6d1-c1cd199396ee
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 204 No Content
+        code: 204
+        duration: 251.642764ms

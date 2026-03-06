@@ -74,16 +74,21 @@ testunit:
 	go test ./keyfactor/ -run "TestUnit" -v $(TESTARGS) -timeout 30m
 
 KEYFACTOR_ENV_FILE ?= ~/.env_ses2541
+KEYFACTOR_K8S_CREDENTIALS_FILE ?= $(HOME)/GolandProjects/terraform-keyfactor-provider-testing/examples/certs/deployment/k8s-creds.json
 
 testint:
-	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestInt" -v $(TESTARGS) -timeout 120m
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 go test ./keyfactor/ -run "TestInt" -v $(TESTARGS) -timeout 120m
 
 testint-check:
-	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestInt" -v -count=1 -timeout 120m
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 go test ./keyfactor/ -run "TestInt" -v -count=1 -timeout 120m
 
 testint-run:
 	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-run TEST_NAME=TestIntFoo"; exit 1; fi
-	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m
+
+testint-debug:
+	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-debug TEST_NAME=TestIntFoo"; exit 1; fi
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_LOG=DEBUG TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m 2>&1 | tee /tmp/tf-debug.log
 
 fmtcheck:
 	@./scripts/gofmtcheck.sh
@@ -119,4 +124,4 @@ showlines:
 	fi
 	@sed -n '$(FROM),$(TO)p' $(FILE) | cat -v
 
-.PHONY: build release install test testacc testunit testint testint-check testint-run fmtcheck fmt tag setversion vendor showlines
+.PHONY: build release install test testacc testunit testint testint-check testint-run testint-debug fmtcheck fmt tag setversion vendor showlines

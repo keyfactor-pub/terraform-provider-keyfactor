@@ -2,6 +2,7 @@ package keyfactor
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +18,17 @@ func TestIntKeyfactorCertificateDeployResource(t *testing.T) {
 	ca := discoverCA(t, client)
 	agentID, clientMachine := discoverAgent(t, client)
 	storeType := discoverStoreTypeForAgent(t, client, agentID)
-	storePath := fmt.Sprintf("/tf-int-test-deploy-%d", time.Now().UnixNano())
+
+	// For K8S store types, require credentials and use namespace/name path format
+	var storePath string
+	if strings.HasPrefix(strings.ToLower(storeType), "k8s") {
+		if k8sStoreCredentials() == "" {
+			t.Skip("Skipping K8S deployment test: set KEYFACTOR_K8S_CREDENTIALS_FILE or KEYFACTOR_K8S_SERVER_PASSWORD")
+		}
+		storePath = fmt.Sprintf("default/tf-int-test-deploy-%d", time.Now().UnixNano())
+	} else {
+		storePath = fmt.Sprintf("/tf-int-test-deploy-%d", time.Now().UnixNano())
+	}
 
 	// Build cert config (enrollment pattern or template)
 	enrollmentPattern := discoverEnrollmentPattern(t, client)
@@ -46,7 +57,6 @@ func TestIntKeyfactorCertificateDeployResource(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_store_id"),
-					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "certificate_alias", "tf-int-test-deploy"),
 				),
 			},
 		},

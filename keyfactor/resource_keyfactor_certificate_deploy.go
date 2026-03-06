@@ -556,17 +556,36 @@ func (r resourceCommandCertificateDeployment) Delete(
 	//hid := fmt.Sprintf("%s-%s-%s", certificateId, storeId, certificateAlias)
 
 	if certificateAlias == "" {
-		// If no alias is provided then lookup the cert ID in keyfactor and use the alias from there
-		lookupCertResp, lkErr := kfClient.GetCertificateContext(&api.GetCertificateContextArgs{Id: int(certificateId)})
-		if lkErr != nil {
-			response.Diagnostics.AddWarning(
-				"Certificate removal error.",
-				fmt.Sprintf("Error looking up certificate '%s' in Keyfactor: "+lkErr.Error(), certificateId),
-			)
-			response.State.RemoveResource(ctx)
-			return
+		// Look up the actual alias from the store inventory — the alias is the Name field in the inventory entry.
+		// This handles store types (e.g. K8S TLS Secret) where the alias is not the thumbprint.
+		inv, invErr := kfClient.GetCertStoreInventory(storeId)
+		if invErr == nil && inv != nil {
+			certIdInt := int(certificateId)
+			for _, item := range *inv {
+				for _, cert := range item.Certificates {
+					if cert.Id == certIdInt {
+						certificateAlias = item.Name
+						break
+					}
+				}
+				if certificateAlias != "" {
+					break
+				}
+			}
 		}
-		certificateAlias = lookupCertResp.Thumbprint // TODO: This is not always valid alias can be non-thumbprint
+		if certificateAlias == "" {
+			// Final fallback: use thumbprint
+			lookupCertResp, lkErr := kfClient.GetCertificateContext(&api.GetCertificateContextArgs{Id: int(certificateId)})
+			if lkErr != nil {
+				response.Diagnostics.AddWarning(
+					"Certificate removal error.",
+					fmt.Sprintf("Error looking up certificate '%d' in Keyfactor: "+lkErr.Error(), certificateId),
+				)
+				response.State.RemoveResource(ctx)
+				return
+			}
+			certificateAlias = lookupCertResp.Thumbprint
+		}
 	}
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
 	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
@@ -608,7 +627,7 @@ func (r resourceCommandCertificateDeployment) Delete(
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
 				fmt.Sprintf(
-					"Unknown error during removal of certificate '%s' from store '%s (%s)': "+err.Error(),
+					"Unknown error during removal of certificate '%d' from store '%s (%s)': "+err.Error(),
 					certificateId,
 					storeId,
 					certificateAlias,
@@ -650,7 +669,7 @@ func addCertificateToStore(
 	var storesStruct []api.CertificateStore
 
 	certificateIdInt := int(plan.CertificateId.Value)
-	implicitOverwrite := plan.Overwrite.Null || plan.Overwrite.Value
+	implicitOverwrite := plan.Overwrite.Value
 	ctx = tflog.SetField(ctx, "certificate_id", certificateIdInt)
 	ctx = tflog.SetField(ctx, "implicit_overwrite", implicitOverwrite)
 	ctx = tflog.SetField(ctx, "certificate_alias", plan.CertificateAlias.Value)
@@ -722,18 +741,12 @@ func tryAddCertificateToStore(
 		return nil // No error, exit early
 	}
 
-	if strings.Contains(err.Error(), "does not exist in certificate store") && implicitOverwrite {
-		if config.CertificateStores != nil && len(*config.CertificateStores) > 0 {
-			for i := range *config.CertificateStores {
-				(*config.CertificateStores)[i].Overwrite = false
-			}
-		}
-		resp, err = conn.AddCertificateToStores(config)
-		if err == nil {
-			tflog.Trace(ctx, fmt.Sprintf("Response from Keyfactor on retry: %v", resp))
-			return nil
-		}
-	}
+	// Some store types (e.g. K8S TLS Secret) require Overwrite=true when an alias is provided
+	// but also require the alias to already exist in the Command inventory. For new stores with
+	// empty inventory the first call fails with "does not exist in certificate store". Previously
+	// the code retried with Overwrite=false, which caused a confusing secondary error
+	// ("Overwrite must be true") for store types that mandate Overwrite=true. The retry is
+	// removed: return the original, more informative error directly.
 
 	tflog.Error(ctx, fmt.Sprintf("Error adding certificate %v to Keyfactor store %v: %v", certificateId, storeId, err))
 	return err

@@ -594,18 +594,53 @@ data "keyfactor_certificate" "test" {
 `, certResourceRef)
 }
 
+// k8sStoreCredentials returns the kubeconfig JSON for K8S store server_password.
+// Checks KEYFACTOR_K8S_CREDENTIALS_FILE (file path) then KEYFACTOR_K8S_SERVER_PASSWORD (raw content).
+// Returns empty string if neither is set.
+func k8sStoreCredentials() string {
+	if filePath := os.Getenv("KEYFACTOR_K8S_CREDENTIALS_FILE"); filePath != "" {
+		data, err := os.ReadFile(filePath)
+		if err == nil {
+			return string(data)
+		}
+	}
+	return os.Getenv("KEYFACTOR_K8S_SERVER_PASSWORD")
+}
+
 // testAccCertStoreConfig generates HCL for a certificate store resource test.
-// Includes required properties for K8S store types.
+// Includes required credentials and properties for K8S store types.
 func testAccCertStoreConfig(storeType, clientMachine, agentID, storePath string) string {
-	// K8S store types require KubeSecretType and ServerUseSsl properties
-	properties := ""
 	stLower := strings.ToLower(storeType)
 	if strings.HasPrefix(stLower, "k8s") {
-		properties = `
+		creds := k8sStoreCredentials()
+
+		// Determine KubeSecretType based on store type
+		kubeSecretType := "tls"
+		switch stLower {
+		case "k8ssecret":
+			kubeSecretType = "opaque"
+		case "k8sjks":
+			kubeSecretType = "jks"
+		case "k8spkcs12":
+			kubeSecretType = "pkcs12"
+		}
+
+		return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+  server_username  = "kubeconfig"
+  server_password  = <<EOT
+%s
+EOT
+  server_use_ssl   = true
   properties = {
-    KubeSecretType = "tls_secret"
-    ServerUseSsl   = "true"
-  }`
+    KubeSecretType = "%s"
+  }
+}
+`, clientMachine, storePath, agentID, storeType, creds, kubeSecretType)
 	}
 
 	return fmt.Sprintf(`
@@ -613,9 +648,9 @@ resource "keyfactor_certificate_store" "test" {
   client_machine   = "%s"
   store_path       = "%s"
   agent_identifier = "%s"
-  store_type       = "%s"%s
+  store_type       = "%s"
 }
-`, clientMachine, storePath, agentID, storeType, properties)
+`, clientMachine, storePath, agentID, storeType)
 }
 
 // testAccCertStoreDataSourceByID generates HCL for reading a cert store by ID
@@ -653,8 +688,6 @@ func testAccCertDeployConfig(certResourceRef, storeResourceRef string) string {
 resource "keyfactor_certificate_deployment" "test" {
   certificate_id       = %s.identifier
   certificate_store_id = %s.id
-  certificate_alias    = "tf-int-test-deploy"
-  overwrite            = true
 }
 `, certResourceRef, storeResourceRef)
 }

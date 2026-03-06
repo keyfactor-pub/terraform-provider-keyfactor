@@ -66,3 +66,44 @@ func testAccDataSourceKeyfactorCertificateBasic(resourceName string, id string, 
 	`, resourceName, id, password)
 	return output
 }
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorCertificateDataSource(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+
+	// Try enrollment pattern first (Command v25+), fall back to template+CA
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var certConfig string
+	if enrollmentPattern != "" {
+		certConfig = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca)
+	} else {
+		templateName := discoverTemplate(t, client)
+		certConfig = testAccCertPFXConfig(templateName, ca)
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// First create a certificate, then read it back via data source
+				Config: certConfig + "\n" +
+					testAccCertDataSourceByID("keyfactor_certificate.test"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					// Resource checks
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					// Data source checks
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "certificate_authority"),
+				),
+			},
+		},
+	})
+}

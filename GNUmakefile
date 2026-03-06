@@ -70,6 +70,21 @@ test:
 testacc:
 	TF_ACC=1 go test $(TEST) -v $(TESTARGS) -timeout 120m
 
+testunit:
+	go test ./keyfactor/ -run "TestUnit" -v $(TESTARGS) -timeout 30m
+
+KEYFACTOR_ENV_FILE ?= ~/.env_ses2541
+
+testint:
+	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestInt" -v $(TESTARGS) -timeout 120m
+
+testint-check:
+	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestInt" -v -count=1 -timeout 120m
+
+testint-run:
+	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-run TEST_NAME=TestIntFoo"; exit 1; fi
+	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m
+
 fmtcheck:
 	@./scripts/gofmtcheck.sh
 
@@ -84,6 +99,9 @@ setversion:
 	sed -i '' -e 's/VERSION = ".*"/VERSION = "$(VERSION)"/' keyfactor/version.go
 	@sed -i '' -e 's/TAG_VERSION=v*.*/TAG_VERSION=v$(VERSION)/' tag.sh
 
+tidy:
+	go mod tidy
+
 vendor:
 	rm -rf vendor
 	go mod vendor
@@ -94,4 +112,11 @@ tag:
 	git tag v$(VERSION) || true
 	git push origin v$(VERSION) || true
 
-.PHONY: build release install test testacc fmtcheck fmt tag setversion vendor
+showlines:
+	@if [ -z "$(FILE)" ] || [ -z "$(FROM)" ] || [ -z "$(TO)" ]; then \
+		echo "Usage: make showlines FILE=<path> FROM=<line> TO=<line>"; \
+		exit 1; \
+	fi
+	@sed -n '$(FROM),$(TO)p' $(FILE) | cat -v
+
+.PHONY: build release install test testacc testunit testint testint-check testint-run fmtcheck fmt tag setversion vendor showlines

@@ -17,6 +17,11 @@ type dataSourceAgentType struct{}
 func (r dataSourceAgentType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
+			"id": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Read-only mirror of agent_id for Terraform test framework compatibility.",
+			},
 			"agent_id": {
 				Type:        types.StringType,
 				Computed:    true,
@@ -227,6 +232,8 @@ func (r dataSourceAgent) Read(
 			Null:  isNullString(agent.LastErrorMessage),
 		},
 	}
+
+	result.syncTfId()
 
 	diags = response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)

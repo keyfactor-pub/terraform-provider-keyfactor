@@ -2,9 +2,11 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
 	"testing"
+	"time"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 func TestAccKeyfactorCertificateStoreDataSource(t *testing.T) {
@@ -58,4 +60,37 @@ func testAccDataSourceKeyfactorCertificateStoreBasic(resourceName string, passwo
 		password = "%s"
 	}
 	`, resourceName, password)
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorCertificateStoreDataSource(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	agentID, clientMachine := discoverAgent(t, client)
+	storeType := discoverStoreTypeForAgent(t, client, agentID)
+	storePath := fmt.Sprintf("/tf-int-test-ds-%d", time.Now().UnixNano())
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// First create a store, then read it back via data source
+				Config: testAccCertStoreConfig(storeType, clientMachine, agentID, storePath) + "\n" +
+					testAccCertStoreDataSourceByID("keyfactor_certificate_store.test"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					// Resource checks
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
+					// Data source checks
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_store.test", "store_path"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_store.test", "store_type"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_store.test", "agent_id"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_store.test", "approved"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_store.test", "properties.%"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_store.test", "agent_assigned"),
+				),
+			},
+		},
+	})
 }

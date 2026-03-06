@@ -10,12 +10,16 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"gopkg.in/dnaeon/go-vcr.v4/pkg/recorder"
 )
 
 // ---------------------------------------------------------------------------
@@ -509,6 +513,83 @@ func newVCRServer(baseURL string) *auth_providers.Server {
 		Domain:        "TEST",
 		SkipTLSVerify: true,
 	}
+}
+
+// newVCRProviderFactories returns Terraform provider factories backed by a VCR
+// recorder. In replay mode (default) it replays cassette files from
+// keyfactor/testdata/cassettes/ and skips the test if none exist yet. Set
+// RECORD_CASSETTES=1 to record new cassettes against a live lab.
+//
+// Usage:
+//
+//	factories, cleanup := newVCRProviderFactories(t, "my_cassette")
+//	defer cleanup()
+//	resource.UnitTest(t, resource.TestCase{ProtoV6ProviderFactories: factories, ...})
+func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func() (tfprotov6.ProviderServer, error), func()) {
+	t.Helper()
+
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+	recordMode := os.Getenv("RECORD_CASSETTES") == "1"
+
+	if recordMode {
+		// Recording mode: real lab credentials must be available.
+		testAccPreCheck(t)
+	} else {
+		// Replay mode: inject fake basic-auth credentials so that Configure
+		// succeeds without making any network calls.
+		t.Setenv("KEYFACTOR_HOSTNAME", "vcr.test.local")
+		t.Setenv("KEYFACTOR_USERNAME", "vcr-test-user")
+		t.Setenv("KEYFACTOR_PASSWORD", "Vcrtestpass1!")
+		t.Setenv("KEYFACTOR_SKIP_VERIFY", "true")
+		// Clear OAuth vars to force the basic-auth path in getServerConfig.
+		t.Setenv("KEYFACTOR_AUTH_CLIENT_ID", "")
+		t.Setenv("KEYFACTOR_AUTH_CLIENT_SECRET", "")
+		t.Setenv("KEYFACTOR_AUTH_TOKEN_URL", "")
+	}
+
+	mode := recorder.ModeReplayOnly
+	if recordMode {
+		mode = recorder.ModeRecordOnce
+	}
+
+	r, err := recorder.New(cassettePath, recorder.WithMode(mode))
+	if err != nil {
+		if !recordMode {
+			t.Skipf("No cassette found for %q. Run with RECORD_CASSETTES=1 against a live lab to record.", cassetteName)
+		}
+		t.Fatalf("Failed to create VCR recorder for %q: %s", cassetteName, err)
+	}
+
+	// Create a provider with a testHook that swaps AuthClient on all internal
+	// clients to use the VCR recorder's transport after Configure runs.
+	p := &provider{
+		testHook: func(pp *provider) {
+			if pp.client == nil || pp.sdkClient == nil {
+				return
+			}
+			vcrHTTPClient := r.GetDefaultClient()
+			server := pp.client.AuthClient.GetServerConfig()
+			vcrAuth := &vcrAuthConfig{
+				httpClient: vcrHTTPClient,
+				server:     server,
+			}
+			pp.client.AuthClient = vcrAuth
+			pp.sdkClient.V1.AuthClient = vcrAuth
+			pp.sdkClient.V2.AuthClient = vcrAuth
+		},
+	}
+
+	factories := map[string]func() (tfprotov6.ProviderServer, error){
+		"keyfactor": providerserver.NewProtocol6WithError(p),
+	}
+
+	cleanup := func() {
+		if stopErr := r.Stop(); stopErr != nil {
+			t.Logf("Warning: VCR recorder stop error: %s", stopErr)
+		}
+	}
+
+	return factories, cleanup
 }
 
 // ---------------------------------------------------------------------------

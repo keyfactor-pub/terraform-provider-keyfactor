@@ -591,6 +591,68 @@ func TestIntKeyfactorCertificateResource_PFX(t *testing.T) {
 	})
 }
 
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes — no lab required)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorCertificateResource_PFX tests the full create/read/destroy
+// lifecycle of a PFX certificate resource using pre-recorded HTTP cassettes.
+//
+// To record cassettes against a live lab:
+//
+//	RECORD_CASSETTES=1 make testunit
+func TestUnitKeyfactorCertificateResource_PFX(t *testing.T) {
+	// These values must match what was used when recording the cassette.
+	templateName := envOrDefault("KEYFACTOR_CERTIFICATE_TEMPLATE_NAME", "2YearTestWebServer")
+	ca := envOrDefault("KEYFACTOR_CERTIFICATE_CA", "CommandCA1")
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_pfx")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertPFXConfig(templateName, ca),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "identifier"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateResource_CSR tests the full create/read/destroy
+// lifecycle of a CSR-based certificate resource using pre-recorded cassettes.
+func TestUnitKeyfactorCertificateResource_CSR(t *testing.T) {
+	templateName := envOrDefault("KEYFACTOR_CERTIFICATE_TEMPLATE_NAME", "2YearTestWebServer")
+	ca := envOrDefault("KEYFACTOR_CERTIFICATE_CA", "CommandCA1")
+	// Use a fixed CSR so the cassette request body is reproducible.
+	csr := CsrContent
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_csr")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertCSRConfig(templateName, ca, csr),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+				),
+			},
+		},
+	})
+}
+
 func TestIntKeyfactorCertificateResource_CSR(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	ca := discoverCA(t, client)

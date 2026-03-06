@@ -27,6 +27,9 @@ type provider struct {
 	configured bool
 	client     *api.Client
 	sdkClient  *keyfactor.APIClient
+	// testHook is called after Configure to allow tests to inject a custom
+	// transport (e.g. a VCR recorder). It is nil in production.
+	testHook func(*provider)
 }
 
 const (
@@ -757,6 +760,11 @@ func (p *provider) Configure(
 		p.sdkClient = c
 		p.configured = true
 		continue
+	}
+
+	// Allow tests to inject a custom transport (e.g. VCR recorder).
+	if p.testHook != nil {
+		p.testHook(p)
 	}
 }
 

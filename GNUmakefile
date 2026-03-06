@@ -73,6 +73,9 @@ testacc:
 testunit:
 	go test ./keyfactor/ -run "TestUnit" -v $(TESTARGS) -timeout 30m
 
+testunit-record:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnit" -v -count=1 $(TESTARGS) -timeout 30m
+
 KEYFACTOR_ENV_FILE ?= ~/.env_ses2541
 KEYFACTOR_K8S_CREDENTIALS_FILE ?= $(HOME)/GolandProjects/terraform-keyfactor-provider-testing/examples/certs/deployment/k8s-creds.json
 
@@ -111,6 +114,10 @@ vendor:
 	rm -rf vendor
 	go mod vendor
 
+vendor-dev:
+	go mod tidy
+	./vendor_dev.sh
+
 tag:
 	git tag -d v$(VERSION) || true
 	git push origin v$(VERSION) || true
@@ -124,4 +131,4 @@ showlines:
 	fi
 	@sed -n '$(FROM),$(TO)p' $(FILE) | cat -v
 
-.PHONY: build release install test testacc testunit testint testint-check testint-run testint-debug fmtcheck fmt tag setversion vendor showlines
+.PHONY: build release install test testacc testunit testunit-record testint testint-check testint-run testint-debug fmtcheck fmt tag setversion vendor vendor-dev showlines

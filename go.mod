@@ -17,6 +17,8 @@ require (
 
 require github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 
+require gopkg.in/dnaeon/go-vcr.v4 v4.0.6
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1 // indirect
@@ -74,6 +76,7 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/zclconf/go-cty v1.17.0 // indirect
 	go.mozilla.org/pkcs7 v0.9.0 // indirect
+	go.yaml.in/yaml/v4 v4.0.0-rc.3 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect

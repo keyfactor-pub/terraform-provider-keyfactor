@@ -164,4 +164,97 @@ showlines:
 	fi
 	@sed -n '$(FROM),$(TO)p' $(FILE) | cat -v
 
-.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines
+# ---------------------------------------------------------------------------
+# Applications API debugging targets (uses KEYFACTOR_ENV_FILE credentials)
+# Usage examples:
+#   make api-list-applications
+#   make api-get-application APP_ID=9
+#   make api-create-application APP_NAME=my-app
+#   make api-update-application APP_ID=9 APP_NAME=my-app APP_INTERVAL=30
+#   make api-delete-application APP_ID=9
+#   make api-options-application
+# ---------------------------------------------------------------------------
+APP_ID ?= 1
+APP_NAME ?= test-application
+APP_INTERVAL ?= 60
+APP_DAILY_TIME ?=
+APP_OVERWRITE ?= false
+
+# Internal helper: get OAuth token from env file
+define get_token
+	. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token')
+endef
+
+api-list-applications:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-get-application:
+	@if [ -z "$(APP_ID)" ]; then echo "Usage: make api-get-application APP_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications/$(APP_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-create-application:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X POST \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{\"Name\":\"$(APP_NAME)\",\"OverwriteSchedules\":$(APP_OVERWRITE),\"Schedule\":{\"Interval\":{\"Minutes\":$(APP_INTERVAL)}}}" | jq .
+
+api-update-application:
+	@if [ -z "$(APP_ID)" ]; then echo "Usage: make api-update-application APP_ID=<id> [APP_NAME=...] [APP_INTERVAL=...]"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X PUT \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{\"Id\":$(APP_ID),\"Name\":\"$(APP_NAME)\",\"OverwriteSchedules\":$(APP_OVERWRITE),\"Schedule\":{\"Interval\":{\"Minutes\":$(APP_INTERVAL)}}}" | jq .
+
+api-delete-application:
+	@if [ -z "$(APP_ID)" ]; then echo "Usage: make api-delete-application APP_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X DELETE \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications/$(APP_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN"
+
+api-options-application:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	echo "--- OPTIONS /Applications ---" && \
+	curl -sk -i -X OPTIONS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" 2>&1 | grep -i "^allow:" && \
+	echo "--- OPTIONS /Applications/$(APP_ID) ---" && \
+	curl -sk -i -X OPTIONS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Applications/$(APP_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" 2>&1 | grep -i "^allow:"
+
+.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-get-application api-create-application api-update-application api-delete-application api-options-application

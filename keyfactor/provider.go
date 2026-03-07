@@ -799,6 +799,7 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 		"keyfactor_oauth_security_role":                   resourceOAuthSecurityRoleType{},
 		"keyfactor_role":                                  resourceSecurityRoleType{},
 		"keyfactor_template_role_binding":                 resourceCertificateTemplateRoleBindingType{},
+		"keyfactor_application":                           resourceApplicationType{},
 	}, nil
 }
 
@@ -815,6 +816,7 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 		"keyfactor_permission_set":       dataSourcePermissionSetType{},
 		"keyfactor_role":                 dataSourceSecurityRoleType{},
 		"keyfactor_identity":             dataSourceSecurityIdentityType{},
+		"keyfactor_application":          dataSourceApplicationType{},
 	}, nil
 }
 

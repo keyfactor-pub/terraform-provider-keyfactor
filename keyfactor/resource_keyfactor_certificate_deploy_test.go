@@ -31,13 +31,14 @@ func TestIntKeyfactorCertificateDeployResource(t *testing.T) {
 	}
 
 	// Build cert config (enrollment pattern or template)
+	cn := randomTestCN("tf-int-deploy")
 	enrollmentPattern := discoverEnrollmentPattern(t, client)
 	var certConfig string
 	if enrollmentPattern != "" {
-		certConfig = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca)
+		certConfig = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
 	} else {
 		templateName := discoverTemplate(t, client)
-		certConfig = testAccCertPFXConfig(templateName, ca)
+		certConfig = testAccCertPFXConfig(templateName, ca, cn)
 	}
 
 	storeConfig := testAccCertStoreConfig(storeType, clientMachine, agentID, storePath)

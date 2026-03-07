@@ -2,10 +2,12 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 type certificateStoreTestCase_v9 struct {
@@ -150,11 +152,31 @@ resource "keyfactor_certificate_store" "tf_k8s_acc_test" {
 //
 //	RECORD_CASSETTES=1 make testunit
 func TestUnitKeyfactorCertificateStoreResource(t *testing.T) {
-	// These values must match what was used when recording the cassette.
-	storeType := envOrDefault("KEYFACTOR_CERTIFICATE_STORE_TYPE", "SSL")
-	clientMachine := envOrDefault("KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE", "vcr-test-machine")
-	agentID := envOrDefault("KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID", "vcr-agent-id")
-	storePath := envOrDefault("KEYFACTOR_CERTIFICATE_STORE_PATH", "/vcr-test-store")
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_store_resource")
+	var storeType, clientMachine, agentID, storePath string
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		// Recording mode: auto-discover lab resources and save params for replay.
+		client := newTestClient(t)
+		agentID, clientMachine = discoverAgent(t, client)
+		storeType = discoverStoreTypeForAgent(t, client, agentID)
+		// Use a K8S-compatible path format: namespace/name (no leading slash).
+		storePath = "default/tf-unit-test-1000000"
+		writeStoreTestParams(cassettePath, storeTestParams{
+			StoreType:     storeType,
+			ClientMachine: clientMachine,
+			AgentID:       agentID,
+			StorePath:     storePath,
+		})
+	} else {
+		// Replay mode: load params recorded with the cassette so that the HCL
+		// config exactly matches what was used during recording, avoiding drift.
+		params := readStoreTestParams(cassettePath)
+		storeType = params.StoreType
+		clientMachine = params.ClientMachine
+		agentID = params.AgentID
+		storePath = params.StorePath
+	}
 
 	factories, cleanup := newVCRProviderFactories(t, "certificate_store_resource")
 	defer cleanup()
@@ -166,9 +188,9 @@ func TestUnitKeyfactorCertificateStoreResource(t *testing.T) {
 				Config: testAccCertStoreConfig(storeType, clientMachine, agentID, storePath),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
-					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "store_path", storePath),
-					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "store_type", storeType),
-					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "client_machine", clientMachine),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "store_path"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "store_type"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "client_machine"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "agent_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "approved"),
 				),

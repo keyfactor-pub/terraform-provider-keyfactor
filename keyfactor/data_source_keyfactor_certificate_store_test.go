@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -71,11 +72,36 @@ func testAccDataSourceKeyfactorCertificateStoreBasic(resourceName string, passwo
 //
 // To record cassettes against a live lab:
 //
-//	KEYFACTOR_CERTIFICATE_STORE_ID=<uuid> RECORD_CASSETTES=1 make testunit
+//	RECORD_CASSETTES=1 make testunit
 func TestUnitKeyfactorCertificateStoreDataSource(t *testing.T) {
-	// The store ID and client_machine/store_path must match cassette values.
-	storeID := envOrDefault("KEYFACTOR_CERTIFICATE_STORE_ID", "vcr-store-id")
 	resourceName := "data.keyfactor_certificate_store.test"
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_store_data_source")
+	var storeType, clientMachine, agentID, storePath string
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		// Recording mode: auto-discover lab resources and save params for replay.
+		client := newTestClient(t)
+		agentID, clientMachine = discoverAgent(t, client)
+		storeType = discoverStoreTypeForAgent(t, client, agentID)
+		// Use a K8S-compatible path format: namespace/name (no leading slash).
+		storePath = "default/tf-unit-test-ds-1000001"
+		writeStoreTestParams(cassettePath, storeTestParams{
+			StoreType:     storeType,
+			ClientMachine: clientMachine,
+			AgentID:       agentID,
+			StorePath:     storePath,
+		})
+	} else {
+		// Replay mode: load params recorded with the cassette.
+		params := readStoreTestParams(cassettePath)
+		storeType = params.StoreType
+		clientMachine = params.ClientMachine
+		agentID = params.AgentID
+		storePath = params.StorePath
+	}
+
+	config := testAccCertStoreConfig(storeType, clientMachine, agentID, storePath) + "\n" +
+		testAccCertStoreDataSourceByID("keyfactor_certificate_store.test")
 
 	factories, cleanup := newVCRProviderFactories(t, "certificate_store_data_source")
 	defer cleanup()
@@ -84,8 +110,9 @@ func TestUnitKeyfactorCertificateStoreDataSource(t *testing.T) {
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccDataSourceKeyfactorCertificateStoreBasic(storeID, ""),
+				Config: config,
 				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
 					resource.TestCheckResourceAttrSet(resourceName, "store_path"),
 					resource.TestCheckResourceAttrSet(resourceName, "store_type"),
 					resource.TestCheckResourceAttrSet(resourceName, "agent_id"),

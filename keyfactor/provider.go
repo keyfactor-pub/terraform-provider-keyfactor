@@ -30,6 +30,10 @@ type provider struct {
 	// testHook is called after Configure to allow tests to inject a custom
 	// transport (e.g. a VCR recorder). It is nil in production.
 	testHook func(*provider)
+	// testAuth, if non-nil, bypasses Configure's auth/network logic entirely.
+	// The pre-built AuthConfig (e.g. a VCR-backed stub) is used for both clients.
+	// Used in unit tests with VCR cassettes.
+	testAuth api.AuthConfig
 }
 
 const (
@@ -689,6 +693,21 @@ func (p *provider) Configure(
 	req tfsdk.ConfigureProviderRequest,
 	resp *tfsdk.ConfigureProviderResponse,
 ) {
+	// Test mode: bypass all auth/network logic and use the pre-built VCR auth client.
+	if p.testAuth != nil {
+		PFXPasswordLength = DEFAULT_PFX_PASSWORD_LEN
+		PFXPasswordDigits = DEFAULT_PFX_PASSWORD_NUMBER_COUNT
+		PFXPasswordSpecialChars = DEFAULT_PFX_PASSWORD_SPECIAL_CHAR_COUNT
+		PFXPasswordUpperCases = DEFAULT_PFX_PASSWORD_UPPER_COUNT
+		p.client = api.NewKeyfactorClientWithAuth(p.testAuth, &ctx)
+		p.sdkClient = keyfactor.NewAPIClientWithAuth(p.testAuth)
+		p.configured = true
+		if p.testHook != nil {
+			p.testHook(p)
+		}
+		return
+	}
+
 	// Retrieve provider data from configuration
 	var config providerData
 

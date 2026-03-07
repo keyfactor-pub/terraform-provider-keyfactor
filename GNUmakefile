@@ -76,6 +76,18 @@ testunit:
 testunit-record:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnit" -v -count=1 $(TESTARGS) -timeout 30m
 
+# Record a single unit test cassette. Usage: make testunit-record-one TEST_NAME=TestUnitFoo
+testunit-record-one:
+	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testunit-record-one TEST_NAME=TestUnitFoo"; exit 1; fi
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 30m
+
+testunit-record-csr:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_CSR" -v -count=1 -timeout 30m
+
+# Run unit tests and display only failures (quiet mode)
+testunit-check:
+	go test ./keyfactor/ -run "TestUnit" -count=1 $(TESTARGS) -timeout 30m
+
 KEYFACTOR_ENV_FILE ?= ~/.env_ses2541
 KEYFACTOR_K8S_CREDENTIALS_FILE ?= $(HOME)/GolandProjects/terraform-keyfactor-provider-testing/examples/certs/deployment/k8s-creds.json
 
@@ -92,6 +104,27 @@ testint-run:
 testint-debug:
 	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-debug TEST_NAME=TestIntFoo"; exit 1; fi
 	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_LOG=DEBUG TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m 2>&1 | tee /tmp/tf-debug.log
+
+# Run a single integration test with TF debug logging. Usage: make testint-debug-run TEST_NAME=TestIntFoo
+testint-debug-run:
+	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-debug-run TEST_NAME=TestIntFoo"; exit 1; fi
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_LOG=DEBUG TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m 2>&1 | tee /tmp/tf-debug.log
+
+# Run all tests (unit + int + acc). Requires lab connection.
+testall:
+	$(MAKE) testunit
+	$(MAKE) testint-check
+
+# Lint the provider code
+lint:
+	@which golangci-lint > /dev/null 2>&1 || (echo "golangci-lint not found, install from https://golangci-lint.run/usage/install/"; exit 1)
+	golangci-lint run ./...
+
+# Format Go files and check for issues
+check: fmt vet
+
+vet:
+	go vet ./...
 
 fmtcheck:
 	@./scripts/gofmtcheck.sh
@@ -131,4 +164,4 @@ showlines:
 	fi
 	@sed -n '$(FROM),$(TO)p' $(FILE) | cat -v
 
-.PHONY: build release install test testacc testunit testunit-record testint testint-check testint-run testint-debug fmtcheck fmt tag setversion vendor vendor-dev showlines
+.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines

@@ -6,20 +6,25 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"gopkg.in/dnaeon/go-vcr.v4/pkg/cassette"
 	"gopkg.in/dnaeon/go-vcr.v4/pkg/recorder"
+	"gopkg.in/yaml.v3"
 )
 
 // ---------------------------------------------------------------------------
@@ -515,6 +520,208 @@ func newVCRServer(baseURL string) *auth_providers.Server {
 	}
 }
 
+// cassetteInfo holds the recording host and API path extracted from a cassette file.
+type cassetteInfo struct {
+	Host    string
+	APIPath string
+}
+
+// readCassetteInfo parses the cassette YAML to extract the host and API path
+// from the first interaction's URL. Falls back to sensible defaults if parsing fails.
+func readCassetteInfo(cassettePath string) cassetteInfo {
+	data, err := os.ReadFile(cassettePath + ".yaml")
+	if err != nil {
+		return cassetteInfo{Host: "vcr.test.local", APIPath: "KeyfactorAPI"}
+	}
+	var c struct {
+		Interactions []struct {
+			Request struct {
+				URL string `yaml:"url"`
+			} `yaml:"request"`
+		} `yaml:"interactions"`
+	}
+	if err := yaml.Unmarshal(data, &c); err != nil || len(c.Interactions) == 0 {
+		return cassetteInfo{Host: "vcr.test.local", APIPath: "KeyfactorAPI"}
+	}
+	u, err := url.Parse(c.Interactions[0].Request.URL)
+	if err != nil || u.Host == "" {
+		return cassetteInfo{Host: "vcr.test.local", APIPath: "KeyfactorAPI"}
+	}
+	// API path is the leading path component(s) before the first real endpoint.
+	// e.g. /Keyfactor/API/Enrollment/PFX → "Keyfactor/API"
+	//      /KeyfactorAPI/SSL/Certificates → "KeyfactorAPI"
+	parts := strings.SplitN(strings.TrimPrefix(u.Path, "/"), "/", 3)
+	apiPath := parts[0]
+	if len(parts) >= 2 {
+		apiPath = parts[0] + "/" + parts[1]
+	}
+	return cassetteInfo{Host: u.Host, APIPath: apiPath}
+}
+
+// normalizeCassettePath strips known Keyfactor API path prefixes from a URL path so that
+// cassettes recorded on different labs (or with different apiPath settings) can be replayed.
+func normalizeCassettePath(p string) string {
+	for _, prefix := range []string{"/Keyfactor/API/", "/KeyfactorAPI/"} {
+		if strings.HasPrefix(p, prefix) {
+			return strings.TrimPrefix(p, prefix)
+		}
+	}
+	return strings.TrimPrefix(p, "/")
+}
+
+// makeVCRMatcher builds a cassette.MatcherFunc that matches only on HTTP
+// method, normalised API path, and query string — ignoring host, headers,
+// body, and protocol details. This is intentionally lenient so that cassettes
+// recorded with real lab credentials can be replayed without any network or
+// credentials.
+func makeVCRMatcher() cassette.MatcherFunc {
+	return func(r *http.Request, i cassette.Request) bool {
+		if r.Method != i.Method {
+			return false
+		}
+		iURL, err := url.Parse(i.URL)
+		if err != nil {
+			return false
+		}
+		if normalizeCassettePath(r.URL.Path) != normalizeCassettePath(iURL.Path) {
+			return false
+		}
+		if r.URL.RawQuery != iURL.RawQuery {
+			return false
+		}
+		return true
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Certificate store test params (cassette-recorded values for replay mode)
+// ---------------------------------------------------------------------------
+
+// storeTestParams holds the key field values used when recording a cassette,
+// so that replay mode can use identical values and avoid Terraform plan drift.
+type storeTestParams struct {
+	StoreType     string `json:"store_type"`
+	ClientMachine string `json:"client_machine"`
+	AgentID       string `json:"agent_id"`
+	StorePath     string `json:"store_path"`
+}
+
+// writeStoreTestParams saves recording parameters alongside the cassette file.
+func writeStoreTestParams(cassettePath string, params storeTestParams) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+// readStoreTestParams loads recording parameters from the JSON params file.
+// Returns safe defaults if the file does not exist yet.
+func readStoreTestParams(cassettePath string) storeTestParams {
+	defaults := storeTestParams{
+		StoreType:     "K8STLSSecr",
+		ClientMachine: "vcr-test-machine",
+		AgentID:       "00000000-0000-0000-0000-000000000001",
+		StorePath:     "default/tf-unit-test-1000000",
+	}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params storeTestParams
+	if err := json.Unmarshal(data, &params); err != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Certificate PFX test params (cassette-recorded values for replay mode)
+// ---------------------------------------------------------------------------
+
+// certPFXTestParams holds the key field values used when recording a PFX cassette,
+// so that replay mode can use identical values and avoid Terraform plan drift.
+type certPFXTestParams struct {
+	TemplateName      string `json:"template_name"`
+	CA                string `json:"ca"`
+	EnrollmentPattern string `json:"enrollment_pattern"`
+	CN                string `json:"cn"`
+}
+
+func writeCertPFXTestParams(cassettePath string, params certPFXTestParams) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readCertPFXTestParams(cassettePath string) certPFXTestParams {
+	defaults := certPFXTestParams{
+		TemplateName: "2YearTestWebServer",
+		CA:           "CommandCA1",
+		CN:           "tf-unit-pfx.example.com",
+	}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params certPFXTestParams
+	if err := json.Unmarshal(data, &params); err != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Certificate CSR test params (cassette-recorded values for replay mode)
+// ---------------------------------------------------------------------------
+
+// certCSRTestParams holds the key field values used when recording a CSR cassette.
+// The CSRPem is stored so replay mode uses the exact same CSR that was enrolled,
+// ensuring the cert still exists in the lab if needed (though VCR doesn't require it).
+type certCSRTestParams struct {
+	TemplateName string `json:"template_name"`
+	CA           string `json:"ca"`
+	CSRPem       string `json:"csr_pem"`
+}
+
+func writeCertCSRTestParams(cassettePath string, params certCSRTestParams) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readCertCSRTestParams(cassettePath string) certCSRTestParams {
+	defaults := certCSRTestParams{
+		TemplateName: "2YearTestWebServer",
+		CA:           "CommandCA1",
+		CSRPem:       "", // empty: will fall back to generating a dummy CSR in replay
+	}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params certCSRTestParams
+	if err := json.Unmarshal(data, &params); err != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Unique CN generator
+// ---------------------------------------------------------------------------
+
+// randomTestCN generates a unique common name for test certificates and CSRs.
+// Uses Unix nanoseconds to avoid CN conflicts when tests run multiple times
+// against the same lab without cleaning up previously-enrolled certificates.
+func randomTestCN(prefix string) string {
+	return fmt.Sprintf("%s-%d.example.com", prefix, time.Now().UnixNano()%1000000000)
+}
+
 // newVCRProviderFactories returns Terraform provider factories backed by a VCR
 // recorder. In replay mode (default) it replays cassette files from
 // keyfactor/testdata/cassettes/ and skips the test if none exist yet. Set
@@ -529,66 +736,101 @@ func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func
 	t.Helper()
 
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
-	recordMode := os.Getenv("RECORD_CASSETTES") == "1"
+	matcher := makeVCRMatcher()
 
-	if recordMode {
-		// Recording mode: real lab credentials must be available.
-		testAccPreCheck(t)
-	} else {
-		// Replay mode: inject fake basic-auth credentials so that Configure
-		// succeeds without making any network calls.
-		t.Setenv("KEYFACTOR_HOSTNAME", "vcr.test.local")
-		t.Setenv("KEYFACTOR_USERNAME", "vcr-test-user")
-		t.Setenv("KEYFACTOR_PASSWORD", "Vcrtestpass1!")
-		t.Setenv("KEYFACTOR_SKIP_VERIFY", "true")
-		// Clear OAuth vars to force the basic-auth path in getServerConfig.
-		t.Setenv("KEYFACTOR_AUTH_CLIENT_ID", "")
-		t.Setenv("KEYFACTOR_AUTH_CLIENT_SECRET", "")
-		t.Setenv("KEYFACTOR_AUTH_TOKEN_URL", "")
-	}
+	if os.Getenv("RECORD_CASSETTES") != "1" {
+		// Replay mode: pre-create the VCR recorder and inject it as testAuth so
+		// provider.Configure() bypasses all auth/network logic entirely.
+		info := readCassetteInfo(cassettePath)
 
-	mode := recorder.ModeReplayOnly
-	if recordMode {
-		mode = recorder.ModeRecordOnce
-	}
-
-	r, err := recorder.New(cassettePath, recorder.WithMode(mode))
-	if err != nil {
-		if !recordMode {
+		r, err := recorder.New(cassettePath,
+			recorder.WithMode(recorder.ModeReplayOnly),
+			recorder.WithMatcher(matcher),
+		)
+		if err != nil {
 			t.Skipf("No cassette found for %q. Run with RECORD_CASSETTES=1 against a live lab to record.", cassetteName)
 		}
-		t.Fatalf("Failed to create VCR recorder for %q: %s", cassetteName, err)
+
+		vcrAuth := &vcrAuthConfig{
+			httpClient: r.GetDefaultClient(),
+			server: &auth_providers.Server{
+				Host:          info.Host,
+				APIPath:       info.APIPath,
+				Username:      "vcr-test-user",
+				Password:      "Vcrtestpass1!",
+				SkipTLSVerify: true,
+			},
+		}
+
+		p := &provider{testAuth: vcrAuth}
+		factories := map[string]func() (tfprotov6.ProviderServer, error){
+			"keyfactor": providerserver.NewProtocol6WithError(p),
+		}
+		cleanup := func() {
+			if stopErr := r.Stop(); stopErr != nil {
+				t.Logf("Warning: VCR recorder stop error: %s", stopErr)
+			}
+		}
+		return factories, cleanup
 	}
 
-	// Create a provider with a testHook that swaps AuthClient on all internal
-	// clients to use the VCR recorder's transport after Configure runs.
-	p := &provider{
-		testHook: func(pp *provider) {
-			if pp.client == nil || pp.sdkClient == nil {
-				return
-			}
-			vcrHTTPClient := r.GetDefaultClient()
-			server := pp.client.AuthClient.GetServerConfig()
-			vcrAuth := &vcrAuthConfig{
-				httpClient: vcrHTTPClient,
-				server:     server,
-			}
-			pp.client.AuthClient = vcrAuth
-			pp.sdkClient.V1.AuthClient = vcrAuth
-			pp.sdkClient.V2.AuthClient = vcrAuth
-		},
+	// Recording mode: create ONE shared VCR recorder for the entire test so
+	// that ALL provider API calls (across multiple Configure() invocations) are
+	// captured in a single cassette. We use testAuth to bypass Configure()'s
+	// own auth/network logic and route every call through the VCR recorder.
+	testAccPreCheck(t)
+	realClient := newTestClient(t)
+	realHTTPClient, hErr := realClient.AuthClient.GetHttpClient()
+	if hErr != nil || realHTTPClient == nil {
+		t.Fatalf("VCR recording: failed to get real HTTP client: %v", hErr)
 	}
 
+	r, rErr := recorder.New(cassettePath,
+		recorder.WithMode(recorder.ModeRecordOnly),
+		recorder.WithRealTransport(realHTTPClient.Transport),
+		recorder.WithMatcher(matcher),
+		// Redact auth and sensitive fields before saving cassette.
+		recorder.WithHook(func(i *cassette.Interaction) error {
+			delete(i.Request.Headers, "Authorization")
+			// Redact ServerPassword from request bodies (may contain kubeconfig).
+			if i.Request.Body != "" {
+				var body map[string]interface{}
+				if json.Unmarshal([]byte(i.Request.Body), &body) == nil {
+					redacted := false
+					for _, key := range []string{"ServerPassword", "Password"} {
+						if v, ok := body[key]; ok && v != nil && v != "" {
+							body[key] = "[REDACTED]"
+							redacted = true
+						}
+					}
+					if redacted {
+						if sanitized, mErr := json.Marshal(body); mErr == nil {
+							i.Request.Body = string(sanitized)
+							i.Request.ContentLength = int64(len(sanitized))
+						}
+					}
+				}
+			}
+			return nil
+		}, recorder.BeforeSaveHook),
+	)
+	if rErr != nil {
+		t.Fatalf("Failed to create VCR recorder for %q: %s", cassetteName, rErr)
+	}
+
+	vcrAuth := &vcrAuthConfig{
+		httpClient: r.GetDefaultClient(),
+		server:     realClient.AuthClient.GetServerConfig(),
+	}
+	p := &provider{testAuth: vcrAuth}
 	factories := map[string]func() (tfprotov6.ProviderServer, error){
 		"keyfactor": providerserver.NewProtocol6WithError(p),
 	}
-
 	cleanup := func() {
 		if stopErr := r.Stop(); stopErr != nil {
 			t.Logf("Warning: VCR recorder stop error: %s", stopErr)
 		}
 	}
-
 	return factories, cleanup
 }
 
@@ -597,29 +839,31 @@ func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func
 // ---------------------------------------------------------------------------
 
 // testAccCertPFXConfig generates HCL for a PFX certificate resource test.
-func testAccCertPFXConfig(templateName, ca string) string {
+// cn is the common name to use; pass randomTestCN("tf-int-pfx") for unique values.
+func testAccCertPFXConfig(templateName, ca, cn string) string {
 	return fmt.Sprintf(`
 resource "keyfactor_certificate" "test" {
-  common_name            = "tf-int-test.example.com"
+  common_name            = "%s"
   certificate_authority  = "%s"
   certificate_template   = "%s"
   key_password           = "Tftest123456"
-  dns_sans               = ["tf-int-test.example.com"]
+  dns_sans               = ["%s"]
 }
-`, ca, templateName)
+`, cn, ca, templateName, cn)
 }
 
 // testAccCertPFXConfigEnrollmentPattern generates HCL for a PFX certificate
 // resource test using an enrollment pattern (required for Command v25+).
-func testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca string) string {
+// cn is the common name to use; pass randomTestCN("tf-int-pfx") for unique values.
+func testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn string) string {
 	return fmt.Sprintf(`
 resource "keyfactor_certificate" "test" {
-  common_name                      = "tf-int-test.example.com"
+  common_name                      = "%s"
   certificate_authority            = "%s"
   certificate_enrollment_pattern   = "%s"
   key_password                     = "Tftest123456"
 }
-`, ca, enrollmentPattern)
+`, cn, ca, enrollmentPattern)
 }
 
 // generateSimpleCSR creates a fresh PEM-encoded CSR with only a CN field.
@@ -643,14 +887,17 @@ func generateSimpleCSR(t *testing.T, cn string) string {
 
 // testAccCertCSRConfig generates HCL for a CSR-based certificate resource test.
 func testAccCertCSRConfig(templateName, ca, csr string) string {
+	// Decode literal \n escape sequences to real newlines so the HCL heredoc is valid.
+	decodedCSR := strings.ReplaceAll(csr, `\n`, "\n")
 	return fmt.Sprintf(`
 resource "keyfactor_certificate" "test_csr" {
   certificate_authority  = "%s"
   certificate_template   = "%s"
   csr                    = <<-EOT
-%sEOT
+%s
+EOT
 }
-`, ca, templateName, csr)
+`, ca, templateName, strings.TrimRight(decodedCSR, "\n"))
 }
 
 // testAccCertCSRConfigEnrollmentPattern generates HCL for a CSR-based certificate

@@ -2,9 +2,11 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 func TestAccKeyfactorCertificateDataSource(t *testing.T) {
@@ -78,9 +80,44 @@ func testAccDataSourceKeyfactorCertificateBasic(resourceName string, id string, 
 //
 //	KEYFACTOR_CERTIFICATE_ID=<id> RECORD_CASSETTES=1 make testunit
 func TestUnitKeyfactorCertificateDataSource(t *testing.T) {
-	// The cert ID must match what was used during cassette recording.
-	certID := envOrDefault("KEYFACTOR_CERTIFICATE_ID", "1")
+	// The data source reads an existing cert. In recording mode, first create one
+	// to get a stable ID, then read it back — just like TestIntKeyfactorCertificateDataSource.
+	// In replay mode, use the cert resource + data source combo config so the cassette
+	// interactions match (certificate ID is resolved via the resource reference).
 	resourceName := "data.keyfactor_certificate.test"
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_data_source")
+
+	var config string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		ca := discoverCA(t, client)
+		cn := randomTestCN("tf-unit-ds")
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		var certConfig string
+		var templateName string
+		if enrollmentPattern != "" {
+			certConfig = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+		} else {
+			templateName = discoverTemplate(t, client)
+			certConfig = testAccCertPFXConfig(templateName, ca, cn)
+		}
+		writeCertPFXTestParams(cassettePath, certPFXTestParams{
+			TemplateName:      templateName,
+			CA:                ca,
+			EnrollmentPattern: enrollmentPattern,
+			CN:                cn,
+		})
+		config = certConfig + "\n" + testAccCertDataSourceByID("keyfactor_certificate.test")
+	} else {
+		params := readCertPFXTestParams(cassettePath)
+		var certConfig string
+		if params.EnrollmentPattern != "" {
+			certConfig = testAccCertPFXConfigEnrollmentPattern(params.EnrollmentPattern, params.CA, params.CN)
+		} else {
+			certConfig = testAccCertPFXConfig(params.TemplateName, params.CA, params.CN)
+		}
+		config = certConfig + "\n" + testAccCertDataSourceByID("keyfactor_certificate.test")
+	}
 
 	factories, cleanup := newVCRProviderFactories(t, "certificate_data_source")
 	defer cleanup()
@@ -89,8 +126,9 @@ func TestUnitKeyfactorCertificateDataSource(t *testing.T) {
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccDataSourceKeyfactorCertificateBasic("keyfactor_certificate", certID, "Tftest123456"),
+				Config: config,
 				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
 					resource.TestCheckResourceAttrSet(resourceName, "serial_number"),
 					resource.TestCheckResourceAttrSet(resourceName, "thumbprint"),
 					resource.TestCheckResourceAttrSet(resourceName, "certificate_pem"),
@@ -108,15 +146,16 @@ func TestUnitKeyfactorCertificateDataSource(t *testing.T) {
 func TestIntKeyfactorCertificateDataSource(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	ca := discoverCA(t, client)
+	cn := randomTestCN("tf-int-ds")
 
 	// Try enrollment pattern first (Command v25+), fall back to template+CA
 	enrollmentPattern := discoverEnrollmentPattern(t, client)
 	var certConfig string
 	if enrollmentPattern != "" {
-		certConfig = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca)
+		certConfig = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
 	} else {
 		templateName := discoverTemplate(t, client)
-		certConfig = testAccCertPFXConfig(templateName, ca)
+		certConfig = testAccCertPFXConfig(templateName, ca, cn)
 	}
 
 	resource.Test(t, resource.TestCase{

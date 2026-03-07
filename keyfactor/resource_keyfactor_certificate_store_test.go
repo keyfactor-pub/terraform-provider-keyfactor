@@ -140,6 +140,44 @@ resource "keyfactor_certificate_store" "tf_k8s_acc_test" {
 }
 
 // ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes — no lab required)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorCertificateStoreResource tests the full create/read/destroy
+// lifecycle of a certificate store resource using pre-recorded HTTP cassettes.
+//
+// To record cassettes against a live lab:
+//
+//	RECORD_CASSETTES=1 make testunit
+func TestUnitKeyfactorCertificateStoreResource(t *testing.T) {
+	// These values must match what was used when recording the cassette.
+	storeType := envOrDefault("KEYFACTOR_CERTIFICATE_STORE_TYPE", "SSL")
+	clientMachine := envOrDefault("KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE", "vcr-test-machine")
+	agentID := envOrDefault("KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID", "vcr-agent-id")
+	storePath := envOrDefault("KEYFACTOR_CERTIFICATE_STORE_PATH", "/vcr-test-store")
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_store_resource")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertStoreConfig(storeType, clientMachine, agentID, storePath),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "store_path", storePath),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "store_type", storeType),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "client_machine", clientMachine),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "agent_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "approved"),
+				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Integration tests (auto-discovery, only need lab connection env vars)
 // ---------------------------------------------------------------------------
 

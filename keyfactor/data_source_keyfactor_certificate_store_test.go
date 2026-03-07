@@ -63,6 +63,40 @@ func testAccDataSourceKeyfactorCertificateStoreBasic(resourceName string, passwo
 }
 
 // ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes — no lab required)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorCertificateStoreDataSource tests the certificate store
+// data source read path using pre-recorded HTTP cassettes.
+//
+// To record cassettes against a live lab:
+//
+//	KEYFACTOR_CERTIFICATE_STORE_ID=<uuid> RECORD_CASSETTES=1 make testunit
+func TestUnitKeyfactorCertificateStoreDataSource(t *testing.T) {
+	// The store ID and client_machine/store_path must match cassette values.
+	storeID := envOrDefault("KEYFACTOR_CERTIFICATE_STORE_ID", "vcr-store-id")
+	resourceName := "data.keyfactor_certificate_store.test"
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_store_data_source")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDataSourceKeyfactorCertificateStoreBasic(storeID, ""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "store_path"),
+					resource.TestCheckResourceAttrSet(resourceName, "store_type"),
+					resource.TestCheckResourceAttrSet(resourceName, "agent_id"),
+					resource.TestCheckResourceAttrSet(resourceName, "approved"),
+				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Integration tests (auto-discovery)
 // ---------------------------------------------------------------------------
 

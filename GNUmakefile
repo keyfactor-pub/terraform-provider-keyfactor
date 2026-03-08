@@ -110,6 +110,10 @@ testint-debug-run:
 	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-debug-run TEST_NAME=TestIntFoo"; exit 1; fi
 	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_LOG=DEBUG TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m 2>&1 | tee /tmp/tf-debug.log
 
+# Run all PAM integration tests
+testint-pam:
+	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestInt.*PAM" -v -count=1 -timeout 120m
+
 # Run all tests (unit + int + acc). Requires lab connection.
 testall:
 	$(MAKE) testunit
@@ -257,4 +261,79 @@ api-options-application:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" 2>&1 | grep -i "^allow:"
 
-.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-get-application api-create-application api-update-application api-delete-application api-options-application
+# ---------------------------------------------------------------------------
+# PAM Providers API debugging targets (uses KEYFACTOR_ENV_FILE credentials)
+# Usage examples:
+#   make api-list-pam-providers
+#   make api-get-pam-provider PAM_ID=1
+#   make api-list-pam-provider-types
+#   make api-get-pam-provider-type PAM_TYPE_ID=c09bbfa5-a081-4194-9dd2-31f3cc3fabcc
+#   make api-delete-pam-provider PAM_ID=1
+#   make api-delete-pam-provider-type PAM_TYPE_ID=<guid>
+# ---------------------------------------------------------------------------
+PAM_ID ?= 1
+PAM_TYPE_ID ?=
+PAM_NAME ?= test-pam-provider
+PAM_TYPE_GUID ?=
+
+api-list-pam-providers:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/PamProviders" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-get-pam-provider:
+	@if [ -z "$(PAM_ID)" ]; then echo "Usage: make api-get-pam-provider PAM_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/PamProviders/$(PAM_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-delete-pam-provider:
+	@if [ -z "$(PAM_ID)" ]; then echo "Usage: make api-delete-pam-provider PAM_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X DELETE \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/PamProviders/$(PAM_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN"
+
+api-list-pam-provider-types:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/PamProviders/Types" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-get-pam-provider-type:
+	@if [ -z "$(PAM_TYPE_ID)" ]; then echo "Usage: make api-get-pam-provider-type PAM_TYPE_ID=<guid>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/PamProviders/Types/$(PAM_TYPE_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-delete-pam-provider-type:
+	@if [ -z "$(PAM_TYPE_ID)" ]; then echo "Usage: make api-delete-pam-provider-type PAM_TYPE_ID=<guid>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X DELETE \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/PamProviders/Types/$(PAM_TYPE_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN"
+
+.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type

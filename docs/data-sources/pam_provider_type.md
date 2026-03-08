@@ -1,0 +1,54 @@
+---
+page_title: "keyfactor_pam_provider_type Data Source - terraform-provider-keyfactor"
+subcategory: ""
+description: |-
+  Reads an existing Keyfactor Command PAM Provider Type by name or GUID. Use the returned parameter IDs and names when configuring keyfactor_pam_provider resources.
+---
+
+# keyfactor_pam_provider_type (Data Source)
+
+Reads an existing Keyfactor Command PAM Provider Type by name or GUID.
+
+Use the returned `parameters` list to obtain parameter `id` and `name` values required when configuring `keyfactor_pam_provider` resources.
+
+## Example Usage
+
+```terraform
+# Look up a PAM provider type by name
+data "keyfactor_pam_provider_type" "by_name" {
+  identifier = "Thycotic"
+}
+
+# Look up a PAM provider type by GUID
+data "keyfactor_pam_provider_type" "by_guid" {
+  identifier = "c09bbfa5-a081-4194-9dd2-31f3cc3fabcc"
+}
+
+# Use parameter metadata when creating a provider
+output "param_ids" {
+  value = data.keyfactor_pam_provider_type.by_name.parameters[*].id
+}
+```
+
+## Schema
+
+### Required
+
+- `identifier` (String) Name or GUID of the PAM provider type to look up.
+
+### Read-Only
+
+- `id` (String) GUID identifier of the PAM provider type.
+- `name` (String) Name of the PAM provider type.
+- `parameters` (List of Object) Parameters defined for this PAM provider type. (see [below for nested schema](#nestedatt--parameters))
+
+<a id="nestedatt--parameters"></a>
+### Nested Schema for `parameters`
+
+Read-Only:
+
+- `data_type` (Number) Data type: `1` = string, `2` = secret.
+- `display_name` (String) Human-readable display name for the parameter.
+- `id` (Number) Integer ID of the parameter.
+- `instance_level` (Boolean) Whether this parameter is configured at the instance level.
+- `name` (String) Parameter name.

@@ -803,6 +803,7 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 		"keyfactor_pam_provider_type":                     resourcePAMProviderTypeType{},
 		"keyfactor_pam_provider":                          resourcePAMProviderResourceType{},
 		"keyfactor_certificate_authority":                 resourceCertificateAuthorityType{},
+		"keyfactor_certificate_template":                  resourceCertificateTemplateType{},
 	}, nil
 }
 

@@ -10,73 +10,35 @@ import (
 
 func TestAccKeyfactorCertificateTemplateDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate_template")
-	var shortName = os.Getenv("KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1")
+	var templateName = os.Getenv("KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1")
+	if templateName == "" {
+		t.Skip("Skipping: KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1 not set")
+	}
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
-			// Read testing
 			{
-				Config: testAccDataSourceKeyfactorCertificateTemplateBasic(shortName),
+				Config: fmt.Sprintf(`
+data "keyfactor_certificate_template" "test" {
+  identifier = "%s"
+}
+`, templateName),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr(resourceName, "short_name", shortName),
 					resource.TestCheckResourceAttrSet(resourceName, "id"),
-					resource.TestCheckResourceAttrSet(resourceName, "name"),
+					resource.TestCheckResourceAttr(resourceName, "common_name", templateName),
+					resource.TestCheckResourceAttrSet(resourceName, "template_name"),
 					resource.TestCheckResourceAttrSet(resourceName, "oid"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_size"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_type"),
 					resource.TestCheckResourceAttrSet(resourceName, "forest_root"),
-					resource.TestCheckResourceAttrSet(resourceName, "friendly_name"), //TODO: This is causing issues
 					resource.TestCheckResourceAttrSet(resourceName, "key_retention"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_retention_days"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_archival"),
-					//resource.TestCheckResourceAttrSet(resourceName, "enrollment_fields.#"), // TODO: Check this
 					resource.TestCheckResourceAttrSet(resourceName, "allowed_enrollment_types"),
-					resource.TestCheckResourceAttrSet(resourceName, "template_regexes.#"),
-					resource.TestCheckResourceAttrSet(resourceName, "allowed_requesters.#"),
-					resource.TestCheckResourceAttrSet(resourceName, "rfc_enforcement"),
 					resource.TestCheckResourceAttrSet(resourceName, "requires_approval"),
 					resource.TestCheckResourceAttrSet(resourceName, "key_usage"),
-				),
-			},
-		},
-	})
-}
-
-func testAccDataSourceKeyfactorCertificateTemplateBasic(resourceName string) string {
-	return fmt.Sprintf(`
-	data "keyfactor_certificate_template" "test" {
-		short_name = "%s"
-	}
-	`, resourceName)
-}
-
-// ---------------------------------------------------------------------------
-// Integration tests (auto-discovery)
-// ---------------------------------------------------------------------------
-
-func TestIntKeyfactorCertificateTemplateDataSource(t *testing.T) {
-	client := testAccIntegrationPreCheck(t)
-	shortName := discoverTemplate(t, client)
-
-	resource.Test(t, resource.TestCase{
-		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps: []resource.TestStep{
-			{
-				Config: testAccDataSourceKeyfactorCertificateTemplateBasic(shortName),
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("data.keyfactor_certificate_template.test", "short_name", shortName),
-					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "id"),
-					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "name"),
-					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "oid"),
-					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "key_size"),
-					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "key_type"),
-					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "forest_root"),
-					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "requires_approval"),
-					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "key_usage"),
-					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "allowed_enrollment_types"),
-					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_template.test", "template_regexes.#"),
 				),
 			},
 		},

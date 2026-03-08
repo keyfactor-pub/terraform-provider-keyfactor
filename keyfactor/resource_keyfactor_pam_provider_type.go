@@ -249,3 +249,37 @@ func (r resourcePAMProviderType) Delete(ctx context.Context, request tfsdk.Delet
 
 	LogFunctionExit(ctx, "resourcePAMProviderType.Delete")
 }
+
+func (r resourcePAMProviderType) ImportState(
+	ctx context.Context,
+	request tfsdk.ImportResourceStateRequest,
+	response *tfsdk.ImportResourceStateResponse,
+) {
+	tflog.Info(ctx, fmt.Sprintf("ImportState called on PAM provider type with ID %q", request.ID))
+
+	pamAPI := r.p.sdkClient.V1.PAMProviderApi
+	req := pamAPI.NewGetPamProvidersTypesRequest(ctx)
+	allTypes, httpResp, err := req.Execute()
+	if err != nil {
+		body := readHTTPResponseBody(httpResp)
+		response.Diagnostics.AddError(
+			"Error importing PAM provider type.",
+			fmt.Sprintf("Could not list PAM provider types: %s. Details: %s", err.Error(), body),
+		)
+		return
+	}
+
+	for _, pt := range allTypes {
+		if pt.GetId() == request.ID {
+			state := pamProviderTypeResponseToState(&pt)
+			diags := response.State.Set(ctx, &state)
+			response.Diagnostics.Append(diags...)
+			return
+		}
+	}
+
+	response.Diagnostics.AddError(
+		"PAM provider type not found.",
+		fmt.Sprintf("No PAM provider type with GUID %q was found.", request.ID),
+	)
+}

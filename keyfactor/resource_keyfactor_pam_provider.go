@@ -334,3 +334,38 @@ func (r resourcePAMProvider) Delete(ctx context.Context, request tfsdk.DeleteRes
 
 	LogFunctionExit(ctx, "resourcePAMProvider.Delete")
 }
+
+func (r resourcePAMProvider) ImportState(
+	ctx context.Context,
+	request tfsdk.ImportResourceStateRequest,
+	response *tfsdk.ImportResourceStateResponse,
+) {
+	tflog.Info(ctx, fmt.Sprintf("ImportState called on PAM provider with ID %q", request.ID))
+
+	id, err := strconv.Atoi(request.ID)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Invalid PAM provider ID.",
+			fmt.Sprintf("Import ID must be an integer, got %q: %s", request.ID, err.Error()),
+		)
+		return
+	}
+
+	pamAPI := r.p.sdkClient.V1.PAMProviderApi
+	req := pamAPI.NewGetPamProvidersByIdRequest(ctx, int32(id))
+	resp, httpResp, err := req.Execute()
+	if err != nil {
+		body := readHTTPResponseBody(httpResp)
+		response.Diagnostics.AddError(
+			"Error importing PAM provider.",
+			fmt.Sprintf("Could not read PAM provider %d: %s. Details: %s", id, err.Error(), body),
+		)
+		return
+	}
+
+	// Import populates metadata only. param_values will be empty because
+	// secret values cannot be recovered from the server.
+	state := pamProviderResponseToMetadata(resp)
+	diags := response.State.Set(ctx, &state)
+	response.Diagnostics.Append(diags...)
+}

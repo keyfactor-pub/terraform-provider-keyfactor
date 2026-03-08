@@ -37,6 +37,12 @@ func TestIntKeyfactorPAMProviderTypeResource(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_pam_provider_type.test", "parameters.1.id"),
 				),
 			},
+			{
+				// Import by GUID
+				ResourceName:      "keyfactor_pam_provider_type.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
 		},
 	})
 }
@@ -60,6 +66,12 @@ func TestIntKeyfactorPAMProviderTypeResourceMinimal(t *testing.T) {
 					resource.TestCheckResourceAttr("keyfactor_pam_provider_type.test", "name", typeName),
 					resource.TestCheckResourceAttr("keyfactor_pam_provider_type.test", "parameters.#", "0"),
 				),
+			},
+			{
+				// Import by GUID
+				ResourceName:      "keyfactor_pam_provider_type.test",
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
 		},
 	})

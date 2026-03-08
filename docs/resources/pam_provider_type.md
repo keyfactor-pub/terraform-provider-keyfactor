@@ -70,3 +70,11 @@ Optional:
 Read-Only:
 
 - `id` (Number) Integer ID of the parameter.
+
+## Import
+
+PAM provider types can be imported using their GUID:
+
+```shell
+terraform import keyfactor_pam_provider_type.example c09bbfa5-a081-4194-9dd2-31f3cc3fabcc
+```

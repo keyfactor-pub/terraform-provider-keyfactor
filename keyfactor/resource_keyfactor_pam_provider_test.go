@@ -42,6 +42,13 @@ func TestIntKeyfactorPAMProviderResource(t *testing.T) {
 					resource.TestCheckResourceAttr("keyfactor_pam_provider.test", "param_values.#", "2"),
 				),
 			},
+			{
+				// Import by integer ID — param_values are write-only and cannot be recovered
+				ResourceName:            "keyfactor_pam_provider.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"param_values"},
+			},
 		},
 	})
 }
@@ -66,6 +73,12 @@ func TestIntKeyfactorPAMProviderResourceMinimal(t *testing.T) {
 					resource.TestCheckResourceAttr("keyfactor_pam_provider.test", "name", provName),
 					resource.TestCheckResourceAttrSet("keyfactor_pam_provider.test", "provider_type_id"),
 				),
+			},
+			{
+				// Import by integer ID
+				ResourceName:      "keyfactor_pam_provider.test",
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
 		},
 	})

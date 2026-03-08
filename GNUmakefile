@@ -114,6 +114,10 @@ testint-debug-run:
 testint-pam:
 	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestInt.*PAM" -v -count=1 -timeout 120m
 
+# Run all Certificate Authority integration tests
+testint-ca:
+	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestInt.*CertificateAuthority" -v -count=1 -timeout 120m
+
 # Run all tests (unit + int + acc). Requires lab connection.
 testall:
 	$(MAKE) testunit
@@ -262,6 +266,42 @@ api-options-application:
 		-H "Authorization: Bearer $$TOKEN" 2>&1 | grep -i "^allow:"
 
 # ---------------------------------------------------------------------------
+# Certificate Authority API debugging targets (uses KEYFACTOR_ENV_FILE credentials)
+# Usage examples:
+#   make api-list-cas
+#   make api-get-ca CA_ID=1
+# ---------------------------------------------------------------------------
+CA_ID ?= 1
+
+api-list-cas:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateAuthority" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-get-ca:
+	@if [ -z "$(CA_ID)" ]; then echo "Usage: make api-get-ca CA_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateAuthority/$(CA_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-list-cas-short:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateAuthority" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq '[.[] | {Id, LogicalName, HostName, CAType, Standalone, Remote}]'
+
+# ---------------------------------------------------------------------------
 # PAM Providers API debugging targets (uses KEYFACTOR_ENV_FILE credentials)
 # Usage examples:
 #   make api-list-pam-providers
@@ -336,4 +376,4 @@ api-delete-pam-provider-type:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN"
 
-.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type
+.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type

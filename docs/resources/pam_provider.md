@@ -73,3 +73,13 @@ Required:
 - `name` (String) Name of the PAM provider type parameter. Required by the Keyfactor API.
 - `param_id` (Number) Integer ID of the PAM provider type parameter.
 - `value` (String, Sensitive) Value for this parameter. For secret parameters (`data_type = 2`), this is write-only and will not drift even if modified outside Terraform.
+
+## Import
+
+PAM providers can be imported using their integer ID:
+
+```shell
+terraform import keyfactor_pam_provider.example 42
+```
+
+**Note:** `param_values` cannot be recovered on import and must be re-specified in configuration.

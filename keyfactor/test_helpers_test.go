@@ -712,6 +712,37 @@ func readCertCSRTestParams(cassettePath string) certCSRTestParams {
 }
 
 // ---------------------------------------------------------------------------
+// PAM provider type test params (cassette-recorded values for replay mode)
+// ---------------------------------------------------------------------------
+
+type pamProviderTypeTestParams struct {
+	TypeName string `json:"type_name"`
+}
+
+func writePAMProviderTypeTestParams(cassettePath string, params pamProviderTypeTestParams) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readPAMProviderTypeTestParams(cassettePath string) pamProviderTypeTestParams {
+	defaults := pamProviderTypeTestParams{
+		TypeName: "tf-unit-pamtype",
+	}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params pamProviderTypeTestParams
+	if err := json.Unmarshal(data, &params); err != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
 // PAM provider test params (cassette-recorded values for replay mode)
 // ---------------------------------------------------------------------------
 

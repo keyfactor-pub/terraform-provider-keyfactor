@@ -88,7 +88,10 @@ testunit-record-application:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorApplication" -v -count=1 -timeout 30m
 
 testunit-record-pam-provider:
-	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorPAMProvider" -v -count=1 -timeout 30m
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorPAMProvider[^T]" -v -count=1 -timeout 30m
+
+testunit-record-pam-provider-type:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorPAMProviderType" -v -count=1 -timeout 30m
 
 # Run unit tests and display only failures (quiet mode)
 testunit-check:

@@ -144,4 +144,10 @@ terraform.rc
 vendor/
 .todos.md
 tfexes/
-.env
+*.env*
+*.log
+*.der
+*.pem
+*.pfx
+*.jks
+*.key

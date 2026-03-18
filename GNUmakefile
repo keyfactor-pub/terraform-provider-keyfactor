@@ -87,6 +87,9 @@ testunit-record-csr:
 testunit-record-application:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorApplication" -v -count=1 -timeout 30m
 
+testunit-record-pam-provider:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorPAMProvider" -v -count=1 -timeout 30m
+
 # Run unit tests and display only failures (quiet mode)
 testunit-check:
 	go test ./keyfactor/ -run "TestUnit" -count=1 $(TESTARGS) -timeout 30m

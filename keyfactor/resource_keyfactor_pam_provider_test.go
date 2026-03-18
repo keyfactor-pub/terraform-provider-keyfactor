@@ -2,7 +2,10 @@ package keyfactor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
@@ -127,6 +130,59 @@ resource "keyfactor_pam_provider" "test" {
   ]
 }
 `, typeName, provName, hostValue, secretValue)
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorPAMProviderResource tests the keyfactor_pam_provider resource
+// create/update lifecycle using VCR cassettes (no lab required for replay).
+// The config also creates a keyfactor_pam_provider_type inline.
+func TestUnitKeyfactorPAMProviderResource(t *testing.T) {
+	cassetteName := "pam_provider_resource"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var typeName, provName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		typeName = fmt.Sprintf("tf-unit-pamtype-%d", time.Now().UnixNano()%1000000000)
+		provName = fmt.Sprintf("tf-unit-pam-%d", time.Now().UnixNano()%1000000000)
+		writePAMProviderTestParams(cassettePath, pamProviderTestParams{TypeName: typeName, ProvName: provName})
+	} else {
+		params := readPAMProviderTestParams(cassettePath)
+		typeName = params.TypeName
+		provName = params.ProvName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_pam_provider.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Create PAM provider type + provider with two param values
+				Config: testAccPAMProviderConfig(typeName, provName, "https://pam.example.com", "secret123"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "name", provName),
+					resource.TestCheckResourceAttrSet(resourceName, "provider_type_id"),
+					resource.TestCheckResourceAttr(resourceName, "param_values.#", "2"),
+				),
+			},
+			{
+				// Update: rename provider and change param values
+				Config: testAccPAMProviderConfig(typeName, provName+"-updated", "https://pam2.example.com", "newsecret456"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "name", provName+"-updated"),
+					resource.TestCheckResourceAttr(resourceName, "param_values.#", "2"),
+				),
+			},
+		},
+	})
 }
 
 func testAccPAMProviderConfigMinimal(typeName, provName string) string {

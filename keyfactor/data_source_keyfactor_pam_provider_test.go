@@ -2,7 +2,10 @@ package keyfactor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
@@ -71,6 +74,64 @@ func TestIntKeyfactorPAMProviderDataSourceByID(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Config generators
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorPAMProviderDataSource tests the keyfactor_pam_provider data
+// source using VCR cassettes (no lab required for replay). Covers lookup by
+// name and by integer ID.
+func TestUnitKeyfactorPAMProviderDataSource(t *testing.T) {
+	cassetteName := "pam_provider_data_source"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var typeName, provName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		typeName = fmt.Sprintf("tf-unit-pamtype-ds-%d", time.Now().UnixNano()%1000000000)
+		provName = fmt.Sprintf("tf-unit-pam-ds-%d", time.Now().UnixNano()%1000000000)
+		writePAMProviderTestParams(cassettePath, pamProviderTestParams{TypeName: typeName, ProvName: provName})
+	} else {
+		params := readPAMProviderTestParams(cassettePath)
+		typeName = params.TypeName
+		provName = params.ProvName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_pam_provider.test"
+	dataSourceName := "data.keyfactor_pam_provider.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Create type + provider, read back by name
+				Config: testAccPAMProviderConfigMinimal(typeName, provName) + "\n" +
+					testAccPAMProviderDataSourceByName(resourceName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "name", provName),
+					resource.TestCheckResourceAttrSet(dataSourceName, "id"),
+					resource.TestCheckResourceAttr(dataSourceName, "name", provName),
+					resource.TestCheckResourceAttrSet(dataSourceName, "provider_type_id"),
+					resource.TestCheckResourceAttrSet(dataSourceName, "provider_type_name"),
+				),
+			},
+			{
+				// Read the same provider by integer ID
+				Config: testAccPAMProviderConfigMinimal(typeName, provName) + "\n" +
+					testAccPAMProviderDataSourceByID(resourceName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(dataSourceName, "id"),
+					resource.TestCheckResourceAttr(dataSourceName, "name", provName),
+					resource.TestCheckResourceAttrSet(dataSourceName, "provider_type_id"),
+				),
+			},
+		},
+	})
+}
 
 func testAccPAMProviderDataSourceByName(resourceRef string) string {
 	return fmt.Sprintf(`

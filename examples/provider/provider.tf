@@ -19,11 +19,11 @@ provider "keyfactor" {
 
 # kerberos auth - password-based
 provider "keyfactor" {
-  hostname         = "mykfinstance.kfdelivery.com"
-  kerberos_realm   = "EXAMPLE.COM"
+  hostname          = "mykfinstance.kfdelivery.com"
+  kerberos_realm    = "EXAMPLE.COM"
   kerberos_username = "svc_terraform"
   kerberos_password = "your_kerberos_password"
-  kerberos_config  = "/etc/krb5.conf" # optional, defaults to /etc/krb5.conf
+  kerberos_config   = "/etc/krb5.conf" # optional, defaults to /etc/krb5.conf
 
   # Disable PA-FX-FAST if authenticating against Active Directory
   kerberos_disable_pafxfast = true

@@ -65,7 +65,6 @@ data "keyfactor_certificate" "cert_wo_pkey_id" {
 - `friendly_name` (String) Only applicable for PFX enrollments. A friendly name for the certificate. If not provided, the common name will be used unless `use_cn_as_friendly_name` is set to `false`.
 - `key_password` (String, Sensitive) Password used to recover the private key from Keyfactor Command. NOTE: If no value is provided a random password will be generated for key recovery. This value is not stored and does not encrypt the private key in Terraform state.
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
-- `renewal_config` (Attributes) Configuration for certificate auto renewal. Includes whether auto-renewal is enabled and the number of days before expiry. (see [below for nested schema](#nestedatt--renewal_config))
 - `use_cn_as_friendly_name` (Boolean) Only applicable for PFX enrollments. Use the common name as the friendly name for the certificate. Defaults to `true`. NOTE: Keyfactor Command must be configured to `allow custom friendly name` for this to work under `Application Settings > Enrollment > PFX`.
 
 ### Read-Only
@@ -85,6 +84,7 @@ One of either the Template or the EnrollmentPatternId is required unless the enr
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
 - `dns_sans` (List of String) List of DNS subject alternative names (DNS SANs) of the certificate. Ex: www.example.com
 - `enrollment_password` (String, Sensitive) The password used during certificate issuance. Also used to unlock PFX/PKCS12 and JKS keystores. Only returned if the certificate template has KeyRetention set to a value other than None. Will use `key_password` value if specified else will generate a random password of length12 with a minimum of 4 uppercase, 4 numeric, and 0 special characters. Review this provider's schema docs for more details: https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs#schema
+- `id` (String) Read-only alias of `identifier` for Terraform framework compatibility.
 - `ip_sans` (List of String) List of IP subject alternative names (IP SANs) of the certificate. Ex: 192.168.0.200
 - `is_expired` (Boolean) Whether the certificate is expired
 - `is_pending_revocation` (Boolean) Whether the certificate is pending revocation
@@ -92,6 +92,8 @@ One of either the Template or the EnrollmentPatternId is required unless the enr
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
 - `jks` (String, Sensitive) Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
 - `locality` (String) Subject locality (L) of the certificate
+- `not_after` (String) Not After date of enrolled certificate
+- `not_before` (String) Not Before date of enrolled certificate
 - `organization` (String) Subject organization (O) of the certificate
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate
 - `owner_role_name` (String) A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
@@ -108,24 +110,11 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 > Only compatible with Keyfactor Command versions v12.3.0+ and later.
 - `pfx` (String, Sensitive) Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.
 - `private_key` (String, Sensitive) PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
+- `revocation_effective_date` (String) The effective date of the certificate revocation
 - `serial_number` (String) Serial number of newly enrolled certificate
 - `state` (String) Subject state (ST) of the certificate
 - `thumbprint` (String) Thumbprint of newly enrolled certificate
 - `uri_sans` (List of String) List of URI subject alternative names (URI SANs) of the certificate. Ex: https://www.example.com
 - `zip` (String, Sensitive) Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.
 
-<a id="nestedatt--renewal_config"></a>
-### Nested Schema for `renewal_config`
 
-Required:
-
-- `renew_days` (Number) The number of days before the certificate expires to renew.
-
-Optional:
-
-- `force_renewal` (Boolean) Will force certificate to be renewed
-- `revoke_on_renew` (Boolean) Whether the existing certificate should be revoked on renewal.
-
-Read-Only:
-
-- `renew_eligible` (Boolean) Whether the certificate is eligible for renewal.

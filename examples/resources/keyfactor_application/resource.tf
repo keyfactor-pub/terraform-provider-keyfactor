@@ -1,8 +1,8 @@
 # Application with an interval-based inventory schedule
 resource "keyfactor_application" "interval" {
-  name                       = "My App"
-  overwrite_schedules        = false
-  schedule_interval_minutes  = 60
+  name                      = "My App"
+  overwrite_schedules       = false
+  schedule_interval_minutes = 60
 }
 
 # Application with a daily inventory schedule

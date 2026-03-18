@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	github.com/Keyfactor/keyfactor-auth-client-go v1.4.0-rc.0
 	github.com/Keyfactor/keyfactor-go-client-sdk/v24 v24.0.2
-	github.com/Keyfactor/keyfactor-go-client/v3 v3.4.0
+	github.com/Keyfactor/keyfactor-go-client/v3 v3.5.0-rc.1
 	github.com/hashicorp/terraform-plugin-framework v0.10.0
 	github.com/hashicorp/terraform-plugin-go v0.18.0
 	github.com/hashicorp/terraform-plugin-log v0.10.0
@@ -16,6 +16,8 @@ require (
 )
 
 require github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
+
+require go.mozilla.org/pkcs7 v0.9.0
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0 // indirect
@@ -73,7 +75,6 @@ require (
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/zclconf/go-cty v1.17.0 // indirect
-	go.mozilla.org/pkcs7 v0.9.0 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect

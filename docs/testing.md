@@ -10,6 +10,10 @@ For general test infrastructure details (VCR cassettes, discovery helpers, env v
 
 - [Certificate Resource: Format Change (Integration)](#testintkeyfactorcertificateresource_formatchange)
 - [Certificate Resource: Format Change (Unit/VCR)](#testunitkeyfactorcertificateresource_formatchange)
+- [Certificate Resource: Both Template and Pattern (Integration)](#testintkeyfactorcertificateresource_bothtemplateandpattern)
+- [Certificate Resource: Both Template and Pattern (Unit/VCR)](#testunitkeyfactorcertificateresource_bothtemplateandpattern)
+- [Certificate Resource: Neither Template nor Pattern (Integration)](#testintkeyfactorcertificateresource_neithertemplatenorpattern)
+- [Certificate Resource: Neither Template nor Pattern (Unit)](#testunitkeyfactorcertificateresource_neithertemplatenorpattern)
 
 ---
 
@@ -130,3 +134,110 @@ make testunit-record-one TEST_NAME=TestUnitKeyfactorCertificateResource_FormatCh
 |------|-------------|
 | **Replay** (default) | Loads the cassette YAML and replays recorded HTTP responses. No network access. Skips if cassette file is missing. |
 | **Record** (`RECORD_CASSETTES=1`) | Connects to a live lab, runs the full test, and writes all HTTP interactions to the cassette file. Also writes a `.params.json` file with the discovered CA/template/CN values. |
+
+---
+
+## TestIntKeyfactorCertificateResource_BothTemplateAndPattern
+
+**File:** `keyfactor/resource_keyfactor_certificate_test.go`
+**Tier:** Integration (`TestInt*`)
+**Fixes:** [#146 — Provider validation and docs don't match XOR template & pattern](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/146)
+
+### What It Tests
+
+Verifies that specifying **both** `certificate_template` and `certificate_enrollment_pattern` on a `keyfactor_certificate` resource is accepted by the provider and results in a successful enrollment.
+
+Prior to the fix, the provider used an `xorValidator` that required exactly one of the two attributes — specifying both (or neither) caused a validation error. The Keyfactor Command API documentation states that both may be provided, with the enrollment pattern taking precedence.
+
+### Test Steps
+
+| Step | Config | What Is Validated |
+|------|--------|-------------------|
+| 1 | Create with both `certificate_template` and `certificate_enrollment_pattern` | Certificate is created successfully. `id`, `serial_number`, `thumbprint` are populated. Both `certificate_template` and `certificate_enrollment_pattern` are preserved in state. |
+
+### Key Assertions
+
+- **No validation error:** The provider accepts both attributes without error.
+- **Correct state:** Both `certificate_template` and `certificate_enrollment_pattern` are stored in state with their original values.
+- **Successful enrollment:** The certificate is issued (serial number and thumbprint populated).
+
+### How to Run
+
+```bash
+make testint-run TEST_NAME=TestIntKeyfactorCertificateResource_BothTemplateAndPattern
+```
+
+### Prerequisites
+
+- Lab connection env vars (`KEYFACTOR_HOSTNAME`, OAuth credentials)
+- Command v25+ with at least one enrollment pattern linked to a template
+- The test auto-discovers the enrollment pattern and its linked template via `discoverEnrollmentPattern()` and `discoverEnrollmentPatternTemplate()`
+
+---
+
+## TestUnitKeyfactorCertificateResource_BothTemplateAndPattern
+
+**File:** `keyfactor/resource_keyfactor_certificate_test.go`
+**Tier:** Unit (`TestUnit*`)
+**Cassette:** `keyfactor/testdata/cassettes/certificate_resource_both_template_pattern.yaml`
+**Params:** `keyfactor/testdata/cassettes/certificate_resource_both_template_pattern.params.json`
+**Fixes:** [#146 — Provider validation and docs don't match XOR template & pattern](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/146)
+
+### What It Tests
+
+VCR version of `TestIntKeyfactorCertificateResource_BothTemplateAndPattern`. Runs offline using pre-recorded HTTP interactions.
+
+### How to Run
+
+```bash
+# Replay (no lab needed)
+go test ./keyfactor/ -run TestUnitKeyfactorCertificateResource_BothTemplateAndPattern -v
+
+# Record a new cassette
+. ~/.env_ses2541 && unset KEYFACTOR_CERTIFICATE_CA_DOMAIN KEYFACTOR_CERTIFICATE_CA_NAME && \
+  RECORD_CASSETTES=1 go test ./keyfactor/ -run TestUnitKeyfactorCertificateResource_BothTemplateAndPattern -v -count=1 -timeout 30m
+```
+
+---
+
+## TestIntKeyfactorCertificateResource_NeitherTemplateNorPattern
+
+**File:** `keyfactor/resource_keyfactor_certificate_test.go`
+**Tier:** Integration (`TestInt*`)
+**Fixes:** [#146 — Provider validation and docs don't match XOR template & pattern](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/146)
+
+### What It Tests
+
+Verifies that specifying **neither** `certificate_template` nor `certificate_enrollment_pattern` is rejected by the provider with a clear validation error.
+
+While the old `xorValidator` also rejected "neither set", the new `atLeastOneOfValidator` preserves this behavior — at least one must be provided.
+
+### Test Steps
+
+| Step | Config | What Is Validated |
+|------|--------|-------------------|
+| 1 | Create with neither `certificate_template` nor `certificate_enrollment_pattern` | Provider returns a validation error matching "at least one of". |
+
+### How to Run
+
+```bash
+make testint-run TEST_NAME=TestIntKeyfactorCertificateResource_NeitherTemplateNorPattern
+```
+
+---
+
+## TestUnitKeyfactorCertificateResource_NeitherTemplateNorPattern
+
+**File:** `keyfactor/resource_keyfactor_certificate_test.go`
+**Tier:** Unit (`TestUnit*`)
+**Fixes:** [#146 — Provider validation and docs don't match XOR template & pattern](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/146)
+
+### What It Tests
+
+Unit version of the "neither set" test. No cassette is needed because validation runs before any API calls.
+
+### How to Run
+
+```bash
+go test ./keyfactor/ -run TestUnitKeyfactorCertificateResource_NeitherTemplateNorPattern -v
+```

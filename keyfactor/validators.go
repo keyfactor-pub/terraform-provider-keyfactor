@@ -9,19 +9,22 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 )
 
-type xorValidator struct {
+// atLeastOneOfValidator validates that at least one of this attribute or
+// the other named attribute is set. Both being set is allowed — the API
+// handles precedence (enrollment pattern takes precedence over template).
+type atLeastOneOfValidator struct {
 	otherAttr string
 }
 
-func (v xorValidator) Description(ctx context.Context) string {
-	return fmt.Sprintf("Exactly one of this attribute or `%s` must be set", v.otherAttr)
+func (v atLeastOneOfValidator) Description(ctx context.Context) string {
+	return fmt.Sprintf("At least one of this attribute or `%s` must be set", v.otherAttr)
 }
 
-func (v xorValidator) MarkdownDescription(ctx context.Context) string {
+func (v atLeastOneOfValidator) MarkdownDescription(ctx context.Context) string {
 	return v.Description(ctx)
 }
 
-func (v xorValidator) Validate(
+func (v atLeastOneOfValidator) Validate(
 	ctx context.Context,
 	req tfsdk.ValidateAttributeRequest,
 	resp *tfsdk.ValidateAttributeResponse,
@@ -33,12 +36,12 @@ func (v xorValidator) Validate(
 	resp.Diagnostics.Append(diags...)
 	otherVal := otherAttrValue != nil && !otherAttrValue.IsNull()
 
-	if (attrVal && otherVal) || (!attrVal && !otherVal) {
+	if !attrVal && !otherVal {
 		resp.Diagnostics.AddAttributeError(
 			req.AttributePath,
-			"Invalid Attribute Combination",
+			"Missing Required Attribute",
 			fmt.Sprintf(
-				"Exactly one of `%s` or `%s` must be set, but not both or neither.",
+				"At least one of `%s` or `%s` must be set.",
 				req.AttributePath.String(),
 				v.otherAttr,
 			),

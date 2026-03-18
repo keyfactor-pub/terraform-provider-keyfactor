@@ -901,6 +901,21 @@ resource "keyfactor_certificate" "test" {
 `, cn, ca, enrollmentPattern, formatLine)
 }
 
+// testAccCertPFXConfigBothTemplateAndPattern generates HCL for a PFX certificate
+// resource test that sets BOTH certificate_template and certificate_enrollment_pattern.
+// This tests that the provider allows both to be specified simultaneously (fixes #146).
+func testAccCertPFXConfigBothTemplateAndPattern(templateName, enrollmentPattern, ca, cn string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                      = "%s"
+  certificate_authority            = "%s"
+  certificate_template             = "%s"
+  certificate_enrollment_pattern   = "%s"
+  key_password                     = "Tftest123456"
+}
+`, cn, ca, templateName, enrollmentPattern)
+}
+
 // generateSimpleCSR creates a fresh PEM-encoded CSR with only a CN field.
 // This avoids template subject field restrictions (e.g., "Wrong number of LOCALITY fields").
 func generateSimpleCSR(t *testing.T, cn string) string {

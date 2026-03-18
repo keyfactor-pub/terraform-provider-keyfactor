@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"testing"
 
@@ -724,9 +725,147 @@ func TestIntKeyfactorCertificateResource_FormatChange(t *testing.T) {
 	})
 }
 
+// TestIntKeyfactorCertificateResource_BothTemplateAndPattern verifies that
+// specifying both certificate_template AND certificate_enrollment_pattern
+// is accepted by the provider and results in a successful enrollment.
+// The API uses the enrollment pattern settings with the template for
+// validation. (Fixes #146)
+func TestIntKeyfactorCertificateResource_BothTemplateAndPattern(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+	cn := randomTestCN("tf-int-both")
+
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	if enrollmentPattern == "" {
+		t.Skip("No enrollment pattern available (pre-v25 lab); skipping both-set test")
+	}
+
+	// Get the template that the enrollment pattern is linked to
+	templateName := discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+	if templateName == "" {
+		t.Skip("Could not determine template for enrollment pattern; skipping both-set test")
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertPFXConfigBothTemplateAndPattern(templateName, enrollmentPattern, ca, cn),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate_template", templateName),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate_enrollment_pattern", enrollmentPattern),
+				),
+			},
+		},
+	})
+}
+
+// TestIntKeyfactorCertificateResource_NeitherTemplateNorPattern verifies that
+// specifying neither certificate_template nor certificate_enrollment_pattern
+// is rejected by the provider with a validation error. (Fixes #146)
+func TestIntKeyfactorCertificateResource_NeitherTemplateNorPattern(t *testing.T) {
+	_ = testAccIntegrationPreCheck(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name            = "tf-int-neither.example.com"
+  certificate_authority  = "FakeCA"
+  key_password           = "Tftest123456"
+}
+`),
+				ExpectError: regexp.MustCompile(`(?i)at least one of`),
+			},
+		},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests (VCR cassettes — no lab required)
 // ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorCertificateResource_BothTemplateAndPattern verifies that
+// specifying both certificate_template AND certificate_enrollment_pattern
+// is accepted. VCR version of TestIntKeyfactorCertificateResource_BothTemplateAndPattern.
+// (Fixes #146)
+func TestUnitKeyfactorCertificateResource_BothTemplateAndPattern(t *testing.T) {
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_resource_both_template_pattern")
+
+	var enrollmentPattern, templateName, ca, cn string
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		ca = discoverCA(t, client)
+		cn = randomTestCN("tf-unit-both")
+		enrollmentPattern = discoverEnrollmentPattern(t, client)
+		if enrollmentPattern == "" {
+			t.Skip("No enrollment pattern available (pre-v25 lab); skipping both-set test")
+		}
+		templateName = discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+		if templateName == "" {
+			t.Skip("Could not determine template for enrollment pattern; skipping both-set test")
+		}
+		writeCertPFXTestParams(cassettePath, certPFXTestParams{
+			TemplateName:      templateName,
+			CA:                ca,
+			EnrollmentPattern: enrollmentPattern,
+			CN:                cn,
+		})
+	} else {
+		params := readCertPFXTestParams(cassettePath)
+		enrollmentPattern = params.EnrollmentPattern
+		templateName = params.TemplateName
+		ca = params.CA
+		cn = params.CN
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_both_template_pattern")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertPFXConfigBothTemplateAndPattern(templateName, enrollmentPattern, ca, cn),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate_template", templateName),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "certificate_enrollment_pattern", enrollmentPattern),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateResource_NeitherTemplateNorPattern verifies that
+// specifying neither certificate_template nor certificate_enrollment_pattern
+// is rejected by the provider validation. No cassette needed — validation
+// runs before any API calls. (Fixes #146)
+func TestUnitKeyfactorCertificateResource_NeitherTemplateNorPattern(t *testing.T) {
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+resource "keyfactor_certificate" "test" {
+  common_name            = "tf-unit-neither.example.com"
+  certificate_authority  = "FakeCA"
+  key_password           = "Tftest123456"
+}
+`,
+				ExpectError: regexp.MustCompile(`(?i)at least one of`),
+			},
+		},
+	})
+}
 
 // TestUnitKeyfactorCertificateResource_FormatChange verifies that changing
 // certificate_format does NOT force resource recreation and that the correct

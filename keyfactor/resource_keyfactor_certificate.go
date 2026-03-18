@@ -164,7 +164,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 				Description:   "A string that sets the name of the certificate template that should be used to issue the certificate. The template short name should be used. See also EnrollmentPatternId.\n\nOne of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern.\n\nImportant:  The template must be configured with at least one enrollment pattern in order to be used for enrollment (see POST Enrollment Patterns).\nNote:  This parameter is considered deprecated as for Keyfactor Command v25.1.0 and may be removed in a future release.",
 				Validators: []tfsdk.AttributeValidator{
-					xorValidator{otherAttr: "certificate_enrollment_pattern"},
+					atLeastOneOfValidator{otherAttr: "certificate_enrollment_pattern"},
 				},
 			},
 			"certificate_enrollment_pattern": {
@@ -176,7 +176,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					"integer) indicating the enrollment pattern to use when" +
 					" requesting the certificate. If this value is not provided, the default enrollment pattern defined for the template provided in the request (see the Template parameter) will be used.\n\nOne of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern. IMPORTANT: Requires Keyfactor Command v25.1.0+",
 				Validators: []tfsdk.AttributeValidator{
-					xorValidator{otherAttr: "certificate_template"},
+					atLeastOneOfValidator{otherAttr: "certificate_template"},
 				},
 			},
 			"dns_sans": {
@@ -1036,10 +1036,9 @@ func (r resourceCommandCertificate) Read(
 	}
 
 	// handle template name + enrollment pattern sets
-	// If template name AND enrollment pattern name are set, enrollment pattern takes precedence
-	// else if only template name is set, use that and set enrollment pattern to null to not force a replacement
-	if (state.CertificateTemplate.Null || state.CertificateTemplate.Unknown) && !state.EnrollmentPattern.Null {
-		// Check if the state value matches the fetched value, if not update it
+	// Both may be set (enrollment pattern takes precedence per API docs).
+	// Update state values if the server returned different names.
+	if !state.EnrollmentPattern.Null && !state.EnrollmentPattern.Unknown {
 		if state.EnrollmentPattern.Value != enrollmentPatternName {
 			result.EnrollmentPattern = types.String{
 				Value: enrollmentPatternName,
@@ -1053,8 +1052,8 @@ func (r resourceCommandCertificate) Read(
 				),
 			)
 		}
-	} else if !state.CertificateTemplate.Null && (state.EnrollmentPattern.Null || state.EnrollmentPattern.Unknown) {
-		//check if template name has changed
+	}
+	if !state.CertificateTemplate.Null && !state.CertificateTemplate.Unknown {
 		if state.CertificateTemplate.Value != templateName {
 			result.CertificateTemplate = types.String{
 				Value: templateName,
@@ -1065,11 +1064,13 @@ func (r resourceCommandCertificate) Read(
 				fmt.Sprintf("Setting template name to '%s' from fetched value", templateName),
 			)
 		}
-		// Set enrollment pattern to null to avoid forcing a replacement on next run
+	}
+	// If only template is set (no enrollment pattern), null out enrollment pattern
+	// to avoid forcing a replacement on next run.
+	if !state.CertificateTemplate.Null && (state.EnrollmentPattern.Null || state.EnrollmentPattern.Unknown) {
 		result.EnrollmentPattern = types.String{
 			Null: true,
 		}
-
 	}
 
 	if !state.CSR.IsNull() {

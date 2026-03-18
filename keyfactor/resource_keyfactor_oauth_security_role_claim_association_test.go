@@ -96,3 +96,52 @@ resource "%s" "%s" {
 		t.claimValue, t.role1Name, t.role2Name, t.resourceType, t.resourceName, t.associatedRoleResource)
 	return output
 }
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
+	testAccIntegrationPreCheck(t)
+
+	authScheme := discoverOAuthAuthScheme(t)
+	_ = authScheme // The existing HCL config hardcodes "System"; integration test reuses that config
+
+	r := oauthSecurityRoleClaimAssociationTestCase{
+		role1Name:              acctest.RandomWithPrefix("tf-int-role"),
+		role2Name:              acctest.RandomWithPrefix("tf-int-role"),
+		associatedRoleResource: "test_role_1",
+		claimValue:             acctest.RandomWithPrefix("tf-int-claim"),
+		claimProviderScheme:    authScheme,
+		resourceType:           "keyfactor_oauth_security_role_claim_association",
+		resourceName:           "test_role_claim_association",
+		resourcePath:           "keyfactor_oauth_security_role_claim_association.test_role_claim_association",
+	}
+
+	// Swap to role 2
+	r2 := r
+	r2.associatedRoleResource = "test_role_2"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResource(r),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
+					resource.TestCheckResourceAttrSet(r.resourcePath, "role_id"),
+					resource.TestCheckResourceAttrSet(r.resourcePath, "claim_id"),
+				),
+			},
+			// Swap association to role 2
+			{
+				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResource(r2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r2.resourcePath, "id"),
+					resource.TestCheckResourceAttrSet(r2.resourcePath, "role_id"),
+					resource.TestCheckResourceAttrSet(r2.resourcePath, "claim_id"),
+				),
+			},
+		},
+	})
+}

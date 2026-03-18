@@ -16,3 +16,29 @@ provider "keyfactor" {
 
   alias = "keyfactor_command_oauth" # This isn't required
 }
+
+# kerberos auth - password-based
+provider "keyfactor" {
+  hostname         = "mykfinstance.kfdelivery.com"
+  kerberos_realm   = "EXAMPLE.COM"
+  kerberos_username = "svc_terraform"
+  kerberos_password = "your_kerberos_password"
+  kerberos_config  = "/etc/krb5.conf" # optional, defaults to /etc/krb5.conf
+
+  # Disable PA-FX-FAST if authenticating against Active Directory
+  kerberos_disable_pafxfast = true
+}
+
+# kerberos auth - keytab-based (no password required)
+provider "keyfactor" {
+  hostname          = "mykfinstance.kfdelivery.com"
+  kerberos_realm    = "EXAMPLE.COM"
+  kerberos_username = "svc_terraform"
+  kerberos_keytab   = "/etc/keyfactor/svc_terraform.keytab"
+}
+
+# kerberos auth - credential cache (ccache)
+provider "keyfactor" {
+  hostname        = "mykfinstance.kfdelivery.com"
+  kerberos_ccache = "/tmp/krb5cc_1000" # path to an existing ccache obtained via kinit
+}

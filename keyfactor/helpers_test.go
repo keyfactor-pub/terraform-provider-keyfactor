@@ -252,3 +252,44 @@ func TestAddOAuthSecurityClaimToRole(t *testing.T) {
 		assert.Equal(t, 1, len(result)) // Should not have added duplicate claim
 	})
 }
+
+func TestNormalizeSerialNumber(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"hex uppercase", "77BFBF38D702AA41CE4EE2B1C7713CE6705B9D2E", "77BFBF38D702AA41CE4EE2B1C7713CE6705B9D2E"},
+		{"hex lowercase", "77bfbf38d702aa41ce4ee2b1c7713ce6705b9d2e", "77BFBF38D702AA41CE4EE2B1C7713CE6705B9D2E"},
+		{"decimal from big.Int", "683646001849179623094227348073945305115006836014", "77BFBF38D702AA41CE4EE2B1C7713CE6705B9D2E"},
+		{"empty string", "", ""},
+		{"nil string", "<nil>", ""},
+		{"hex with colons", "77:BF:BF:38:D7:02:AA:41", "77BFBF38D702AA41"},
+		{"small decimal", "255", "FF"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeSerialNumber(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestNormalizeThumbprint(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"uppercase", "746F0BCE6AF15060042380D65D8B438CF27C6192", "746f0bce6af15060042380d65d8b438cf27c6192"},
+		{"lowercase", "746f0bce6af15060042380d65d8b438cf27c6192", "746f0bce6af15060042380d65d8b438cf27c6192"},
+		{"with colons", "74:6F:0B:CE:6A:F1", "746f0bce6af1"},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeThumbprint(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

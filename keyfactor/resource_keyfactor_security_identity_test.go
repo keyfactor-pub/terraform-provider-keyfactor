@@ -119,3 +119,47 @@ resource "keyfactor_identity" "terraformer" {
 `, t.accountName, t.rolesStr)
 	return output
 }
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorIdentityResource(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+
+	accountName := discoverSecurityIdentity(t, client)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create with single role
+			{
+				Config: fmt.Sprintf(`
+resource "keyfactor_identity" "int_test" {
+	account_name = "%s"
+	roles        = sort(["Administrator"])
+}
+`, accountName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_identity.int_test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_identity.int_test", "account_name", accountName),
+					resource.TestCheckResourceAttr("keyfactor_identity.int_test", "roles.#", "1"),
+					resource.TestCheckResourceAttr("keyfactor_identity.int_test", "roles.0", "Administrator"),
+				),
+			},
+			// Update: remove all roles
+			{
+				Config: fmt.Sprintf(`
+resource "keyfactor_identity" "int_test" {
+	account_name = "%s"
+	roles        = sort([])
+}
+`, accountName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_identity.int_test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_identity.int_test", "roles.#", "0"),
+				),
+			},
+		},
+	})
+}

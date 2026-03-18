@@ -2,6 +2,7 @@ package keyfactor
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -35,4 +36,27 @@ func testAccDataSourceKeyfactorPermissionSet(resourceName string, permissionSetN
 	}
 	`, resourceName, permissionSetName)
 	return output
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorPermissionSetDataSource(t *testing.T) {
+	testAccIntegrationPreCheck(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDataSourceKeyfactorPermissionSet("keyfactor_permission_set", "Global"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("data.keyfactor_permission_set.test", "id"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_permission_set.test", "permissions.#"),
+					resource.TestMatchResourceAttr("data.keyfactor_permission_set.test", "permissions.#", regexp.MustCompile(`^[1-9][0-9]*$`)),
+					resource.TestCheckResourceAttr("data.keyfactor_permission_set.test", "name", "Global"),
+				),
+			},
+		},
+	})
 }

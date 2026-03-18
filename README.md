@@ -27,6 +27,74 @@ resources become available.
 * If you want to contribute bug fixes or proposed enhancements, see the [Contributing Guidelines](CONTRIBUTING.md) and
   create a [Pull request](../../pulls).
 
+## Authentication
+
+The provider supports three authentication methods. Kerberos is evaluated first when any Kerberos field is set, then Basic, then OAuth.
+
+### Basic Auth
+
+```terraform
+provider "keyfactor" {
+  hostname = "mykfinstance.kfdelivery.com"
+  username = "COMMAND\\svc_terraform"
+  password = "your_password"
+  domain   = "COMMAND"
+}
+```
+
+Environment variables: `KEYFACTOR_HOSTNAME`, `KEYFACTOR_USERNAME`, `KEYFACTOR_PASSWORD`, `KEYFACTOR_DOMAIN`
+
+### OAuth
+
+```terraform
+provider "keyfactor" {
+  hostname      = "mykfinstance.kfdelivery.com"
+  client_id     = "my_client_id"
+  client_secret = "my_client_secret"
+  token_url     = "https://idp.example.com/realms/Keyfactor/protocol/openid-connect/token"
+  scopes        = "enroll,agents,cert:admin"
+}
+```
+
+Environment variables: `KEYFACTOR_AUTH_CLIENT_ID`, `KEYFACTOR_AUTH_CLIENT_SECRET`, `KEYFACTOR_AUTH_TOKEN_URL`, `KEYFACTOR_AUTH_SCOPES`
+
+### Kerberos / SPNEGO
+
+Three sub-modes are supported — the provider selects automatically based on which fields are set:
+
+| Sub-mode | Required fields |
+|----------|----------------|
+| Password | `kerberos_realm` + `kerberos_username` + `kerberos_password` |
+| Keytab   | `kerberos_realm` + `kerberos_username` + `kerberos_keytab` |
+| CCache   | `kerberos_ccache` |
+
+```terraform
+# Password-based
+provider "keyfactor" {
+  hostname          = "mykfinstance.kfdelivery.com"
+  kerberos_realm    = "EXAMPLE.COM"
+  kerberos_username = "svc_terraform"
+  kerberos_password = "your_kerberos_password"
+  # kerberos_disable_pafxfast = true  # required for some Active Directory environments
+}
+
+# Keytab-based
+provider "keyfactor" {
+  hostname          = "mykfinstance.kfdelivery.com"
+  kerberos_realm    = "EXAMPLE.COM"
+  kerberos_username = "svc_terraform"
+  kerberos_keytab   = "/etc/keyfactor/svc_terraform.keytab"
+}
+
+# CCache (after running kinit)
+provider "keyfactor" {
+  hostname        = "mykfinstance.kfdelivery.com"
+  kerberos_ccache = "/tmp/krb5cc_1000"
+}
+```
+
+Environment variables: `KEYFACTOR_AUTH_KRB_REALM`, `KEYFACTOR_AUTH_KRB_USERNAME`, `KEYFACTOR_AUTH_KRB_PASSWORD`, `KEYFACTOR_AUTH_KRB_KEYTAB`, `KEYFACTOR_AUTH_KRB_CCACHE`, `KEYFACTOR_AUTH_KRB_CONFIG`, `KEYFACTOR_AUTH_KRB_SPN`, `KEYFACTOR_AUTH_KRB_DISABLE_PAFXFAST`
+
 ## Usage
 
 * [Documentation](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs)

@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
 	"testing"
+	"time"
 )
 
 type roleTestCase struct {
@@ -143,4 +144,51 @@ resource "keyfactor_role" "terraform_test" {
 }
 `, t.name, t.description, t.permissionsStr)
 	return output
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorRoleResource(t *testing.T) {
+	testAccIntegrationPreCheck(t)
+
+	roleName := fmt.Sprintf("tf-int-test-%d", time.Now().UnixNano())
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create with no permissions
+			{
+				Config: fmt.Sprintf(`
+resource "keyfactor_role" "int_test" {
+	name        = "%s"
+	description = "Integration test role"
+	permissions = []
+}
+`, roleName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_role.int_test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_role.int_test", "name", roleName),
+					resource.TestCheckResourceAttr("keyfactor_role.int_test", "description", "Integration test role"),
+					resource.TestCheckResourceAttr("keyfactor_role.int_test", "permissions.#", "0"),
+				),
+			},
+			// Update: add permissions
+			{
+				Config: fmt.Sprintf(`
+resource "keyfactor_role" "int_test" {
+	name        = "%s"
+	description = "Integration test role updated"
+	permissions = distinct(sort(["Certificates:Read", "Certificates:EditMetadata"]))
+}
+`, roleName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_role.int_test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_role.int_test", "description", "Integration test role updated"),
+					resource.TestCheckResourceAttr("keyfactor_role.int_test", "permissions.#", "2"),
+				),
+			},
+		},
+	})
 }

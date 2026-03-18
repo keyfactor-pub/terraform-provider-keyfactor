@@ -6,7 +6,11 @@ import (
 )
 
 // CommandAgent represents an agent in the Keyfactor system.
+//
+// NOTE: TfId (tfsdk:"id") is a read-only mirror of AgentId, required by the SDKv2 test harness.
+// Do NOT read from or write to TfId directly; it is populated automatically via syncTfId().
 type CommandAgent struct {
+	TfId                        types.String `tfsdk:"id"`                            // Read-only mirror of AgentId for test framework.
 	AgentId                     types.String `tfsdk:"agent_id"`                      // Unique identifier for the agent.
 	AgentIdentifier             types.String `tfsdk:"agent_identifier"`              // Identifier for the agent in Keyfactor.
 	ClientMachine               types.String `tfsdk:"client_machine"`                // Machine name where the agent is running.
@@ -24,6 +28,8 @@ type CommandAgent struct {
 	LastErrorCode               types.Int64  `tfsdk:"last_error_code"`               // Last error code reported by the agent.
 	LastErrorMessage            types.String `tfsdk:"last_error_message"`            // Last error message reported by the agent.
 }
+
+func (a *CommandAgent) syncTfId() { a.TfId = a.AgentId }
 
 // SecurityIdentity represents an identity with security roles in Keyfactor.
 type SecurityIdentity struct {
@@ -97,8 +103,14 @@ type OAuthSecurityRoleClaimAssociation struct {
 }
 
 // CommandCertificate represents a certificate entity in Keyfactor.
+//
+// NOTE: This struct has two ID-related fields due to a Terraform testing framework requirement:
+//   - ID  (tfsdk:"identifier") — The actual Keyfactor certificate identifier. Used throughout provider code.
+//   - TfId (tfsdk:"id")        — Read-only mirror of ID, required by the SDKv2 test harness.
+//     Do NOT read from or write to TfId directly; it is populated automatically via syncTfId().
 type CommandCertificate struct {
-	ID types.String `tfsdk:"identifier"` // Unique identifier of the certificate.
+	TfId types.String `tfsdk:"id"`         // Read-only mirror of ID for Terraform test framework. Use syncTfId() only.
+	ID   types.String `tfsdk:"identifier"` // Unique identifier of the certificate.
 
 	// CSR Request Fields
 	CSR types.String `tfsdk:"csr"` // Certificate Signing Request (CSR) content.
@@ -166,9 +178,11 @@ type CommandCertificate struct {
 	RevokeOnDestroy   types.Bool   `tfsdk:"revoke_on_destroy"`         // RevokeOnDestroy indicates whether the certificate should be revoked when the resource is destroyed.
 }
 
-// CommandCertificate represents a certificate entity in Keyfactor.
+// DataCommandCertificate represents a certificate data source entity in Keyfactor.
+// See CommandCertificate for notes on TfId vs ID.
 type DataCommandCertificate struct {
-	ID types.String `tfsdk:"identifier"` // Unique identifier of the certificate.
+	TfId types.String `tfsdk:"id"`         // Read-only mirror of ID for Terraform test framework. Use syncTfId() only.
+	ID   types.String `tfsdk:"identifier"` // Unique identifier of the certificate.
 
 	// CSR Request Fields
 	CSR types.String `tfsdk:"csr"` // Certificate Signing Request (CSR) content.
@@ -234,6 +248,14 @@ type DataCommandCertificate struct {
 	NotAfter          types.String `tfsdk:"not_after"`                 // NotAfter represents the end date and time after which the certificate is no longer valid.
 	RevocationEffDate types.String `tfsdk:"revocation_effective_date"` // RevocationEffDate represents the date and time when the revocation of the certificate becomes effective.
 }
+
+// syncTfId copies the ID (identifier) value to the TfId (id) field.
+// Must be called before every State.Set() on a CommandCertificate.
+func (c *CommandCertificate) syncTfId() { c.TfId = c.ID }
+
+// syncTfId copies the ID (identifier) value to the TfId (id) field.
+// Must be called before every State.Set() on a DataCommandCertificate.
+func (c *DataCommandCertificate) syncTfId() { c.TfId = c.ID }
 
 type CertificateAutoRenewConfig struct {
 	ForceRenewal types.Bool  `tfsdk:"force_renewal"` // ForceRenewal indicates if the certificate should be forcefully renewed, regardless of its current state.

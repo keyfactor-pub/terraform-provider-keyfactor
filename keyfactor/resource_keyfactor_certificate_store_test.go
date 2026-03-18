@@ -2,9 +2,12 @@ package keyfactor
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
+	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 type certificateStoreTestCase_v9 struct {
@@ -136,4 +139,94 @@ resource "keyfactor_certificate_store" "tf_k8s_acc_test" {
 }
 `, t.clientMachine, t.storePath, t.agentIdentifier, t.storeType, t.schedule, t.containerName, t.storePassword, t.serverUserName, t.serverPassword)
 	return output
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes — no lab required)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorCertificateStoreResource tests the full create/read/destroy
+// lifecycle of a certificate store resource using pre-recorded HTTP cassettes.
+//
+// To record cassettes against a live lab:
+//
+//	RECORD_CASSETTES=1 make testunit
+func TestUnitKeyfactorCertificateStoreResource(t *testing.T) {
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_store_resource")
+	var storeType, clientMachine, agentID, storePath string
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		// Recording mode: auto-discover lab resources and save params for replay.
+		client := newTestClient(t)
+		agentID, clientMachine = discoverAgent(t, client)
+		storeType = discoverStoreTypeForAgent(t, client, agentID)
+		// Use a K8S-compatible path format: namespace/name (no leading slash).
+		storePath = "default/tf-unit-test-1000000"
+		writeStoreTestParams(cassettePath, storeTestParams{
+			StoreType:     storeType,
+			ClientMachine: clientMachine,
+			AgentID:       agentID,
+			StorePath:     storePath,
+		})
+	} else {
+		// Replay mode: load params recorded with the cassette so that the HCL
+		// config exactly matches what was used during recording, avoiding drift.
+		params := readStoreTestParams(cassettePath)
+		storeType = params.StoreType
+		clientMachine = params.ClientMachine
+		agentID = params.AgentID
+		storePath = params.StorePath
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_store_resource")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertStoreConfig(storeType, clientMachine, agentID, storePath),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "store_path"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "store_type"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "client_machine"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "agent_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "approved"),
+				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery, only need lab connection env vars)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorCertificateStoreResource(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	agentID, clientMachine := discoverAgent(t, client)
+
+	// Use a store type from the agent's capabilities for best compatibility
+	storeType := discoverStoreTypeForAgent(t, client, agentID)
+	storePath := fmt.Sprintf("/tf-int-test-%d", time.Now().UnixNano())
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertStoreConfig(storeType, clientMachine, agentID, storePath),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "store_path", storePath),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "store_type", storeType),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "client_machine", clientMachine),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "agent_id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "agent_identifier", agentID),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "approved"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "properties.%"),
+				),
+			},
+		},
+	})
 }

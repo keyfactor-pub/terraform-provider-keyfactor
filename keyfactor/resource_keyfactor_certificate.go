@@ -90,6 +90,11 @@ type resourceCommandCertificateType struct{}
 func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
+			"id": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Read-only alias of `identifier` for Terraform framework compatibility.",
+			},
 			"csr": {
 				Type:          types.StringType,
 				Optional:      true,
@@ -662,6 +667,7 @@ func (r resourceCommandCertificate) Create(
 		}
 
 		tflog.Debug(ctx, "Setting state")
+		result.syncTfId()
 		diags = response.State.Set(ctx, result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -687,6 +693,7 @@ func (r resourceCommandCertificate) Create(
 		}
 
 		tflog.Debug(ctx, "Setting state")
+		result.syncTfId()
 		diags = response.State.Set(ctx, *result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -789,9 +796,10 @@ func (r resourceCommandCertificate) Read(
 
 	notBeforeStr := leaf.NotBefore.UTC().Format(time.RFC3339)
 	notAfterStr := leaf.NotAfter.UTC().Format(time.RFC3339)
-	sn := leaf.SerialNumber.String()
+	sn := normalizeSerialNumber(leaf.SerialNumber.String())
 	issuerDN := leaf.Issuer.String()
 	tp, _ := api.GetCertificateThumbprint(leaf)
+	tp = normalizeThumbprint(tp)
 	fullChain := chainPEM
 	if !strings.Contains(fullChain, leafPEM) {
 		fullChain = leafPEM + chainPEM
@@ -819,7 +827,21 @@ func (r resourceCommandCertificate) Read(
 	revoked, _, expired, cDiags = checkCertDiags(ctx, certGetResp, warningDays, leaf)
 	response.Diagnostics.Append(cDiags...)
 	if certGetResp != nil {
-		caName = certGetResp.CertificateAuthorityName
+		// Preserve the user's original certificate_authority value when the server
+		// returns a fully-qualified name (e.g. "hostname\\LogicalName") but the user
+		// specified only the logical name.  This prevents spurious plan drift on
+		// an attribute that carries RequiresReplace semantics.
+		remoteCaName := certGetResp.CertificateAuthorityName
+		if remoteCaName != "" && caName != "" && remoteCaName != caName {
+			// Check if the remote CA name ends with the state value (logical name match)
+			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
+				tflog.Debug(ctx, fmt.Sprintf("Preserving user-supplied certificate_authority %q (remote returned %q)", caName, remoteCaName))
+			} else {
+				caName = remoteCaName
+			}
+		} else if remoteCaName != "" {
+			caName = remoteCaName
+		}
 		certificateID = certGetResp.Id
 		//templateName = certGetResp.TemplateName
 		metadata = flattenMetadata(certGetResp.Metadata)
@@ -1083,6 +1105,7 @@ func (r resourceCommandCertificate) Read(
 
 	// Set state
 	tflog.Debug(ctx, "Setting state")
+	result.syncTfId()
 	sDiags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(sDiags...)
 	response.Diagnostics.Append(diags...)
@@ -1351,6 +1374,7 @@ func (r resourceCommandCertificate) Update(
 
 		// Set state
 		tflog.Debug(ctx, "Setting state")
+		result.syncTfId()
 		diags = response.State.Set(ctx, &result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -1454,6 +1478,7 @@ func (r resourceCommandCertificate) Update(
 			}
 		}
 
+		result.syncTfId()
 		diags = response.State.Set(ctx, result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -1649,12 +1674,22 @@ func (r resourceCommandCertificate) ImportState(
 		return
 	}
 
-	leaf := x509.Certificate{
-		Raw: []byte(leafPEM),
+	leaf, lDiags := parseLeafCert(ctx, leafPEM)
+	response.Diagnostics.Append(lDiags...)
+	if response.Diagnostics.HasError() || leaf == nil {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf(
+				"Failed to parse certificate '%s' during import. "+
+					"Please check the certificate ID and try again.", state.ID.Value,
+			),
+		)
+		return
 	}
-	sn := leaf.SerialNumber.String()
+	sn := normalizeSerialNumber(leaf.SerialNumber.String())
 	issuerDN := leaf.Issuer.String()
-	tp, _ := api.GetCertificateThumbprint(&leaf)
+	tp, _ := api.GetCertificateThumbprint(leaf)
+	tp = normalizeThumbprint(tp)
 	fullChain := chainPEM
 	if !strings.Contains(fullChain, leafPEM) {
 		fullChain = leafPEM + chainPEM
@@ -1665,7 +1700,16 @@ func (r resourceCommandCertificate) ImportState(
 	metadata := state.Metadata
 	if certGetResp != nil {
 		// Info that can only be retrieved with `Read Certificates` permissions
-		caName = certGetResp.CertificateAuthorityName
+		remoteCaName := certGetResp.CertificateAuthorityName
+		if remoteCaName != "" && caName != "" && remoteCaName != caName {
+			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
+				tflog.Debug(ctx, fmt.Sprintf("Preserving user-supplied certificate_authority %q (remote returned %q)", caName, remoteCaName))
+			} else {
+				caName = remoteCaName
+			}
+		} else if remoteCaName != "" {
+			caName = remoteCaName
+		}
 		certificateIdInt = certGetResp.Id
 		templateName = certGetResp.TemplateName
 		metadata = flattenMetadata(certGetResp.Metadata)
@@ -1678,7 +1722,7 @@ func (r resourceCommandCertificate) ImportState(
 		}
 	}
 
-	cn, l, s, c, o, ou := parseSubjectToTfState(leaf)
+	cn, l, s, c, o, ou := parseSubjectToTfState(*leaf)
 
 	tflog.Debug(ctx, "Creating CommandCertificate object")
 	var result = CommandCertificate{
@@ -1753,6 +1797,7 @@ func (r resourceCommandCertificate) ImportState(
 
 	// Set state
 	tflog.Debug(ctx, "Setting state")
+	result.syncTfId()
 	diags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -2364,9 +2409,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		DNSSANs:            plan.DNSSANs,
 		IPSANs:             plan.IPSANs,
 		URISANs:            plan.URISANs,
-		SerialNumber:       types.String{Value: enrolledSerialNumber},
+		SerialNumber:       types.String{Value: normalizeSerialNumber(enrolledSerialNumber)},
 		IssuerDN:           types.String{Value: enrolledIssuerDN},
-		Thumbprint:         types.String{Value: enrolledThumbprint},
+		Thumbprint:         types.String{Value: normalizeThumbprint(enrolledThumbprint)},
 		//PEM:                  types.String{Value: leafPEM}, //This is set below depending out output format
 		//PEMCACert:            types.String{Value: chainPEM}, //This is set below depending out output format
 		//PEMChain:             types.String{Value: chainPEM}, //This is set below depending out output format
@@ -2779,9 +2824,9 @@ func (r resourceCommandCertificate) enrollCSR(
 		DNSSANs:            plan.DNSSANs,
 		IPSANs:             plan.IPSANs,
 		URISANs:            plan.URISANs,
-		SerialNumber:       types.String{Value: enrollResponse.CertificateInformation.SerialNumber},
+		SerialNumber:       types.String{Value: normalizeSerialNumber(enrollResponse.CertificateInformation.SerialNumber)},
 		IssuerDN:           types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
-		Thumbprint:         types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
+		Thumbprint:         types.String{Value: normalizeThumbprint(enrollResponse.CertificateInformation.Thumbprint)},
 		PEM:                types.String{Value: leaf},
 		PEMCACert:          types.String{Value: caCert},
 		PEMChain:           types.String{Value: fullChain},

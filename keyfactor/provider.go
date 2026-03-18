@@ -27,6 +27,13 @@ type provider struct {
 	configured bool
 	client     *api.Client
 	sdkClient  *keyfactor.APIClient
+	// testHook is called after Configure to allow tests to inject a custom
+	// transport (e.g. a VCR recorder). It is nil in production.
+	testHook func(*provider)
+	// testAuth, if non-nil, bypasses Configure's auth/network logic entirely.
+	// The pre-built AuthConfig (e.g. a VCR-backed stub) is used for both clients.
+	// Used in unit tests with VCR cassettes.
+	testAuth api.AuthConfig
 }
 
 const (
@@ -207,6 +214,72 @@ func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostic
 						DefaultValMsg+EnvVarUsage, false, auth_providers.EnvKeyfactorSkipVerify,
 				),
 			},
+			"kerberos_realm": {
+				Type:     types.StringType,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"Kerberos realm for Kerberos/SPNEGO authentication (e.g. EXAMPLE.COM). "+
+						EnvVarUsage, auth_providers.EnvKeyfactorKrbRealm,
+				),
+			},
+			"kerberos_keytab": {
+				Type:     types.StringType,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"Path to the Kerberos keytab file for keytab-based authentication. "+
+						EnvVarUsage, auth_providers.EnvKeyfactorKrbKeytab,
+				),
+			},
+			"kerberos_config": {
+				Type:     types.StringType,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"Path to the krb5.conf Kerberos configuration file. "+
+						fmt.Sprintf("Defaults to %s. ", auth_providers.DefaultKrbConfigPath)+
+						EnvVarUsage, auth_providers.EnvKeyfactorKrbConfig,
+				),
+			},
+			"kerberos_ccache": {
+				Type:     types.StringType,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"Path to the Kerberos credential cache file for ccache-based authentication. "+
+						EnvVarUsage, auth_providers.EnvKeyfactorKrbCCache,
+				),
+			},
+			"kerberos_spn": {
+				Type:     types.StringType,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"Service Principal Name for Kerberos authentication. Auto-generated from hostname if omitted. "+
+						EnvVarUsage, auth_providers.EnvKeyfactorKrbSPN,
+				),
+			},
+			"kerberos_username": {
+				Type:     types.StringType,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"Kerberos principal username for password or keytab-based authentication. Accepts user@REALM format. "+
+						EnvVarUsage, auth_providers.EnvKeyfactorKrbUsername,
+				),
+			},
+			"kerberos_password": {
+				Type:      types.StringType,
+				Optional:  true,
+				Sensitive: true,
+				Description: fmt.Sprintf(
+					"Password for password-based Kerberos authentication. "+
+						EnvVarUsage, auth_providers.EnvKeyfactorKrbPassword,
+				),
+			},
+			"kerberos_disable_pafxfast": {
+				Type:     types.BoolType,
+				Optional: true,
+				Description: fmt.Sprintf(
+					"Disable PA-FX-FAST for Active Directory Kerberos compatibility. "+
+						DefaultValMsg, false,
+				),
+			},
 		},
 		MarkdownDescription: `
 ## Overview
@@ -246,7 +319,7 @@ at https://support.keyfactor.com/ and Keyfactor will address issues as resources
 | 9.x                       | 1.0.x                      |
 `,
 		Description: "The Keyfactor Command provider allows you to authenticate to Keyfactor Command using a username" +
-			" and password, or an OAuth credentials.",
+			" and password, OAuth credentials, or Kerberos/SPNEGO.",
 	}, nil
 }
 
@@ -272,6 +345,15 @@ type providerData struct {
 	PFXPasswordUppers    types.Number `tfsdk:"pfx_password_min_uppercases"`
 	PFXPasswordNumbers   types.Number `tfsdk:"pfx_password_min_digits"`
 	PFXPasswordSpecials  types.Number `tfsdk:"pfx_password_max_special_chars"`
+	// Kerberos auth fields
+	KerberosRealm           types.String `tfsdk:"kerberos_realm"`
+	KerberosKeytab          types.String `tfsdk:"kerberos_keytab"`
+	KerberosConfig          types.String `tfsdk:"kerberos_config"`
+	KerberosCCache          types.String `tfsdk:"kerberos_ccache"`
+	KerberosSPN             types.String `tfsdk:"kerberos_spn"`
+	KerberosUsername        types.String `tfsdk:"kerberos_username"`
+	KerberosPassword        types.String `tfsdk:"kerberos_password"`
+	KerberosDisablePAFXFast types.Bool   `tfsdk:"kerberos_disable_pafxfast"`
 }
 
 func (p *provider) getServerConfig(c *providerData, ctx context.Context) (*auth_providers.Server, diag.Diagnostics) {
@@ -442,13 +524,103 @@ func (p *provider) getServerConfig(c *providerData, ctx context.Context) (*auth_
 		audience = c.Audience.Value
 	}
 
+	// Kerberos auth provider config
+	tflog.Debug(ctx, "Resolving Kerberos realm from environment variables")
+	krbRealm, krOk := os.LookupEnv(auth_providers.EnvKeyfactorKrbRealm)
+	if !krOk || c.KerberosRealm.Value != "" {
+		krbRealm = c.KerberosRealm.Value
+		if krbRealm != "" {
+			krOk = true
+		}
+	}
+
+	tflog.Debug(ctx, "Resolving Kerberos keytab from environment variables")
+	krbKeytab, ktOk := os.LookupEnv(auth_providers.EnvKeyfactorKrbKeytab)
+	if !ktOk || c.KerberosKeytab.Value != "" {
+		krbKeytab = c.KerberosKeytab.Value
+		if krbKeytab != "" {
+			ktOk = true
+		}
+	}
+
+	tflog.Debug(ctx, "Resolving Kerberos ccache from environment variables")
+	krbCCache, kccOk := os.LookupEnv(auth_providers.EnvKeyfactorKrbCCache)
+	if !kccOk || c.KerberosCCache.Value != "" {
+		krbCCache = c.KerberosCCache.Value
+		if krbCCache != "" {
+			kccOk = true
+		}
+	}
+
+	tflog.Debug(ctx, "Resolving Kerberos config path from environment variables")
+	krbConfig, _ := os.LookupEnv(auth_providers.EnvKeyfactorKrbConfig)
+	if c.KerberosConfig.Value != "" {
+		krbConfig = c.KerberosConfig.Value
+	}
+
+	tflog.Debug(ctx, "Resolving Kerberos SPN from environment variables")
+	krbSPN, _ := os.LookupEnv(auth_providers.EnvKeyfactorKrbSPN)
+	if c.KerberosSPN.Value != "" {
+		krbSPN = c.KerberosSPN.Value
+	}
+
+	tflog.Debug(ctx, "Resolving Kerberos username from environment variables")
+	krbUsername, _ := os.LookupEnv(auth_providers.EnvKeyfactorKrbUsername)
+	if c.KerberosUsername.Value != "" {
+		krbUsername = c.KerberosUsername.Value
+	}
+
+	tflog.Debug(ctx, "Resolving Kerberos password from environment variables")
+	krbPassword, _ := os.LookupEnv(auth_providers.EnvKeyfactorKrbPassword)
+	if c.KerberosPassword.Value != "" {
+		krbPassword = c.KerberosPassword.Value
+	}
+	if krbPassword != "" {
+		ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "kerberos_password", krbPassword)
+	}
+
+	krbDisablePAFXFast := c.KerberosDisablePAFXFast.Value
+	if disableStr, ok := os.LookupEnv(auth_providers.EnvKeyfactorKrbDisablePAFXFast); ok && !krbDisablePAFXFast {
+		krbDisablePAFXFast = disableStr == "true" || disableStr == "1"
+	}
+
+	isKerberos := krOk || ktOk || kccOk
+	ctx = tflog.SetField(ctx, "is_kerberos", isKerberos)
 	isBasicAuth := uOk && pOk
 	ctx = tflog.SetField(ctx, "is_basic_auth", isBasicAuth)
 	isOAuth := (cOk && csOk && tOk) || atOk
 	ctx = tflog.SetField(ctx, "is_oauth", isOAuth)
 
 	tflog.Debug(ctx, "Beginning authentication")
-	if isBasicAuth {
+	if isKerberos {
+		LogFunctionCall(ctx, "krbAuthConfig.Authenticate()")
+		krbAuthConfig := &auth_providers.CommandAuthConfigKerberos{}
+		_ = krbAuthConfig.CommandAuthConfig.
+			WithCommandHostName(hostname).
+			WithCommandAPIPath(apiPath).
+			WithSkipVerify(skipVerifyBool).
+			WithCommandCACert(caCert).
+			WithClientTimeout(int(clientTimeout))
+		kErr := krbAuthConfig.
+			WithUsername(krbUsername).
+			WithPassword(krbPassword).
+			WithRealm(krbRealm).
+			WithKeytabPath(krbKeytab).
+			WithConfigPath(krbConfig).
+			WithCCachePath(krbCCache).
+			WithSPN(krbSPN).
+			WithDisablePAFXFast(krbDisablePAFXFast).
+			Authenticate()
+		LogFunctionReturned(ctx, "krbAuthConfig.Authenticate()")
+		if kErr != nil {
+			errMsg := fmt.Errorf("unable to authenticate with Kerberos credentials: %w", kErr)
+			tflog.Error(ctx, errMsg.Error())
+			d.AddError("kerberos authentication error", errMsg.Error())
+			return nil, d
+		}
+		LogFunctionExit(ctx, "getServerConfig()")
+		return krbAuthConfig.GetServerConfig(), d
+	} else if isBasicAuth {
 		LogFunctionCall(ctx, "basicAuthNoParamsConfig.Authenticate")
 		basicAuthNoParamsConfig.WithCommandHostName(hostname).
 			WithCommandAPIPath(apiPath).
@@ -521,6 +693,21 @@ func (p *provider) Configure(
 	req tfsdk.ConfigureProviderRequest,
 	resp *tfsdk.ConfigureProviderResponse,
 ) {
+	// Test mode: bypass all auth/network logic and use the pre-built VCR auth client.
+	if p.testAuth != nil {
+		PFXPasswordLength = DEFAULT_PFX_PASSWORD_LEN
+		PFXPasswordDigits = DEFAULT_PFX_PASSWORD_NUMBER_COUNT
+		PFXPasswordSpecialChars = DEFAULT_PFX_PASSWORD_SPECIAL_CHAR_COUNT
+		PFXPasswordUpperCases = DEFAULT_PFX_PASSWORD_UPPER_COUNT
+		p.client = api.NewKeyfactorClientWithAuth(p.testAuth, &ctx)
+		p.sdkClient = keyfactor.NewAPIClientWithAuth(p.testAuth)
+		p.configured = true
+		if p.testHook != nil {
+			p.testHook(p)
+		}
+		return
+	}
+
 	// Retrieve provider data from configuration
 	var config providerData
 
@@ -593,6 +780,11 @@ func (p *provider) Configure(
 		p.configured = true
 		continue
 	}
+
+	// Allow tests to inject a custom transport (e.g. VCR recorder).
+	if p.testHook != nil {
+		p.testHook(p)
+	}
 }
 
 // GetResources - Defines provider resources
@@ -607,6 +799,7 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 		"keyfactor_oauth_security_role":                   resourceOAuthSecurityRoleType{},
 		"keyfactor_role":                                  resourceSecurityRoleType{},
 		"keyfactor_template_role_binding":                 resourceCertificateTemplateRoleBindingType{},
+		"keyfactor_application":                           resourceApplicationType{},
 	}, nil
 }
 
@@ -623,6 +816,7 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 		"keyfactor_permission_set":       dataSourcePermissionSetType{},
 		"keyfactor_role":                 dataSourceSecurityRoleType{},
 		"keyfactor_identity":             dataSourceSecurityIdentityType{},
+		"keyfactor_application":          dataSourceApplicationType{},
 	}, nil
 }
 

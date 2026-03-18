@@ -226,7 +226,6 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					"Valid PFX enrollment options are: `PEM, PFX, JKS, " +
 					"Zip`. Valid CSR enrollment options are `PEM, DER`. Defaults to: `PEM`",
 				//Validators: []tfsdk.AttributeValidator{},
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"metadata": {
 				Type: types.MapType{
@@ -982,6 +981,7 @@ func (r resourceCommandCertificate) Read(
 		PEMChain:           types.String{Null: true},
 		PrivateKey:         types.String{Null: true},
 		PFX:                types.String{Null: true},
+		JKS:                types.String{Null: true},
 		Zip:                types.String{Null: true},
 		KeyPassword:        state.KeyPassword,
 		EnrollmentPassword: state.EnrollmentPassword,
@@ -1475,6 +1475,66 @@ func (r resourceCommandCertificate) Update(
 			result.RevocationEffDate = types.String{
 				Value: certGetResp.RevocationEffDate,
 				Null:  isNullString(certGetResp.RevocationEffDate),
+			}
+		}
+
+		// If the effective certificate_format changed, re-download in the new
+		// format so that format-specific state fields (PEM, PFX, JKS, Zip) are
+		// refreshed without forcing resource recreation. (Fixes #150)
+		//
+		// Normalize: "" and "STORE" both produce PEM output in Read, so they
+		// are effectively equivalent and don't require a re-download.
+		effectivePlanFmt := effectiveCertificateFormat(plan.CertificateFormat.Value)
+		effectiveStateFmt := effectiveCertificateFormat(state.CertificateFormat.Value)
+		if effectivePlanFmt != effectiveStateFmt {
+			tflog.Info(ctx, fmt.Sprintf(
+				"certificate_format changed from %q to %q (effective: %q → %q), re-downloading certificate.",
+				state.CertificateFormat.Value, plan.CertificateFormat.Value,
+				effectiveStateFmt, effectivePlanFmt,
+			))
+			dlLeafPEM, dlChainPEM, dlPKeyPEM, dlRawData, dlDiags := recoverOrDownloadCertificate(
+				ctx,
+				int(state.CertificateId.Value),
+				int(state.CollectionId.Value),
+				plan.KeyPassword.Value,
+				r.p.client,
+				effectivePlanFmt,
+			)
+			if dlDiags.HasError() {
+				response.Diagnostics.Append(dlDiags...)
+			} else {
+				// Clear all format-specific fields
+				result.PEM = types.String{Null: true}
+				result.PEMCACert = types.String{Null: true}
+				result.PEMChain = types.String{Null: true}
+				result.PrivateKey = types.String{Null: true}
+				result.PFX = types.String{Null: true}
+				result.JKS = types.String{Null: true}
+				result.Zip = types.String{Null: true}
+
+				switch effectivePlanFmt {
+				case "PEM":
+					dlFullChain := dlChainPEM
+					if !strings.Contains(dlFullChain, dlLeafPEM) {
+						dlFullChain = dlLeafPEM + dlChainPEM
+					}
+					result.PEM = types.String{Value: dlLeafPEM, Null: isNullString(dlLeafPEM)}
+					result.PEMCACert = types.String{Value: dlChainPEM, Null: isNullString(dlChainPEM)}
+					result.PEMChain = types.String{Value: dlFullChain, Null: isNullString(dlFullChain)}
+					result.PrivateKey = types.String{Value: dlPKeyPEM, Null: isNullString(dlPKeyPEM)}
+				case "JKS":
+					if dlRawData != nil {
+						result.JKS = types.String{Value: *dlRawData, Null: isNullString(*dlRawData)}
+					}
+				case "PFX":
+					if dlRawData != nil {
+						result.PFX = types.String{Value: *dlRawData, Null: isNullString(*dlRawData)}
+					}
+				case "ZIP":
+					if dlRawData != nil {
+						result.Zip = types.String{Value: *dlRawData, Null: isNullString(*dlRawData)}
+					}
+				}
 			}
 		}
 

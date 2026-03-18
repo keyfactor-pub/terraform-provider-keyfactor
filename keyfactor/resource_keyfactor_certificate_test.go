@@ -598,9 +598,201 @@ func TestIntKeyfactorCertificateResource_PFX(t *testing.T) {
 	})
 }
 
+// checkFormatFields returns a TestCheckFunc that verifies the expected format-specific
+// fields are set and all other format fields are empty. Also verifies the resource ID
+// has not changed (no recreation).
+func checkFormatFields(format string, originalID *string) resource.TestCheckFunc {
+	res := "keyfactor_certificate.test"
+
+	// Define which fields each format populates
+	pemFields := []string{"certificate_pem", "certificate_chain"}
+	binaryFields := map[string]string{
+		"PFX": "pfx",
+		"JKS": "jks",
+		"ZIP": "zip",
+	}
+
+	var checks []resource.TestCheckFunc
+
+	// ID stability check
+	checks = append(checks, resource.TestCheckResourceAttrWith(res, "id", func(value string) error {
+		if *originalID != "" && value != *originalID {
+			return fmt.Errorf("certificate was recreated (id changed from %s to %s); expected in-place update", *originalID, value)
+		}
+		*originalID = value
+		return nil
+	}))
+
+	effectiveFmt := format
+	if effectiveFmt == "" || effectiveFmt == "STORE" {
+		effectiveFmt = "PEM"
+	}
+
+	switch effectiveFmt {
+	case "PEM":
+		for _, f := range pemFields {
+			checks = append(checks, resource.TestCheckResourceAttrSet(res, f))
+		}
+		for _, f := range binaryFields {
+			checks = append(checks, resource.TestCheckNoResourceAttr(res, f))
+		}
+	case "PFX":
+		checks = append(checks, resource.TestCheckResourceAttrSet(res, "pfx"))
+		for _, f := range pemFields {
+			checks = append(checks, resource.TestCheckNoResourceAttr(res, f))
+		}
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "jks"))
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "zip"))
+	case "JKS":
+		checks = append(checks, resource.TestCheckResourceAttrSet(res, "jks"))
+		for _, f := range pemFields {
+			checks = append(checks, resource.TestCheckNoResourceAttr(res, f))
+		}
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "pfx"))
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "zip"))
+	case "ZIP":
+		checks = append(checks, resource.TestCheckResourceAttrSet(res, "zip"))
+		for _, f := range pemFields {
+			checks = append(checks, resource.TestCheckNoResourceAttr(res, f))
+		}
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "pfx"))
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "jks"))
+	}
+
+	return resource.ComposeAggregateTestCheckFunc(checks...)
+}
+
+// certFormatConfig generates the HCL for a given format using the appropriate
+// enrollment method (enrollment pattern or template).
+func certFormatConfig(enrollmentPattern, templateName, ca, cn, format string) string {
+	if enrollmentPattern != "" {
+		return testAccCertPFXConfigEnrollmentPatternWithFormat(enrollmentPattern, ca, cn, format)
+	}
+	return testAccCertPFXConfigWithFormat(templateName, ca, cn, format)
+}
+
+// TestIntKeyfactorCertificateResource_FormatChange verifies that changing
+// certificate_format does NOT force resource recreation and that the correct
+// format-specific fields are populated for each format. (Fixes #150)
+//
+// Test flow: default → PEM → PFX → JKS → ZIP → PEM
+func TestIntKeyfactorCertificateResource_FormatChange(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+	cn := randomTestCN("tf-int-fmt")
+
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var templateName string
+	if enrollmentPattern == "" {
+		templateName = discoverTemplate(t, client)
+	}
+
+	var originalID string
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, ""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					checkFormatFields("", &originalID),
+				),
+			},
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PEM"),
+				Check:  checkFormatFields("PEM", &originalID),
+			},
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PFX"),
+				Check:  checkFormatFields("PFX", &originalID),
+			},
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "JKS"),
+				Check:  checkFormatFields("JKS", &originalID),
+			},
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "ZIP"),
+				Check:  checkFormatFields("ZIP", &originalID),
+			},
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PEM"),
+				Check:  checkFormatFields("PEM", &originalID),
+			},
+		},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests (VCR cassettes — no lab required)
 // ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorCertificateResource_FormatChange verifies that changing
+// certificate_format does NOT force resource recreation and that the correct
+// format-specific fields are populated for each format. (VCR version of
+// TestIntKeyfactorCertificateResource_FormatChange — Fixes #150)
+//
+// Test flow: default → PEM → default
+//
+// Note: Binary format transitions (PFX/JKS/ZIP) require private key recovery
+// from Keyfactor Command, which depends on CA key retention configuration.
+// The integration test (TestIntKeyfactorCertificateResource_FormatChange)
+// exercises the full format matrix on labs that support recovery.
+func TestUnitKeyfactorCertificateResource_FormatChange(t *testing.T) {
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_resource_format_change")
+
+	var enrollmentPattern, templateName, ca, cn string
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		ca = discoverCA(t, client)
+		cn = randomTestCN("tf-unit-fmt")
+		enrollmentPattern = discoverEnrollmentPattern(t, client)
+		if enrollmentPattern == "" {
+			templateName = discoverTemplate(t, client)
+		}
+		writeCertPFXTestParams(cassettePath, certPFXTestParams{
+			TemplateName:      templateName,
+			CA:                ca,
+			EnrollmentPattern: enrollmentPattern,
+			CN:                cn,
+		})
+	} else {
+		params := readCertPFXTestParams(cassettePath)
+		enrollmentPattern = params.EnrollmentPattern
+		templateName = params.TemplateName
+		ca = params.CA
+		cn = params.CN
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_format_change")
+	defer cleanup()
+
+	var originalID string
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, ""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					checkFormatFields("", &originalID),
+				),
+			},
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PEM"),
+				Check:  checkFormatFields("PEM", &originalID),
+			},
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, ""),
+				Check:  checkFormatFields("", &originalID),
+			},
+		},
+	})
+}
 
 // TestUnitKeyfactorCertificateResource_PFX tests the full create/read/destroy
 // lifecycle of a PFX certificate resource using pre-recorded HTTP cassettes.

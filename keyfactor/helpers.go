@@ -1209,6 +1209,20 @@ func recoverOrDownloadCertificate(
 		client,
 		certificateFormat,
 	)
+
+	// For binary formats (PFX/JKS/ZIP), recovery is the only path — the P7B
+	// download fallback only produces PEM data so it cannot help.  If we got
+	// rawBytes back that's success for a binary format even without leafPEM.
+	effectiveFmt := effectiveCertificateFormat(certificateFormat)
+	if effectiveFmt == "PFX" || effectiveFmt == "JKS" || effectiveFmt == "ZIP" {
+		if rawBytes != nil && *rawBytes != "" {
+			// Recovery succeeded — clear any non-fatal diagnostics that may
+			// have been added (e.g. "private key not returned").
+			diags = diag.Diagnostics{}
+		}
+		return leafPEM, chainPEM, pKeyPEM, rawBytes, diags
+	}
+
 	if leafPEM == "" || diags.HasError() {
 		// Attempt to download certificate as a fallback
 		tflog.Debug(ctx, "Unable to recover private key. Attempting to download certificate from Keyfactor Command.")
@@ -1259,6 +1273,17 @@ func hasAPIErrors(
 		return true
 	}
 	return false
+}
+
+// effectiveCertificateFormat normalizes a certificate_format value to the
+// effective download format. Empty string and "STORE" both resolve to PEM
+// (since the STORE format produces PEM output in the Read path).
+func effectiveCertificateFormat(format string) string {
+	f := strings.ToUpper(strings.TrimSpace(format))
+	if f == "" || f == "STORE" {
+		return "PEM"
+	}
+	return f
 }
 
 // determineCertificateIdType determines if the given ID is a certificate Thumbprint or CN.

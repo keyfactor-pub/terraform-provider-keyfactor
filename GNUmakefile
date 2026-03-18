@@ -400,4 +400,90 @@ api-get-template:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
-.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template
+# Certificate API targets
+#   make api-list-certs                         — list 5 most recent certs
+#   make api-get-cert CERT_ID=123               — get certificate context by ID
+#   make api-download-cert CERT_ID=123          — download cert as P7B
+#   make api-recover-cert CERT_ID=123           — recover cert+key as STORE format
+#   make api-recover-cert-pfx CERT_ID=123       — recover cert+key as PFX
+#   make api-recover-cert-pem CERT_ID=123       — recover cert+key as PEM
+CERT_ID ?=
+CERT_PASSWORD ?= Tftest123456
+
+CERT_QUERY ?=
+
+api-list-certs:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	QUERY="pq.returnLimit=10&pq.sortAscending=0&pq.includeParameters=IncludeHasPrivateKey"; \
+	if [ -n "$(CERT_QUERY)" ]; then QUERY="$$QUERY&pq.queryString=$(CERT_QUERY)"; fi; \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates?$$QUERY" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq '[.[] | {Id, IssuedCN, Thumbprint, HasPrivateKey}]'
+
+api-get-cert:
+	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-get-cert CERT_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates/$(CERT_ID)?IncludeHasPrivateKey=true&IncludeMetadata=true" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-download-cert:
+	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-download-cert CERT_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X POST \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates/Download" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "x-certificateformat: P7B" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{\"CertID\": $(CERT_ID), \"IncludeChain\": true}" | head -200
+
+api-recover-cert:
+	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-recover-cert CERT_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X POST \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates/Recover" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d '{"CertID": $(CERT_ID), "Password": "$(CERT_PASSWORD)", "IncludeChain": true}' | head -200
+
+api-recover-cert-pfx:
+	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-recover-cert-pfx CERT_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X POST \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates/Recover" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d '{"CertID": $(CERT_ID), "Password": "$(CERT_PASSWORD)", "IncludeChain": true, "CertFormat": "PFX"}' | head -200
+
+api-recover-cert-pem:
+	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-recover-cert-pem CERT_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X POST \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates/Recover" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d '{"CertID": $(CERT_ID), "Password": "$(CERT_PASSWORD)", "IncludeChain": true, "CertFormat": "PEM"}' | head -200
+
+.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-recover-cert api-recover-cert-pfx api-recover-cert-pem

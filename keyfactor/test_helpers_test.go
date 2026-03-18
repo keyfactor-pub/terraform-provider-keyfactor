@@ -852,6 +852,24 @@ resource "keyfactor_certificate" "test" {
 `, cn, ca, templateName, cn)
 }
 
+// testAccCertPFXConfigWithFormat generates HCL for a PFX certificate resource
+// test with an explicit certificate_format.
+func testAccCertPFXConfigWithFormat(templateName, ca, cn, certFormat string) string {
+	formatLine := ""
+	if certFormat != "" {
+		formatLine = fmt.Sprintf("\n  certificate_format    = \"%s\"", certFormat)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name            = "%s"
+  certificate_authority  = "%s"
+  certificate_template   = "%s"
+  key_password           = "Tftest123456"
+  dns_sans               = ["%s"]%s
+}
+`, cn, ca, templateName, cn, formatLine)
+}
+
 // testAccCertPFXConfigEnrollmentPattern generates HCL for a PFX certificate
 // resource test using an enrollment pattern (required for Command v25+).
 // cn is the common name to use; pass randomTestCN("tf-int-pfx") for unique values.
@@ -864,6 +882,23 @@ resource "keyfactor_certificate" "test" {
   key_password                     = "Tftest123456"
 }
 `, cn, ca, enrollmentPattern)
+}
+
+// testAccCertPFXConfigEnrollmentPatternWithFormat generates HCL for a PFX certificate
+// resource test using an enrollment pattern with an explicit certificate_format.
+func testAccCertPFXConfigEnrollmentPatternWithFormat(enrollmentPattern, ca, cn, certFormat string) string {
+	formatLine := ""
+	if certFormat != "" {
+		formatLine = fmt.Sprintf("\n  certificate_format             = \"%s\"", certFormat)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                      = "%s"
+  certificate_authority            = "%s"
+  certificate_enrollment_pattern   = "%s"
+  key_password                     = "Tftest123456"%s
+}
+`, cn, ca, enrollmentPattern, formatLine)
 }
 
 // generateSimpleCSR creates a fresh PEM-encoded CSR with only a CN field.

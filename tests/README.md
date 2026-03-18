@@ -10,6 +10,8 @@ For general test infrastructure (VCR cassettes, discovery helpers, env vars, Mak
 |------|------------------------|--------|
 | [certificate_resource.md](certificate_resource.md) | `keyfactor_certificate` resource | [#150](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/150), [#146](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/146) |
 | [agents_data_source.md](agents_data_source.md) | `keyfactor_agents` data source | [#52](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/52) |
+| [application_resource.md](application_resource.md) | `keyfactor_application` resource | — |
+| [application_data_source.md](application_data_source.md) | `keyfactor_application` data source | — |
 
 ## Test Tiers
 

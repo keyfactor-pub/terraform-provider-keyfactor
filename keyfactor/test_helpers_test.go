@@ -712,6 +712,37 @@ func readCertCSRTestParams(cassettePath string) certCSRTestParams {
 }
 
 // ---------------------------------------------------------------------------
+// Application test params (cassette-recorded values for replay mode)
+// ---------------------------------------------------------------------------
+
+type applicationTestParams struct {
+	AppName string `json:"app_name"`
+}
+
+func writeApplicationTestParams(cassettePath string, params applicationTestParams) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readApplicationTestParams(cassettePath string) applicationTestParams {
+	defaults := applicationTestParams{
+		AppName: "tf-unit-app",
+	}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params applicationTestParams
+	if err := json.Unmarshal(data, &params); err != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
 // Agents data source test params (cassette-recorded values for replay mode)
 // ---------------------------------------------------------------------------
 

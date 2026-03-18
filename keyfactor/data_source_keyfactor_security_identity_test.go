@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -39,6 +40,56 @@ func testAccKeyfactorDataSourceSecurityIdentityBasic(identityName string) string
 		account_name = "%s"
 	}
 	`, identityName)
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorIdentityDataSource tests the keyfactor_identity data source
+// using VCR cassettes (no lab required for replay).
+// Recording requires a lab with Active Directory integration; the test is skipped
+// in replay mode if no cassette has been recorded.
+func TestUnitKeyfactorIdentityDataSource(t *testing.T) {
+	cassetteName := "security_identity_data_source"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var accountName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		accountName = discoverSecurityIdentity(t, client)
+		if accountName == "" {
+			t.Skip("No security identity available for recording")
+		}
+		writeSecurityIdentityTestParams(cassettePath, securityIdentityTestParams{AccountName: accountName})
+	} else {
+		params := readSecurityIdentityTestParams(cassettePath)
+		if params.AccountName == "" {
+			t.Skip("No security identity params recorded; skipping (requires AD lab to record)")
+		}
+		accountName = params.AccountName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	dataSourceName := "data.keyfactor_identity.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKeyfactorDataSourceSecurityIdentityBasic(accountName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(dataSourceName, "id"),
+					resource.TestCheckResourceAttrSet(dataSourceName, "account_name"),
+					resource.TestCheckResourceAttrSet(dataSourceName, "identity_type"),
+					resource.TestCheckResourceAttrSet(dataSourceName, "valid"),
+					resource.TestCheckResourceAttrSet(dataSourceName, "roles.#"),
+				),
+			},
+		},
+	})
 }
 
 // ---------------------------------------------------------------------------

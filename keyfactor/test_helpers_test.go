@@ -245,16 +245,15 @@ func discoverEnrollmentPatternTemplate(t *testing.T, client *api.Client, pattern
 
 // discoverSecurityIdentity returns an existing security identity's account name
 // (in "DOMAIN\\user" format suitable for HCL with escaping).
-// Checks KEYFACTOR_DOMAIN + KEYFACTOR_USERNAME env vars first, then discovers
-// from the lab by calling GetSecurityIdentities().
+// Checks KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME env var first, then discovers
+// from the lab by calling GetSecurityIdentities(). NOTE: this returns an identity
+// that ALREADY EXISTS in Keyfactor — use it for data source tests, not resource
+// create tests.
 func discoverSecurityIdentity(t *testing.T, client *api.Client) string {
 	t.Helper()
 
-	domain := os.Getenv("KEYFACTOR_DOMAIN")
-	username := os.Getenv("KEYFACTOR_USERNAME")
-	if domain != "" && username != "" {
-		accountName := fmt.Sprintf("%s\\\\%s", domain, username)
-		t.Logf("Using identity from env: %s", accountName)
+	if accountName := os.Getenv("KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME"); accountName != "" {
+		t.Logf("Using identity from KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME: %s", accountName)
 		return accountName
 	}
 
@@ -547,21 +546,33 @@ func readCassetteInfo(cassettePath string) cassetteInfo {
 	if err != nil || u.Host == "" {
 		return cassetteInfo{Host: "vcr.test.local", APIPath: "KeyfactorAPI"}
 	}
-	// API path is the leading path component(s) before the first real endpoint.
-	// e.g. /Keyfactor/API/Enrollment/PFX → "Keyfactor/API"
-	//      /KeyfactorAPI/SSL/Certificates → "KeyfactorAPI"
+	// Use KEYFACTOR_API_PATH env var when set (e.g. during recording or CI replay).
+	// Fall back to inferring from the first cassette URL otherwise.
+	if envPath := os.Getenv("KEYFACTOR_API_PATH"); envPath != "" {
+		return cassetteInfo{Host: u.Host, APIPath: strings.Trim(envPath, "/")}
+	}
+
+	// Infer API path from the URL. Known patterns:
+	//   /Keyfactor/API/Enrollment/PFX → "Keyfactor/API"  (two-component prefix)
+	//   /KeyfactorAPI/SSL/Certificates → "KeyfactorAPI"   (single-component prefix)
+	// Only use two components when the path matches "Keyfactor/API".
 	parts := strings.SplitN(strings.TrimPrefix(u.Path, "/"), "/", 3)
 	apiPath := parts[0]
-	if len(parts) >= 2 {
+	if len(parts) >= 2 && strings.EqualFold(parts[0]+"/"+parts[1], "Keyfactor/API") {
 		apiPath = parts[0] + "/" + parts[1]
 	}
 	return cassetteInfo{Host: u.Host, APIPath: apiPath}
 }
 
-// normalizeCassettePath strips known Keyfactor API path prefixes from a URL path so that
+// normalizeCassettePath strips the Keyfactor API path prefix from a URL path so that
 // cassettes recorded on different labs (or with different apiPath settings) can be replayed.
+// Uses KEYFACTOR_API_PATH env var when set; falls back to the two well-known defaults.
 func normalizeCassettePath(p string) string {
-	for _, prefix := range []string{"/Keyfactor/API/", "/KeyfactorAPI/"} {
+	prefixes := []string{"/Keyfactor/API/", "/KeyfactorAPI/"}
+	if envPath := os.Getenv("KEYFACTOR_API_PATH"); envPath != "" {
+		prefixes = append([]string{"/" + strings.Trim(envPath, "/") + "/"}, prefixes...)
+	}
+	for _, prefix := range prefixes {
 		if strings.HasPrefix(p, prefix) {
 			return strings.TrimPrefix(p, prefix)
 		}
@@ -707,6 +718,35 @@ func readCertCSRTestParams(cassettePath string) certCSRTestParams {
 	var params certCSRTestParams
 	if err := json.Unmarshal(data, &params); err != nil {
 		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Security identity test params (cassette-recorded values for replay mode)
+// ---------------------------------------------------------------------------
+
+type securityIdentityTestParams struct {
+	// AccountName is the HCL-escaped account name (backslashes doubled, e.g. "DOMAIN\\\\user").
+	AccountName string `json:"account_name"`
+}
+
+func writeSecurityIdentityTestParams(cassettePath string, params securityIdentityTestParams) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readSecurityIdentityTestParams(cassettePath string) securityIdentityTestParams {
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return securityIdentityTestParams{}
+	}
+	var params securityIdentityTestParams
+	if err := json.Unmarshal(data, &params); err != nil {
+		return securityIdentityTestParams{}
 	}
 	return params
 }

@@ -16,6 +16,8 @@ For general test infrastructure (VCR cassettes, discovery helpers, env vars, Mak
 | [pam_provider_data_source.md](pam_provider_data_source.md) | `keyfactor_pam_provider` data source | — |
 | [pam_provider_type_resource.md](pam_provider_type_resource.md) | `keyfactor_pam_provider_type` resource | — |
 | [pam_provider_type_data_source.md](pam_provider_type_data_source.md) | `keyfactor_pam_provider_type` data source | — |
+| [security_identity_resource.md](security_identity_resource.md) | `keyfactor_identity` resource | — |
+| [security_identity_data_source.md](security_identity_data_source.md) | `keyfactor_identity` data source | — |
 
 ## Test Tiers
 

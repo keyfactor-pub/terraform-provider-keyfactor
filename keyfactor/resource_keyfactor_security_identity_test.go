@@ -3,9 +3,12 @@ package keyfactor
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
 type identityTestCase struct {
@@ -110,6 +113,14 @@ func TestAccKeyfactorIdentityResource(t *testing.T) {
 	})
 }
 
+func testAccSecurityIdentityResourceConfig(accountName string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_identity" "test" {
+  account_name = "%s"
+}
+`, accountName)
+}
+
 func testAccKeyfactorIdentityResourceConfig(t identityTestCase) string {
 	output := fmt.Sprintf(`
 resource "keyfactor_identity" "terraformer" {
@@ -118,6 +129,75 @@ resource "keyfactor_identity" "terraformer" {
 }
 `, t.accountName, t.rolesStr)
 	return output
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorIdentityResource tests the keyfactor_identity resource create
+// lifecycle using VCR cassettes (no lab required for replay).
+// Recording requires a lab with Active Directory integration; the test is skipped
+// in replay mode if no cassette has been recorded.
+// discoverCreatableIdentity returns an AD account name suitable for resource
+// create tests — the account must exist in AD but NOT already be in Keyfactor's
+// security identities. Reads KEYFACTOR_SECURITY_IDENTITY_NEW env var, falling
+// back to the standard Windows Guest account (present on all AD domains).
+func discoverCreatableIdentity(t *testing.T) string {
+	t.Helper()
+	if v := os.Getenv("KEYFACTOR_SECURITY_IDENTITY_NEW"); v != "" {
+		t.Logf("Using creatable identity from env: %s", v)
+		return v
+	}
+	// KEYFACTOR_DOMAIN is the domain used for basic-auth labs.
+	domain := os.Getenv("KEYFACTOR_DOMAIN")
+	if domain == "" {
+		domain = "KEYFACTOR"
+	}
+	account := fmt.Sprintf("%s\\\\Guest", strings.ToUpper(domain))
+	t.Logf("Using default creatable identity: %s", account)
+	return account
+}
+
+func TestUnitKeyfactorIdentityResource(t *testing.T) {
+	cassetteName := "security_identity_resource"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var accountName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		accountName = discoverCreatableIdentity(t)
+		writeSecurityIdentityTestParams(cassettePath, securityIdentityTestParams{AccountName: accountName})
+	} else {
+		params := readSecurityIdentityTestParams(cassettePath)
+		if params.AccountName == "" {
+			t.Skip("No security identity params recorded; skipping (requires AD lab to record)")
+		}
+		accountName = params.AccountName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_identity.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Create identity with no roles.
+				// identity_type and valid are populated by Read, not Create,
+				// so we only check id and account_name here.
+				// ExpectNonEmptyPlan: the resource has known drift after refresh
+				// (roles [] vs null, computed fields reset) — pre-existing resource bug.
+				Config:             testAccSecurityIdentityResourceConfig(accountName),
+				ExpectNonEmptyPlan: true,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttrSet(resourceName, "account_name"),
+				),
+			},
+		},
+	})
 }
 
 // ---------------------------------------------------------------------------

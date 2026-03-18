@@ -972,6 +972,8 @@ func TestUnitKeyfactorCertificateResource_PFX(t *testing.T) {
 	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_pfx")
 	defer cleanup()
 
+	pfxParams := readCertPFXTestParams(cassettePath)
+
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
@@ -983,6 +985,10 @@ func TestUnitKeyfactorCertificateResource_PFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					// Regression: certificate_pem must contain the end-entity cert, not a CA cert.
+					// If DownloadCertificate returns certs[0] from a root-first P7B, IsCA=true here.
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test", "certificate_pem", pfxParams.CN),
 				),
 			},
 		},
@@ -1027,15 +1033,80 @@ func TestUnitKeyfactorCertificateResource_CSR(t *testing.T) {
 	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_csr")
 	defer cleanup()
 
+	// Derive the expected CN from the stored CSR to assert the downloaded cert is the
+	// enrolled end-entity — regression guard for the P7B chain ordering bug.
+	csrParams := readCertCSRTestParams(cassettePath)
+	enrolledCN := parseCNFromCSRPEM(csrParams.CSRPem)
+
+	checks := []resource.TestCheckFunc{
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+		// Regression: certificate_pem must contain the end-entity cert, not a CA cert.
+		// If DownloadCertificate returns certs[0] from a root-first P7B, IsCA=true here.
+		testCheckCertPEMIsLeaf("keyfactor_certificate.test_csr", "certificate_pem"),
+	}
+	if enrolledCN != "" {
+		checks = append(checks, testCheckCertPEMCommonName("keyfactor_certificate.test_csr", "certificate_pem", enrolledCN))
+	}
+
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
+				Check:  resource.ComposeAggregateTestCheckFunc(checks...),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateResource_CSR_RootFirstChain is a regression test
+// for the P7B cert-chain ordering bug. It uses a synthetic cassette where the
+// Certificates/Download endpoint returns a root-first P7B (CA cert before
+// end-entity).
+//
+// The bug lives in the Read path (DownloadCertificate returns certs[0] as leaf,
+// but certs[0] is the CA when the P7B is root-first). The Create path is
+// unaffected — it uses the enrollment response's Certificates[0], which is
+// always the correct leaf. To exercise the Read path we use a two-step test:
+//   - Step 1: Create (no checks — enrollment state is correct regardless)
+//   - Step 2: RefreshState — triggers ReadResource, which calls
+//     DownloadCertificate. The testCheckCertPEMIsLeaf check then runs against
+//     the refreshed state and FAILS with the bug / PASSES after the fix.
+func TestUnitKeyfactorCertificateResource_CSR_RootFirstChain(t *testing.T) {
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("Skipping synthetic cassette test in record mode")
+	}
+
+	cassetteName := "certificate_resource_csr_rootfirst"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	// Always regenerate the synthetic cassette — it is built from Go crypto,
+	// not recorded from a real lab.
+	leafCN := generateRootFirstP7BCassette(t, cassettePath)
+	csr := generateSimpleCSR(t, leafCN)
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: Create only. No checks — the enrollment response always
+				// returns the correct leaf cert, so the Create state is clean.
+				Config: testAccCertCSRConfig("TestTemplate", "TestCA", csr),
+			},
+			{
+				// Step 2: RefreshState triggers ReadResource → DownloadCertificate.
+				// With the bug certs[0] is the CA cert → IsCA=true → testCheckCertPEMIsLeaf FAILS.
+				// After fix findLeaf() returns the end-entity → PASS.
+				RefreshState: true,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test_csr", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test_csr", "certificate_pem", leafCN),
 				),
 			},
 		},

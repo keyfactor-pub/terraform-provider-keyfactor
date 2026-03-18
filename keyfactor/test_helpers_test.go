@@ -4,11 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,6 +26,9 @@ import (
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	sdkresource "github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
+	"go.mozilla.org/pkcs7"
 	"gopkg.in/dnaeon/go-vcr.v4/pkg/cassette"
 	"gopkg.in/dnaeon/go-vcr.v4/pkg/recorder"
 	"gopkg.in/yaml.v3"
@@ -1077,6 +1084,279 @@ resource "keyfactor_certificate" "test" {
   key_password                     = "Tftest123456"
 }
 `, cn, ca, templateName, enrollmentPattern)
+}
+
+// parseCNFromCSRPEM extracts the CommonName from a PEM-encoded CSR.
+// Returns "" if parsing fails, allowing callers to fall back gracefully.
+func parseCNFromCSRPEM(csrPEM string) string {
+	block, _ := pem.Decode([]byte(csrPEM))
+	if block == nil {
+		return ""
+	}
+	csr, err := x509.ParseCertificateRequest(block.Bytes)
+	if err != nil {
+		return ""
+	}
+	return csr.Subject.CommonName
+}
+
+// testCheckCertPEMIsLeaf returns a TestCheckFunc that parses the PEM certificate
+// stored in the named state attribute and asserts it is an end-entity (IsCA=false).
+//
+// Regression guard for the P7B chain-ordering bug: if DownloadCertificate returns
+// the root CA cert as the leaf (certs[0] from a root-first P7B), IsCA will be true
+// and this check will fail — even when subject.subject_common_name is unpopulated
+// (e.g. enrollment-pattern certs).
+func testCheckCertPEMIsLeaf(resourceName, attrName string) sdkresource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("resource %q not found in state", resourceName)
+		}
+		pemStr, ok := rs.Primary.Attributes[attrName]
+		if !ok || pemStr == "" {
+			return fmt.Errorf("attribute %q not set or empty on %s", attrName, resourceName)
+		}
+		block, _ := pem.Decode([]byte(pemStr))
+		if block == nil {
+			return fmt.Errorf("attribute %q on %s is not a valid PEM block", attrName, resourceName)
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return fmt.Errorf("parse certificate from %q on %s: %v", attrName, resourceName, err)
+		}
+		if cert.IsCA {
+			return fmt.Errorf(
+				"certificate in %q on %s is a CA cert (CN=%q IsCA=true); expected end-entity leaf cert — possible P7B chain ordering bug",
+				attrName, resourceName, cert.Subject.CommonName,
+			)
+		}
+		return nil
+	}
+}
+
+// testCheckCertPEMCommonName returns a TestCheckFunc that parses the PEM certificate
+// in the named state attribute and asserts its CN matches expectedCN.
+func testCheckCertPEMCommonName(resourceName, attrName, expectedCN string) sdkresource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("resource %q not found in state", resourceName)
+		}
+		pemStr, ok := rs.Primary.Attributes[attrName]
+		if !ok || pemStr == "" {
+			return fmt.Errorf("attribute %q not set or empty on %s", attrName, resourceName)
+		}
+		block, _ := pem.Decode([]byte(pemStr))
+		if block == nil {
+			return fmt.Errorf("attribute %q on %s is not a valid PEM block", attrName, resourceName)
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return fmt.Errorf("parse certificate from %q on %s: %v", attrName, resourceName, err)
+		}
+		if cert.Subject.CommonName != expectedCN {
+			return fmt.Errorf(
+				"certificate CN in %q on %s = %q, want %q — possible P7B chain ordering bug",
+				attrName, resourceName, cert.Subject.CommonName, expectedCN,
+			)
+		}
+		return nil
+	}
+}
+
+// generateRootFirstP7BCassette writes a fully synthetic VCR cassette for a CSR
+// certificate resource test where the Certificates/Download endpoint returns a
+// root-first P7B (CA cert first, end-entity second).
+//
+// This directly exercises the cert-chain ordering bug: DownloadCertificate
+// returns certs[0] as the leaf, but for root-first P7Bs certs[0] is the issuing
+// CA. testCheckCertPEMIsLeaf will FAIL against the buggy code and PASS after
+// the fix.
+//
+// Returns the leaf CN so callers can configure the Terraform resource correctly.
+func generateRootFirstP7BCassette(t *testing.T, cassettePath string) string {
+	t.Helper()
+
+	const certID = 9999
+	const leafCN = "tf-unit-csr-p7bbug.example.com"
+
+	// Generate CA and leaf certs.
+	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate CA key: %v", err)
+	}
+	caTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Test Root CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTmpl, caTmpl, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("create CA cert: %v", err)
+	}
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		t.Fatalf("parse CA cert: %v", err)
+	}
+
+	leafKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate leaf key: %v", err)
+	}
+	leafTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		Subject:               pkix.Name{CommonName: leafCN},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		IsCA:                  false,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTmpl, caCert, &leafKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("create leaf cert: %v", err)
+	}
+	leafCert, err := x509.ParseCertificate(leafDER)
+	if err != nil {
+		t.Fatalf("parse leaf cert: %v", err)
+	}
+
+	// Compute thumbprint and serial for use in mock responses.
+	thumbSum := sha1.Sum(leafCert.Raw)
+	thumbprint := strings.ToUpper(hex.EncodeToString(thumbSum[:]))
+	serialNumber := strings.ToUpper(fmt.Sprintf("%X", leafCert.SerialNumber))
+	issuerDN := "CN=Test Root CA"
+
+	// Leaf cert PEM for enrollment response.
+	leafPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}))
+
+	// Root-first P7B: CA first, leaf second — the bug trigger.
+	sd, err := pkcs7.NewSignedData([]byte{})
+	if err != nil {
+		t.Fatalf("pkcs7.NewSignedData: %v", err)
+	}
+	sd.AddCertificate(caCert)   // ROOT FIRST
+	sd.AddCertificate(leafCert) // leaf second
+	p7DER, err := sd.Finish()
+	if err != nil {
+		t.Fatalf("pkcs7.Finish: %v", err)
+	}
+	p7B64 := base64.StdEncoding.EncodeToString(p7DER)
+
+	// Build JSON response bodies.
+	enrollBody, _ := json.Marshal(map[string]interface{}{
+		"CertificateInformation": map[string]interface{}{
+			"SerialNumber":       serialNumber,
+			"IssuerDN":           issuerDN,
+			"Thumbprint":         thumbprint,
+			"KeyfactorID":        certID,
+			"Certificates":       []string{leafPEM},
+			"RequestDisposition": "ISSUED",
+			"DispositionMessage": "",
+		},
+	})
+	getCertBody, _ := json.Marshal(map[string]interface{}{
+		"Id":               certID,
+		"Thumbprint":       thumbprint,
+		"SerialNumber":     serialNumber,
+		"IssuedDN":         "CN=" + leafCN,
+		"IssuedCN":         leafCN,
+		"IssuerDN":         issuerDN,
+		"NotBefore":        leafCert.NotBefore.UTC().Format(time.RFC3339),
+		"NotAfter":         leafCert.NotAfter.UTC().Format(time.RFC3339),
+		"IsCACertificate":  false,
+		"HasPrivateKey":    false,
+		"TemplateId":       0,
+		"CertificateKeyId": 0,
+		"Locations":        []interface{}{},
+		"Metadata":         map[string]interface{}{},
+	})
+	recoverBody, _ := json.Marshal(map[string]string{
+		"ErrorCode": "0xA0110002",
+		"Message":   "No private key could be found for the given certificate.",
+	})
+	downloadBody, _ := json.Marshal(map[string]string{
+		"Content": p7B64,
+	})
+	revokeBody, _ := json.Marshal(map[string]interface{}{
+		"RevokedIds":     []int{certID},
+		"SuspendedCerts": []interface{}{},
+	})
+
+	const host = "keyfactor.test"
+	const baseURL = "https://keyfactor.test/KeyfactorAPI"
+	jsonHeader := http.Header{"Content-Type": []string{"application/json"}}
+
+	mkReq := func(method, rawURL string) cassette.Request {
+		return cassette.Request{
+			Proto: "HTTP/1.1", ProtoMajor: 1, ProtoMinor: 1,
+			Host: host, Method: method, URL: rawURL,
+			Headers: http.Header{},
+		}
+	}
+	mkResp := func(code int, body string) cassette.Response {
+		return cassette.Response{
+			Proto: "HTTP/1.1", ProtoMajor: 1, ProtoMinor: 1,
+			ContentLength: int64(len(body)),
+			Body:          body,
+			Headers:       jsonHeader,
+			Status:        fmt.Sprintf("%d %s", code, http.StatusText(code)),
+			Code:          code,
+		}
+	}
+
+	certQueryURL := fmt.Sprintf(
+		"%s/Certificates/%d?includeHasPrivateKey=true&includeLocations=true&includeMetadata=true",
+		baseURL, certID,
+	)
+
+	// Read triplet (GET cert + Recover 404 + Download root-first P7B).
+	// We emit three copies to cover:
+	//   [0..2]  perpetual-diff check after step 1 (Create)
+	//   [3..5]  step 2 RefreshState
+	//   [6..8]  perpetual-diff check after step 2 (RefreshState)
+	readTriplet := func(base int) []*cassette.Interaction {
+		return []*cassette.Interaction{
+			{ID: base, Request: mkReq("GET", certQueryURL), Response: mkResp(200, string(getCertBody))},
+			{ID: base + 1, Request: mkReq("POST", baseURL+"/Certificates/Recover"), Response: mkResp(404, string(recoverBody))},
+			{ID: base + 2, Request: mkReq("POST", baseURL+"/Certificates/Download"), Response: mkResp(200, string(downloadBody))},
+		}
+	}
+	interactions := []*cassette.Interaction{
+		{ID: 0, Request: mkReq("POST", baseURL+"/Enrollment/CSR"), Response: mkResp(200, string(enrollBody))},
+	}
+	for _, ri := range readTriplet(1) {
+		interactions = append(interactions, ri)
+	}
+	for _, ri := range readTriplet(4) {
+		interactions = append(interactions, ri)
+	}
+	for _, ri := range readTriplet(7) {
+		interactions = append(interactions, ri)
+	}
+	interactions = append(interactions,
+		&cassette.Interaction{ID: 10, Request: mkReq("POST", baseURL+"/Certificates/Revoke"), Response: mkResp(200, string(revokeBody))},
+	)
+	c := &cassette.Cassette{
+		Version:      2,
+		Interactions: interactions,
+	}
+
+	data, marshalErr := yaml.Marshal(c)
+	if marshalErr != nil {
+		t.Fatalf("marshal cassette: %v", marshalErr)
+	}
+	if writeErr := os.WriteFile(cassettePath+".yaml", data, 0600); writeErr != nil {
+		t.Fatalf("write cassette file: %v", writeErr)
+	}
+
+	return leafCN
 }
 
 // generateSimpleCSR creates a fresh PEM-encoded CSR with only a CN field.

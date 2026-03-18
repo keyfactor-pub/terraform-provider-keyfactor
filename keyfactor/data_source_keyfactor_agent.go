@@ -151,14 +151,16 @@ func (r dataSourceAgent) Read(
 		return
 	}
 
-	agent := agents[0]
 	if len(agents) == 0 {
 		response.Diagnostics.AddError(
 			"Agent Not Found",
 			fmt.Sprintf("No agent found with identifier '%s'", agentIdentifier),
 		)
 		return
-	} else if len(agents) > 1 {
+	}
+
+	agent := agents[0]
+	if len(agents) > 1 {
 		response.Diagnostics.AddWarning(
 			"Multiple Agents Found",
 			fmt.Sprintf(

@@ -712,6 +712,34 @@ func readCertCSRTestParams(cassettePath string) certCSRTestParams {
 }
 
 // ---------------------------------------------------------------------------
+// Agents data source test params (cassette-recorded values for replay mode)
+// ---------------------------------------------------------------------------
+
+type agentsTestParams struct {
+	AgentCount int `json:"agent_count"`
+}
+
+func writeAgentsTestParams(cassettePath string, params agentsTestParams) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readAgentsTestParams(cassettePath string) agentsTestParams {
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return agentsTestParams{}
+	}
+	var params agentsTestParams
+	if err := json.Unmarshal(data, &params); err != nil {
+		return agentsTestParams{}
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
 // Unique CN generator
 // ---------------------------------------------------------------------------
 

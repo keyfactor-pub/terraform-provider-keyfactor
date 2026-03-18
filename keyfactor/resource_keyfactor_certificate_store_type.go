@@ -1,461 +1,685 @@
 package keyfactor
 
-//
-//import (
-//	"context"
-//	"fmt"
-//	"github.com/Keyfactor/keyfactor-go-client/v3/api"
-//	"github.com/hashicorp/terraform-plugin-framework/attr"
-//	"github.com/hashicorp/terraform-plugin-framework/diag"
-//	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
-//	"github.com/hashicorp/terraform-plugin-framework/types"
-//	"github.com/hashicorp/terraform-plugin-log/tflog"
-//	"log"
-//)
-//
-//type resourceCertificateStoreType struct{}
-//
-//func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
-//	return tfsdk.Schema{
-//		Attributes: map[string]tfsdk.Attribute{
-//			"container_id": {
-//				Type:        types.Int64Type,
-//				Optional:    true,
-//				Description: "Container identifier of the store's associated certificate store container.",
-//			},
-//			"client_machine": {
-//				Type:        types.StringType,
-//				Required:    true,
-//				Description: "Client machine name; value depends on certificate store type. See API reference guide",
-//			},
-//			"store_path": {
-//				Type:        types.StringType,
-//				Required:    true,
-//				Description: "Path to the new certificate store on a target. Format varies depending on type.",
-//			},
-//			"store_type": {
-//				Type:        types.StringType,
-//				Required:    true,
-//				Description: "Short name of certificate store type. See API reference guide",
-//			},
-//			"approved": {
-//				Type:     types.BoolType,
-//				Optional: true,
-//				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-//				//	// For some reason Terraform detects this particular function as having drift; this function
-//				//	// gives us a definitive answer.
-//				//	return !d.HasChange(k)
-//				//},
-//				Description: "Bool that indicates the approval status of store created. Default is true, omit if unsure.",
-//			},
-//			"create_if_missing": {
-//				Type:        types.BoolType,
-//				Optional:    true,
-//				Description: "Bool that indicates if the store should be created with information provided. Valid only for JKS type, omit if unsure.",
-//			},
-//			"properties": {
-//				Type:        types.MapType{ElemType: types.StringType},
-//				Optional:    true,
-//				Description: "Certificate properties specific to certificate store type configured as key-value pairs.",
-//			},
-//			"agent_id": {
-//				Type:        types.StringType,
-//				Required:    true,
-//				Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store.",
-//			},
-//			"agent_assigned": {
-//				Type:     types.BoolType,
-//				Optional: true,
-//				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-//				//	// For some reason Terraform detects this particular function as having drift; this function
-//				//	// gives us a definitive answer.
-//				//	return !d.HasChange(k)
-//				//},
-//				Description: "Bool indicating if there is an orchestrator assigned to the new certificate store.",
-//			},
-//			"container_name": {
-//				Type:        types.StringType,
-//				Optional:    true,
-//				Description: "Name of certificate store's associated container, if applicable.",
-//			},
-//			"inventory_schedule": {
-//				Type:        types.StringType,
-//				Optional:    true,
-//				Description: "Inventory schedule for new certificate store.",
-//			},
-//			"set_new_password_allowed": {
-//				Type:        types.BoolType,
-//				Optional:    true,
-//				Description: "Indicates whether the store password can be changed.",
-//			},
-//			"password": {
-//				Type:        types.StringType,
-//				Optional:    true,
-//				Description: "Sets password for certificate store.",
-//			},
-//			"id": {
-//				Type:        types.StringType,
-//				Computed:    true,
-//				Description: "Keyfactor certificate store GUID.",
-//			},
-//			"certificates": {
-//				Type:        types.ListType{ElemType: types.Int64Type},
-//				Computed:    true,
-//				Description: "A list of certificate IDs associated with the certificate store.",
-//			},
-//		},
-//	}, nil
-//}
-//
-//func (r resourceCertificateStoreType) NewResource(_ context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
-//	return resourceCertificateStore{
-//		p: *(p.(*provider)),
-//	}, nil
-//}
-//
-//type resourceCertificateStore struct {
-//	p provider
-//}
-//
-//func (r resourceCertificateStore) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
-//	if !r.p.configured {
-//		response.Diagnostics.AddError(
-//			"Provider not configured",
-//			"The provider hasn't been configured before apply, likely because it depends on an unknown value from another resource. This leads to weird stuff happening, so we'd prefer if you didn't do that. Thanks!",
-//		)
-//		return
-//	}
-//
-//	// Retrieve values from plan
-//	var plan CertificateStore
-//	diags := request.Plan.Get(ctx, &plan)
-//	response.Diagnostics.Append(diags...)
-//	if response.Diagnostics.HasError() {
-//		return
-//	}
-//
-//	// Generate API request body from plan
-//
-//	kfClient := r.p.client
-//
-//	//certificateStoreId := plan.ID.Value
-//	//ctx = tflog.SetField(ctx, "id", certificateStoreId)
-//	tflog.Info(ctx, "Create called on certificate store resource")
-//
-//	csType, csTypeErr := r.p.client.GetCertStoreTypeByName(plan.StoreType.Value)
-//	if csTypeErr != nil {
-//		response.Diagnostics.AddError(
-//			"Invalid certificate store type.",
-//			fmt.Sprintf("Could not retrieve certificate store type '%s' from Keyfactor"+csTypeErr.Error(), plan.StoreType.Value),
-//		)
-//		return
-//	}
-//
-//	containerId := int(plan.ContainerID.Value)
-//	var properties map[string]string
-//	if plan.Properties.Elems != nil {
-//		diags = plan.Properties.ElementsAs(ctx, &properties, false)
-//
-//	}
-//	newStoreArgs := &api.CreateStoreFctArgs{
-//		ContainerId:     &containerId,
-//		ClientMachine:   plan.ClientMachine.Value,
-//		StorePath:       plan.StorePath.Value,
-//		CertStoreType:   csType.StoreType,
-//		Approved:        &plan.Approved.Value,
-//		CreateIfMissing: &plan.CreateIfMissing.Value,
-//		Properties:      properties,
-//		AgentId:         plan.AgentId.Value,
-//		AgentAssigned:   &plan.AgentAssigned.Value,
-//		ContainerName:   &plan.ContainerName.Value,
-//		//InventorySchedule:     createInventorySchedule(plan.InventorySchedule.Value), // TODO: Implement inventory schedule
-//		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
-//		Password:              createPasswordConfig(plan.Password.Value),
-//	}
-//
-//	createStoreResponse, err := kfClient.CreateStore(newStoreArgs)
-//	if err != nil {
-//		response.Diagnostics.AddError(
-//			"Error creating certificate store",
-//			"Error creating certificate store: %s"+err.Error(),
-//		)
-//		return
-//	}
-//
-//	// Set state
-//	var result = CertificateStore{
-//		ID:                    types.String{Value: createStoreResponse.Id},
-//		ContainerID:           types.Int64{Value: int64(createStoreResponse.ContainerId)},
-//		ClientMachine:         types.String{Value: createStoreResponse.ClientMachine},
-//		StorePath:             types.String{Value: createStoreResponse.Storepath},
-//		StoreType:             types.String{Value: plan.StoreType.Value},
-//		Approved:              plan.Approved,
-//		CreateIfMissing:       plan.CreateIfMissing,
-//		Properties:            plan.Properties,
-//		AgentId:               types.String{Value: createStoreResponse.AgentId},
-//		AgentAssigned:         plan.AgentAssigned,
-//		ContainerName:         plan.ContainerName,
-//		InventorySchedule:     plan.InventorySchedule,
-//		SetNewPasswordAllowed: plan.SetNewPasswordAllowed,
-//		Password:              plan.Password,
-//		Certificates:          types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
-//	}
-//
-//	diags = response.State.Set(ctx, result)
-//	response.Diagnostics.Append(diags...)
-//	if response.Diagnostics.HasError() {
-//		return
-//	}
-//
-//}
-//
-//func (r resourceCertificateStore) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
-//	var state CertificateStore
-//	diags := request.State.Get(ctx, &state)
-//	response.Diagnostics.Append(diags...)
-//	if response.Diagnostics.HasError() {
-//		return
-//	}
-//
-//	tflog.Info(ctx, "Read called on certificate store resource")
-//	certificateStoreId := state.ID.Value
-//
-//	tflog.SetField(ctx, "id", certificateStoreId)
-//
-//	_, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
-//	if err != nil {
-//		response.Diagnostics.AddError(
-//			ERR_SUMMARY_CERT_STORE_READ,
-//			"Error reading certificate store: %s"+err.Error(),
-//		)
-//		return
-//	}
-//
-//	password := state.Password.Value
-//	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", certificateStoreId, password))
-//
-//	if err != nil {
-//		response.Diagnostics.AddError(
-//			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-//			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), certificateStoreId),
-//		)
-//		return
-//	}
-//
-//	// Set state
-//	diags = response.State.Set(ctx, &state)
-//	response.Diagnostics.Append(diags...)
-//	if response.Diagnostics.HasError() {
-//		return
-//	}
-//}
-//
-//func (r resourceCertificateStore) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
-//	// Get plan values
-//	var plan CertificateStore
-//	diags := request.Plan.Get(ctx, &plan)
-//	response.Diagnostics.Append(diags...)
-//	if response.Diagnostics.HasError() {
-//		return
-//	}
-//
-//	// Get current state
-//	var state CertificateStore
-//	diags = request.State.Get(ctx, &state)
-//	response.Diagnostics.Append(diags...)
-//	if response.Diagnostics.HasError() {
-//		return
-//	}
-//
-//	// Generate API request body from plan
-//	containerId := int(plan.ContainerID.Value)
-//	csType, csTypeErr := r.p.client.GetCertStoreTypeByName(plan.StoreType.Value)
-//	if csTypeErr != nil {
-//		response.Diagnostics.AddError(
-//			"Invalid certificate store type.",
-//			fmt.Sprintf("Could not retrieve certificate store type '%s' from Keyfactor"+csTypeErr.Error(), plan.StoreType.Value),
-//		)
-//		return
-//	}
-//	updateStoreArgs := &api.UpdateStoreFctArgs{
-//		Id: state.ID.Value,
-//		CreateStoreFctArgs: api.CreateStoreFctArgs{
-//			ContainerId:     &containerId,
-//			ClientMachine:   plan.ClientMachine.Value,
-//			StorePath:       plan.StorePath.Value,
-//			CertStoreType:   csType.StoreType,
-//			Approved:        &plan.Approved.Value,
-//			CreateIfMissing: &plan.CreateIfMissing.Value,
-//			//Properties:            map[string]interface{}(plan.Properties.Elems),
-//			AgentId:       plan.AgentId.Value,
-//			AgentAssigned: &plan.AgentAssigned.Value,
-//			ContainerName: &plan.ContainerName.Value,
-//			//InventorySchedule:     createInventorySchedule(d.Get("inventory_schedule").([]interface{})),
-//			SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
-//			//Password:              createPasswordConfig(d.Get("password").([]interface{})),
-//		}}
-//
-//	updateResponse, err := r.p.client.UpdateStore(updateStoreArgs)
-//	if err != nil {
-//		response.Diagnostics.AddError(
-//			"Error updating certificate store",
-//			"Error updating certificate store: %s"+err.Error(),
-//		)
-//	}
-//
-//	result := CertificateStore{
-//		ID:                    types.String{Value: state.ID.Value},
-//		ContainerID:           types.Int64{Value: int64(updateResponse.ContainerId)},
-//		ClientMachine:         types.String{Value: updateResponse.ClientMachine},
-//		StorePath:             types.String{Value: updateResponse.Storepath},
-//		StoreType:             plan.StoreType,
-//		Approved:              types.Bool{Value: updateResponse.Approved},
-//		CreateIfMissing:       types.Bool{Value: updateResponse.CreateIfMissing},
-//		Properties:            plan.Properties,
-//		AgentId:               types.String{Value: updateResponse.AgentId},
-//		AgentAssigned:         types.Bool{Value: updateResponse.AgentAssigned},
-//		ContainerName:         types.String{Value: updateResponse.ContainerName},
-//		InventorySchedule:     plan.InventorySchedule,
-//		SetNewPasswordAllowed: types.Bool{Value: updateResponse.SetNewPasswordAllowed},
-//		Password:              plan.Password,
-//	}
-//
-//	// Set state
-//	diags = response.State.Set(ctx, &result)
-//	response.Diagnostics.Append(diags...)
-//	if response.Diagnostics.HasError() {
-//		return
-//	}
-//}
-//
-//func (r resourceCertificateStore) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
-//	var state CertificateStore
-//	diags := request.State.Get(ctx, &state)
-//	kfClient := r.p.client
-//
-//	response.Diagnostics.Append(diags...)
-//	if response.Diagnostics.HasError() {
-//		return
-//	}
-//
-//	// Get order ID from state
-//	certificateStoreId := state.ID.Value
-//	tflog.SetField(ctx, "id", certificateStoreId)
-//
-//	// Delete order by calling API
-//	log.Println("[INFO] Deleting certificate resource")
-//
-//	// When Terraform Destroy is called, we want Keyfactor to revoke the certificate.
-//
-//	tflog.Info(ctx, fmt.Sprintf("Revoking certificate %s in Keyfactor", certificateStoreId))
-//
-//	err := kfClient.DeleteCertificateStore(certificateStoreId)
-//	if err != nil {
-//		response.Diagnostics.AddError("Certificate store delete error.", fmt.Sprintf("Could not delete certificate store '%s' on Keyfactor: "+err.Error(), certificateStoreId))
-//		return
-//	}
-//
-//	// Remove resource from state
-//	response.State.RemoveResource(ctx)
-//
-//}
-//
-//func (r resourceCertificateStore) ImportState(ctx context.Context, request tfsdk.ImportResourceStateRequest, response *tfsdk.ImportResourceStateResponse) {
-//	var state CertificateStore
-//
-//	tflog.Info(ctx, "Read called on certificate store resource")
-//	certificateStoreId := state.ID.Value
-//
-//	tflog.SetField(ctx, "id", certificateStoreId)
-//
-//	readResponse, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
-//	if err != nil {
-//		response.Diagnostics.AddError(
-//			ERR_SUMMARY_CERT_STORE_READ,
-//			"Error reading certificate store: %s"+err.Error(),
-//		)
-//		return
-//	}
-//
-//	password := state.Password.Value
-//	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", certificateStoreId, password))
-//
-//	if err != nil {
-//		response.Diagnostics.AddError(
-//			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-//			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), certificateStoreId),
-//		)
-//		return
-//	}
-//
-//	csType, csTypeErr := r.p.client.GetCertStoreType(readResponse.CertStoreType)
-//	if csTypeErr != nil {
-//		response.Diagnostics.AddError(
-//			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-//			fmt.Sprintf("Could not retrieve certificate store type '%s' from Keyfactor Command: "+err.Error(), readResponse.CertStoreType),
-//		)
-//		return
-//	}
-//	// Set state
-//	result := CertificateStore{
-//		ID:              types.String{Value: state.ID.Value},
-//		ContainerID:     types.Int64{Value: int64(readResponse.ContainerId)},
-//		ClientMachine:   types.String{Value: readResponse.ClientMachine},
-//		StorePath:       types.String{Value: readResponse.StorePath},
-//		StoreType:       types.String{Value: csType.Name},
-//		Approved:        types.Bool{Value: readResponse.Approved},
-//		CreateIfMissing: types.Bool{Value: readResponse.CreateIfMissing},
-//		//Properties:            plan.Properties,
-//		AgentId:       types.String{Value: readResponse.AgentId},
-//		AgentAssigned: types.Bool{Value: readResponse.AgentAssigned},
-//		ContainerName: types.String{Value: readResponse.ContainerName},
-//		//InventorySchedule:     plan.InventorySchedule,
-//		SetNewPasswordAllowed: types.Bool{Value: readResponse.SetNewPasswordAllowed},
-//		//Password:              plan.Password,
-//	}
-//	diags := response.State.Set(ctx, &result)
-//	response.Diagnostics.Append(diags...)
-//	if response.Diagnostics.HasError() {
-//		return
-//	}
-//}
-//
-//func createPasswordConfig(p string) *api.StorePasswordConfig {
-//	password := stringToPointer(p)
-//	res := &api.StorePasswordConfig{
-//		Value: password,
-//	}
-//
-//	return res
-//}
-//
-////func createInventorySchedule(interval string) (*api.InventorySchedule, error) {
-////	inventorySchedule := &api.InventorySchedule{}
-////
-////	if interval == "immediate" {
-////		immediate := true
-////		inventorySchedule.Immediate = &immediate
-////	} else {
-////		if strings.HasSuffix(interval, "m") {
-////			minutes, err := strconv.Atoi(interval[:len(interval)-1])
-////			if err != nil {
-////				return nil, err
-////			}
-////			iv := &api.InventoryInterval{Minutes: minutes}
-////			inventorySchedule.Interval = iv
-////			return inventorySchedule, nil
-////		}
-////		if key == "daily" {
-////			daily := &api.InventoryDaily{Time: innerValue.(string)}
-////			inventorySchedule.Daily = daily
-////			return inventorySchedule
-////		}
-////		if key == "exactly_once" {
-////			once := &api.InventoryOnce{Time: innerValue.(string)}
-////			inventorySchedule.ExactlyOnce = once
-////			return inventorySchedule
-////		}
-////	}
-////
-////	return inventorySchedule
-////}
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
+)
+
+// ---------------------------------------------------------------------------
+// Type registration
+// ---------------------------------------------------------------------------
+
+type resourceCertStoreTypeDefType struct{}
+
+func (r resourceCertStoreTypeDefType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
+	propAttrs := map[string]tfsdk.Attribute{
+		"name": {
+			Type:        types.StringType,
+			Required:    true,
+			Description: "Internal property name.",
+		},
+		"display_name": {
+			Type:        types.StringType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Human-readable display name.",
+		},
+		"type": {
+			Type:        types.StringType,
+			Required:    true,
+			Description: "Property value type (e.g. String, Bool, Secret, MultipleChoice).",
+		},
+		"depends_on": {
+			Type:        types.StringType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Name of another property this one depends on.",
+		},
+		"default_value": {
+			Type:        types.StringType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Default value for the property.",
+		},
+		"required": {
+			Type:        types.BoolType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Whether the property is required.",
+		},
+	}
+
+	entryParamAttrs := map[string]tfsdk.Attribute{
+		"name": {
+			Type:        types.StringType,
+			Required:    true,
+			Description: "Entry parameter name.",
+		},
+		"display_name": {
+			Type:        types.StringType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Human-readable display name.",
+		},
+		"type": {
+			Type:        types.StringType,
+			Required:    true,
+			Description: "Parameter value type.",
+		},
+		"depends_on": {
+			Type:        types.StringType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Name of another parameter this one depends on.",
+		},
+		"default_value": {
+			Type:        types.StringType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Default value for the parameter.",
+		},
+		"options": {
+			Type:        types.StringType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Comma-separated list of allowed values (for MultipleChoice type).",
+		},
+		"required_when_has_private_key": {
+			Type:        types.BoolType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Parameter is required when the entry has a private key.",
+		},
+		"required_when_on_add": {
+			Type:        types.BoolType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Parameter is required when adding a certificate to the store.",
+		},
+		"required_when_on_remove": {
+			Type:        types.BoolType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Parameter is required when removing a certificate from the store.",
+		},
+		"required_when_on_reenrollment": {
+			Type:        types.BoolType,
+			Optional:    true,
+			Computed:    true,
+			Description: "Parameter is required on re-enrollment.",
+		},
+	}
+
+	return tfsdk.Schema{
+		Description: "Manages a Keyfactor Command Certificate Store Type definition. Store types define the capabilities and configuration schema for certificate stores of that type.",
+		Attributes: map[string]tfsdk.Attribute{
+			"id": {
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Numeric ID of the certificate store type (as a string).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+			},
+			"name": {
+				Type:        types.StringType,
+				Required:    true,
+				Description: "Display name of the certificate store type.",
+			},
+			"short_name": {
+				Type:          types.StringType,
+				Required:      true,
+				Description:   "Short/programmatic name of the certificate store type (e.g. PEM, JKS, K8STLSSecr). Changing this forces a new resource.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+			},
+			"capability": {
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Capability string used to identify matching orchestrator plugins.",
+			},
+			"local_store": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether the store is a local store (no orchestrator required).",
+			},
+			"store_path_type": {
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Store path type hint (e.g. Freeform, Fixed).",
+			},
+			"store_path_value": {
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Store path value or template.",
+			},
+			"private_key_allowed": {
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether private keys are allowed: Forbidden, Optional, or Required.",
+			},
+			"server_required": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether server credentials (ServerUsername/ServerPassword) are required.",
+			},
+			"power_shell": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether the store type uses PowerShell.",
+			},
+			"blueprint_allowed": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether blueprint provisioning is allowed for this store type.",
+			},
+			"custom_alias_allowed": {
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether custom aliases are allowed: Forbidden, Optional, or Required.",
+			},
+			// Supported operations (flattened from SupportedOperations nested struct)
+			"supports_add": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether the store type supports adding certificates.",
+			},
+			"supports_create": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether the store type supports creating stores.",
+			},
+			"supports_discovery": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether the store type supports discovery.",
+			},
+			"supports_enrollment": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether the store type supports enrollment.",
+			},
+			"supports_remove": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether the store type supports removing certificates.",
+			},
+			// Password options (flattened from PasswordOptions nested struct)
+			"password_entry_supported": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether per-entry passwords are supported.",
+			},
+			"password_store_required": {
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether a store-level password is required.",
+			},
+			"password_style": {
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Password style (e.g. Default).",
+			},
+			// Computed-only job/registration fields
+			"import_type": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Import type identifier assigned by Keyfactor Command.",
+			},
+			"server_registration": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Server registration type.",
+			},
+			"inventory_endpoint": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Inventory job endpoint path.",
+			},
+			"inventory_job_type": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "GUID of the inventory job type.",
+			},
+			"management_job_type": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "GUID of the management job type.",
+			},
+			"discovery_job_type": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "GUID of the discovery job type.",
+			},
+			"enrollment_job_type": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "GUID of the enrollment job type.",
+			},
+			// Nested lists
+			"properties": {
+				Optional:    true,
+				Computed:    true,
+				Description: "Property definitions for stores of this type.",
+				Attributes:  tfsdk.ListNestedAttributes(propAttrs),
+			},
+			"entry_parameters": {
+				Optional:    true,
+				Computed:    true,
+				Description: "Entry parameter definitions for certificate entries in stores of this type.",
+				Attributes:  tfsdk.ListNestedAttributes(entryParamAttrs),
+			},
+		},
+	}, nil
+}
+
+func (r resourceCertStoreTypeDefType) NewResource(_ context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
+	return resourceCertStoreTypeDef{p: *(p.(*provider))}, nil
+}
+
+// ---------------------------------------------------------------------------
+// State models
+// ---------------------------------------------------------------------------
+
+type resourceCertStoreTypeDef struct {
+	p provider
+}
+
+type KeyfactorCertStoreTypeDef struct {
+	ID                     types.String              `tfsdk:"id"`
+	Name                   types.String              `tfsdk:"name"`
+	ShortName              types.String              `tfsdk:"short_name"`
+	Capability             types.String              `tfsdk:"capability"`
+	LocalStore             types.Bool                `tfsdk:"local_store"`
+	StorePathType          types.String              `tfsdk:"store_path_type"`
+	StorePathValue         types.String              `tfsdk:"store_path_value"`
+	PrivateKeyAllowed      types.String              `tfsdk:"private_key_allowed"`
+	ServerRequired         types.Bool                `tfsdk:"server_required"`
+	PowerShell             types.Bool                `tfsdk:"power_shell"`
+	BlueprintAllowed       types.Bool                `tfsdk:"blueprint_allowed"`
+	CustomAliasAllowed     types.String              `tfsdk:"custom_alias_allowed"`
+	SupportsAdd            types.Bool                `tfsdk:"supports_add"`
+	SupportsCreate         types.Bool                `tfsdk:"supports_create"`
+	SupportsDiscovery      types.Bool                `tfsdk:"supports_discovery"`
+	SupportsEnrollment     types.Bool                `tfsdk:"supports_enrollment"`
+	SupportsRemove         types.Bool                `tfsdk:"supports_remove"`
+	PasswordEntrySupported types.Bool                `tfsdk:"password_entry_supported"`
+	PasswordStoreRequired  types.Bool                `tfsdk:"password_store_required"`
+	PasswordStyle          types.String              `tfsdk:"password_style"`
+	ImportType             types.Int64               `tfsdk:"import_type"`
+	ServerRegistration     types.Int64               `tfsdk:"server_registration"`
+	InventoryEndpoint      types.String              `tfsdk:"inventory_endpoint"`
+	InventoryJobType       types.String              `tfsdk:"inventory_job_type"`
+	ManagementJobType      types.String              `tfsdk:"management_job_type"`
+	DiscoveryJobType       types.String              `tfsdk:"discovery_job_type"`
+	EnrollmentJobType      types.String              `tfsdk:"enrollment_job_type"`
+	Properties             []CertStoreTypeProperty   `tfsdk:"properties"`
+	EntryParameters        []CertStoreTypeEntryParam `tfsdk:"entry_parameters"`
+}
+
+type CertStoreTypeProperty struct {
+	Name         types.String `tfsdk:"name"`
+	DisplayName  types.String `tfsdk:"display_name"`
+	Type         types.String `tfsdk:"type"`
+	DependsOn    types.String `tfsdk:"depends_on"`
+	DefaultValue types.String `tfsdk:"default_value"`
+	Required     types.Bool   `tfsdk:"required"`
+}
+
+type CertStoreTypeEntryParam struct {
+	Name          types.String `tfsdk:"name"`
+	DisplayName   types.String `tfsdk:"display_name"`
+	Type          types.String `tfsdk:"type"`
+	DependsOn     types.String `tfsdk:"depends_on"`
+	DefaultValue  types.String `tfsdk:"default_value"`
+	Options       types.String `tfsdk:"options"`
+	ReqHasPrivKey types.Bool   `tfsdk:"required_when_has_private_key"`
+	ReqOnAdd      types.Bool   `tfsdk:"required_when_on_add"`
+	ReqOnRemove   types.Bool   `tfsdk:"required_when_on_remove"`
+	ReqOnReenroll types.Bool   `tfsdk:"required_when_on_reenrollment"`
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+func interfaceToString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", v)
+}
+
+func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreTypeDef {
+	state := KeyfactorCertStoreTypeDef{
+		ID:                 types.String{Value: strconv.Itoa(resp.StoreType)},
+		Name:               types.String{Value: resp.Name},
+		ShortName:          types.String{Value: resp.ShortName},
+		Capability:         types.String{Value: resp.Capability},
+		LocalStore:         types.Bool{Value: resp.LocalStore},
+		StorePathType:      types.String{Value: resp.StorePathType},
+		StorePathValue:     types.String{Value: resp.StorePathValue},
+		PrivateKeyAllowed:  types.String{Value: resp.PrivateKeyAllowed},
+		ServerRequired:     types.Bool{Value: resp.ServerRequired},
+		PowerShell:         types.Bool{Value: resp.PowerShell},
+		BlueprintAllowed:   types.Bool{Value: resp.BlueprintAllowed},
+		CustomAliasAllowed: types.String{Value: resp.CustomAliasAllowed},
+		ImportType:         types.Int64{Value: int64(resp.ImportType)},
+		ServerRegistration: types.Int64{Value: int64(resp.ServerRegistration)},
+		InventoryEndpoint:  types.String{Value: resp.InventoryEndpoint},
+		InventoryJobType:   types.String{Value: resp.InventoryJobType},
+		ManagementJobType:  types.String{Value: resp.ManagementJobType},
+		DiscoveryJobType:   types.String{Value: resp.DiscoveryJobType},
+		EnrollmentJobType:  types.String{Value: resp.EnrollmentJobType},
+	}
+
+	if resp.SupportedOperations != nil {
+		state.SupportsAdd = types.Bool{Value: resp.SupportedOperations.Add}
+		state.SupportsCreate = types.Bool{Value: resp.SupportedOperations.Create}
+		state.SupportsDiscovery = types.Bool{Value: resp.SupportedOperations.Discovery}
+		state.SupportsEnrollment = types.Bool{Value: resp.SupportedOperations.Enrollment}
+		state.SupportsRemove = types.Bool{Value: resp.SupportedOperations.Remove}
+	}
+
+	if resp.PasswordOptions != nil {
+		state.PasswordEntrySupported = types.Bool{Value: resp.PasswordOptions.EntrySupported}
+		state.PasswordStoreRequired = types.Bool{Value: resp.PasswordOptions.StoreRequired}
+		state.PasswordStyle = types.String{Value: resp.PasswordOptions.Style}
+	}
+
+	state.Properties = []CertStoreTypeProperty{}
+	if resp.Properties != nil {
+		for _, p := range *resp.Properties {
+			state.Properties = append(state.Properties, CertStoreTypeProperty{
+				Name:         types.String{Value: p.Name},
+				DisplayName:  types.String{Value: p.DisplayName},
+				Type:         types.String{Value: p.Type},
+				DependsOn:    types.String{Value: interfaceToString(p.DependsOn)},
+				DefaultValue: types.String{Value: interfaceToString(p.DefaultValue)},
+				Required:     types.Bool{Value: p.Required},
+			})
+		}
+	}
+
+	state.EntryParameters = []CertStoreTypeEntryParam{}
+	if resp.EntryParameters != nil {
+		for _, ep := range *resp.EntryParameters {
+			state.EntryParameters = append(state.EntryParameters, CertStoreTypeEntryParam{
+				Name:          types.String{Value: ep.Name},
+				DisplayName:   types.String{Value: ep.DisplayName},
+				Type:          types.String{Value: ep.Type},
+				DependsOn:     types.String{Value: ep.DependsOn},
+				DefaultValue:  types.String{Value: ep.DefaultValue},
+				Options:       types.String{Value: ep.Options},
+				ReqHasPrivKey: types.Bool{Value: ep.RequiredWhen.HasPrivateKey},
+				ReqOnAdd:      types.Bool{Value: ep.RequiredWhen.OnAdd},
+				ReqOnRemove:   types.Bool{Value: ep.RequiredWhen.OnRemove},
+				ReqOnReenroll: types.Bool{Value: ep.RequiredWhen.OnReenrollment},
+			})
+		}
+	}
+
+	return state
+}
+
+func certStoreTypeDefToAPIRequest(plan KeyfactorCertStoreTypeDef) api.CertificateStoreType {
+	req := api.CertificateStoreType{
+		Name:               plan.Name.Value,
+		ShortName:          plan.ShortName.Value,
+		Capability:         plan.Capability.Value,
+		LocalStore:         plan.LocalStore.Value,
+		StorePathType:      plan.StorePathType.Value,
+		StorePathValue:     plan.StorePathValue.Value,
+		PrivateKeyAllowed:  plan.PrivateKeyAllowed.Value,
+		ServerRequired:     plan.ServerRequired.Value,
+		PowerShell:         plan.PowerShell.Value,
+		BlueprintAllowed:   plan.BlueprintAllowed.Value,
+		CustomAliasAllowed: plan.CustomAliasAllowed.Value,
+		SupportedOperations: &api.StoreTypeSupportedOperations{
+			Add:        plan.SupportsAdd.Value,
+			Create:     plan.SupportsCreate.Value,
+			Discovery:  plan.SupportsDiscovery.Value,
+			Enrollment: plan.SupportsEnrollment.Value,
+			Remove:     plan.SupportsRemove.Value,
+		},
+		PasswordOptions: &api.StoreTypePasswordOptions{
+			EntrySupported: plan.PasswordEntrySupported.Value,
+			StoreRequired:  plan.PasswordStoreRequired.Value,
+			Style:          plan.PasswordStyle.Value,
+		},
+	}
+
+	if len(plan.Properties) > 0 {
+		props := make([]api.StoreTypePropertyDefinition, len(plan.Properties))
+		for i, p := range plan.Properties {
+			props[i] = api.StoreTypePropertyDefinition{
+				Name:         p.Name.Value,
+				DisplayName:  p.DisplayName.Value,
+				Type:         p.Type.Value,
+				DependsOn:    p.DependsOn.Value,
+				DefaultValue: p.DefaultValue.Value,
+				Required:     p.Required.Value,
+			}
+		}
+		req.Properties = &props
+	}
+
+	if len(plan.EntryParameters) > 0 {
+		eps := make([]api.EntryParameter, len(plan.EntryParameters))
+		for i, ep := range plan.EntryParameters {
+			eps[i] = api.EntryParameter{
+				Name:         ep.Name.Value,
+				DisplayName:  ep.DisplayName.Value,
+				Type:         ep.Type.Value,
+				DependsOn:    ep.DependsOn.Value,
+				DefaultValue: ep.DefaultValue.Value,
+				Options:      ep.Options.Value,
+			}
+			eps[i].RequiredWhen.HasPrivateKey = ep.ReqHasPrivKey.Value
+			eps[i].RequiredWhen.OnAdd = ep.ReqOnAdd.Value
+			eps[i].RequiredWhen.OnRemove = ep.ReqOnRemove.Value
+			eps[i].RequiredWhen.OnReenrollment = ep.ReqOnReenroll.Value
+		}
+		req.EntryParameters = &eps
+	}
+
+	return req
+}
+
+// ---------------------------------------------------------------------------
+// CRUD
+// ---------------------------------------------------------------------------
+
+func (r resourceCertStoreTypeDef) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
+	LogFunctionEntry(ctx, "resourceCertStoreTypeDef.Create")
+
+	var plan KeyfactorCertStoreTypeDef
+	diags := request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	tflog.Info(ctx, fmt.Sprintf("Creating certificate store type %q (%q)", plan.Name.Value, plan.ShortName.Value))
+
+	createReq := certStoreTypeDefToAPIRequest(plan)
+	resp, err := r.p.client.CreateStoreType(&createReq)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error creating certificate store type",
+			fmt.Sprintf("Could not create certificate store type %q: %s", plan.ShortName.Value, err.Error()),
+		)
+		return
+	}
+
+	state := certStoreTypeDefToState(resp)
+	diags = response.State.Set(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	LogFunctionExit(ctx, "resourceCertStoreTypeDef.Create")
+}
+
+func (r resourceCertStoreTypeDef) Read(ctx context.Context, request tfsdk.ReadResourceRequest, response *tfsdk.ReadResourceResponse) {
+	LogFunctionEntry(ctx, "resourceCertStoreTypeDef.Read")
+
+	var state KeyfactorCertStoreTypeDef
+	diags := request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	id, err := strconv.Atoi(state.ID.Value)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Invalid certificate store type ID",
+			fmt.Sprintf("State ID %q is not a valid integer: %s", state.ID.Value, err.Error()),
+		)
+		return
+	}
+
+	tflog.Info(ctx, fmt.Sprintf("Reading certificate store type ID %d", id))
+
+	resp, err := r.p.client.GetCertificateStoreTypeById(id)
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			tflog.Info(ctx, fmt.Sprintf("Certificate store type %d not found, removing from state", id))
+			response.State.RemoveResource(ctx)
+			return
+		}
+		response.Diagnostics.AddError(
+			"Error reading certificate store type",
+			fmt.Sprintf("Could not read certificate store type %d: %s", id, err.Error()),
+		)
+		return
+	}
+
+	newState := certStoreTypeDefToState(resp)
+	diags = response.State.Set(ctx, &newState)
+	response.Diagnostics.Append(diags...)
+	LogFunctionExit(ctx, "resourceCertStoreTypeDef.Read")
+}
+
+func (r resourceCertStoreTypeDef) Update(ctx context.Context, request tfsdk.UpdateResourceRequest, response *tfsdk.UpdateResourceResponse) {
+	LogFunctionEntry(ctx, "resourceCertStoreTypeDef.Update")
+
+	var state KeyfactorCertStoreTypeDef
+	diags := request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	var plan KeyfactorCertStoreTypeDef
+	diags = request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	id, err := strconv.Atoi(state.ID.Value)
+	if err != nil {
+		response.Diagnostics.AddError("Invalid certificate store type ID", state.ID.Value)
+		return
+	}
+
+	tflog.Info(ctx, fmt.Sprintf("Updating certificate store type %d", id))
+
+	updateReq := certStoreTypeDefToAPIRequest(plan)
+	updateReq.StoreType = id
+
+	resp, err := r.p.client.UpdateStoreType(&updateReq)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error updating certificate store type",
+			fmt.Sprintf("Could not update certificate store type %d: %s", id, err.Error()),
+		)
+		return
+	}
+
+	newState := certStoreTypeDefToState(resp)
+	diags = response.State.Set(ctx, &newState)
+	response.Diagnostics.Append(diags...)
+	LogFunctionExit(ctx, "resourceCertStoreTypeDef.Update")
+}
+
+func (r resourceCertStoreTypeDef) Delete(ctx context.Context, request tfsdk.DeleteResourceRequest, response *tfsdk.DeleteResourceResponse) {
+	LogFunctionEntry(ctx, "resourceCertStoreTypeDef.Delete")
+
+	var state KeyfactorCertStoreTypeDef
+	diags := request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	id, err := strconv.Atoi(state.ID.Value)
+	if err != nil {
+		response.Diagnostics.AddError("Invalid certificate store type ID", state.ID.Value)
+		return
+	}
+
+	tflog.Info(ctx, fmt.Sprintf("Deleting certificate store type %d", id))
+
+	_, err = r.p.client.DeleteCertificateStoreType(id)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error deleting certificate store type",
+			fmt.Sprintf("Could not delete certificate store type %d: %s", id, err.Error()),
+		)
+		return
+	}
+
+	LogFunctionExit(ctx, "resourceCertStoreTypeDef.Delete")
+}
+
+func (r resourceCertStoreTypeDef) ImportState(
+	ctx context.Context,
+	request tfsdk.ImportResourceStateRequest,
+	response *tfsdk.ImportResourceStateResponse,
+) {
+	tflog.Info(ctx, fmt.Sprintf("Importing certificate store type %q", request.ID))
+
+	var resp *api.CertificateStoreType
+	var err error
+
+	// Accept integer ID or short name.
+	if numID, parseErr := strconv.Atoi(request.ID); parseErr == nil {
+		resp, err = r.p.client.GetCertificateStoreTypeById(numID)
+	} else {
+		resp, err = r.p.client.GetCertificateStoreTypeByName(request.ID)
+	}
+
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error importing certificate store type",
+			fmt.Sprintf("Could not find certificate store type %q: %s", request.ID, err.Error()),
+		)
+		return
+	}
+
+	state := certStoreTypeDefToState(resp)
+	diags := response.State.Set(ctx, &state)
+	response.Diagnostics.Append(diags...)
+}

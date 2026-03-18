@@ -804,6 +804,7 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 		"keyfactor_pam_provider":                          resourcePAMProviderResourceType{},
 		"keyfactor_certificate_authority":                 resourceCertificateAuthorityType{},
 		"keyfactor_certificate_template":                  resourceCertificateTemplateType{},
+		"keyfactor_certificate_store_type":                resourceCertStoreTypeDefType{},
 	}, nil
 }
 
@@ -824,7 +825,8 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 		"keyfactor_application":           dataSourceApplicationType{},
 		"keyfactor_pam_provider_type":     dataSourcePAMProviderTypeType{},
 		"keyfactor_pam_provider":          dataSourcePAMProviderType{},
-		"keyfactor_certificate_authority": dataSourceCertificateAuthorityType{},
+		"keyfactor_certificate_authority":     dataSourceCertificateAuthorityType{},
+		"keyfactor_certificate_store_type":    dataSourceCertStoreTypeDefType{},
 	}, nil
 }
 

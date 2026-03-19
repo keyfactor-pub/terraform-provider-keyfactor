@@ -826,7 +826,8 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 		"keyfactor_pam_provider_type":     dataSourcePAMProviderTypeType{},
 		"keyfactor_pam_provider":          dataSourcePAMProviderType{},
 		"keyfactor_certificate_authority":     dataSourceCertificateAuthorityType{},
-		"keyfactor_certificate_store_type":    dataSourceCertStoreTypeDefType{},
+		"keyfactor_certificate_store_type":     dataSourceCertStoreTypeDefType{},
+		"keyfactor_certificate_store_types":    dataSourceCertStoreTypesType{},
 	}, nil
 }
 

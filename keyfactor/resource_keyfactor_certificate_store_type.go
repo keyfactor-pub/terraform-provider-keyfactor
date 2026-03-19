@@ -14,6 +14,33 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// Plan modifiers
+// ---------------------------------------------------------------------------
+
+// nullIfUnknownListModifier converts an Unknown list plan value to Null so
+// that Optional+Computed list attributes can be decoded when not set in config.
+type nullIfUnknownListModifier struct{}
+
+func (m nullIfUnknownListModifier) Modify(_ context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	list, ok := resp.AttributePlan.(types.List)
+	if !ok {
+		return
+	}
+	resp.AttributePlan = types.List{Null: true, ElemType: list.ElemType}
+}
+
+func (m nullIfUnknownListModifier) Description(_ context.Context) string {
+	return "Treats unset Optional+Computed list as null rather than unknown."
+}
+
+func (m nullIfUnknownListModifier) MarkdownDescription(_ context.Context) string {
+	return "Treats unset Optional+Computed list as null rather than unknown."
+}
+
+// ---------------------------------------------------------------------------
 // Type registration
 // ---------------------------------------------------------------------------
 
@@ -280,16 +307,18 @@ func (r resourceCertStoreTypeDefType) GetSchema(_ context.Context) (tfsdk.Schema
 			},
 			// Nested lists
 			"properties": {
-				Optional:    true,
-				Computed:    true,
-				Description: "Property definitions for stores of this type.",
-				Attributes:  tfsdk.ListNestedAttributes(propAttrs),
+				Optional:      true,
+				Computed:      true,
+				Description:   "Property definitions for stores of this type.",
+				Attributes:    tfsdk.ListNestedAttributes(propAttrs),
+				PlanModifiers: tfsdk.AttributePlanModifiers{nullIfUnknownListModifier{}},
 			},
 			"entry_parameters": {
-				Optional:    true,
-				Computed:    true,
-				Description: "Entry parameter definitions for certificate entries in stores of this type.",
-				Attributes:  tfsdk.ListNestedAttributes(entryParamAttrs),
+				Optional:      true,
+				Computed:      true,
+				Description:   "Entry parameter definitions for certificate entries in stores of this type.",
+				Attributes:    tfsdk.ListNestedAttributes(entryParamAttrs),
+				PlanModifiers: tfsdk.AttributePlanModifiers{nullIfUnknownListModifier{}},
 			},
 		},
 	}, nil

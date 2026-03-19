@@ -216,6 +216,13 @@ func (r dataSourceCertificateStore) Read(
 		return
 	}
 
+	// Resolve numeric store type ID to short name.
+	csType, csTypeErr := r.p.client.GetCertificateStoreType(sResp.CertStoreType)
+	storeTypeShortName := fmt.Sprintf("%d", sResp.CertStoreType) // fallback: numeric string
+	if csTypeErr == nil && csType != nil {
+		storeTypeShortName = csType.ShortName
+	}
+
 	var result = CertificateStore{
 		ID:                    types.String{Value: sResp.Id},
 		ContainerID:           types.Int64{Value: int64(sResp.ContainerId)},
@@ -225,7 +232,7 @@ func (r dataSourceCertificateStore) Read(
 		AgentAssigned:         types.Bool{Value: sResp.AgentAssigned},
 		ClientMachine:         state.ClientMachine,
 		StorePath:             state.StorePath,
-		StoreType:             types.String{Value: fmt.Sprintf("%v", sResp.CertStoreType)},
+		StoreType:             types.String{Value: storeTypeShortName},
 		Approved:              types.Bool{Value: sResp.Approved},
 		CreateIfMissing:       types.Bool{Value: sResp.CreateIfMissing},
 		Properties:            properties,

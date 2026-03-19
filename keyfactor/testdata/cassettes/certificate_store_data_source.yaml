@@ -427,3 +427,81 @@ interactions:
         status: 204 No Content
         code: 204
         duration: 251.642764ms
+    - id: 9
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStoreTypes/154
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 2075
+        body: '{"Name":"K8STLSSecr","ShortName":"K8STLSSecr","Capability":"K8STLSSecr","StoreType":154,"ImportType":0,"LocalStore":false,"SupportedOperations":{"Add":true,"Create":true,"Discovery":true,"Enrollment":false,"Remove":true},"Properties":[{"Id":278,"StoreTypeId":154,"Name":"KubeNamespace","DisplayName":"KubeNamespace","Type":"String","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":279,"StoreTypeId":154,"Name":"KubeSecretName","DisplayName":"KubeSecretName","Type":"String","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":280,"StoreTypeId":154,"Name":"KubeSecretType","DisplayName":"KubeSecretType","Type":"String","DefaultValue":"tls_secret","Required":true,"ValidationOptions":{"OnCreation":1}},{"Id":281,"StoreTypeId":154,"Name":"IncludeCertChain","DisplayName":"Include Certificate Chain","Type":"Bool","DefaultValue":"true","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":282,"StoreTypeId":154,"Name":"SeparateChain","DisplayName":"Separate Chain","Type":"Bool","DefaultValue":"false","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":283,"StoreTypeId":154,"Name":"ServerUsername","DisplayName":"Server Username","Type":"Secret","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":284,"StoreTypeId":154,"Name":"ServerPassword","DisplayName":"Server Password","Type":"Secret","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":285,"StoreTypeId":154,"Name":"ServerUseSsl","DisplayName":"Use SSL","Type":"Bool","DefaultValue":"true","Required":true,"ValidationOptions":{"OnCreation":1}}],"EntryParameters":[],"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"PrivateKeyAllowed":"Optional","CertificateFormat":0,"JobProperties":[],"ServerRequired":true,"PowerShell":false,"BlueprintAllowed":false,"CustomAliasAllowed":"Forbidden","ServerRegistration":35,"InventoryEndpoint":"/AnyInventory/Update","InventoryJobType":"1826f5fd-68c5-45ec-856e-2c0209c2018d","ManagementJobType":"50431909-6488-4237-a9b0-1158429cf59c","DiscoveryJobType":"f40a4c55-085b-47a7-bd42-a4103f6c4bd0"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Sat, 07 Mar 2026 02:48:04 GMT
+            Server:
+                - istio-envoy
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 50ms
+    - id: 10
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStoreTypes/154
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 2075
+        body: '{"Name":"K8STLSSecr","ShortName":"K8STLSSecr","Capability":"K8STLSSecr","StoreType":154,"ImportType":0,"LocalStore":false,"SupportedOperations":{"Add":true,"Create":true,"Discovery":true,"Enrollment":false,"Remove":true},"Properties":[{"Id":278,"StoreTypeId":154,"Name":"KubeNamespace","DisplayName":"KubeNamespace","Type":"String","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":279,"StoreTypeId":154,"Name":"KubeSecretName","DisplayName":"KubeSecretName","Type":"String","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":280,"StoreTypeId":154,"Name":"KubeSecretType","DisplayName":"KubeSecretType","Type":"String","DefaultValue":"tls_secret","Required":true,"ValidationOptions":{"OnCreation":1}},{"Id":281,"StoreTypeId":154,"Name":"IncludeCertChain","DisplayName":"Include Certificate Chain","Type":"Bool","DefaultValue":"true","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":282,"StoreTypeId":154,"Name":"SeparateChain","DisplayName":"Separate Chain","Type":"Bool","DefaultValue":"false","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":283,"StoreTypeId":154,"Name":"ServerUsername","DisplayName":"Server Username","Type":"Secret","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":284,"StoreTypeId":154,"Name":"ServerPassword","DisplayName":"Server Password","Type":"Secret","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":285,"StoreTypeId":154,"Name":"ServerUseSsl","DisplayName":"Use SSL","Type":"Bool","DefaultValue":"true","Required":true,"ValidationOptions":{"OnCreation":1}}],"EntryParameters":[],"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"PrivateKeyAllowed":"Optional","CertificateFormat":0,"JobProperties":[],"ServerRequired":true,"PowerShell":false,"BlueprintAllowed":false,"CustomAliasAllowed":"Forbidden","ServerRegistration":35,"InventoryEndpoint":"/AnyInventory/Update","InventoryJobType":"1826f5fd-68c5-45ec-856e-2c0209c2018d","ManagementJobType":"50431909-6488-4237-a9b0-1158429cf59c","DiscoveryJobType":"f40a4c55-085b-47a7-bd42-a4103f6c4bd0"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Sat, 07 Mar 2026 02:48:04 GMT
+            Server:
+                - istio-envoy
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 50ms

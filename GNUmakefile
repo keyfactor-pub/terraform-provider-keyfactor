@@ -39,6 +39,12 @@ SUFFIX ?= _TF
 store-type-demo:
 	cd $(PROVIDER_DIR)/terraform/store_type_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
 
+## application-demo: Run full lifecycle demo in terraform/application_demo/
+##   (build, init, validate, plan, apply, import, reconcile, drift-check, destroy)
+##   Usage: make application-demo [SUFFIX=_TF]
+application-demo:
+	cd $(PROVIDER_DIR)/terraform/application_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
+
 release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64
 	mv ./bin/${BINARY}_${VERSION}_darwin_amd64 ./bin/terraform-provider-keyfactor
@@ -105,6 +111,9 @@ testunit-record-csr:
 testunit-record-application:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorApplication" -v -count=1 -timeout 30m
 
+testunit-record-application-schedules:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorApplicationResource(ScheduleTypes|Monthly|ExactlyOnce)" -v -count=1 -timeout 30m
+
 testunit-record-pam-provider:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorPAMProvider[^T]" -v -count=1 -timeout 30m
 
@@ -163,6 +172,7 @@ testunit-record-all:
 	$(MAKE) testunit-record-oauth-role-ds
 	$(MAKE) testunit-record-oauth-role-claim-assoc
 	$(MAKE) testunit-record-enrollment-pattern
+	$(MAKE) testunit-record-application-schedules
 
 # Run unit tests and display only failures (quiet mode)
 testunit-check:
@@ -566,4 +576,4 @@ api-recover-cert-pem:
 		-H "Authorization: Bearer $$TOKEN" \
 		-d '{"CertID": $(CERT_ID), "Password": "$(CERT_PASSWORD)", "IncludeChain": true, "CertFormat": "PEM"}' | head -200
 
-.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-all testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-recover-cert api-recover-cert-pfx api-recover-cert-pem
+.PHONY: store-type-demo application-demo build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-all testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-recover-cert api-recover-cert-pfx api-recover-cert-pem

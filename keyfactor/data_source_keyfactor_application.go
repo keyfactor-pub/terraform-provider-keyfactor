@@ -36,6 +36,11 @@ func (r dataSourceApplicationType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Computed:    true,
 				Description: "Whether the application schedule overwrites member certificate store schedules.",
 			},
+			"schedule_immediate": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "True if an immediate one-shot inventory run is configured.",
+			},
 			"schedule_interval_minutes": {
 				Type:        types.Int64Type,
 				Computed:    true,
@@ -45,6 +50,31 @@ func (r dataSourceApplicationType) GetSchema(_ context.Context) (tfsdk.Schema, d
 				Type:        types.StringType,
 				Computed:    true,
 				Description: "Inventory schedule daily time as an ISO 8601 datetime string, if a daily schedule is configured.",
+			},
+			"schedule_weekly_days": {
+				Type:        types.ListType{ElemType: types.StringType},
+				Computed:    true,
+				Description: "Days of the week for a weekly schedule (e.g. [\"Monday\", \"Wednesday\"]).",
+			},
+			"schedule_weekly_time": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Time-of-day for the weekly schedule as an ISO 8601 datetime string.",
+			},
+			"schedule_monthly_day": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Day of the month for a monthly schedule (1–31).",
+			},
+			"schedule_monthly_time": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Time-of-day for the monthly schedule as an ISO 8601 datetime string.",
+			},
+			"schedule_exactly_once_time": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "ISO 8601 datetime string if inventory is scheduled to run exactly once.",
 			},
 			"certificate_store_ids": {
 				Type:        types.ListType{ElemType: types.StringType},
@@ -77,8 +107,14 @@ type KeyfactorApplicationDataSource struct {
 	ID                   types.Int64  `tfsdk:"id"`
 	Name                 types.String `tfsdk:"name"`
 	OverwriteSchedules   types.Bool   `tfsdk:"overwrite_schedules"`
+	ScheduleImmediate    types.Bool   `tfsdk:"schedule_immediate"`
 	ScheduleIntervalMins types.Int64  `tfsdk:"schedule_interval_minutes"`
 	ScheduleDailyTime    types.String `tfsdk:"schedule_daily_time"`
+	ScheduleWeeklyDays   types.List   `tfsdk:"schedule_weekly_days"`
+	ScheduleWeeklyTime   types.String `tfsdk:"schedule_weekly_time"`
+	ScheduleMonthlyDay   types.Int64  `tfsdk:"schedule_monthly_day"`
+	ScheduleMonthlyTime  types.String `tfsdk:"schedule_monthly_time"`
+	ScheduleExactlyOnce  types.String `tfsdk:"schedule_exactly_once_time"`
 	CertificateStoreIDs  types.List   `tfsdk:"certificate_store_ids"`
 }
 
@@ -136,7 +172,7 @@ func (r dataSourceApplication) Read(ctx context.Context, request tfsdk.ReadDataS
 		return
 	}
 
-	intervalMins, dailyTime := flattenApplicationSchedule(app.Schedule)
+	immediate, intervalMins, dailyTime, weeklyDays, weeklyTime, monthlyDay, monthlyTime, exactlyOnce := flattenApplicationSchedule(app.Schedule)
 
 	// Build the certificate_store_ids list.
 	storeIDs := make([]string, 0, len(app.CertificateStores))
@@ -153,8 +189,14 @@ func (r dataSourceApplication) Read(ctx context.Context, request tfsdk.ReadDataS
 		ID:                   types.Int64{Value: int64(app.Id)},
 		Name:                 types.String{Value: app.Name},
 		OverwriteSchedules:   types.Bool{Value: app.OverwriteSchedules},
+		ScheduleImmediate:    immediate,
 		ScheduleIntervalMins: intervalMins,
 		ScheduleDailyTime:    dailyTime,
+		ScheduleWeeklyDays:   weeklyDays,
+		ScheduleWeeklyTime:   weeklyTime,
+		ScheduleMonthlyDay:   monthlyDay,
+		ScheduleMonthlyTime:  monthlyTime,
+		ScheduleExactlyOnce:  exactlyOnce,
 		CertificateStoreIDs:  storeIDList,
 	}
 

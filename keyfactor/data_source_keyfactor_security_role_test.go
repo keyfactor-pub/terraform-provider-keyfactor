@@ -7,6 +7,40 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorSecurityRoleDataSource tests the keyfactor_role data source
+// using VCR cassettes. Reads the well-known "Administrator" role.
+func TestUnitKeyfactorSecurityRoleDataSource(t *testing.T) {
+	cassetteName := "security_role_data_source"
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	dataSourceName := "data.keyfactor_role.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDataSourceKeyfactorSecurityRoleBasic("Administrator"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(dataSourceName, "id"),
+					resource.TestCheckResourceAttr(dataSourceName, "name", "Administrator"),
+					resource.TestCheckResourceAttrSet(dataSourceName, "description"),
+					resource.TestCheckResourceAttrWith(dataSourceName, "permissions.#", func(value string) error {
+						if value == "0" {
+							return fmt.Errorf("expected Administrator to have at least one permission, got 0")
+						}
+						return nil
+					}),
+				),
+			},
+		},
+	})
+}
+
 func TestAccKeyfactorSecurityRoleDataSource(t *testing.T) {
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_role")
 	var rName = "Administrator"

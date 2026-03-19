@@ -2,7 +2,10 @@ package keyfactor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -137,6 +140,67 @@ func TestAccKeyfactorOAuthRoleImportState(t *testing.T) {
 					// Use the known roleName to construct the import ID
 					return r.name, nil
 				},
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorOAuthRoleResource tests the keyfactor_oauth_security_role
+// resource create/update lifecycle using VCR cassettes.
+func TestUnitKeyfactorOAuthRoleResource(t *testing.T) {
+	cassetteName := "oauth_security_role_resource"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var roleName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		roleName = fmt.Sprintf("tf-unit-oauth-role-%d", time.Now().UnixNano()%1000000000)
+		writeOAuthRoleRecordTestParams(cassettePath, oauthRoleRecordTestParams{RoleName: roleName})
+	} else {
+		params := readOAuthRoleRecordTestParams(cassettePath)
+		roleName = params.RoleName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	r := oauthRoleTestCase{
+		name:         roleName,
+		description:  "Unit test OAuth role",
+		permissions:  []string{"/metadata/types/read/"},
+		emailAddress: "unit-test@example.com",
+		resourceType: "keyfactor_oauth_security_role",
+		resourceName: "unit_test",
+		resourcePath: "keyfactor_oauth_security_role.unit_test",
+	}
+	r2 := r
+	r2.description = "Unit test OAuth role updated"
+	r2.permissions = []string{"/certificates/"}
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKeyfactorOAuthRoleResourceConfig(r),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
+					resource.TestCheckResourceAttrSet(r.resourcePath, "permission_set_id"),
+					resource.TestCheckResourceAttr(r.resourcePath, "name", r.name),
+					resource.TestCheckResourceAttr(r.resourcePath, "description", r.description),
+					resource.TestCheckResourceAttr(r.resourcePath, "email_address", r.emailAddress),
+					resource.TestCheckResourceAttr(r.resourcePath, "permissions.0", r.permissions[0]),
+				),
+			},
+			{
+				Config: testAccKeyfactorOAuthRoleResourceConfig(r2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r2.resourcePath, "id"),
+					resource.TestCheckResourceAttr(r2.resourcePath, "description", r2.description),
+					resource.TestCheckResourceAttr(r2.resourcePath, "permissions.0", r2.permissions[0]),
+				),
 			},
 		},
 	})

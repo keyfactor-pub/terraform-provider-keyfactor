@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -188,6 +189,115 @@ func TestIntKeyfactorCertificateStoreTypeDataSource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(dsName, "id"),
 					resource.TestCheckResourceAttr(dsName, "name", name),
 					resource.TestCheckResourceAttr(dsName, "short_name", shortName),
+				),
+			},
+			{
+				// Read back by numeric ID
+				Config: testAccCertStoreTypeConfig(name, shortName) + "\n" +
+					testAccCertStoreTypeDataSourceByID(resourceName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(dsName, "id"),
+					resource.TestCheckResourceAttr(dsName, "name", name),
+					resource.TestCheckResourceAttr(dsName, "short_name", shortName),
+				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorCertificateStoreTypeResource tests the certificate store type
+// resource create/update lifecycle using VCR cassettes.
+func TestUnitKeyfactorCertificateStoreTypeResource(t *testing.T) {
+	cassetteName := "certificate_store_type_resource"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var name, shortName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		ts := time.Now().UnixNano() % 1000000000
+		name = fmt.Sprintf("tf-unit-store-type-%d", ts)
+		shortName = fmt.Sprintf("TFU%d", ts%1000000)
+		writeCertStoreTypeTestParams(cassettePath, certStoreTypeTestParams{Name: name, ShortName: shortName})
+	} else {
+		params := readCertStoreTypeTestParams(cassettePath)
+		name = params.Name
+		shortName = params.ShortName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_certificate_store_type.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertStoreTypeConfig(name, shortName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "name", name),
+					resource.TestCheckResourceAttr(resourceName, "short_name", shortName),
+					resource.TestCheckResourceAttr(resourceName, "supports_add", "true"),
+					resource.TestCheckResourceAttr(resourceName, "supports_remove", "true"),
+					resource.TestCheckResourceAttr(resourceName, "private_key_allowed", "Optional"),
+					resource.TestCheckResourceAttr(resourceName, "custom_alias_allowed", "Forbidden"),
+					resource.TestCheckResourceAttr(resourceName, "server_required", "false"),
+				),
+			},
+			{
+				Config: testAccCertStoreTypeConfig(name+"-v2", shortName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "name", name+"-v2"),
+					resource.TestCheckResourceAttr(resourceName, "short_name", shortName),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateStoreTypeDataSource tests the single
+// keyfactor_certificate_store_type data source using VCR cassettes.
+func TestUnitKeyfactorCertificateStoreTypeDataSource(t *testing.T) {
+	cassetteName := "certificate_store_type_data_source"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var name, shortName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		ts := time.Now().UnixNano() % 1000000000
+		name = fmt.Sprintf("tf-unit-store-type-ds-%d", ts)
+		shortName = fmt.Sprintf("TFUDS%d", ts%100000)
+		writeCertStoreTypeTestParams(cassettePath, certStoreTypeTestParams{Name: name, ShortName: shortName})
+	} else {
+		params := readCertStoreTypeTestParams(cassettePath)
+		name = params.Name
+		shortName = params.ShortName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_certificate_store_type.test"
+	dsName := "data.keyfactor_certificate_store_type.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Create and read back by short_name
+				Config: testAccCertStoreTypeConfig(name, shortName) + "\n" +
+					testAccCertStoreTypeDataSourceByShortName(resourceName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "name", name),
+					resource.TestCheckResourceAttrSet(dsName, "id"),
+					resource.TestCheckResourceAttr(dsName, "name", name),
+					resource.TestCheckResourceAttr(dsName, "short_name", shortName),
+					resource.TestCheckResourceAttr(dsName, "supports_add", "true"),
 				),
 			},
 			{

@@ -2,7 +2,10 @@ package keyfactor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -55,6 +58,63 @@ func TestAccKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 				),
 			},
 			// Delete testing automatically occurs in TestCase
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource tests the
+// keyfactor_oauth_security_role_claim_association resource using VCR cassettes.
+func TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
+	cassetteName := "oauth_security_role_claim_association_resource"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var roleName1, roleName2, claimValue string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		ts := time.Now().UnixNano() % 1000000000
+		roleName1 = fmt.Sprintf("tf-unit-role-assoc1-%d", ts)
+		roleName2 = fmt.Sprintf("tf-unit-role-assoc2-%d", ts)
+		claimValue = fmt.Sprintf("tf-unit-claim-assoc-%d", ts)
+		writeOAuthRoleClaimAssocTestParams(cassettePath, oauthRoleClaimAssocTestParams{
+			RoleName1:  roleName1,
+			RoleName2:  roleName2,
+			ClaimValue: claimValue,
+		})
+	} else {
+		params := readOAuthRoleClaimAssocTestParams(cassettePath)
+		roleName1 = params.RoleName1
+		roleName2 = params.RoleName2
+		claimValue = params.ClaimValue
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	r := oauthSecurityRoleClaimAssociationTestCase{
+		role1Name:              roleName1,
+		role2Name:              roleName2,
+		associatedRoleResource: "test_role_1",
+		claimValue:             claimValue,
+		claimProviderScheme:    "System",
+		resourceType:           "keyfactor_oauth_security_role_claim_association",
+		resourceName:           "test_role_claim_association",
+		resourcePath:           "keyfactor_oauth_security_role_claim_association.test_role_claim_association",
+	}
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResource(r),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
+					resource.TestCheckResourceAttrSet(r.resourcePath, "role_id"),
+					resource.TestCheckResourceAttrSet(r.resourcePath, "claim_id"),
+				),
+			},
 		},
 	})
 }

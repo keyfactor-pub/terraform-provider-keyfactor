@@ -116,7 +116,7 @@ func TestUnitKeyfactorPAMProviderDataSource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(dataSourceName, "id"),
 					resource.TestCheckResourceAttr(dataSourceName, "name", provName),
 					resource.TestCheckResourceAttrSet(dataSourceName, "provider_type_id"),
-					resource.TestCheckResourceAttrSet(dataSourceName, "provider_type_name"),
+					resource.TestCheckResourceAttr(dataSourceName, "provider_type_name", typeName),
 				),
 			},
 			{
@@ -127,6 +127,7 @@ func TestUnitKeyfactorPAMProviderDataSource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(dataSourceName, "id"),
 					resource.TestCheckResourceAttr(dataSourceName, "name", provName),
 					resource.TestCheckResourceAttrSet(dataSourceName, "provider_type_id"),
+					resource.TestCheckResourceAttr(dataSourceName, "provider_type_name", typeName),
 				),
 			},
 		},

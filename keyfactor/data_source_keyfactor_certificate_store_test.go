@@ -113,8 +113,8 @@ func TestUnitKeyfactorCertificateStoreDataSource(t *testing.T) {
 				Config: config,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
-					resource.TestCheckResourceAttrSet(resourceName, "store_path"),
-					resource.TestCheckResourceAttrSet(resourceName, "store_type"),
+					resource.TestCheckResourceAttr(resourceName, "store_path", storePath),
+					resource.TestCheckResourceAttr(resourceName, "store_type", storeType),
 					resource.TestCheckResourceAttrSet(resourceName, "agent_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "approved"),
 				),

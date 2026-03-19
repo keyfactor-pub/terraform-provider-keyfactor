@@ -2,7 +2,10 @@ package keyfactor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -31,6 +34,62 @@ func TestAccKeyfactorOAuthSecurityRoleDataSource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "permissions.#"),
 					resource.TestCheckResourceAttrSet(resourceName, "email_address"),
 					resource.TestCheckResourceAttr(resourceName, "name", securityRoleName),
+				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorOAuthSecurityRoleDataSource tests the
+// keyfactor_oauth_security_role data source using VCR cassettes.
+func TestUnitKeyfactorOAuthSecurityRoleDataSource(t *testing.T) {
+	cassetteName := "oauth_security_role_data_source"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var roleName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		roleName = fmt.Sprintf("tf-unit-oauth-role-ds-%d", time.Now().UnixNano()%1000000000)
+		writeOAuthRoleRecordTestParams(cassettePath, oauthRoleRecordTestParams{RoleName: roleName})
+	} else {
+		params := readOAuthRoleRecordTestParams(cassettePath)
+		roleName = params.RoleName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+data "keyfactor_permission_set" "global" {
+	name = "Global"
+}
+
+resource "keyfactor_oauth_security_role" "unit_ds_setup" {
+	name              = %q
+	description       = "Unit test role for data source"
+	permission_set_id = data.keyfactor_permission_set.global.id
+	email_address     = "unit-test@example.com"
+	permissions       = []
+}
+
+data "keyfactor_oauth_security_role" "test" {
+	name = keyfactor_oauth_security_role.unit_ds_setup.name
+}
+`, roleName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("data.keyfactor_oauth_security_role.test", "id"),
+					resource.TestCheckResourceAttr("data.keyfactor_oauth_security_role.test", "name", roleName),
+					resource.TestCheckResourceAttrSet("data.keyfactor_oauth_security_role.test", "description"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_oauth_security_role.test", "permission_set_id"),
+					resource.TestCheckResourceAttr("data.keyfactor_oauth_security_role.test", "email_address", "unit-test@example.com"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_oauth_security_role.test", "permissions.#"),
 				),
 			},
 		},

@@ -21,6 +21,24 @@ tfdocs:
 	tfplugindocs generate
 	terraform fmt -recursive ./examples/
 
+## gen-store-types: Regenerate terraform/data_store_types/store_types.tf from live state.
+##   Requires: terraform apply has been run in terraform/data_store_types/ so that
+##   terraform show -json produces data.keyfactor_certificate_store_types.all.
+##   Usage: make gen-store-types [STORE_TYPE_SUFFIX=_TF]
+STORE_TYPE_SUFFIX ?= _TF
+STORE_TYPE_DIR    := $(PROVIDER_DIR)/terraform/data_store_types
+gen-store-types:
+	cd $(STORE_TYPE_DIR) && \
+	  TF_CLI_CONFIG_FILE=.terraformrc terraform show -json > tf_state.json && \
+	  python3 gen_store_types.py --suffix "$(STORE_TYPE_SUFFIX)"
+
+## store-type-demo: Run full lifecycle demo in terraform/store_type_demo/
+##   (build, init, validate, apply, import, drift-check, destroy)
+##   Usage: make store-type-demo [SUFFIX=_TF]
+SUFFIX ?= _TF
+store-type-demo:
+	cd $(PROVIDER_DIR)/terraform/store_type_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
+
 release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64
 	mv ./bin/${BINARY}_${VERSION}_darwin_amd64 ./bin/terraform-provider-keyfactor
@@ -95,6 +113,56 @@ testunit-record-pam-provider-type:
 
 testunit-record-security-identity:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorIdentity" -v -count=1 -timeout 30m
+
+testunit-record-security-role:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorSecurityRole" -v -count=1 -timeout 30m
+
+testunit-record-cert-store-type:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateStoreType[^s]" -v -count=1 -timeout 30m
+
+testunit-record-cert-store-types:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateStoreTypes" -v -count=1 -timeout 30m
+
+testunit-record-agent-ds:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorAgentDataSource" -v -count=1 -timeout 30m
+
+testunit-record-permission-set:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorPermissionSetDataSource" -v -count=1 -timeout 30m
+
+testunit-record-oauth-claim:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuth(Claim|SecurityClaim)" -v -count=1 -timeout 30m
+
+testunit-record-oauth-role:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthRole" -v -count=1 -timeout 30m
+
+testunit-record-oauth-role-ds:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthSecurityRoleDataSource" -v -count=1 -timeout 30m
+
+testunit-record-oauth-role-claim-assoc:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthSecurityRoleClaimAssociation" -v -count=1 -timeout 30m
+
+# Enrollment patterns require Command v25+; this target also sets TF_ACC=1 for API discovery
+testunit-record-enrollment-pattern:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 TF_ACC=1 go test ./keyfactor/ -run "TestUnitKeyfactorEnrollmentPatternDataSource" -v -count=1 -timeout 30m
+
+# Re-record ALL unit test cassettes (requires lab connection and Command v25+ for enrollment-pattern).
+# This is the primary target to run when the Command API changes break existing cassettes.
+testunit-record-all:
+	$(MAKE) testunit-record-csr
+	$(MAKE) testunit-record-application
+	$(MAKE) testunit-record-pam-provider
+	$(MAKE) testunit-record-pam-provider-type
+	$(MAKE) testunit-record-security-identity
+	$(MAKE) testunit-record-security-role
+	$(MAKE) testunit-record-cert-store-type
+	$(MAKE) testunit-record-cert-store-types
+	$(MAKE) testunit-record-agent-ds
+	$(MAKE) testunit-record-permission-set
+	$(MAKE) testunit-record-oauth-claim
+	$(MAKE) testunit-record-oauth-role
+	$(MAKE) testunit-record-oauth-role-ds
+	$(MAKE) testunit-record-oauth-role-claim-assoc
+	$(MAKE) testunit-record-enrollment-pattern
 
 # Run unit tests and display only failures (quiet mode)
 testunit-check:
@@ -498,4 +566,4 @@ api-recover-cert-pem:
 		-H "Authorization: Bearer $$TOKEN" \
 		-d '{"CertID": $(CERT_ID), "Password": "$(CERT_PASSWORD)", "IncludeChain": true, "CertFormat": "PEM"}' | head -200
 
-.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-recover-cert api-recover-cert-pfx api-recover-cert-pem
+.PHONY: build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-all testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-recover-cert api-recover-cert-pfx api-recover-cert-pem

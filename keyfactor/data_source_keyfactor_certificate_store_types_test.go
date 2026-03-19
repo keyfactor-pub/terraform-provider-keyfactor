@@ -2,6 +2,8 @@ package keyfactor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -98,6 +100,72 @@ func TestIntKeyfactorCertificateStoreTypesDataSource(t *testing.T) {
 			},
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorCertificateStoreTypesDataSource tests the
+// keyfactor_certificate_store_types (plural) data source using VCR cassettes.
+func TestUnitKeyfactorCertificateStoreTypesDataSource(t *testing.T) {
+	cassetteName := "certificate_store_types_data_source"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var params certStoreTypesDataSourceTestParams
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		types, err := client.ListCertificateStoreTypes()
+		if err != nil || types == nil || len(*types) == 0 {
+			t.Skip("No store types available for recording")
+		}
+		params = certStoreTypesDataSourceTestParams{
+			StoreTypeCount:  len(*types),
+			FirstShortName:  (*types)[0].ShortName,
+			FirstCapability: (*types)[0].Capability,
+		}
+		writeCertStoreTypesDataSourceTestParams(cassettePath, params)
+	} else {
+		params = readCertStoreTypesDataSourceTestParams(cassettePath)
+		if params.StoreTypeCount == 0 {
+			t.Skip("No store type params recorded; skipping")
+		}
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	dsName := "data.keyfactor_certificate_store_types.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// No filter — all store types returned
+				Config: testAccCertStoreTypesDataSourceConfigNoFilter(),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(dsName, "id"),
+					resource.TestCheckResourceAttrWith(dsName, "store_types.#", func(value string) error {
+						if value == "0" {
+							return fmt.Errorf("expected at least one store type, got 0")
+						}
+						return nil
+					}),
+					// First entry should have required fields populated
+					resource.TestCheckResourceAttrSet(dsName, "store_types.0.short_name"),
+					resource.TestCheckResourceAttrSet(dsName, "store_types.0.name"),
+				),
+			},
+			{
+				// Filter by exact short_name — should return exactly this store type
+				Config: testAccCertStoreTypesDataSourceConfigShortNameFilter(params.FirstShortName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(dsName, "store_types.#", "1"),
+					resource.TestCheckResourceAttr(dsName, "store_types.0.short_name", params.FirstShortName),
+				),
+			},
+		},
+	})
 }
 
 // ---------------------------------------------------------------------------

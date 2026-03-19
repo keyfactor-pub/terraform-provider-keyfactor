@@ -882,6 +882,222 @@ func readAgentsTestParams(cassettePath string) agentsTestParams {
 }
 
 // ---------------------------------------------------------------------------
+// Security role test params
+// ---------------------------------------------------------------------------
+
+type securityRoleTestParams struct {
+	RoleName string `json:"role_name"`
+}
+
+func writeSecurityRoleTestParams(cassettePath string, params securityRoleTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readSecurityRoleTestParams(cassettePath string) securityRoleTestParams {
+	defaults := securityRoleTestParams{RoleName: "tf-unit-role"}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params securityRoleTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Certificate store type test params
+// ---------------------------------------------------------------------------
+
+type certStoreTypeTestParams struct {
+	Name      string `json:"name"`
+	ShortName string `json:"short_name"`
+}
+
+func writeCertStoreTypeTestParams(cassettePath string, params certStoreTypeTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readCertStoreTypeTestParams(cassettePath string) certStoreTypeTestParams {
+	defaults := certStoreTypeTestParams{Name: "tf-unit-store-type", ShortName: "TFUNIT"}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params certStoreTypeTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Certificate store types (plural) data source test params
+// ---------------------------------------------------------------------------
+
+type certStoreTypesDataSourceTestParams struct {
+	StoreTypeCount  int    `json:"store_type_count"`
+	FirstShortName  string `json:"first_short_name"`
+	FirstCapability string `json:"first_capability"`
+}
+
+func writeCertStoreTypesDataSourceTestParams(cassettePath string, params certStoreTypesDataSourceTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readCertStoreTypesDataSourceTestParams(cassettePath string) certStoreTypesDataSourceTestParams {
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return certStoreTypesDataSourceTestParams{}
+	}
+	var params certStoreTypesDataSourceTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return certStoreTypesDataSourceTestParams{}
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Agent data source test params
+// ---------------------------------------------------------------------------
+
+type agentDataSourceTestParams struct {
+	AgentID       string `json:"agent_id"`
+	ClientMachine string `json:"client_machine"`
+}
+
+func writeAgentDataSourceTestParams(cassettePath string, params agentDataSourceTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readAgentDataSourceTestParams(cassettePath string) agentDataSourceTestParams {
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return agentDataSourceTestParams{}
+	}
+	var params agentDataSourceTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return agentDataSourceTestParams{}
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// OAuth security claim test params
+// ---------------------------------------------------------------------------
+
+type oauthClaimRecordTestParams struct {
+	ClaimValue string `json:"claim_value"`
+	AuthScheme string `json:"auth_scheme"`
+}
+
+func writeOAuthClaimRecordTestParams(cassettePath string, params oauthClaimRecordTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readOAuthClaimRecordTestParams(cassettePath string) oauthClaimRecordTestParams {
+	defaults := oauthClaimRecordTestParams{ClaimValue: "tf-unit-claim", AuthScheme: "System"}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params oauthClaimRecordTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// OAuth security role test params
+// ---------------------------------------------------------------------------
+
+type oauthRoleRecordTestParams struct {
+	RoleName string `json:"role_name"`
+}
+
+func writeOAuthRoleRecordTestParams(cassettePath string, params oauthRoleRecordTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readOAuthRoleRecordTestParams(cassettePath string) oauthRoleRecordTestParams {
+	defaults := oauthRoleRecordTestParams{RoleName: "tf-unit-oauth-role"}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params oauthRoleRecordTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// OAuth security role claim association test params
+// ---------------------------------------------------------------------------
+
+type oauthRoleClaimAssocTestParams struct {
+	RoleName1  string `json:"role_name_1"`
+	RoleName2  string `json:"role_name_2"`
+	ClaimValue string `json:"claim_value"`
+}
+
+func writeOAuthRoleClaimAssocTestParams(cassettePath string, params oauthRoleClaimAssocTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readOAuthRoleClaimAssocTestParams(cassettePath string) oauthRoleClaimAssocTestParams {
+	defaults := oauthRoleClaimAssocTestParams{
+		RoleName1:  "tf-unit-role-assoc-1",
+		RoleName2:  "tf-unit-role-assoc-2",
+		ClaimValue: "tf-unit-claim-assoc",
+	}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params oauthRoleClaimAssocTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Enrollment pattern data source test params
+// ---------------------------------------------------------------------------
+
+type enrollmentPatternTestParams struct {
+	PatternName string `json:"pattern_name"`
+}
+
+func writeEnrollmentPatternTestParams(cassettePath string, params enrollmentPatternTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readEnrollmentPatternTestParams(cassettePath string) enrollmentPatternTestParams {
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return enrollmentPatternTestParams{}
+	}
+	var params enrollmentPatternTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return enrollmentPatternTestParams{}
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
 // Unique CN generator
 // ---------------------------------------------------------------------------
 

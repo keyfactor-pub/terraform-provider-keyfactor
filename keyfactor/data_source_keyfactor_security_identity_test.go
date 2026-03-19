@@ -75,6 +75,9 @@ func TestUnitKeyfactorIdentityDataSource(t *testing.T) {
 
 	dataSourceName := "data.keyfactor_identity.test"
 
+	// The accountName in params has doubled backslashes (HCL escape); state stores single backslash.
+	stateAccountName := strings.ReplaceAll(accountName, `\\`, `\`)
+
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
@@ -82,9 +85,9 @@ func TestUnitKeyfactorIdentityDataSource(t *testing.T) {
 				Config: testAccKeyfactorDataSourceSecurityIdentityBasic(accountName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(dataSourceName, "id"),
-					resource.TestCheckResourceAttrSet(dataSourceName, "account_name"),
+					resource.TestCheckResourceAttr(dataSourceName, "account_name", stateAccountName),
 					resource.TestCheckResourceAttrSet(dataSourceName, "identity_type"),
-					resource.TestCheckResourceAttrSet(dataSourceName, "valid"),
+					resource.TestCheckResourceAttr(dataSourceName, "valid", "true"),
 					resource.TestCheckResourceAttrSet(dataSourceName, "roles.#"),
 				),
 			},

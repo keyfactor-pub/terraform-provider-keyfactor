@@ -188,9 +188,10 @@ func TestUnitKeyfactorCertificateStoreResource(t *testing.T) {
 				Config: testAccCertStoreConfig(storeType, clientMachine, agentID, storePath),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "store_path"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "store_type"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "client_machine"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "store_path", storePath),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "store_type", storeType),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "client_machine", clientMachine),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "agent_identifier", agentID),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "agent_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "approved"),
 				),

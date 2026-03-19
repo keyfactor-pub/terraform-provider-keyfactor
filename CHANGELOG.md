@@ -1,3 +1,57 @@
+# v2.8.0
+
+## Applications
+
+### Features
+
+- feat: `keyfactor_application` resource and data source
+
+## Agents
+
+### Features
+
+- feat: `keyfactor_agents` data source for listing all orchestrator agents
+
+## Certificate Authorities
+
+### Features
+
+- feat: `keyfactor_certificate_authority` resource and data source with import support
+
+## Certificate Store Types
+
+### Features
+
+- feat: `keyfactor_certificate_store_type` resource and data source
+- feat: `keyfactor_certificate_store_types` data source for listing all store types
+
+## Certificate Templates
+
+### Features
+
+- feat: `keyfactor_certificate_template` resource and data source (replaces legacy SDK-based data source)
+
+## Certificates
+
+### Fixes
+
+- fix: `keyfactor_certificate` `certificate_template` and `enrollment_pattern` can now be specified together (#146)
+- fix: `keyfactor_certificate` changing `certificate_format` no longer forces resource replacement (#150)
+- fix: `keyfactor_certificate` serial number and thumbprint normalized to uppercase hex
+
+## Certificate Deployments
+
+### Fixes
+
+- fix: `keyfactor_certificate_deployment` overwrite semantics corrected; K8S store credential support fixed
+
+## PAM Providers
+
+### Features
+
+- feat: `keyfactor_pam_provider` resource and data source
+- feat: `keyfactor_pam_provider_type` resource and data source
+
 # 2.7.1
 
 ## Certificates

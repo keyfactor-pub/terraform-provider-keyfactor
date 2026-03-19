@@ -86,7 +86,8 @@ func (r dataSourceApplicationType) GetSchema(_ context.Context) (tfsdk.Schema, d
 Reads an existing Keyfactor Command Application (certificate store container).
 
 > [!NOTE]
-> Applications are only available in Keyfactor Command v25.0+
+> On Keyfactor Command v25.0+ this data source uses the ` + "`/Applications`" + ` endpoint.
+> On pre-v25 Command it automatically falls back to ` + "`/CertificateStoreContainers`" + `.
 `,
 	}, nil
 }

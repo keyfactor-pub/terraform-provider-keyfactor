@@ -2,7 +2,10 @@
 
 **File:** `keyfactor/data_source_keyfactor_application_test.go`
 
-> **Note:** Applications are only available in Keyfactor Command v25.0+
+> **Note:** On Keyfactor Command v25.0+ this data source uses the `/Applications` endpoint.
+> On pre-v25 Command it transparently falls back to `/CertificateStoreContainers`.
+> The `x-keyfactor-product-version` response header is read during authentication to detect
+> the server version automatically.
 
 ---
 

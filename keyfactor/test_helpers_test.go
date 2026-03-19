@@ -514,6 +514,11 @@ func (v *vcrAuthConfig) GetServerConfig() *auth_providers.Server {
 	return v.server
 }
 
+func (v *vcrAuthConfig) GetCommandVersion() string {
+	// VCR tests always target a v25+ lab; use the Applications endpoint.
+	return "25.1.0.0"
+}
+
 // newVCRServer returns a fake *auth_providers.Server suitable for VCR replay.
 func newVCRServer(baseURL string) *auth_providers.Server {
 	return &auth_providers.Server{
@@ -1093,6 +1098,118 @@ func readEnrollmentPatternTestParams(cassettePath string) enrollmentPatternTestP
 	var params enrollmentPatternTestParams
 	if json.Unmarshal(data, &params) != nil {
 		return enrollmentPatternTestParams{}
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// CA test params
+// ---------------------------------------------------------------------------
+
+type caTestParams struct {
+	CAName string `json:"ca_name"`
+	CAID   string `json:"ca_id"`
+	CAHost string `json:"ca_host"`
+}
+
+func writeCATestParams(cassettePath string, params caTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readCATestParams(cassettePath string) caTestParams {
+	defaults := caTestParams{CAName: "Sub-CA", CAID: "1", CAHost: "localhost"}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params caTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Certificate template test params
+// ---------------------------------------------------------------------------
+
+type templateTestParams struct {
+	TemplateName string `json:"template_name"`
+	TemplateID   string `json:"template_id"`
+}
+
+func writeTemplateTestParams(cassettePath string, params templateTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readTemplateTestParams(cassettePath string) templateTestParams {
+	defaults := templateTestParams{TemplateName: "WebServer", TemplateID: "1"}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params templateTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return defaults
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Certificate deploy test params
+// ---------------------------------------------------------------------------
+
+type deployTestParams struct {
+	CN            string `json:"cn"`
+	StoreType     string `json:"store_type"`
+	ClientMachine string `json:"client_machine"`
+	AgentID       string `json:"agent_id"`
+	StorePath     string `json:"store_path"`
+	CAName        string `json:"ca_name"`
+	TemplateName  string `json:"template_name"`
+}
+
+func writeDeployTestParams(cassettePath string, params deployTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readDeployTestParams(cassettePath string) deployTestParams {
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return deployTestParams{}
+	}
+	var params deployTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return deployTestParams{}
+	}
+	return params
+}
+
+// ---------------------------------------------------------------------------
+// Template role binding test params
+// ---------------------------------------------------------------------------
+
+type roleBindingTestParams struct {
+	RoleName     string `json:"role_name"`
+	TemplateName string `json:"template_name"`
+}
+
+func writeRoleBindingTestParams(cassettePath string, params roleBindingTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readRoleBindingTestParams(cassettePath string) roleBindingTestParams {
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return roleBindingTestParams{}
+	}
+	var params roleBindingTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return roleBindingTestParams{}
 	}
 	return params
 }

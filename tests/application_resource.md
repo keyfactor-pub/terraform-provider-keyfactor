@@ -2,7 +2,9 @@
 
 **File:** `keyfactor/resource_keyfactor_application_test.go`
 
-> **Note:** Applications are only available in Keyfactor Command v25.0+
+> **Note:** On Keyfactor Command v25.0+ this resource uses the `/Applications` endpoint.
+> On pre-v25 Command it transparently falls back to `/CertificateStoreContainers`, which
+> supports the same JSON schedule format and all schedule types.
 
 ---
 

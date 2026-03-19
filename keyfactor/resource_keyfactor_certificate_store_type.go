@@ -394,6 +394,15 @@ type CertStoreTypeEntryParam struct {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// passwordStyleOrDefault returns the given password style, defaulting to "Default"
+// when the value is empty. The API requires a non-empty style value.
+func passwordStyleOrDefault(style string) string {
+	if style == "" {
+		return "Default"
+	}
+	return style
+}
+
 func interfaceToString(v interface{}) string {
 	if v == nil {
 		return ""
@@ -438,8 +447,7 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 		state.PasswordStyle = types.String{Value: resp.PasswordOptions.Style}
 	}
 
-	state.Properties = []CertStoreTypeProperty{}
-	if resp.Properties != nil {
+	if resp.Properties != nil && len(*resp.Properties) > 0 {
 		for _, p := range *resp.Properties {
 			state.Properties = append(state.Properties, CertStoreTypeProperty{
 				Name:         types.String{Value: p.Name},
@@ -452,8 +460,7 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 		}
 	}
 
-	state.EntryParameters = []CertStoreTypeEntryParam{}
-	if resp.EntryParameters != nil {
+	if resp.EntryParameters != nil && len(*resp.EntryParameters) > 0 {
 		for _, ep := range *resp.EntryParameters {
 			state.EntryParameters = append(state.EntryParameters, CertStoreTypeEntryParam{
 				Name:          types.String{Value: ep.Name},
@@ -496,7 +503,7 @@ func certStoreTypeDefToAPIRequest(plan KeyfactorCertStoreTypeDef) api.Certificat
 		PasswordOptions: &api.StoreTypePasswordOptions{
 			EntrySupported: plan.PasswordEntrySupported.Value,
 			StoreRequired:  plan.PasswordStoreRequired.Value,
-			Style:          plan.PasswordStyle.Value,
+			Style:          passwordStyleOrDefault(plan.PasswordStyle.Value),
 		},
 	}
 

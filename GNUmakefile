@@ -37,13 +37,13 @@ gen-store-types:
 ##   Usage: make store-type-demo [SUFFIX=_TF]
 SUFFIX ?= _TF
 store-type-demo:
-	cd $(PROVIDER_DIR)/terraform/store_type_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/store_type_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
 
 ## application-demo: Run full lifecycle demo in terraform/application_demo/
 ##   (build, init, validate, plan, apply, import, reconcile, drift-check, destroy)
 ##   Usage: make application-demo [SUFFIX=_TF]
 application-demo:
-	cd $(PROVIDER_DIR)/terraform/application_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/application_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
 
 release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64

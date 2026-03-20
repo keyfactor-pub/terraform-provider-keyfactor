@@ -39,6 +39,12 @@
 - fix: `keyfactor_certificate` changing `certificate_format` no longer forces resource replacement (#150)
 - fix: `keyfactor_certificate` serial number and thumbprint normalized to uppercase hex
 
+## Certificate Stores
+
+### Features
+
+- feat: `keyfactor_certificate_store` data source now supports lookup by GUID via the `id` field; `client_machine` and `store_path` are no longer required when `id` is provided
+
 ## Certificate Deployments
 
 ### Fixes

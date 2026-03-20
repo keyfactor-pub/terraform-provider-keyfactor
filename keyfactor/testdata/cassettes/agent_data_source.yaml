@@ -1,0 +1,253 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            pq.queryString:
+                - AgentId -eq "275bcd31-9e7b-4c4a-bce9-1719e0c2168d"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Agents?pq.queryString=AgentId%20-eq%20%22275bcd31-9e7b-4c4a-bce9-1719e0c2168d%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3577
+        body: '[{"AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","ClientMachine":"container_uo-25-4","Username":"alpha-rho-rho-alpha-82852","AgentPlatform":1,"Version":"25.4.1.0","Status":2,"LastSeen":"2026-03-20T00:20:11.017Z","Capabilities":["K8STLSSecr","K8SSecret","K8SCert","K8SNS","SSL","K8SJKS","K8SPKCS12","K8SCluster","LOGS"],"Blueprint":null,"Thumbprint":"","LegacyThumbprint":"","AuthCertificateReenrollment":"None","LastThumbprintUsed":"","LastErrorCode":null,"LastErrorMessage":null,"JobTypes":[{"Name":"K8STLSSecr Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"50431909-6488-4237-a9b0-1158429cf59c"},{"Name":"K8SSecret Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"7726a60a-2914-4577-a8c2-139afb7e5872"},{"Name":"K8SCert Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"6e5bd399-f98c-42f4-8f65-16810b51bac3"},{"Name":"K8SNS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"2fac1326-32b5-49b5-a844-193775c3079e"},{"Name":"K8STLSSecr Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1826f5fd-68c5-45ec-856e-2c0209c2018d"},{"Name":"SSL Endpoint Discovery","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"332abd4e-cf9a-4449-a550-3c984a2399f9"},{"Name":"K8SJKS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b74fb16a-ec56-42e6-9333-4359a1c89707"},{"Name":"K8SSecret Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"2eeeb374-7aed-45e6-aced-610ae85630e5"},{"Name":"K8SNS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"31dccc34-b00b-4541-a9a6-638618d417bd"},{"Name":"K8SPKCS12 Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"6370c8d7-7505-4b39-9c24-69d4bb48f09d"},{"Name":"K8SPKCS12 Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b1eb7f6c-3cfb-46a7-9a1d-6b2c10adc440"},{"Name":"K8SCert Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"475f1044-0d6b-4724-be4d-7fe79b579aa0"},{"Name":"K8STLSSecr Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"f40a4c55-085b-47a7-bd42-a4103f6c4bd0"},{"Name":"K8SNS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"2808b35e-a43f-42d3-8f92-b0c119095668"},{"Name":"K8SCluster Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"954b950e-e89e-4de9-a24a-b9e867826a1e"},{"Name":"K8SJKS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1b02d709-a2db-4590-a61a-bb318d06c30f"},{"Name":"K8SJKS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"de9d08dd-d64d-4c08-9aa0-c031945d020d"},{"Name":"Orchestrator Log Retrieval","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"0d8cf0c8-56ca-4b8a-b16a-c062018e170d"},{"Name":"K8SSecret Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"9a38a5da-d591-4ae5-9982-c6a41f74b5f6"},{"Name":"K8SPKCS12 Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"c82037f4-fc63-4884-91b3-d9baf21c4cf7"},{"Name":"SSL Endpoint Monitoring","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"ecd5758a-2f05-49b1-9373-d9bde7077f59"},{"Name":"K8SCluster Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"be50b19d-aeb8-48c5-b725-f8481b118fbe"}]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "3577"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Fri, 20 Mar 2026 00:20:13 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "65"
+            X-Keyfactor-Correlation-Id:
+                - 73ee4b15-16a0-4df8-bb55-befe59bff1ee
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 1.032710826s
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            pq.queryString:
+                - AgentId -eq "275bcd31-9e7b-4c4a-bce9-1719e0c2168d"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Agents?pq.queryString=AgentId%20-eq%20%22275bcd31-9e7b-4c4a-bce9-1719e0c2168d%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3577
+        body: '[{"AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","ClientMachine":"container_uo-25-4","Username":"alpha-rho-rho-alpha-82852","AgentPlatform":1,"Version":"25.4.1.0","Status":2,"LastSeen":"2026-03-20T00:20:11.017Z","Capabilities":["K8STLSSecr","K8SSecret","K8SCert","K8SNS","SSL","K8SJKS","K8SPKCS12","K8SCluster","LOGS"],"Blueprint":null,"Thumbprint":"","LegacyThumbprint":"","AuthCertificateReenrollment":"None","LastThumbprintUsed":"","LastErrorCode":null,"LastErrorMessage":null,"JobTypes":[{"Name":"K8STLSSecr Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"50431909-6488-4237-a9b0-1158429cf59c"},{"Name":"K8SSecret Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"7726a60a-2914-4577-a8c2-139afb7e5872"},{"Name":"K8SCert Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"6e5bd399-f98c-42f4-8f65-16810b51bac3"},{"Name":"K8SNS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"2fac1326-32b5-49b5-a844-193775c3079e"},{"Name":"K8STLSSecr Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1826f5fd-68c5-45ec-856e-2c0209c2018d"},{"Name":"SSL Endpoint Discovery","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"332abd4e-cf9a-4449-a550-3c984a2399f9"},{"Name":"K8SJKS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b74fb16a-ec56-42e6-9333-4359a1c89707"},{"Name":"K8SSecret Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"2eeeb374-7aed-45e6-aced-610ae85630e5"},{"Name":"K8SNS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"31dccc34-b00b-4541-a9a6-638618d417bd"},{"Name":"K8SPKCS12 Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"6370c8d7-7505-4b39-9c24-69d4bb48f09d"},{"Name":"K8SPKCS12 Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b1eb7f6c-3cfb-46a7-9a1d-6b2c10adc440"},{"Name":"K8SCert Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"475f1044-0d6b-4724-be4d-7fe79b579aa0"},{"Name":"K8STLSSecr Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"f40a4c55-085b-47a7-bd42-a4103f6c4bd0"},{"Name":"K8SNS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"2808b35e-a43f-42d3-8f92-b0c119095668"},{"Name":"K8SCluster Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"954b950e-e89e-4de9-a24a-b9e867826a1e"},{"Name":"K8SJKS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1b02d709-a2db-4590-a61a-bb318d06c30f"},{"Name":"K8SJKS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"de9d08dd-d64d-4c08-9aa0-c031945d020d"},{"Name":"Orchestrator Log Retrieval","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"0d8cf0c8-56ca-4b8a-b16a-c062018e170d"},{"Name":"K8SSecret Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"9a38a5da-d591-4ae5-9982-c6a41f74b5f6"},{"Name":"K8SPKCS12 Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"c82037f4-fc63-4884-91b3-d9baf21c4cf7"},{"Name":"SSL Endpoint Monitoring","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"ecd5758a-2f05-49b1-9373-d9bde7077f59"},{"Name":"K8SCluster Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"be50b19d-aeb8-48c5-b725-f8481b118fbe"}]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "3577"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Fri, 20 Mar 2026 00:20:14 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "62"
+            X-Keyfactor-Correlation-Id:
+                - 2392453d-1105-4431-b5b0-949f9fdaa61c
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 178.056676ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            pq.queryString:
+                - AgentId -eq "275bcd31-9e7b-4c4a-bce9-1719e0c2168d"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Agents?pq.queryString=AgentId%20-eq%20%22275bcd31-9e7b-4c4a-bce9-1719e0c2168d%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3577
+        body: '[{"AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","ClientMachine":"container_uo-25-4","Username":"alpha-rho-rho-alpha-82852","AgentPlatform":1,"Version":"25.4.1.0","Status":2,"LastSeen":"2026-03-20T00:20:11.017Z","Capabilities":["K8STLSSecr","K8SSecret","K8SCert","K8SNS","SSL","K8SJKS","K8SPKCS12","K8SCluster","LOGS"],"Blueprint":null,"Thumbprint":"","LegacyThumbprint":"","AuthCertificateReenrollment":"None","LastThumbprintUsed":"","LastErrorCode":null,"LastErrorMessage":null,"JobTypes":[{"Name":"K8STLSSecr Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"50431909-6488-4237-a9b0-1158429cf59c"},{"Name":"K8SSecret Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"7726a60a-2914-4577-a8c2-139afb7e5872"},{"Name":"K8SCert Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"6e5bd399-f98c-42f4-8f65-16810b51bac3"},{"Name":"K8SNS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"2fac1326-32b5-49b5-a844-193775c3079e"},{"Name":"K8STLSSecr Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1826f5fd-68c5-45ec-856e-2c0209c2018d"},{"Name":"SSL Endpoint Discovery","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"332abd4e-cf9a-4449-a550-3c984a2399f9"},{"Name":"K8SJKS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b74fb16a-ec56-42e6-9333-4359a1c89707"},{"Name":"K8SSecret Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"2eeeb374-7aed-45e6-aced-610ae85630e5"},{"Name":"K8SNS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"31dccc34-b00b-4541-a9a6-638618d417bd"},{"Name":"K8SPKCS12 Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"6370c8d7-7505-4b39-9c24-69d4bb48f09d"},{"Name":"K8SPKCS12 Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b1eb7f6c-3cfb-46a7-9a1d-6b2c10adc440"},{"Name":"K8SCert Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"475f1044-0d6b-4724-be4d-7fe79b579aa0"},{"Name":"K8STLSSecr Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"f40a4c55-085b-47a7-bd42-a4103f6c4bd0"},{"Name":"K8SNS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"2808b35e-a43f-42d3-8f92-b0c119095668"},{"Name":"K8SCluster Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"954b950e-e89e-4de9-a24a-b9e867826a1e"},{"Name":"K8SJKS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1b02d709-a2db-4590-a61a-bb318d06c30f"},{"Name":"K8SJKS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"de9d08dd-d64d-4c08-9aa0-c031945d020d"},{"Name":"Orchestrator Log Retrieval","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"0d8cf0c8-56ca-4b8a-b16a-c062018e170d"},{"Name":"K8SSecret Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"9a38a5da-d591-4ae5-9982-c6a41f74b5f6"},{"Name":"K8SPKCS12 Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"c82037f4-fc63-4884-91b3-d9baf21c4cf7"},{"Name":"SSL Endpoint Monitoring","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"ecd5758a-2f05-49b1-9373-d9bde7077f59"},{"Name":"K8SCluster Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"be50b19d-aeb8-48c5-b725-f8481b118fbe"}]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "3577"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Fri, 20 Mar 2026 00:20:15 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "64"
+            X-Keyfactor-Correlation-Id:
+                - 27c0c177-0535-4b53-bc29-f4edff099494
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 178.370682ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            pq.queryString:
+                - AgentId -eq "275bcd31-9e7b-4c4a-bce9-1719e0c2168d"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Agents?pq.queryString=AgentId%20-eq%20%22275bcd31-9e7b-4c4a-bce9-1719e0c2168d%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3577
+        body: '[{"AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","ClientMachine":"container_uo-25-4","Username":"alpha-rho-rho-alpha-82852","AgentPlatform":1,"Version":"25.4.1.0","Status":2,"LastSeen":"2026-03-20T00:20:11.017Z","Capabilities":["K8STLSSecr","K8SSecret","K8SCert","K8SNS","SSL","K8SJKS","K8SPKCS12","K8SCluster","LOGS"],"Blueprint":null,"Thumbprint":"","LegacyThumbprint":"","AuthCertificateReenrollment":"None","LastThumbprintUsed":"","LastErrorCode":null,"LastErrorMessage":null,"JobTypes":[{"Name":"K8STLSSecr Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"50431909-6488-4237-a9b0-1158429cf59c"},{"Name":"K8SSecret Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"7726a60a-2914-4577-a8c2-139afb7e5872"},{"Name":"K8SCert Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"6e5bd399-f98c-42f4-8f65-16810b51bac3"},{"Name":"K8SNS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"2fac1326-32b5-49b5-a844-193775c3079e"},{"Name":"K8STLSSecr Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1826f5fd-68c5-45ec-856e-2c0209c2018d"},{"Name":"SSL Endpoint Discovery","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"332abd4e-cf9a-4449-a550-3c984a2399f9"},{"Name":"K8SJKS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b74fb16a-ec56-42e6-9333-4359a1c89707"},{"Name":"K8SSecret Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"2eeeb374-7aed-45e6-aced-610ae85630e5"},{"Name":"K8SNS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"31dccc34-b00b-4541-a9a6-638618d417bd"},{"Name":"K8SPKCS12 Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"6370c8d7-7505-4b39-9c24-69d4bb48f09d"},{"Name":"K8SPKCS12 Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b1eb7f6c-3cfb-46a7-9a1d-6b2c10adc440"},{"Name":"K8SCert Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"475f1044-0d6b-4724-be4d-7fe79b579aa0"},{"Name":"K8STLSSecr Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"f40a4c55-085b-47a7-bd42-a4103f6c4bd0"},{"Name":"K8SNS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"2808b35e-a43f-42d3-8f92-b0c119095668"},{"Name":"K8SCluster Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"954b950e-e89e-4de9-a24a-b9e867826a1e"},{"Name":"K8SJKS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1b02d709-a2db-4590-a61a-bb318d06c30f"},{"Name":"K8SJKS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"de9d08dd-d64d-4c08-9aa0-c031945d020d"},{"Name":"Orchestrator Log Retrieval","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"0d8cf0c8-56ca-4b8a-b16a-c062018e170d"},{"Name":"K8SSecret Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"9a38a5da-d591-4ae5-9982-c6a41f74b5f6"},{"Name":"K8SPKCS12 Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"c82037f4-fc63-4884-91b3-d9baf21c4cf7"},{"Name":"SSL Endpoint Monitoring","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"ecd5758a-2f05-49b1-9373-d9bde7077f59"},{"Name":"K8SCluster Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"be50b19d-aeb8-48c5-b725-f8481b118fbe"}]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "3577"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Fri, 20 Mar 2026 00:20:15 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "65"
+            X-Keyfactor-Correlation-Id:
+                - d77e4fd8-8a92-4149-820f-aa12140aa061
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 171.395873ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            pq.queryString:
+                - AgentId -eq "275bcd31-9e7b-4c4a-bce9-1719e0c2168d"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Agents?pq.queryString=AgentId%20-eq%20%22275bcd31-9e7b-4c4a-bce9-1719e0c2168d%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3577
+        body: '[{"AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","ClientMachine":"container_uo-25-4","Username":"alpha-rho-rho-alpha-82852","AgentPlatform":1,"Version":"25.4.1.0","Status":2,"LastSeen":"2026-03-20T00:20:11.017Z","Capabilities":["K8STLSSecr","K8SSecret","K8SCert","K8SNS","SSL","K8SJKS","K8SPKCS12","K8SCluster","LOGS"],"Blueprint":null,"Thumbprint":"","LegacyThumbprint":"","AuthCertificateReenrollment":"None","LastThumbprintUsed":"","LastErrorCode":null,"LastErrorMessage":null,"JobTypes":[{"Name":"K8STLSSecr Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"50431909-6488-4237-a9b0-1158429cf59c"},{"Name":"K8SSecret Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"7726a60a-2914-4577-a8c2-139afb7e5872"},{"Name":"K8SCert Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"6e5bd399-f98c-42f4-8f65-16810b51bac3"},{"Name":"K8SNS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"2fac1326-32b5-49b5-a844-193775c3079e"},{"Name":"K8STLSSecr Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1826f5fd-68c5-45ec-856e-2c0209c2018d"},{"Name":"SSL Endpoint Discovery","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"332abd4e-cf9a-4449-a550-3c984a2399f9"},{"Name":"K8SJKS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b74fb16a-ec56-42e6-9333-4359a1c89707"},{"Name":"K8SSecret Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"2eeeb374-7aed-45e6-aced-610ae85630e5"},{"Name":"K8SNS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"31dccc34-b00b-4541-a9a6-638618d417bd"},{"Name":"K8SPKCS12 Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"6370c8d7-7505-4b39-9c24-69d4bb48f09d"},{"Name":"K8SPKCS12 Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"b1eb7f6c-3cfb-46a7-9a1d-6b2c10adc440"},{"Name":"K8SCert Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"475f1044-0d6b-4724-be4d-7fe79b579aa0"},{"Name":"K8STLSSecr Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"f40a4c55-085b-47a7-bd42-a4103f6c4bd0"},{"Name":"K8SNS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"2808b35e-a43f-42d3-8f92-b0c119095668"},{"Name":"K8SCluster Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"954b950e-e89e-4de9-a24a-b9e867826a1e"},{"Name":"K8SJKS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"1b02d709-a2db-4590-a61a-bb318d06c30f"},{"Name":"K8SJKS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"de9d08dd-d64d-4c08-9aa0-c031945d020d"},{"Name":"Orchestrator Log Retrieval","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"0d8cf0c8-56ca-4b8a-b16a-c062018e170d"},{"Name":"K8SSecret Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"9a38a5da-d591-4ae5-9982-c6a41f74b5f6"},{"Name":"K8SPKCS12 Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"c82037f4-fc63-4884-91b3-d9baf21c4cf7"},{"Name":"SSL Endpoint Monitoring","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"ecd5758a-2f05-49b1-9373-d9bde7077f59"},{"Name":"K8SCluster Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"be50b19d-aeb8-48c5-b725-f8481b118fbe"}]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "3577"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Fri, 20 Mar 2026 00:20:16 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "59"
+            X-Keyfactor-Correlation-Id:
+                - 9999777c-679d-4121-acb5-2b8c5180d80a
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 167.615839ms

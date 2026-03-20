@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
@@ -125,6 +126,66 @@ resource "keyfactor_template_role_binding" "terraform_test" {
 }
 `, t.roleName, t.templatesStr)
 	return output
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorTemplateRoleBindingResource exercises the template role
+// binding resource. Because the keyfactor-go-client UpdateTemplateArg struct
+// is missing the Policies field required by Command v25+, the apply step is
+// expected to fail with an error.  The cassette captures the role Create and
+// the attempted template update that yields the server error.
+func TestUnitKeyfactorTemplateRoleBindingResource(t *testing.T) {
+	cassetteName := "template_role_binding_resource"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var roleName, templateName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := testAccIntegrationPreCheck(t)
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		if enrollmentPattern == "" {
+			t.Skip("Template role binding requires enrollment patterns (Command v25+)")
+		}
+		templateName = discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+		if templateName == "" {
+			templateName = discoverTemplate(t, client)
+		}
+		roleName = fmt.Sprintf("tf-unit-binding-%d", time.Now().UnixNano())
+		writeRoleBindingTestParams(cassettePath, roleBindingTestParams{RoleName: roleName, TemplateName: templateName})
+	} else {
+		params := readRoleBindingTestParams(cassettePath)
+		if params.RoleName == "" {
+			t.Skip("No template role binding cassette recorded. Run with RECORD_CASSETTES=1 against a v25+ lab.")
+		}
+		roleName = params.RoleName
+		templateName = params.TemplateName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: fmt.Sprintf(`
+resource "keyfactor_role" "unit_binding_test" {
+  name        = %q
+  description = "Unit test role for binding"
+  permissions = []
+}
+
+resource "keyfactor_template_role_binding" "unit_test" {
+  role_name            = keyfactor_role.unit_binding_test.name
+  template_short_names = [%q]
+}
+`, roleName, templateName),
+				ExpectError: regexp.MustCompile(`(?i)Policies.*cannot be empty|Error updating template`),
+			},
+		},
+	})
 }
 
 // ---------------------------------------------------------------------------

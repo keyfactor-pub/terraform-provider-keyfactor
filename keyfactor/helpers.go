@@ -1103,20 +1103,24 @@ func parseProperties(properties string) (types.Map, types.String, types.String, 
 	}
 
 	for k, v := range propsObj {
+		// The single-store GET endpoint may return special properties as nested
+		// objects (e.g. {"Value": {"SecretValue": "..."}}) rather than plain
+		// strings. Use a safe string conversion to avoid panics.
+		strVal, _ := v.(string)
 		switch k {
 		case "ServerUsername":
-			serverUsername = types.String{Value: v.(string)}
+			serverUsername = types.String{Value: strVal}
 		case "ServerPassword":
-			serverPassword = types.String{Value: v.(string)}
+			serverPassword = types.String{Value: strVal}
 		case "ServerUseSsl":
 			// Convert terraform True/False to bool true/false
-			val, valErr := terraformBoolToGoBool(v.(string))
+			val, valErr := terraformBoolToGoBool(strVal)
 			if valErr != nil {
 				val = true // Default to true if we can't convert
 			}
 			serverUseSsl = types.Bool{Value: val}
 		default:
-			propElems[k] = types.String{Value: v.(string)}
+			propElems[k] = types.String{Value: strVal}
 		}
 	}
 

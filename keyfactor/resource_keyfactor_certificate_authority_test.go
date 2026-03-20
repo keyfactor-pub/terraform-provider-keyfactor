@@ -2,6 +2,8 @@ package keyfactor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -49,6 +51,60 @@ func TestIntKeyfactorCertificateAuthorityResourceImport(t *testing.T) {
 					resource.TestCheckResourceAttr("keyfactor_certificate_authority.test", "id", caID),
 					resource.TestCheckResourceAttr("keyfactor_certificate_authority.test", "logical_name", caName),
 					resource.TestCheckResourceAttr("keyfactor_certificate_authority.test", "host_name", caHost),
+				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+func TestUnitKeyfactorCertificateAuthorityResource(t *testing.T) {
+	cassetteName := "certificate_authority_resource"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var caID, caName, caHost string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := testAccIntegrationPreCheck(t)
+		if client == nil {
+			t.Skip("Skipping: testAccIntegrationPreCheck returned nil client")
+		}
+		cas, err := client.GetCAList()
+		if err != nil || len(cas) == 0 {
+			t.Skip("Skipping: no certificate authority found in lab")
+		}
+		caID = strconv.Itoa(cas[0].Id)
+		caName = cas[0].LogicalName
+		caHost = cas[0].HostName
+		writeCATestParams(cassettePath, caTestParams{CAID: caID, CAName: caName, CAHost: caHost})
+	} else {
+		params := readCATestParams(cassettePath)
+		caID = params.CAID
+		caName = params.CAName
+		caHost = params.CAHost
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_certificate_authority.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		CheckDestroy:             nil,
+		Steps: []resource.TestStep{
+			{
+				Config:            testAccCertificateAuthorityImportConfig(caName, caHost),
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateId:     caID,
+				ImportStateVerify: false,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "id", caID),
+					resource.TestCheckResourceAttr(resourceName, "logical_name", caName),
+					resource.TestCheckResourceAttrSet(resourceName, "host_name"),
 				),
 			},
 		},

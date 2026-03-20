@@ -68,51 +68,41 @@ func TestAccKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 
 // TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource tests the
 // keyfactor_oauth_security_role_claim_association resource using VCR cassettes.
+// Uses a single-role config to avoid non-deterministic POST ordering with two
+// identical-URL requests that the VCR body-agnostic matcher cannot distinguish.
 func TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 	cassetteName := "oauth_security_role_claim_association_resource"
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
 
-	var roleName1, roleName2, claimValue string
+	var roleName1, claimValue string
 	if os.Getenv("RECORD_CASSETTES") == "1" {
 		ts := time.Now().UnixNano() % 1000000000
 		roleName1 = fmt.Sprintf("tf-unit-role-assoc1-%d", ts)
-		roleName2 = fmt.Sprintf("tf-unit-role-assoc2-%d", ts)
 		claimValue = fmt.Sprintf("tf-unit-claim-assoc-%d", ts)
 		writeOAuthRoleClaimAssocTestParams(cassettePath, oauthRoleClaimAssocTestParams{
 			RoleName1:  roleName1,
-			RoleName2:  roleName2,
 			ClaimValue: claimValue,
 		})
 	} else {
 		params := readOAuthRoleClaimAssocTestParams(cassettePath)
 		roleName1 = params.RoleName1
-		roleName2 = params.RoleName2
 		claimValue = params.ClaimValue
 	}
 
 	factories, cleanup := newVCRProviderFactories(t, cassetteName)
 	defer cleanup()
 
-	r := oauthSecurityRoleClaimAssociationTestCase{
-		role1Name:              roleName1,
-		role2Name:              roleName2,
-		associatedRoleResource: "test_role_1",
-		claimValue:             claimValue,
-		claimProviderScheme:    "System",
-		resourceType:           "keyfactor_oauth_security_role_claim_association",
-		resourceName:           "test_role_claim_association",
-		resourcePath:           "keyfactor_oauth_security_role_claim_association.test_role_claim_association",
-	}
+	resourcePath := "keyfactor_oauth_security_role_claim_association.test_role_claim_association"
 
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResource(r),
+				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(roleName1, claimValue),
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
-					resource.TestCheckResourceAttrSet(r.resourcePath, "role_id"),
-					resource.TestCheckResourceAttrSet(r.resourcePath, "claim_id"),
+					resource.TestCheckResourceAttrSet(resourcePath, "id"),
+					resource.TestCheckResourceAttrSet(resourcePath, "role_id"),
+					resource.TestCheckResourceAttrSet(resourcePath, "claim_id"),
 				),
 			},
 		},
@@ -155,6 +145,37 @@ resource "%s" "%s" {
 `,
 		t.claimValue, t.role1Name, t.role2Name, t.resourceType, t.resourceName, t.associatedRoleResource)
 	return output
+}
+
+// testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle is a
+// single-role variant used by the unit test to avoid non-deterministic VCR
+// replay when two identical-URL POSTs cannot be distinguished by the matcher.
+func testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(roleName, claimValue string) string {
+	return fmt.Sprintf(`
+data "keyfactor_permission_set" "global_permission_set" {
+     name = "Global"
+}
+
+resource "keyfactor_oauth_security_claim" "test_claim" {
+	claim_type = "OAuthSubject"
+	claim_value = "%s"
+	provider_authentication_scheme = "System"
+	description = "A Terraform test claim"
+}
+
+resource "keyfactor_oauth_security_role" "test_role_1" {
+	name = "%s"
+	description  = "A Terraform test role"
+	permission_set_id  = data.keyfactor_permission_set.global_permission_set.id
+	email_address = "foo@example.com"
+	permissions = []
+}
+
+resource "keyfactor_oauth_security_role_claim_association" "test_role_claim_association" {
+	role_id  = resource.keyfactor_oauth_security_role.test_role_1.id
+	claim_id = resource.keyfactor_oauth_security_claim.test_claim.id
+}
+`, claimValue, roleName)
 }
 
 // ---------------------------------------------------------------------------

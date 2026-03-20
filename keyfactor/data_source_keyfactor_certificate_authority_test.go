@@ -2,6 +2,8 @@ package keyfactor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -67,6 +69,63 @@ func TestIntKeyfactorCertificateAuthorityDataSourceByID(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.keyfactor_certificate_authority.test", "id"),
 					resource.TestCheckResourceAttr("data.keyfactor_certificate_authority.test", "logical_name", caName),
+				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+func TestUnitKeyfactorCertificateAuthorityDataSource(t *testing.T) {
+	cassetteName := "certificate_authority_data_source"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var caName, caID string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := testAccIntegrationPreCheck(t)
+		if client == nil {
+			t.Skip("Skipping: testAccIntegrationPreCheck returned nil client")
+		}
+		cas, err := client.GetCAList()
+		if err != nil || len(cas) == 0 {
+			t.Skip("Skipping: no certificate authority found in lab")
+		}
+		caName = cas[0].LogicalName
+		caID = strconv.Itoa(cas[0].Id)
+		writeCATestParams(cassettePath, caTestParams{CAName: caName, CAID: caID, CAHost: cas[0].HostName})
+	} else {
+		params := readCATestParams(cassettePath)
+		caName = params.CAName
+		caID = params.CAID
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	dsName := "data.keyfactor_certificate_authority.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Look up by name
+				Config: testAccCertificateAuthorityDataSourceConfig(caName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(dsName, "id"),
+					resource.TestCheckResourceAttr(dsName, "logical_name", caName),
+					resource.TestCheckResourceAttrSet(dsName, "host_name"),
+					resource.TestCheckResourceAttrSet(dsName, "ca_type"),
+				),
+			},
+			{
+				// Look up by ID
+				Config: testAccCertificateAuthorityDataSourceConfig(caID),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(dsName, "id"),
+					resource.TestCheckResourceAttr(dsName, "logical_name", caName),
 				),
 			},
 		},

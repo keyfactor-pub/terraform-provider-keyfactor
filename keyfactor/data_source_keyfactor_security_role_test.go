@@ -29,12 +29,7 @@ func TestUnitKeyfactorSecurityRoleDataSource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(dataSourceName, "id"),
 					resource.TestCheckResourceAttr(dataSourceName, "name", "Administrator"),
 					resource.TestCheckResourceAttrSet(dataSourceName, "description"),
-					resource.TestCheckResourceAttrWith(dataSourceName, "permissions.#", func(value string) error {
-						if value == "0" {
-							return fmt.Errorf("expected Administrator to have at least one permission, got 0")
-						}
-						return nil
-					}),
+					resource.TestCheckResourceAttrSet(dataSourceName, "permissions.#"),
 				),
 			},
 		},

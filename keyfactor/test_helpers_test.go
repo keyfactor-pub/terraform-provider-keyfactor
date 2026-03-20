@@ -1162,13 +1162,14 @@ func readTemplateTestParams(cassettePath string) templateTestParams {
 // ---------------------------------------------------------------------------
 
 type deployTestParams struct {
-	CN            string `json:"cn"`
-	StoreType     string `json:"store_type"`
-	ClientMachine string `json:"client_machine"`
-	AgentID       string `json:"agent_id"`
-	StorePath     string `json:"store_path"`
-	CAName        string `json:"ca_name"`
-	TemplateName  string `json:"template_name"`
+	CN                string `json:"cn"`
+	StoreType         string `json:"store_type"`
+	ClientMachine     string `json:"client_machine"`
+	AgentID           string `json:"agent_id"`
+	StorePath         string `json:"store_path"`
+	CAName            string `json:"ca_name"`
+	TemplateName      string `json:"template_name"`
+	EnrollmentPattern string `json:"enrollment_pattern,omitempty"`
 }
 
 func writeDeployTestParams(cassettePath string, params deployTestParams) {
@@ -1807,7 +1808,8 @@ resource "keyfactor_certificate_store" "test" {
 `, clientMachine, storePath, agentID, storeType)
 }
 
-// testAccCertStoreDataSourceByID generates HCL for reading a cert store by ID
+// testAccCertStoreDataSourceByID generates HCL for reading a cert store by
+// client_machine + store_path using values from an existing resource reference.
 func testAccCertStoreDataSourceByID(storeResourceRef string) string {
 	return fmt.Sprintf(`
 data "keyfactor_certificate_store" "test" {
@@ -1815,6 +1817,16 @@ data "keyfactor_certificate_store" "test" {
   store_path     = %s.store_path
 }
 `, storeResourceRef, storeResourceRef)
+}
+
+// testAccCertStoreDataSourceByGUID generates HCL for reading a cert store by
+// GUID (id) using the id from an existing resource reference.
+func testAccCertStoreDataSourceByGUID(storeResourceRef string) string {
+	return fmt.Sprintf(`
+data "keyfactor_certificate_store" "test_by_guid" {
+  id = %s.id
+}
+`, storeResourceRef)
 }
 
 // testAccAgentDataSourceConfig generates HCL for reading an agent by identifier (GUID or machine name)

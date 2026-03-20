@@ -12,14 +12,22 @@ For general test infrastructure (VCR cassettes, discovery helpers, env vars, Mak
 | [agents_data_source.md](agents_data_source.md) | `keyfactor_agents` data source | [#52](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/52) |
 | [application_resource.md](application_resource.md) | `keyfactor_application` resource | — |
 | [application_data_source.md](application_data_source.md) | `keyfactor_application` data source | — |
+| [certificate_authority_resource.md](certificate_authority_resource.md) | `keyfactor_certificate_authority` resource | — |
+| [certificate_authority_data_source.md](certificate_authority_data_source.md) | `keyfactor_certificate_authority` data source | — |
+| [certificate_deploy_resource.md](certificate_deploy_resource.md) | `keyfactor_certificate_deployment` resource | — |
+| [certificate_store_resource.md](certificate_store_resource.md) | `keyfactor_certificate_store` resource | — |
+| [certificate_store_data_source.md](certificate_store_data_source.md) | `keyfactor_certificate_store` data source (by GUID or client+path) | — |
 | [certificate_store_type_resource.md](certificate_store_type_resource.md) | `keyfactor_certificate_store_type` resource | — |
 | [certificate_store_types_data_source.md](certificate_store_types_data_source.md) | `keyfactor_certificate_store_types` data source | — |
+| [certificate_template_resource.md](certificate_template_resource.md) | `keyfactor_certificate_template` resource | — |
+| [certificate_template_data_source.md](certificate_template_data_source.md) | `keyfactor_certificate_template` data source | — |
 | [pam_provider_resource.md](pam_provider_resource.md) | `keyfactor_pam_provider` resource | — |
 | [pam_provider_data_source.md](pam_provider_data_source.md) | `keyfactor_pam_provider` data source | — |
 | [pam_provider_type_resource.md](pam_provider_type_resource.md) | `keyfactor_pam_provider_type` resource | — |
 | [pam_provider_type_data_source.md](pam_provider_type_data_source.md) | `keyfactor_pam_provider_type` data source | — |
 | [security_identity_resource.md](security_identity_resource.md) | `keyfactor_identity` resource | — |
 | [security_identity_data_source.md](security_identity_data_source.md) | `keyfactor_identity` data source | — |
+| [template_role_binding_resource.md](template_role_binding_resource.md) | `keyfactor_template_role_binding` resource | — |
 
 ## Test Tiers
 
@@ -40,6 +48,7 @@ Every resource and data source has a `TestUnit*` test backed by a VCR cassette. 
 | `certificate_data_source` | `TestUnitKeyfactorCertificateDataSource` |
 | `certificate_store_resource` | `TestUnitKeyfactorCertificateStoreResource` |
 | `certificate_store_data_source` | `TestUnitKeyfactorCertificateStoreDataSource` |
+| `certificate_store_data_source_by_guid` | `TestUnitKeyfactorCertificateStoreDataSourceByGUID` |
 | `certificate_store_type_resource` | `TestUnitKeyfactorCertificateStoreTypeResource` |
 | `certificate_store_type_data_source` | `TestUnitKeyfactorCertificateStoreTypeDataSource` |
 | `certificate_store_types_data_source` | `TestUnitKeyfactorCertificateStoreTypesDataSource` |
@@ -61,6 +70,12 @@ Every resource and data source has a `TestUnit*` test backed by a VCR cassette. 
 | `oauth_security_role_data_source` | `TestUnitKeyfactorOAuthSecurityRoleDataSource` |
 | `oauth_security_role_claim_association_resource` | `TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource` |
 | `enrollment_pattern_data_source` | `TestUnitKeyfactorEnrollmentPatternDataSource` *(v25+ only)* |
+| `certificate_authority_resource` | `TestUnitKeyfactorCertificateAuthorityResource` |
+| `certificate_authority_data_source` | `TestUnitKeyfactorCertificateAuthorityDataSource` |
+| `certificate_template_resource` | `TestUnitKeyfactorCertificateTemplateResource` |
+| `certificate_template_data_source` | `TestUnitKeyfactorCertificateTemplateDataSource`, `TestUnitKeyfactorCertificateTemplateDataSourceLegacy` |
+| `certificate_deploy_resource` | `TestUnitKeyfactorCertificateDeployResource` |
+| `template_role_binding_resource` | `TestUnitKeyfactorTemplateRoleBindingResource` |
 
 ## Refreshing Cassettes
 

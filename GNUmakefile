@@ -154,6 +154,21 @@ testunit-record-oauth-role-claim-assoc:
 testunit-record-enrollment-pattern:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 TF_ACC=1 go test ./keyfactor/ -run "TestUnitKeyfactorEnrollmentPatternDataSource" -v -count=1 -timeout 30m
 
+testunit-record-cert-authority:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateAuthority" -v -count=1 -timeout 30m
+
+testunit-record-cert-template:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateTemplate" -v -count=1 -timeout 30m
+
+testunit-record-cert-deploy:
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateDeployResource" -v -count=1 -timeout 30m
+
+testunit-record-template-role-binding:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorTemplateRoleBindingResource" -v -count=1 -timeout 30m
+
+testunit-record-cert-store-ds-guid:
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateStoreDataSourceByGUID" -v -count=1 -timeout 30m
+
 # Re-record ALL unit test cassettes (requires lab connection and Command v25+ for enrollment-pattern).
 # This is the primary target to run when the Command API changes break existing cassettes.
 testunit-record-all:
@@ -165,6 +180,7 @@ testunit-record-all:
 	$(MAKE) testunit-record-security-role
 	$(MAKE) testunit-record-cert-store-type
 	$(MAKE) testunit-record-cert-store-types
+	$(MAKE) testunit-record-cert-store-ds-guid
 	$(MAKE) testunit-record-agent-ds
 	$(MAKE) testunit-record-permission-set
 	$(MAKE) testunit-record-oauth-claim
@@ -173,6 +189,10 @@ testunit-record-all:
 	$(MAKE) testunit-record-oauth-role-claim-assoc
 	$(MAKE) testunit-record-enrollment-pattern
 	$(MAKE) testunit-record-application-schedules
+	$(MAKE) testunit-record-cert-authority
+	$(MAKE) testunit-record-cert-template
+	$(MAKE) testunit-record-cert-deploy
+	$(MAKE) testunit-record-template-role-binding
 
 # Run unit tests and display only failures (quiet mode)
 testunit-check:
@@ -576,4 +596,30 @@ api-recover-cert-pem:
 		-H "Authorization: Bearer $$TOKEN" \
 		-d '{"CertID": $(CERT_ID), "Password": "$(CERT_PASSWORD)", "IncludeChain": true, "CertFormat": "PEM"}' | head -200
 
-.PHONY: store-type-demo application-demo build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-all testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-recover-cert api-recover-cert-pfx api-recover-cert-pem
+# Certificate store targets
+#   make api-list-cert-stores                    — list certificate stores (up to 10)
+#   make api-list-cert-stores STORE_QUERY=<q>    — list stores filtered by query (e.g. STORE_QUERY=K8SCert)
+#   make api-get-cert-store STORE_ID=<guid>      — get a specific store by GUID
+STORE_QUERY ?=
+api-list-cert-stores:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	QUERY="certificateStoreQuery.returnLimit=10"; \
+	if [ -n "$(STORE_QUERY)" ]; then QUERY="$$QUERY&certificateStoreQuery.queryString=$(STORE_QUERY)"; fi; \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores?$$QUERY" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq '[.[] | {Id, ClientMachine, Storepath, CertStoreType, Properties}]'
+
+api-get-cert-store:
+	@if [ -z "$(STORE_ID)" ]; then echo "Usage: make api-get-cert-store STORE_ID=<guid>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores/$(STORE_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+.PHONY: store-type-demo application-demo build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-all testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-recover-cert api-recover-cert-pfx api-recover-cert-pem

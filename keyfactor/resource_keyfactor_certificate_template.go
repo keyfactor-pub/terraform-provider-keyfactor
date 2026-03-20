@@ -254,7 +254,7 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Friendly name for the template.",
+				Description:   "Friendly name for the template. Deprecated in Command v25+.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"key_retention": {
@@ -275,20 +275,20 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				Type:          types.Int64Type,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Bitmask of allowed enrollment types: 0=none (disabled), 1=PFX, 2=CSR, 3=both. Setting to 0 effectively disables the template.",
+				Description:   "Bitmask of allowed enrollment types: 0=none (disabled), 1=PFX, 2=CSR, 3=both. Setting to 0 effectively disables the template. Deprecated in Command v25+ (use enrollment patterns).",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"use_allowed_requesters": {
 				Type:          types.BoolType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Whether to restrict enrollment to specific requesters.",
+				Description:   "Whether to restrict enrollment to specific requesters. Deprecated in Command v25+ (use keyfactor_template_role_binding instead).",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"allowed_requesters": {
 				Type:        types.ListType{ElemType: types.StringType},
 				Optional:    true,
-				Description: "List of security roles allowed to enroll.",
+				Description: "List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead).",
 			},
 			"requires_approval": {
 				Type:          types.BoolType,
@@ -324,7 +324,7 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 			// Nested writable lists
 			"template_regexes": {
 				Optional:    true,
-				Description: "Subject field regex validation rules.",
+				Description: "Subject field regex validation rules. Deprecated in Command v25+.",
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
 						"subject_part": {
@@ -350,7 +350,7 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 			},
 			"template_defaults": {
 				Optional:    true,
-				Description: "Default values for subject fields.",
+				Description: "Default values for subject fields. Deprecated in Command v25+.",
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
 						"subject_part": {
@@ -366,7 +366,7 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 			},
 			"enrollment_fields": {
 				Optional:    true,
-				Description: "Custom enrollment fields for CSR/PFX enrollment.",
+				Description: "Custom enrollment fields for CSR/PFX enrollment. Deprecated in Command v25+.",
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
 						"id": {
@@ -478,36 +478,36 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				),
 			},
 
-			// v25+ read-only
+			// v25+ fields
 			"manageability": {
 				Type:          types.Int64Type,
 				Computed:      true,
-				Description:   "Manageability level (v25+, read-only).",
+				Description:   "Manageability level (Command v25+, read-only).",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"certificate_cleanup_enabled": {
 				Type:        types.BoolType,
 				Optional:    true,
 				Computed:    true,
-				Description: "Whether certificate cleanup is enabled (v25+).",
+				Description: "Whether expired certificate cleanup is enabled (Command v25+).",
 			},
 			"time_after_expiration": {
 				Type:        types.Int64Type,
 				Optional:    true,
 				Computed:    true,
-				Description: "Time after expiration before cleanup.",
+				Description: "Time after expiration before cleanup eligibility (Command v25+).",
 			},
 			"time_after_expiration_units": {
 				Type:        types.Int64Type,
 				Optional:    true,
 				Computed:    true,
-				Description: "Units for time_after_expiration (0=Days, 1=Weeks, 2=Months).",
+				Description: "Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months (Command v25+).",
 			},
 			"delete_with_archived_key": {
 				Type:        types.BoolType,
 				Optional:    true,
 				Computed:    true,
-				Description: "Whether to delete certificates that have archived keys during cleanup.",
+				Description: "Whether to delete certificates with archived keys during cleanup (Command v25+).",
 			},
 		},
 	}, nil
@@ -662,8 +662,13 @@ func templateResponseToState(resp *v1.TemplatesTemplateRetrievalResponse) Keyfac
 		AllowOneClickRenewals:  types.Bool{Value: resp.GetAllowOneClickRenewals()},
 		KeyUsage:               types.Int64{Value: int64(resp.GetKeyUsage())},
 
-		// v25+ (not in SDK, left as null)
-		Manageability: types.Int64{Null: true},
+	}
+
+	// Manageability (v25+)
+	if resp.Manageability.IsSet() && resp.Manageability.Get() != nil {
+		state.Manageability = types.Int64{Value: int64(resp.GetManageability())}
+	} else {
+		state.Manageability = types.Int64{Null: true}
 	}
 
 	// CertificateCleanupEnabled

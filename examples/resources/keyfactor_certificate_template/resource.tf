@@ -32,3 +32,14 @@ resource "keyfactor_certificate_template" "webserver" {
     value        = "Example Corp"
   }
 }
+
+# Example showing certificate cleanup settings (Command v25+)
+resource "keyfactor_certificate_template" "webserver_with_cleanup" {
+  allowed_enrollment_types = 3 # PFX + CSR
+
+  # Automatically clean up expired certificates after 30 days
+  certificate_cleanup_enabled = true
+  time_after_expiration       = 30
+  time_after_expiration_units = 0 # 0=Days, 1=Weeks, 2=Months
+  delete_with_archived_key    = false
+}

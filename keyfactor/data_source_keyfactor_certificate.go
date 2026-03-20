@@ -595,7 +595,7 @@ func (r dataSourceCertificate) Read(
 			Value: revoked,
 		},
 		IsPendingRevocation: types.Bool{
-			Null: true,
+			Value: certGetResp != nil && strings.Contains(strings.ToLower(certGetResp.CertStateString), "pending"),
 		},
 		OwnerRoleName:     types.String{Value: ownerRoleName, Null: isNullString(ownerRoleName)},
 		EnrollmentPattern: types.String{Value: enrollmentPattern, Null: isNullString(enrollmentPattern)},

@@ -1868,3 +1868,210 @@ func envOrDefault(key, defaultVal string) string {
 	}
 	return defaultVal
 }
+
+// ---------------------------------------------------------------------------
+// Certificate SAN / full-subject HCL config helpers
+// ---------------------------------------------------------------------------
+
+// hclStringList formats a []string as a Terraform list literal, e.g. ["a", "b"].
+func hclStringList(items []string) string {
+	if len(items) == 0 {
+		return "[]"
+	}
+	quoted := make([]string, len(items))
+	for i, s := range items {
+		quoted[i] = fmt.Sprintf("%q", s)
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+// genDNSSANs generates n DNS SANs like "san1.base.example.com".
+func genDNSSANs(base string, n int) []string {
+	sans := make([]string, n)
+	for i := range sans {
+		sans[i] = fmt.Sprintf("san%d.%s", i+1, base)
+	}
+	return sans
+}
+
+// genIPSANs generates n IP SANs in the 10.0.0.x range.
+func genIPSANs(n int) []string {
+	ips := make([]string, n)
+	for i := range ips {
+		ips[i] = fmt.Sprintf("10.0.0.%d", i+1)
+	}
+	return ips
+}
+
+// genURISANs generates n URI SANs like "https://san1.base/path".
+func genURISANs(base string, n int) []string {
+	uris := make([]string, n)
+	for i := range uris {
+		uris[i] = fmt.Sprintf("https://san%d.%s/path", i+1, base)
+	}
+	return uris
+}
+
+// testAccCertPFXConfigWithSANs builds an HCL config for a PFX certificate
+// with the given DNS, IP, and URI SANs (template-based enrollment).
+func testAccCertPFXConfigWithSANs(templateName, ca, cn string, dnsSANs, ipSANs, uriSANs []string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name           = %q
+  certificate_authority = %q
+  certificate_template  = %q
+  certificate_format    = "PEM"
+  key_password          = "Tftest123456"
+  dns_sans              = %s
+  ip_sans               = %s
+  uri_sans              = %s
+}
+`, cn, ca, templateName, hclStringList(dnsSANs), hclStringList(ipSANs), hclStringList(uriSANs))
+}
+
+// testAccCertPFXConfigEnrollmentPatternWithSANs builds an HCL config for a
+// PFX certificate with the given SANs using enrollment-pattern enrollment.
+func testAccCertPFXConfigEnrollmentPatternWithSANs(enrollmentPattern, ca, cn string, dnsSANs, ipSANs, uriSANs []string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name              = %q
+  certificate_authority    = %q
+  certificate_enrollment_pattern = %q
+  certificate_format       = "PEM"
+  key_password             = "Tftest123456"
+  dns_sans                 = %s
+  ip_sans                  = %s
+  uri_sans                 = %s
+}
+`, cn, ca, enrollmentPattern, hclStringList(dnsSANs), hclStringList(ipSANs), hclStringList(uriSANs))
+}
+
+// testAccCertPFXConfigFullSubject builds an HCL config with all DN subject
+// fields populated plus DNS and IP SANs (template-based enrollment).
+func testAccCertPFXConfigFullSubject(templateName, ca, cn, locality, org, state, country, ou string, dnsSANs, ipSANs []string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name           = %q
+  certificate_authority = %q
+  certificate_template  = %q
+  certificate_format    = "PEM"
+  key_password          = "Tftest123456"
+  locality              = %q
+  organization          = %q
+  state                 = %q
+  country               = %q
+  organizational_unit   = %q
+  dns_sans              = %s
+  ip_sans               = %s
+}
+`, cn, ca, templateName, locality, org, state, country, ou, hclStringList(dnsSANs), hclStringList(ipSANs))
+}
+
+// testAccCertPFXConfigEnrollmentPatternFullSubject builds an HCL config with
+// all DN subject fields using enrollment-pattern enrollment.
+func testAccCertPFXConfigEnrollmentPatternFullSubject(enrollmentPattern, ca, cn, locality, org, state, country, ou string, dnsSANs, ipSANs []string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name              = %q
+  certificate_authority    = %q
+  certificate_enrollment_pattern = %q
+  certificate_format       = "PEM"
+  key_password             = "Tftest123456"
+  locality                 = %q
+  organization             = %q
+  state                    = %q
+  country                  = %q
+  organizational_unit      = %q
+  dns_sans                 = %s
+  ip_sans                  = %s
+}
+`, cn, ca, enrollmentPattern, locality, org, state, country, ou, hclStringList(dnsSANs), hclStringList(ipSANs))
+}
+
+// certSANConfig selects the correct HCL generator based on whether an
+// enrollment pattern or a template name is provided.
+func certSANConfig(enrollmentPattern, templateName, ca, cn string, dnsSANs, ipSANs, uriSANs []string) string {
+	if enrollmentPattern != "" {
+		return testAccCertPFXConfigEnrollmentPatternWithSANs(enrollmentPattern, ca, cn, dnsSANs, ipSANs, uriSANs)
+	}
+	return testAccCertPFXConfigWithSANs(templateName, ca, cn, dnsSANs, ipSANs, uriSANs)
+}
+
+// certFullSubjectConfig selects the correct HCL generator for full-subject
+// configs based on whether an enrollment pattern is provided.
+func certFullSubjectConfig(enrollmentPattern, templateName, ca, cn, locality, org, state, country, ou string, dnsSANs, ipSANs []string) string {
+	if enrollmentPattern != "" {
+		return testAccCertPFXConfigEnrollmentPatternFullSubject(enrollmentPattern, ca, cn, locality, org, state, country, ou, dnsSANs, ipSANs)
+	}
+	return testAccCertPFXConfigFullSubject(templateName, ca, cn, locality, org, state, country, ou, dnsSANs, ipSANs)
+}
+
+// ---------------------------------------------------------------------------
+// Certificate metadata HCL config helpers
+// ---------------------------------------------------------------------------
+
+// hclMetadataMap formats a map[string]string as a Terraform map literal.
+func hclMetadataMap(m map[string]string) string {
+	if len(m) == 0 {
+		return "{}"
+	}
+	var b strings.Builder
+	b.WriteString("{\n")
+	for k, v := range m {
+		b.WriteString(fmt.Sprintf("    %q = %q\n", k, v))
+	}
+	b.WriteString("  }")
+	return b.String()
+}
+
+// testAccCertPFXConfigWithMetadata builds HCL for a PEM certificate resource
+// with the given metadata (template-based enrollment).
+func testAccCertPFXConfigWithMetadata(templateName, ca, cn string, metadata map[string]string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name           = %q
+  certificate_authority = %q
+  certificate_template  = %q
+  certificate_format    = "PEM"
+  key_password          = "Tftest123456"
+  metadata              = %s
+}
+`, cn, ca, templateName, hclMetadataMap(metadata))
+}
+
+// testAccCertPFXConfigEnrollmentPatternWithMetadata builds HCL for a PEM
+// certificate resource with metadata using enrollment-pattern enrollment.
+func testAccCertPFXConfigEnrollmentPatternWithMetadata(enrollmentPattern, ca, cn string, metadata map[string]string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                    = %q
+  certificate_authority          = %q
+  certificate_enrollment_pattern = %q
+  certificate_format             = "PEM"
+  key_password                   = "Tftest123456"
+  metadata                       = %s
+}
+`, cn, ca, enrollmentPattern, hclMetadataMap(metadata))
+}
+
+// testAccCertCSRConfigWithMetadata builds HCL for a CSR-based certificate
+// resource with the given metadata.
+func testAccCertCSRConfigWithMetadata(templateName, ca, csr string, metadata map[string]string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test_csr" {
+  csr                   = %q
+  certificate_authority = %q
+  certificate_template  = %q
+  metadata              = %s
+}
+`, csr, ca, templateName, hclMetadataMap(metadata))
+}
+
+// certMetadataConfig selects the correct enrollment-method HCL generator for
+// metadata tests.
+func certMetadataConfig(enrollmentPattern, templateName, ca, cn string, metadata map[string]string) string {
+	if enrollmentPattern != "" {
+		return testAccCertPFXConfigEnrollmentPatternWithMetadata(enrollmentPattern, ca, cn, metadata)
+	}
+	return testAccCertPFXConfigWithMetadata(templateName, ca, cn, metadata)
+}

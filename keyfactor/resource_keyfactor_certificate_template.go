@@ -486,28 +486,28 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"certificate_cleanup_enabled": {
-				Type:          types.BoolType,
-				Computed:      true,
-				Description:   "Whether certificate cleanup is enabled (v25+, read-only).",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether certificate cleanup is enabled (v25+).",
 			},
 			"time_after_expiration": {
-				Type:          types.Int64Type,
-				Computed:      true,
-				Description:   "Time after expiration value (v25+, read-only).",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.Int64Type,
+				Optional:    true,
+				Computed:    true,
+				Description: "Time after expiration before cleanup.",
 			},
 			"time_after_expiration_units": {
-				Type:          types.StringType,
-				Computed:      true,
-				Description:   "Units for time_after_expiration (v25+, read-only).",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.Int64Type,
+				Optional:    true,
+				Computed:    true,
+				Description: "Units for time_after_expiration (0=Days, 1=Weeks, 2=Months).",
 			},
 			"delete_with_archived_key": {
-				Type:          types.BoolType,
-				Computed:      true,
-				Description:   "Whether to delete certificates with archived keys (v25+, read-only).",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.BoolType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Whether to delete certificates that have archived keys during cleanup.",
 			},
 		},
 	}, nil
@@ -633,7 +633,7 @@ type KeyfactorCertificateTemplateState struct {
 	Manageability             types.Int64  `tfsdk:"manageability"`
 	CertificateCleanupEnabled types.Bool   `tfsdk:"certificate_cleanup_enabled"`
 	TimeAfterExpiration       types.Int64  `tfsdk:"time_after_expiration"`
-	TimeAfterExpirationUnits  types.String `tfsdk:"time_after_expiration_units"`
+	TimeAfterExpirationUnits  types.Int64  `tfsdk:"time_after_expiration_units"`
 	DeleteWithArchivedKey     types.Bool   `tfsdk:"delete_with_archived_key"`
 }
 
@@ -663,11 +663,32 @@ func templateResponseToState(resp *v1.TemplatesTemplateRetrievalResponse) Keyfac
 		KeyUsage:               types.Int64{Value: int64(resp.GetKeyUsage())},
 
 		// v25+ (not in SDK, left as null)
-		Manageability:             types.Int64{Null: true},
-		CertificateCleanupEnabled: types.Bool{Null: true},
-		TimeAfterExpiration:       types.Int64{Null: true},
-		TimeAfterExpirationUnits:  types.String{Null: true},
-		DeleteWithArchivedKey:     types.Bool{Null: true},
+		Manageability: types.Int64{Null: true},
+	}
+
+	// CertificateCleanupEnabled
+	if resp.CertificateCleanupEnabled.IsSet() {
+		state.CertificateCleanupEnabled = types.Bool{Value: resp.GetCertificateCleanupEnabled()}
+	} else {
+		state.CertificateCleanupEnabled = types.Bool{Null: true}
+	}
+	// TimeAfterExpiration
+	if resp.TimeAfterExpiration.IsSet() {
+		state.TimeAfterExpiration = types.Int64{Value: int64(resp.GetTimeAfterExpiration())}
+	} else {
+		state.TimeAfterExpiration = types.Int64{Null: true}
+	}
+	// TimeAfterExpirationUnits
+	if resp.TimeAfterExpirationUnits != nil {
+		state.TimeAfterExpirationUnits = types.Int64{Value: int64(*resp.TimeAfterExpirationUnits)}
+	} else {
+		state.TimeAfterExpirationUnits = types.Int64{Null: true}
+	}
+	// DeleteWithArchivedKey
+	if resp.DeleteWithArchivedKey.IsSet() {
+		state.DeleteWithArchivedKey = types.Bool{Value: resp.GetDeleteWithArchivedKey()}
+	} else {
+		state.DeleteWithArchivedKey = types.Bool{Null: true}
 	}
 
 	// KeyRetention enum → int
@@ -890,6 +911,19 @@ func buildTemplateUpdateRequest(
 	if !plan.KeyUsage.Null && !plan.KeyUsage.Unknown {
 		ku := int32(plan.KeyUsage.Value)
 		req.KeyUsage = &ku
+	}
+	if !plan.CertificateCleanupEnabled.Null && !plan.CertificateCleanupEnabled.Unknown {
+		req.SetCertificateCleanupEnabled(plan.CertificateCleanupEnabled.Value)
+	}
+	if !plan.TimeAfterExpiration.Null && !plan.TimeAfterExpiration.Unknown {
+		req.SetTimeAfterExpiration(int32(plan.TimeAfterExpiration.Value))
+	}
+	if !plan.TimeAfterExpirationUnits.Null && !plan.TimeAfterExpirationUnits.Unknown {
+		units := v1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits(plan.TimeAfterExpirationUnits.Value)
+		req.SetTimeAfterExpirationUnits(units)
+	}
+	if !plan.DeleteWithArchivedKey.Null && !plan.DeleteWithArchivedKey.Unknown {
+		req.SetDeleteWithArchivedKey(plan.DeleteWithArchivedKey.Value)
 	}
 
 	// TemplatePolicy

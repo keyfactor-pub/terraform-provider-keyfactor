@@ -232,6 +232,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					ElemType: types.StringType,
 				},
 				Optional:    true,
+				Computed:    true,
 				Description: "Metadata key-value pairs to be attached to certificate",
 			},
 			"serial_number": {
@@ -1004,7 +1005,7 @@ func (r resourceCommandCertificate) Read(
 			Value: revoked,
 		},
 		IsPendingRevocation: types.Bool{
-			Null: true, // todo: implement pending revocation check
+			Value: certGetResp != nil && strings.Contains(strings.ToLower(certGetResp.CertStateString), "pending"),
 		},
 		RenewalConfig: renewalConfig,
 		OwnerRoleName: types.String{
@@ -1273,9 +1274,9 @@ func (r resourceCommandCertificate) Update(
 			return
 		}
 
-		certificateIdInt, cIdErr := strconv.Atoi(plan.ID.Value)
+		certificateIdInt, cIdErr := strconv.Atoi(state.ID.Value)
 		if cIdErr != nil {
-			certificateIdInt = -1
+			certificateIdInt = int(state.CertificateId.Value)
 		}
 
 		sans := append(dnsSANs, ipSANs...)
@@ -1328,7 +1329,7 @@ func (r resourceCommandCertificate) Update(
 			EnrollmentPassword:   state.EnrollmentPassword,
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
-			Metadata:             plan.Metadata,
+			Metadata:             knownMetadataFromPlan(plan.Metadata),
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
 			CollectionId:         state.CollectionId,
@@ -1340,7 +1341,7 @@ func (r resourceCommandCertificate) Update(
 				Value: revoked,
 			},
 			IsPendingRevocation: types.Bool{
-				Null: true, // todo: implement pending revocation check
+				Value: certGetResp != nil && strings.Contains(strings.ToLower(certGetResp.CertStateString), "pending"),
 			},
 			RenewalConfig: renewalConfig,
 
@@ -1444,7 +1445,7 @@ func (r resourceCommandCertificate) Update(
 			CertificateId:        state.CertificateId,
 			CertificateAuthority: state.CertificateAuthority,
 			CertificateTemplate:  state.CertificateTemplate,
-			Metadata:             plan.Metadata,
+			Metadata:             knownMetadataFromPlan(plan.Metadata),
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
 			CollectionId:         state.CollectionId,
@@ -1456,7 +1457,7 @@ func (r resourceCommandCertificate) Update(
 				Value: revoked,
 			},
 			IsPendingRevocation: types.Bool{
-				Null: true, // This is always null for updates, as we don't support pending revocation on updates.
+				Value: certGetResp != nil && strings.Contains(strings.ToLower(certGetResp.CertStateString), "pending"),
 			},
 			RenewalConfig: renewalConfig,
 
@@ -2483,14 +2484,14 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		CertificateTemplate:  plan.CertificateTemplate,
 		CertificateId:        types.Int64{Value: int64(enrolledId)},
 		RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
-		Metadata:             plan.Metadata,
+		Metadata:             knownMetadataFromPlan(plan.Metadata),
 		CollectionId:         plan.CollectionId,
 		FriendlyName:         plan.FriendlyName,
 		UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
 		ExpiryWarningDays:    plan.ExpiryWarningDays,
 		IsExpired:            types.Bool{Value: false}, // Set to false as we just enrolled the certificate
 		IsRevoked:            types.Bool{Value: false}, // Set to false as we just enrolled the certificate
-		IsPendingRevocation:  types.Bool{Null: true},   // Set to false as we just enrolled the certificate
+		IsPendingRevocation:  types.Bool{Value: false}, // Newly enrolled certificates are not pending revocation
 		RenewalConfig:        plan.RenewalConfig,
 		CertificateFormat:    plan.CertificateFormat,
 		OwnerRoleName:        plan.OwnerRoleName,
@@ -2549,7 +2550,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			enrollResponse.CertificateInformation.PKCS12Blob,
 			lookupPassword,
 		)
-		chainPEM = strings.Join(pChain, "\n")
+		chainPEM = strings.Join(pChain, "")
 
 		if pfxErr != nil {
 			tflog.Error(ctx, "Error unpacking PKCS12 blob, attempting to recover private key.")
@@ -2575,8 +2576,16 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 
 		result.PEM = types.String{Value: leafPEM, Null: isNullString(leafPEM)}
 		result.PEMCACert = types.String{Value: chainPEM, Null: isNullString(chainPEM)}
-		result.PEMChain = types.String{Value: leafPEM + "\n" + chainPEM, Null: isNullString(leafPEM + "\n" + chainPEM)}
+		result.PEMChain = types.String{Value: leafPEM + chainPEM, Null: isNullString(leafPEM + chainPEM)}
 		result.PrivateKey = types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)}
+		// Parse leaf to populate validity window fields from the enrolled certificate.
+		if leafPEM != "" {
+			if leafObj, leafParseErr := parseLeafCert(ctx, leafPEM); !leafParseErr.HasError() && leafObj != nil {
+				result.NotBefore = types.String{Value: leafObj.NotBefore.UTC().Format(time.RFC3339)}
+				result.NotAfter = types.String{Value: leafObj.NotAfter.UTC().Format(time.RFC3339)}
+				result.IsExpired = types.Bool{Value: time.Now().After(leafObj.NotAfter)}
+			}
+		}
 	default:
 		tflog.Error(ctx, "Invalid certificate format, this should have been caught earlier.")
 		diags.AddError(
@@ -2682,6 +2691,16 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByName(
 		}
 	}
 	return 0, fmt.Errorf("enrollment pattern with name '%s' not found", patternName)
+}
+
+// knownMetadataFromPlan returns plan.Metadata if it is a known value, or an
+// empty map if it is Unknown (i.e. Computed and not set in config). This
+// ensures the provider never stores an unknown metadata value in state.
+func knownMetadataFromPlan(m types.Map) types.Map {
+	if m.Unknown {
+		return types.Map{ElemType: types.StringType, Elems: map[string]attr.Value{}}
+	}
+	return m
 }
 
 func (r resourceCommandCertificate) parseMetadata(
@@ -2903,14 +2922,14 @@ func (r resourceCommandCertificate) enrollCSR(
 		CertificateAuthority: plan.CertificateAuthority,
 		CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
 		CertificateTemplate:  plan.CertificateTemplate,
-		Metadata:             plan.Metadata,
+		Metadata:             knownMetadataFromPlan(plan.Metadata),
 		CollectionId:         plan.CollectionId,
 		FriendlyName:         plan.FriendlyName,
 		UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
 		ExpiryWarningDays:    plan.ExpiryWarningDays,
 		IsExpired:            types.Bool{Value: false}, //Assuming the certificate is not expired as it should be newly created
 		IsRevoked:            types.Bool{Value: false}, //Assuming the certificate is not revoked as it should be newly created
-		IsPendingRevocation:  types.Bool{Null: true},   // Set to false as we just enrolled the certificate
+		IsPendingRevocation:  types.Bool{Value: false}, // Newly enrolled certificates are not pending revocation
 		RenewalConfig:        plan.RenewalConfig,
 		EnrollmentPattern:    plan.EnrollmentPattern,
 		CertificateFormat:    plan.CertificateFormat,

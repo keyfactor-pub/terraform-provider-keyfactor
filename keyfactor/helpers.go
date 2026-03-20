@@ -232,10 +232,6 @@ func flattenMetadata(metadata interface{}) types.Map {
 		result.Elems[k] = types.String{Value: v}
 	}
 
-	//check if elems is empty
-	if len(result.Elems) == 0 {
-		result.Null = true
-	}
 	return result
 }
 
@@ -727,7 +723,7 @@ func recoverPrivateKeyFromKeyfactorCommand(
 			diags.AddError("Error unpacking PFX data", errMsg)
 			return "", "", "", rawBytes, diags
 		}
-		return pfxPrivateKey, pfxLeaf, strings.Join(pfxChain, "\n"), rawBytes, diags
+		return pfxPrivateKey, pfxLeaf, strings.Join(pfxChain, ""), rawBytes, diags
 	}
 
 	if (certificateFormat == "PEM" || certificateFormat == "pem") && pkey == nil {

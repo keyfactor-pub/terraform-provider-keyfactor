@@ -171,7 +171,7 @@ func (d dataSourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.S
 			"manageability":              {Type: types.Int64Type, Computed: true},
 			"certificate_cleanup_enabled": {Type: types.BoolType, Computed: true},
 			"time_after_expiration":      {Type: types.Int64Type, Computed: true},
-			"time_after_expiration_units": {Type: types.StringType, Computed: true},
+			"time_after_expiration_units": {Type: types.Int64Type, Computed: true},
 			"delete_with_archived_key":   {Type: types.BoolType, Computed: true},
 		},
 	}, nil
@@ -221,7 +221,7 @@ type KeyfactorCertificateTemplateDataSource struct {
 	Manageability             types.Int64  `tfsdk:"manageability"`
 	CertificateCleanupEnabled types.Bool   `tfsdk:"certificate_cleanup_enabled"`
 	TimeAfterExpiration       types.Int64  `tfsdk:"time_after_expiration"`
-	TimeAfterExpirationUnits  types.String `tfsdk:"time_after_expiration_units"`
+	TimeAfterExpirationUnits  types.Int64  `tfsdk:"time_after_expiration_units"`
 	DeleteWithArchivedKey     types.Bool   `tfsdk:"delete_with_archived_key"`
 }
 

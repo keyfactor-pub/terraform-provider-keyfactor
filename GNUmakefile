@@ -169,6 +169,27 @@ testunit-record-template-role-binding:
 testunit-record-cert-store-ds-guid:
 	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateStoreDataSourceByGUID" -v -count=1 -timeout 30m
 
+testunit-record-cert-full-subject:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_FullSubject" -v -count=1 -timeout 30m
+
+testunit-record-cert-dns-sans:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_DNS_SANs" -v -count=1 -timeout 30m
+
+testunit-record-cert-ip-sans:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_IP_SANs" -v -count=1 -timeout 30m
+
+testunit-record-cert-uri-sans:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_URI_SANs" -v -count=1 -timeout 30m
+
+testunit-record-cert-mixed-sans:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_MixedSANs" -v -count=1 -timeout 30m
+
+testunit-record-cert-pfx-metadata:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_PFX_Metadata" -v -count=1 -timeout 30m
+
+testunit-record-cert-csr-metadata:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_CSR_Metadata" -v -count=1 -timeout 30m
+
 # Re-record ALL unit test cassettes (requires lab connection and Command v25+ for enrollment-pattern).
 # This is the primary target to run when the Command API changes break existing cassettes.
 testunit-record-all:
@@ -193,6 +214,13 @@ testunit-record-all:
 	$(MAKE) testunit-record-cert-template
 	$(MAKE) testunit-record-cert-deploy
 	$(MAKE) testunit-record-template-role-binding
+	$(MAKE) testunit-record-cert-full-subject
+	$(MAKE) testunit-record-cert-dns-sans
+	$(MAKE) testunit-record-cert-ip-sans
+	$(MAKE) testunit-record-cert-uri-sans
+	$(MAKE) testunit-record-cert-mixed-sans
+	$(MAKE) testunit-record-cert-pfx-metadata
+	$(MAKE) testunit-record-cert-csr-metadata
 
 # Run unit tests and display only failures (quiet mode)
 testunit-check:

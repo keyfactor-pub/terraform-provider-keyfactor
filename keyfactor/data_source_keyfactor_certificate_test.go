@@ -129,10 +129,20 @@ func TestUnitKeyfactorCertificateDataSource(t *testing.T) {
 				Config: config,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					// Data source field coverage
 					resource.TestCheckResourceAttrSet(resourceName, "serial_number"),
 					resource.TestCheckResourceAttrSet(resourceName, "thumbprint"),
-					resource.TestCheckResourceAttrSet(resourceName, "certificate_pem"),
 					resource.TestCheckResourceAttrSet(resourceName, "issuer_dn"),
+					resource.TestCheckResourceAttrSet(resourceName, "certificate_pem"),
+					resource.TestCheckResourceAttrSet(resourceName, "certificate_chain"),
+					resource.TestCheckResourceAttrSet(resourceName, "ca_certificate"),
+					resource.TestCheckResourceAttrSet(resourceName, "certificate_authority"),
+					resource.TestCheckResourceAttrSet(resourceName, "certificate_id"),
+					resource.TestCheckResourceAttrSet(resourceName, "not_before"),
+					resource.TestCheckResourceAttrSet(resourceName, "not_after"),
+					resource.TestCheckResourceAttr(resourceName, "is_expired", "false"),
+					resource.TestCheckResourceAttr(resourceName, "is_revoked", "false"),
+					resource.TestCheckResourceAttr(resourceName, "is_pending_revocation", "false"),
 				),
 			},
 		},
@@ -168,13 +178,20 @@ func TestIntKeyfactorCertificateDataSource(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					// Resource checks
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
-					// Data source checks
+					// Data source field coverage
 					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "serial_number"),
 					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "issuer_dn"),
 					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "thumbprint"),
 					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "ca_certificate"),
 					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "certificate_authority"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "certificate_id"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "not_before"),
+					resource.TestCheckResourceAttrSet("data.keyfactor_certificate.test", "not_after"),
+					resource.TestCheckResourceAttr("data.keyfactor_certificate.test", "is_expired", "false"),
+					resource.TestCheckResourceAttr("data.keyfactor_certificate.test", "is_revoked", "false"),
+					resource.TestCheckResourceAttr("data.keyfactor_certificate.test", "is_pending_revocation", "false"),
 				),
 			},
 		},

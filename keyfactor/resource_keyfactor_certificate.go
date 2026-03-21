@@ -591,10 +591,34 @@ Triggers replacement of resource when true.
 					" or deploy via the Command UI.",
 				MarkdownDescription: `Configuration for certificate renewal.
 > [!IMPORTANT]
-> This does not deploy the updated certificate to associated certificate store locations. To deploy the updated 
+> This does not deploy the updated certificate to associated certificate store locations. To deploy the updated
 > certificate you must define a "keyfactor_certificate_deployment" Terraform resource that references this
 > certificate or deploy via the Command UI.
 `,
+			},
+			"key_type": {
+				Type:     types.StringType,
+				Optional: true,
+				Computed: true,
+				Description: "Key algorithm for PFX enrollment: RSA, ECC, Ed25519, Ed448. " +
+					"If omitted, the CA/template default is used. " +
+					"Populated from the issued certificate on read.",
+			},
+			"key_size": {
+				Type:     types.Int64Type,
+				Optional: true,
+				Computed: true,
+				Description: "Key size in bits for PFX enrollment (e.g. 2048, 4096 for RSA; 256, 384, 521 for ECC). " +
+					"If omitted, the CA/template default is used. " +
+					"Populated from the issued certificate on read.",
+			},
+			"curve": {
+				Type:     types.StringType,
+				Optional: true,
+				Computed: true,
+				Description: "ECC curve name for PFX enrollment (e.g. P-256, P-384, P-521). " +
+					"Only relevant when key_type=ECC. " +
+					"Populated from the issued certificate on read.",
 			},
 		},
 		Description: "Manages a certificate in Keyfactor Command using the `/Enrollment` and `/Certificates` APIs",
@@ -835,7 +859,14 @@ func (r resourceCommandCertificate) Read(
 		if remoteCaName != "" && caName != "" && remoteCaName != caName {
 			// Check if the remote CA name ends with the state value (logical name match)
 			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
-				tflog.Debug(ctx, fmt.Sprintf("Preserving user-supplied certificate_authority %q (remote returned %q)", caName, remoteCaName))
+				tflog.Debug(
+					ctx,
+					fmt.Sprintf(
+						"Preserving user-supplied certificate_authority %q (remote returned %q)",
+						caName,
+						remoteCaName,
+					),
+				)
 			} else {
 				caName = remoteCaName
 			}
@@ -1024,6 +1055,9 @@ func (r resourceCommandCertificate) Read(
 		},
 		RevocationEffDate: state.RevocationEffDate,
 		RevokeOnDestroy:   state.RevokeOnDestroy,
+		KeyType:           state.KeyType,
+		KeySize:           state.KeySize,
+		Curve:             state.Curve,
 	}
 
 	if certGetResp != nil {
@@ -1032,6 +1066,15 @@ func (r resourceCommandCertificate) Read(
 				Value: certGetResp.RevocationEffDate,
 				Null:  isNullString(certGetResp.RevocationEffDate),
 			}
+		}
+		if certGetResp.KeyAlgorithm != "" {
+			result.KeyType = types.String{Value: certGetResp.KeyAlgorithm}
+		}
+		if certGetResp.KeySizeInBits > 0 {
+			result.KeySize = types.Int64{Value: int64(certGetResp.KeySizeInBits)}
+		}
+		if certGetResp.Curve != "" {
+			result.Curve = types.String{Value: certGetResp.Curve}
 		}
 
 	}
@@ -1355,6 +1398,9 @@ func (r resourceCommandCertificate) Update(
 			NotAfter:          state.NotAfter,
 			RevocationEffDate: state.RevocationEffDate,
 			RevokeOnDestroy:   plan.RevokeOnDestroy,
+			KeyType:           state.KeyType,
+			KeySize:           state.KeySize,
+			Curve:             state.Curve,
 		}
 
 		if (certGetResp != nil) && (certGetResp.RevocationEffDate != "") {
@@ -1471,6 +1517,9 @@ func (r resourceCommandCertificate) Update(
 			NotAfter:          state.NotAfter,
 			RevocationEffDate: state.RevocationEffDate,
 			RevokeOnDestroy:   plan.RevokeOnDestroy,
+			KeyType:           state.KeyType,
+			KeySize:           state.KeySize,
+			Curve:             state.Curve,
 		}
 
 		if (certGetResp != nil) && (certGetResp.RevocationEffDate != "") {
@@ -1489,11 +1538,13 @@ func (r resourceCommandCertificate) Update(
 		effectivePlanFmt := effectiveCertificateFormat(plan.CertificateFormat.Value)
 		effectiveStateFmt := effectiveCertificateFormat(state.CertificateFormat.Value)
 		if effectivePlanFmt != effectiveStateFmt {
-			tflog.Info(ctx, fmt.Sprintf(
-				"certificate_format changed from %q to %q (effective: %q → %q), re-downloading certificate.",
-				state.CertificateFormat.Value, plan.CertificateFormat.Value,
-				effectiveStateFmt, effectivePlanFmt,
-			))
+			tflog.Info(
+				ctx, fmt.Sprintf(
+					"certificate_format changed from %q to %q (effective: %q → %q), re-downloading certificate.",
+					state.CertificateFormat.Value, plan.CertificateFormat.Value,
+					effectiveStateFmt, effectivePlanFmt,
+				),
+			)
 			dlLeafPEM, dlChainPEM, dlPKeyPEM, dlRawData, dlDiags := recoverOrDownloadCertificate(
 				ctx,
 				int(state.CertificateId.Value),
@@ -1765,7 +1816,14 @@ func (r resourceCommandCertificate) ImportState(
 		remoteCaName := certGetResp.CertificateAuthorityName
 		if remoteCaName != "" && caName != "" && remoteCaName != caName {
 			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
-				tflog.Debug(ctx, fmt.Sprintf("Preserving user-supplied certificate_authority %q (remote returned %q)", caName, remoteCaName))
+				tflog.Debug(
+					ctx,
+					fmt.Sprintf(
+						"Preserving user-supplied certificate_authority %q (remote returned %q)",
+						caName,
+						remoteCaName,
+					),
+				)
 			} else {
 				caName = remoteCaName
 			}
@@ -1834,6 +1892,9 @@ func (r resourceCommandCertificate) ImportState(
 		NotAfter:          state.NotAfter,
 		RevocationEffDate: state.RevocationEffDate,
 		RevokeOnDestroy:   state.RevokeOnDestroy,
+		KeyType:           state.KeyType,
+		KeySize:           state.KeySize,
+		Curve:             state.Curve,
 	}
 
 	if certGetResp != nil {
@@ -1854,6 +1915,15 @@ func (r resourceCommandCertificate) ImportState(
 				Value: certGetResp.NotAfter,
 				Null:  isNullString(certGetResp.NotAfter),
 			}
+		}
+		if certGetResp.KeyAlgorithm != "" {
+			result.KeyType = types.String{Value: certGetResp.KeyAlgorithm}
+		}
+		if certGetResp.KeySizeInBits > 0 {
+			result.KeySize = types.Int64{Value: int64(certGetResp.KeySizeInBits)}
+		}
+		if certGetResp.Curve != "" {
+			result.Curve = types.String{Value: certGetResp.Curve}
 		}
 	}
 
@@ -2315,6 +2385,15 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			SubjectState:              plan.State.Value,
 		},
 	}
+	if !plan.KeyType.Null && !plan.KeyType.Unknown && plan.KeyType.Value != "" {
+		PFXArgs.KeyType = plan.KeyType.Value
+	}
+	if !plan.KeySize.Null && !plan.KeySize.Unknown && plan.KeySize.Value > 0 {
+		PFXArgs.KeyLength = int(plan.KeySize.Value)
+	}
+	if !plan.Curve.Null && !plan.Curve.Unknown && plan.Curve.Value != "" {
+		PFXArgs.Curve = plan.Curve.Value
+	}
 	tflog.Debug(ctx, "API PFXArgs created.")
 
 	//convert PFX args to JSON string
@@ -2500,6 +2579,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		NotAfter:             types.String{Null: true}, // Not provided in enroll response
 		RevocationEffDate:    types.String{Null: true}, // Not provided in enroll response
 		RevokeOnDestroy:      plan.RevokeOnDestroy,
+		KeyType:              knownStringFromPlan(plan.KeyType),
+		KeySize:              knownInt64FromPlan(plan.KeySize),
+		Curve:                knownStringFromPlan(plan.Curve),
 	}
 
 	switch certificateFormat {
@@ -2701,6 +2783,24 @@ func knownMetadataFromPlan(m types.Map) types.Map {
 		return types.Map{ElemType: types.StringType, Elems: map[string]attr.Value{}}
 	}
 	return m
+}
+
+// knownStringFromPlan returns plan value if known, otherwise types.String{Null: true}.
+// Prevents storing Unknown in state for Computed string fields.
+func knownStringFromPlan(s types.String) types.String {
+	if s.Unknown {
+		return types.String{Null: true}
+	}
+	return s
+}
+
+// knownInt64FromPlan returns plan value if known, otherwise types.Int64{Null: true}.
+// Prevents storing Unknown in state for Computed int64 fields.
+func knownInt64FromPlan(i types.Int64) types.Int64 {
+	if i.Unknown {
+		return types.Int64{Null: true}
+	}
+	return i
 }
 
 func (r resourceCommandCertificate) parseMetadata(
@@ -2941,6 +3041,9 @@ func (r resourceCommandCertificate) enrollCSR(
 		NotAfter:             types.String{Null: true}, // Null because CSR enrollment does not provide NotAfter
 		RevocationEffDate:    types.String{Null: true}, // Not provided in enroll response
 		RevokeOnDestroy:      plan.RevokeOnDestroy,
+		KeyType:              types.String{Null: true}, // Not applicable for CSR enrollment
+		KeySize:              types.Int64{Null: true},  // Not applicable for CSR enrollment
+		Curve:                types.String{Null: true}, // Not applicable for CSR enrollment
 	}
 
 	leafObj, leafErr := parseLeafCert(ctx, leaf)

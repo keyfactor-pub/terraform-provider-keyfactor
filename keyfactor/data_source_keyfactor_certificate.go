@@ -347,6 +347,21 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 						"Defaults to %d days.", DEFAULT_EXPIRY_WARNING_DAYS,
 				),
 			},
+			"key_type": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Key algorithm of the issued certificate (e.g. RSA, ECC, Ed25519).",
+			},
+			"key_size": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Key size in bits of the issued certificate (e.g. 2048, 4096, 256).",
+			},
+			"curve": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "ECC curve name of the issued certificate (e.g. P-256, P-384, P-521).",
+			},
 		},
 		Description:         "Reads an existing certificate from Keyfactor Command using the `/Certificates` API",
 		MarkdownDescription: `Reads an existing certificate from Keyfactor Command using the "/Certificates" API.`,
@@ -611,6 +626,21 @@ func (r dataSourceCertificate) Read(
 			Value: notAfterStr,
 			Null:  isNullString(notAfterStr),
 		},
+		KeyType: types.String{Null: true},
+		KeySize: types.Int64{Null: true},
+		Curve:   types.String{Null: true},
+	}
+
+	if certGetResp != nil {
+		if certGetResp.KeyAlgorithm != "" {
+			result.KeyType = types.String{Value: certGetResp.KeyAlgorithm}
+		}
+		if certGetResp.KeySizeInBits > 0 {
+			result.KeySize = types.Int64{Value: int64(certGetResp.KeySizeInBits)}
+		}
+		if certGetResp.Curve != "" {
+			result.Curve = types.String{Value: certGetResp.Curve}
+		}
 	}
 
 	switch state.CertificateFormat.Value {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -1764,6 +1765,99 @@ func TestUnitKeyfactorCertificateResource_PFX_Metadata(t *testing.T) {
 			},
 		},
 	})
+}
+
+// TestIntKeyfactorCertificateResource_PFX_KeyTypes verifies PFX enrollment with
+// explicit key_type, key_size, and curve values. Each sub-test enrolls a fresh
+// certificate and checks that the issued key algorithm is reflected in state.
+//
+// Supported key types depend on the CA/template configuration in the lab.
+// Sub-tests that fail due to unsupported key types will report the CA error.
+func TestIntKeyfactorCertificateResource_PFX_KeyTypes(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+	templateName := discoverTemplate(t, client)
+
+	type keyTestCase struct {
+		name     string
+		keyType  string
+		keySize  int
+		curve    string
+		wantType string // expected key_type in state (KeyAlgorithm from server)
+	}
+	cases := []keyTestCase{
+		{name: "RSA-2048", keyType: "RSA", keySize: 2048, curve: "", wantType: "RSA"},
+		{name: "RSA-4096", keyType: "RSA", keySize: 4096, curve: "", wantType: "RSA"},
+		{name: "ECC-P256", keyType: "ECC", keySize: 0, curve: "P-256", wantType: "ECC"},
+		{name: "ECC-P384", keyType: "ECC", keySize: 0, curve: "P-384", wantType: "ECC"},
+		{name: "ECC-P521", keyType: "ECC", keySize: 0, curve: "P-521", wantType: "ECC"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cn := randomTestCN("tf-int-key-" + strings.ToLower(tc.name))
+			config := testAccCertPFXConfigWithKeyType(templateName, ca, cn, tc.keyType, tc.keySize, tc.curve)
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				Steps: []resource.TestStep{
+					{
+						Config: config,
+						Check: resource.ComposeAggregateTestCheckFunc(
+							resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+							resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+							resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+							resource.TestCheckResourceAttr("keyfactor_certificate.test", "key_type", tc.keyType),
+						),
+					},
+				},
+			})
+		})
+	}
+}
+
+// TestIntKeyfactorCertificateResource_CSR_KeyTypes verifies CSR enrollment
+// using CSRs generated with different key algorithms (RSA, ECC, Ed25519).
+// The key type is embedded in the CSR itself; no key_type field is set in HCL.
+func TestIntKeyfactorCertificateResource_CSR_KeyTypes(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+	templateName := discoverTemplate(t, client)
+
+	type csrKeyCase struct {
+		name    string
+		keyType string
+		curve   string
+	}
+	cases := []csrKeyCase{
+		{name: "RSA-2048", keyType: "RSA", curve: ""},
+		{name: "ECC-P256", keyType: "ECC", curve: "P-256"},
+		{name: "ECC-P384", keyType: "ECC", curve: "P-384"},
+		{name: "ECC-P521", keyType: "ECC", curve: "P-521"},
+		{name: "Ed25519", keyType: "Ed25519", curve: ""},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cn := randomTestCN("tf-int-csrkey-" + strings.ToLower(tc.name))
+			csr := generateCSRWithKeyType(t, cn, tc.keyType, tc.curve)
+			config := testAccCertCSRConfig(templateName, ca, csr)
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				Steps: []resource.TestStep{
+					{
+						Config: config,
+						Check: resource.ComposeAggregateTestCheckFunc(
+							resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "id"),
+							resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
+							resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
+						),
+					},
+				},
+			})
+		})
+	}
 }
 
 // TestUnitKeyfactorCertificateResource_CSR_Metadata tests metadata create,

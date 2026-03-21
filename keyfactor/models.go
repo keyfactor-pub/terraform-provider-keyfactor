@@ -176,6 +176,11 @@ type CommandCertificate struct {
 	NotAfter          types.String `tfsdk:"not_after"`                 // NotAfter represents the end date and time after which the certificate is no longer valid.
 	RevocationEffDate types.String `tfsdk:"revocation_effective_date"` // RevocationEffDate represents the date and time when the revocation of the certificate becomes effective.
 	RevokeOnDestroy   types.Bool   `tfsdk:"revoke_on_destroy"`         // RevokeOnDestroy indicates whether the certificate should be revoked when the resource is destroyed.
+
+	// PFX key generation options
+	KeyType types.String `tfsdk:"key_type"` // KeyType for PFX enrollment: RSA, ECC, Ed25519, Ed448.
+	KeySize types.Int64  `tfsdk:"key_size"` // KeySize in bits for PFX enrollment (e.g. 2048/4096 for RSA; 256/384/521 for ECC).
+	Curve   types.String `tfsdk:"curve"`    // Curve name for ECC PFX enrollment (e.g. P-256, P-384, P-521).
 }
 
 // DataCommandCertificate represents a certificate data source entity in Keyfactor.
@@ -247,6 +252,11 @@ type DataCommandCertificate struct {
 	NotBefore         types.String `tfsdk:"not_before"`                // NotBefore represents the start date and time from which the certificate is valid.
 	NotAfter          types.String `tfsdk:"not_after"`                 // NotAfter represents the end date and time after which the certificate is no longer valid.
 	RevocationEffDate types.String `tfsdk:"revocation_effective_date"` // RevocationEffDate represents the date and time when the revocation of the certificate becomes effective.
+
+	// Key info (read from issued certificate)
+	KeyType types.String `tfsdk:"key_type"` // KeyType of the issued certificate (e.g. RSA, ECC, Ed25519).
+	KeySize types.Int64  `tfsdk:"key_size"` // KeySize in bits of the issued certificate.
+	Curve   types.String `tfsdk:"curve"`    // Curve name for ECC certificates.
 }
 
 // syncTfId copies the ID (identifier) value to the TfId (id) field.

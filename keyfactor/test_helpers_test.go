@@ -2,6 +2,10 @@ package keyfactor
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
@@ -1710,6 +1714,65 @@ func generateSimpleCSR(t *testing.T, cn string) string {
 	}
 	csrPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
 	return string(csrPEM)
+}
+
+// generateCSRWithKeyType creates a PEM-encoded CSR using the specified key type.
+// keyType is one of "RSA", "ECC", "Ed25519". curve is used for ECC (e.g. "P-256", "P-384", "P-521").
+func generateCSRWithKeyType(t *testing.T, cn, keyType, curve string) string {
+	t.Helper()
+	var signer crypto.Signer
+	var err error
+	switch strings.ToUpper(keyType) {
+	case "RSA":
+		signer, err = rsa.GenerateKey(rand.Reader, 2048)
+	case "ECC":
+		var c elliptic.Curve
+		switch curve {
+		case "P-384":
+			c = elliptic.P384()
+		case "P-521":
+			c = elliptic.P521()
+		default:
+			c = elliptic.P256()
+		}
+		signer, err = ecdsa.GenerateKey(c, rand.Reader)
+	case "ED25519":
+		_, signer, err = ed25519.GenerateKey(rand.Reader)
+	default:
+		t.Fatalf("generateCSRWithKeyType: unsupported key type %q", keyType)
+	}
+	if err != nil {
+		t.Fatalf("generateCSRWithKeyType: generate %s key: %v", keyType, err)
+	}
+	tmpl := &x509.CertificateRequest{Subject: pkix.Name{CommonName: cn}}
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, tmpl, signer)
+	if err != nil {
+		t.Fatalf("generateCSRWithKeyType: create CSR: %v", err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}))
+}
+
+// testAccCertPFXConfigWithKeyType generates HCL for a PFX certificate resource
+// test that includes key_type, key_size (0 = omit), and/or curve ("" = omit).
+func testAccCertPFXConfigWithKeyType(templateName, ca, cn, keyType string, keySize int, curve string) string {
+	var extra string
+	if keyType != "" {
+		extra += fmt.Sprintf("\n  key_type              = \"%s\"", keyType)
+	}
+	if keySize > 0 {
+		extra += fmt.Sprintf("\n  key_size              = %d", keySize)
+	}
+	if curve != "" {
+		extra += fmt.Sprintf("\n  curve                 = \"%s\"", curve)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name            = "%s"
+  certificate_authority  = "%s"
+  certificate_template   = "%s"
+  key_password           = "Tftest123456"%s
+}
+`, cn, ca, templateName, extra)
 }
 
 // testAccCertCSRConfig generates HCL for a CSR-based certificate resource test.

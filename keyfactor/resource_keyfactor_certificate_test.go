@@ -787,6 +787,66 @@ resource "keyfactor_certificate" "test" {
 	})
 }
 
+// TestUnitKeyfactorCertificateResource_KeyParamsWithCSR verifies that
+// specifying key_type, key_size, or curve alongside csr is rejected with a
+// validation error (the key type is already embedded in the CSR).
+func TestUnitKeyfactorCertificateResource_KeyParamsWithCSR(t *testing.T) {
+	csrBlock := `<<-EOT
+` + strings.ReplaceAll(CsrContent, `\n`, "\n") + `
+EOT`
+
+	cases := []struct {
+		name   string
+		config string
+	}{
+		{
+			name: "key_type+csr",
+			config: fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  certificate_authority = "FakeCA"
+  certificate_template  = "FakeTemplate"
+  csr                   = %s
+  key_type              = "RSA"
+}`, csrBlock),
+		},
+		{
+			name: "key_size+csr",
+			config: fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  certificate_authority = "FakeCA"
+  certificate_template  = "FakeTemplate"
+  csr                   = %s
+  key_size              = 2048
+}`, csrBlock),
+		},
+		{
+			name: "curve+csr",
+			config: fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  certificate_authority = "FakeCA"
+  certificate_template  = "FakeTemplate"
+  csr                   = %s
+  curve                 = "P-256"
+}`, csrBlock),
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			resource.UnitTest(t, resource.TestCase{
+				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				Steps: []resource.TestStep{
+					{
+						Config:      tc.config,
+						ExpectError: regexp.MustCompile(`(?i)conflicting attributes|cannot be set when`),
+					},
+				},
+			})
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests (VCR cassettes — no lab required)
 // ---------------------------------------------------------------------------

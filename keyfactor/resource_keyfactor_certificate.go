@@ -602,7 +602,11 @@ Triggers replacement of resource when true.
 				Computed: true,
 				Description: "Key algorithm for PFX enrollment: RSA, ECC, Ed25519, Ed448. " +
 					"If omitted, the CA/template default is used. " +
-					"Populated from the issued certificate on read.",
+					"Populated from the issued certificate on read. " +
+					"Cannot be set when `csr` is also set.",
+				Validators: []tfsdk.AttributeValidator{
+					conflictsWithAttrValidator{otherAttr: "csr"},
+				},
 			},
 			"key_size": {
 				Type:     types.Int64Type,
@@ -610,7 +614,11 @@ Triggers replacement of resource when true.
 				Computed: true,
 				Description: "Key size in bits for PFX enrollment (e.g. 2048, 4096 for RSA; 256, 384, 521 for ECC). " +
 					"If omitted, the CA/template default is used. " +
-					"Populated from the issued certificate on read.",
+					"Populated from the issued certificate on read. " +
+					"Cannot be set when `csr` is also set.",
+				Validators: []tfsdk.AttributeValidator{
+					conflictsWithAttrValidator{otherAttr: "csr"},
+				},
 			},
 			"curve": {
 				Type:     types.StringType,
@@ -618,7 +626,11 @@ Triggers replacement of resource when true.
 				Computed: true,
 				Description: "ECC curve name for PFX enrollment (e.g. P-256, P-384, P-521). " +
 					"Only relevant when key_type=ECC. " +
-					"Populated from the issued certificate on read.",
+					"Populated from the issued certificate on read. " +
+					"Cannot be set when `csr` is also set.",
+				Validators: []tfsdk.AttributeValidator{
+					conflictsWithAttrValidator{otherAttr: "csr"},
+				},
 			},
 		},
 		Description: "Manages a certificate in Keyfactor Command using the `/Enrollment` and `/Certificates` APIs",

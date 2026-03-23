@@ -630,11 +630,11 @@ type KeyfactorCertificateTemplateState struct {
 	KeyAlgorithms     []TemplateKeyAlgorithmEntry `tfsdk:"key_algorithms"`
 
 	// v25+ read-only
-	Manageability             types.Int64  `tfsdk:"manageability"`
-	CertificateCleanupEnabled types.Bool   `tfsdk:"certificate_cleanup_enabled"`
-	TimeAfterExpiration       types.Int64  `tfsdk:"time_after_expiration"`
-	TimeAfterExpirationUnits  types.Int64  `tfsdk:"time_after_expiration_units"`
-	DeleteWithArchivedKey     types.Bool   `tfsdk:"delete_with_archived_key"`
+	Manageability             types.Int64 `tfsdk:"manageability"`
+	CertificateCleanupEnabled types.Bool  `tfsdk:"certificate_cleanup_enabled"`
+	TimeAfterExpiration       types.Int64 `tfsdk:"time_after_expiration"`
+	TimeAfterExpirationUnits  types.Int64 `tfsdk:"time_after_expiration_units"`
+	DeleteWithArchivedKey     types.Bool  `tfsdk:"delete_with_archived_key"`
 }
 
 // ---------------------------------------------------------------------------
@@ -661,7 +661,6 @@ func templateResponseToState(resp *v1.TemplatesTemplateRetrievalResponse) Keyfac
 		RequiresApproval:       types.Bool{Value: resp.GetRequiresApproval()},
 		AllowOneClickRenewals:  types.Bool{Value: resp.GetAllowOneClickRenewals()},
 		KeyUsage:               types.Int64{Value: int64(resp.GetKeyUsage())},
-
 	}
 
 	// Manageability (v25+)

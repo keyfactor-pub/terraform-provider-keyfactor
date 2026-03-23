@@ -168,11 +168,11 @@ func (d dataSourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.S
 				}),
 			},
 
-			"manageability":              {Type: types.Int64Type, Computed: true},
+			"manageability":               {Type: types.Int64Type, Computed: true},
 			"certificate_cleanup_enabled": {Type: types.BoolType, Computed: true},
-			"time_after_expiration":      {Type: types.Int64Type, Computed: true},
+			"time_after_expiration":       {Type: types.Int64Type, Computed: true},
 			"time_after_expiration_units": {Type: types.Int64Type, Computed: true},
-			"delete_with_archived_key":   {Type: types.BoolType, Computed: true},
+			"delete_with_archived_key":    {Type: types.BoolType, Computed: true},
 		},
 	}, nil
 }
@@ -210,19 +210,19 @@ type KeyfactorCertificateTemplateDataSource struct {
 	AllowOneClickRenewals  types.Bool   `tfsdk:"allow_one_click_renewals"`
 	KeyUsage               types.Int64  `tfsdk:"key_usage"`
 
-	TemplatePolicy   *TemplatePolicyState           `tfsdk:"template_policy"`
-	TemplateRegexes  []TemplateRegexEntry           `tfsdk:"template_regexes"`
-	TemplateDefaults []TemplateDefaultEntry         `tfsdk:"template_defaults"`
-	EnrollmentFields []TemplateEnrollmentFieldEntry `tfsdk:"enrollment_fields"`
-	MetadataFields   []TemplateMetadataFieldEntry   `tfsdk:"metadata_fields"`
-	ExtendedKeyUsages []TemplateEKUEntry            `tfsdk:"extended_key_usages"`
-	KeyAlgorithms    []TemplateKeyAlgorithmEntry    `tfsdk:"key_algorithms"`
+	TemplatePolicy    *TemplatePolicyState           `tfsdk:"template_policy"`
+	TemplateRegexes   []TemplateRegexEntry           `tfsdk:"template_regexes"`
+	TemplateDefaults  []TemplateDefaultEntry         `tfsdk:"template_defaults"`
+	EnrollmentFields  []TemplateEnrollmentFieldEntry `tfsdk:"enrollment_fields"`
+	MetadataFields    []TemplateMetadataFieldEntry   `tfsdk:"metadata_fields"`
+	ExtendedKeyUsages []TemplateEKUEntry             `tfsdk:"extended_key_usages"`
+	KeyAlgorithms     []TemplateKeyAlgorithmEntry    `tfsdk:"key_algorithms"`
 
-	Manageability             types.Int64  `tfsdk:"manageability"`
-	CertificateCleanupEnabled types.Bool   `tfsdk:"certificate_cleanup_enabled"`
-	TimeAfterExpiration       types.Int64  `tfsdk:"time_after_expiration"`
-	TimeAfterExpirationUnits  types.Int64  `tfsdk:"time_after_expiration_units"`
-	DeleteWithArchivedKey     types.Bool   `tfsdk:"delete_with_archived_key"`
+	Manageability             types.Int64 `tfsdk:"manageability"`
+	CertificateCleanupEnabled types.Bool  `tfsdk:"certificate_cleanup_enabled"`
+	TimeAfterExpiration       types.Int64 `tfsdk:"time_after_expiration"`
+	TimeAfterExpirationUnits  types.Int64 `tfsdk:"time_after_expiration_units"`
+	DeleteWithArchivedKey     types.Bool  `tfsdk:"delete_with_archived_key"`
 }
 
 func (d dataSourceCertificateTemplate) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
@@ -327,13 +327,13 @@ func templateResourceToDataSource(rs KeyfactorCertificateTemplateState, identifi
 		AllowOneClickRenewals:  rs.AllowOneClickRenewals,
 		KeyUsage:               rs.KeyUsage,
 
-		TemplatePolicy:   rs.TemplatePolicy,
-		TemplateRegexes:  rs.TemplateRegexes,
-		TemplateDefaults: rs.TemplateDefaults,
-		EnrollmentFields: rs.EnrollmentFields,
-		MetadataFields:   rs.MetadataFields,
+		TemplatePolicy:    rs.TemplatePolicy,
+		TemplateRegexes:   rs.TemplateRegexes,
+		TemplateDefaults:  rs.TemplateDefaults,
+		EnrollmentFields:  rs.EnrollmentFields,
+		MetadataFields:    rs.MetadataFields,
 		ExtendedKeyUsages: rs.ExtendedKeyUsages,
-		KeyAlgorithms:    rs.KeyAlgorithms,
+		KeyAlgorithms:     rs.KeyAlgorithms,
 
 		Manageability:             rs.Manageability,
 		CertificateCleanupEnabled: rs.CertificateCleanupEnabled,

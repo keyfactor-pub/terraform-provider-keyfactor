@@ -34,7 +34,7 @@ resource "keyfactor_certificate" "full_csr" {
   }
 
   # Trigger automatic renewal when fewer than 30 days remain before expiry
-  renewal_config {
+  renewal_config = {
     renew_days = 30
   }
 }

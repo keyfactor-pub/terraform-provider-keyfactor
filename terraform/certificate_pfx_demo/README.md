@@ -26,6 +26,9 @@ export KEYFACTOR_AUTH_TOKEN_URL=https://auth.example.com/connect/token
 # Optional — skip TLS verification for self-signed certs
 export KEYFACTOR_SKIP_VERIFY=true
 
+# Optional — extend HTTP timeout for slow servers (RSA-8192 needs ~5 min)
+export KEYFACTOR_CLIENT_TIMEOUT=600   # seconds; default is 60
+
 # Certificate enrollment targets
 export TF_VAR_certificate_authority="Sub-CA"          # or "MyHost\\LogicalName" for Windows CAs
 export TF_VAR_certificate_template="2YearTestWebServer"
@@ -34,10 +37,14 @@ export TF_VAR_certificate_template="2YearTestWebServer"
 > **Note:** If `KEYFACTOR_USERNAME` / `KEYFACTOR_PASSWORD` are also set, the provider
 > prefers basic auth over OAuth. Unset them if you want OAuth.
 
-> **Key algorithm support:** Not all CAs or templates support every key type. The Ed25519
-> example requires a CA explicitly configured for Ed25519. ECC key support depends on the
-> template's allowed key algorithms. Enrollments for unsupported key types will fail with
-> a CA error.
+> **Key algorithm support:** Not all CAs or templates support every key type. Ed25519 and
+> Ed448 require a CA explicitly configured for those algorithms. ECC key support depends
+> on the template's allowed key algorithms.
+
+> **⚠ RSA-8192 timeout:** Server-side RSA-8192 key generation can take 4-5 minutes.
+> Set `KEYFACTOR_CLIENT_TIMEOUT=600` (seconds) before running `make apply` to extend
+> the HTTP client timeout to 10 minutes. Without this the default 60-second timeout
+> will cause `rsa_8192` to fail. The `.env` file already includes this setting.
 
 ## Files
 
@@ -93,7 +100,7 @@ make clean          Remove generated files
 | `rsa_2048` | `tf-demo-rsa2048<SUFFIX>.example.com` | RSA 2048-bit |
 | `rsa_3072` | `tf-demo-rsa3072<SUFFIX>.example.com` | RSA 3072-bit |
 | `rsa_4096` | `tf-demo-rsa4096<SUFFIX>.example.com` | RSA 4096-bit |
-| `rsa_8192` | `tf-demo-rsa8192<SUFFIX>.example.com` | RSA 8192-bit |
+| `rsa_8192` | `tf-demo-rsa8192<SUFFIX>.example.com` | RSA 8192-bit ⚠ |
 | `ecc_p256` | `tf-demo-ecc256<SUFFIX>.example.com` | ECC P-256 |
 | `ecc_p384` | `tf-demo-ecc384<SUFFIX>.example.com` | ECC P-384 |
 | `ecc_p521` | `tf-demo-ecc521<SUFFIX>.example.com` | ECC P-521 |

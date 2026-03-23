@@ -107,9 +107,9 @@ release:
 	mv ./bin/${BINARY}_${VERSION}_windows_amd64 ./bin/terraform-provider-keyfactor.exe
 	zip -j ./bin/${BINARY}_${VERSION}_windows_amd64.zip ./bin/terraform-provider-keyfactor.exe
 install:
-	go build -o ${BINARY}
+	go install
 	mkdir -p ${INSTALLDIR}
-	cp ${BINARY} ${INSTALLDIR}/${BINARY}
+	cp $(shell go env GOPATH)/bin/${BINARY} ${INSTALLDIR}/${BINARY}
 
 test:
 	go test -i $(TEST) || exit 1

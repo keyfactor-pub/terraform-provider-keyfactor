@@ -91,9 +91,10 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Read-only alias of `identifier` for Terraform framework compatibility.",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Read-only alias of `identifier` for Terraform framework compatibility.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"csr": {
 				Type:          types.StringType,
@@ -161,7 +162,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type:          types.StringType,
 				Required:      false,
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{RequiresReplaceIfPreviouslySet()},
 				Description:   "A string that sets the name of the certificate template that should be used to issue the certificate. The template short name should be used. See also EnrollmentPatternId.\n\nOne of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern.\n\nImportant:  The template must be configured with at least one enrollment pattern in order to be used for enrollment (see POST Enrollment Patterns).\nNote:  This parameter is considered deprecated as for Keyfactor Command v25.1.0 and may be removed in a future release.",
 				Validators: []tfsdk.AttributeValidator{
 					atLeastOneOfValidator{otherAttr: "certificate_enrollment_pattern"},
@@ -171,7 +172,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type:          types.StringType,
 				Required:      false,
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{RequiresReplaceIfPreviouslySet()},
 				Description: "Either the `name` or internal `ID` (" +
 					"integer) indicating the enrollment pattern to use when" +
 					" requesting the certificate. If this value is not provided, the default enrollment pattern defined for the template provided in the request (see the Template parameter) will be used.\n\nOne of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern. IMPORTANT: Requires Keyfactor Command v25.1.0+",
@@ -236,29 +237,34 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Description: "Metadata key-value pairs to be attached to certificate",
 			},
 			"serial_number": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Serial number of newly enrolled certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Serial number of newly enrolled certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"issuer_dn": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Issuer distinguished name that signed the certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Issuer distinguished name that signed the certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"thumbprint": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Thumbprint of newly enrolled certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Thumbprint of newly enrolled certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"not_before": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Not Before date of enrolled certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Not Before date of enrolled certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"not_after": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Not After date of enrolled certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Not After date of enrolled certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"identifier": {
 				Type:     types.StringType,
@@ -268,6 +274,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					"or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must " +
 					"be an exact match and if multiple certificates are returned the certificate that was most recently " +
 					"issued will be returned. ",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"collection_id": {
 				Type:     types.Int64Type,
@@ -277,7 +284,6 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					"granted at the collection level. NOTE: This will *not* assign the cert to the specified collection ID; " +
 					"assignment is based the collection's associated query. For more information on collection permissions see " +
 					"the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"owner_role_name": {
 				Type:     types.StringType,
@@ -302,35 +308,41 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"certificate_id": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Keyfactor Command certificate ID.",
+				Type:          types.Int64Type,
+				Computed:      true,
+				Description:   "Keyfactor Command certificate ID.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"command_request_id": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Keyfactor request ID.",
+				Type:          types.Int64Type,
+				Computed:      true,
+				Description:   "Keyfactor request ID.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"certificate_pem": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "PEM formatted certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "PEM formatted certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"ca_certificate": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "PEM formatted CA certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "PEM formatted CA certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"certificate_chain": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "PEM formatted full certificate chain",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "PEM formatted full certificate chain",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"private_key": {
-				Type:        types.StringType,
-				Computed:    true,
-				Sensitive:   true,
-				Description: "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+				Type:          types.StringType,
+				Computed:      true,
+				Sensitive:     true,
+				Description:   "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"enrollment_password": {
 				Type:      types.StringType,
@@ -349,22 +361,25 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 					"io/providers/keyfactor-pub/keyfactor/latest/docs#schema",
 			},
 			"jks": {
-				Type:        types.StringType,
-				Computed:    true,
-				Sensitive:   true,
-				Description: "Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+				Type:          types.StringType,
+				Computed:      true,
+				Sensitive:     true,
+				Description:   "Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"pfx": {
-				Type:        types.StringType,
-				Computed:    true,
-				Sensitive:   true,
-				Description: "Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.",
+				Type:          types.StringType,
+				Computed:      true,
+				Sensitive:     true,
+				Description:   "Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"zip": {
-				Type:        types.StringType,
-				Computed:    true,
-				Sensitive:   true,
-				Description: "Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.",
+				Type:          types.StringType,
+				Computed:      true,
+				Sensitive:     true,
+				Description:   "Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"use_cn_as_friendly_name": {
 				Type:     types.BoolType,
@@ -373,8 +388,7 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 					" certificate. Defaults to `true`. " +
 					"NOTE: Keyfactor Command must be configured to `allow custom friendly name` for this to work" +
 					" under `Application Settings > Enrollment > PFX`.",
-				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Optional: true,
 			},
 			"friendly_name": {
 				Type:     types.StringType,
@@ -382,30 +396,31 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Description: "Only applicable for PFX enrollments. A friendly name for the certificate. " +
 					"If not provided, " +
 					"the common name will be used unless `use_cn_as_friendly_name` is set to `false`.",
-				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Optional: true,
 			},
 			"is_expired": {
 				Type:          types.BoolType,
 				Computed:      true,
 				Description:   "Whether the certificate is expired",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 			},
 			"is_revoked": {
 				Type:          types.BoolType,
 				Computed:      true,
 				Description:   "Whether the certificate is revoked",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 			},
 			"is_pending_revocation": {
-				Type:        types.BoolType,
-				Computed:    true,
-				Description: "Whether the certificate is pending revocation",
+				Type:          types.BoolType,
+				Computed:      true,
+				Description:   "Whether the certificate is pending revocation",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"revocation_effective_date": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "The effective date of the certificate revocation",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "The effective date of the certificate revocation",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"revoke_on_destroy": {
 				Type:        types.BoolType,
@@ -1040,9 +1055,9 @@ func (r resourceCommandCertificate) Read(
 		//CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(certificateID), Null: isNullId(certificateID)},
-		CollectionId:        state.CollectionId,
-		FriendlyName:        state.FriendlyName,
-		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
+		CollectionId:        types.Int64{Null: true},  // not recoverable; use isNullId sentinel
+		FriendlyName:        types.String{Null: true}, // write-only enrollment param
+		UseCNAsFriendlyName: types.Bool{Null: true},   // write-only enrollment param
 		ExpiryWarningDays:   state.ExpiryWarningDays,
 		IsExpired: types.Bool{
 			Value: expired,
@@ -1843,10 +1858,24 @@ func (r resourceCommandCertificate) ImportState(
 				caName = remoteCaName
 			}
 		} else if remoteCaName != "" {
-			caName = remoteCaName
+			// caName is empty (import path): extract the logical name from the
+			// server-returned CA path.  Handles Windows "HOST\\LogicalName" and
+			// EJBCA URL format "http://ejbca.../ejbca\\LogicalName" so that the
+			// imported state stores the short logical name and matches the typical
+			// user-supplied certificate_authority value without causing drift.
+			if idx := strings.LastIndex(remoteCaName, "\\"); idx >= 0 {
+				caName = remoteCaName[idx+1:]
+			} else {
+				caName = remoteCaName
+			}
 		}
 		certificateIdInt = certGetResp.Id
-		templateName = certGetResp.TemplateName
+		// Do not update templateName from server during import: certificate_template
+		// and certificate_enrollment_pattern are write-only enrollment parameters
+		// that cannot be recovered from the certificate record.  Leaving templateName
+		// as "" stores null in state; users should add lifecycle.ignore_changes for
+		// these attributes after importing certs enrolled via enrollment patterns.
+		// templateName = certGetResp.TemplateName
 		metadata = flattenMetadata(certGetResp.Metadata)
 		revoked := isRevoked(certGetResp)
 		if revoked {
@@ -1862,7 +1891,7 @@ func (r resourceCommandCertificate) ImportState(
 	tflog.Debug(ctx, "Creating CommandCertificate object")
 	var result = CommandCertificate{
 		ID:                 types.String{Value: certificateId},
-		CSR:                state.CSR,
+		CSR:                types.String{Null: true}, // write-only; not recoverable from server
 		CommonName:         cn,
 		Locality:           l,
 		State:              s,
@@ -1888,16 +1917,16 @@ func (r resourceCommandCertificate) ImportState(
 		CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(certificateIdInt), Null: isNullId(certificateIdInt)},
-		CollectionId:        state.CollectionId,
-		FriendlyName:        state.FriendlyName,
-		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
+		CollectionId:        types.Int64{Null: true},
+		FriendlyName:        types.String{Null: true},
+		UseCNAsFriendlyName: types.Bool{Null: true},
 		RequestId:           types.Int64{Value: int64(requestId), Null: isNullId(requestId)},
-		ExpiryWarningDays:   state.ExpiryWarningDays,
+		ExpiryWarningDays:   types.Int64{Null: true}, // write-only; isNullId(0)==true means not set
 		IsExpired:           types.Bool{Value: false}, // Set to false as we just enrolled the certificate
 		IsRevoked:           types.Bool{Value: false}, // Set to false as we just enrolled the certificate
 		IsPendingRevocation: types.Bool{Null: true},   // Set to false as we just enrolled the certificate
 		RenewalConfig:       state.RenewalConfig,
-		CertificateFormat:   state.CertificateFormat,
+		CertificateFormat:   types.String{Null: true}, // write-only; isNullString("")==true means not set
 		OwnerRoleName:       types.String{Value: ownerRoleName, Null: isNullString(ownerRoleName)},
 		EnrollmentPattern: types.String{
 			Value: fmt.Sprintf("%d", enrollmentPatternId),
@@ -1906,7 +1935,7 @@ func (r resourceCommandCertificate) ImportState(
 		NotBefore:         state.NotBefore,
 		NotAfter:          state.NotAfter,
 		RevocationEffDate: state.RevocationEffDate,
-		RevokeOnDestroy:   state.RevokeOnDestroy,
+		RevokeOnDestroy:   types.Bool{Null: true}, // write-only; false means not set
 		KeyType:           state.KeyType,
 		KeySize:           state.KeySize,
 		Curve:             state.Curve,

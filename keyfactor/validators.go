@@ -5,9 +5,31 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 )
+
+// RequiresReplaceIfPreviouslySet returns an AttributePlanModifier that only
+// forces resource replacement when the attribute had a known, non-null value
+// in prior state AND that value differs from the planned value.
+//
+// Unlike tfsdk.RequiresReplace(), this modifier does NOT trigger replacement
+// when the prior state is null (e.g. after a terraform import).  This is the
+// correct behaviour for write-only enrollment parameters such as
+// certificate_template and certificate_enrollment_pattern: after import those
+// fields are null because the server does not return them; adding a value in
+// the next plan should not force re-enrollment.
+func RequiresReplaceIfPreviouslySet() tfsdk.AttributePlanModifier {
+	return tfsdk.RequiresReplaceIf(
+		func(_ context.Context, state, _ attr.Value, _ path.Path) (bool, diag.Diagnostics) {
+			// Only require replacement when the attribute was already set in state.
+			return !state.IsNull() && !state.IsUnknown(), nil
+		},
+		"Requires replacement only when changing a previously set value (not when first setting a value after import).",
+		"Requires replacement only when changing a previously set value (not when first setting a value after import).",
+	)
+}
 
 // conflictsWithAttrValidator rejects this attribute when the named sibling
 // attribute is also set. Used to prevent meaningless combinations such as

@@ -128,6 +128,18 @@ resource "keyfactor_template_role_binding" "terraform_test" {
 	return output
 }
 
+// testAccKeyfactorTemplateRoleBindingImportConfig returns HCL that declares
+// the binding with no templates — used as the Config for import-only test steps
+// where the actual template list is discovered by ImportState at runtime.
+func testAccKeyfactorTemplateRoleBindingImportConfig(roleName string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_template_role_binding" "import_test" {
+  role_name            = %q
+  template_short_names = []
+}
+`, roleName)
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests (VCR cassettes)
 // ---------------------------------------------------------------------------
@@ -188,6 +200,56 @@ resource "keyfactor_template_role_binding" "unit_test" {
 	})
 }
 
+// TestUnitKeyfactorTemplateRoleBindingResource_Import tests ImportState for the
+// template role binding resource using VCR cassettes. The cassette captures two
+// GetTemplates calls (one inside findTemplateRoleAttachments and one for the
+// name→ID mapping). Import ID is the role name.
+//
+// To record cassettes:
+//
+//	RECORD_CASSETTES=1 make testunit-record-one TEST_NAME=TestUnitKeyfactorTemplateRoleBindingResource_Import
+func TestUnitKeyfactorTemplateRoleBindingResource_Import(t *testing.T) {
+	cassetteName := "template_role_binding_resource_import"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var roleName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := testAccIntegrationPreCheck(t)
+		var templateName string
+		roleName, templateName = discoverRoleBinding(t, client)
+		writeRoleBindingTestParams(cassettePath, roleBindingTestParams{RoleName: roleName, TemplateName: templateName})
+	} else {
+		params := readRoleBindingTestParams(cassettePath)
+		if params.RoleName == "" {
+			t.Skip("No template role binding import cassette recorded. Run with RECORD_CASSETTES=1 against a lab with existing role bindings.")
+		}
+		roleName = params.RoleName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_template_role_binding.import_test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		CheckDestroy:             nil,
+		Steps: []resource.TestStep{
+			{
+				Config:            testAccKeyfactorTemplateRoleBindingImportConfig(roleName),
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateId:     roleName,
+				ImportStateVerify: false,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "role_name", roleName),
+				),
+			},
+		},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Integration tests (auto-discovery)
 // ---------------------------------------------------------------------------
@@ -229,6 +291,38 @@ resource "keyfactor_template_role_binding" "int_test" {
 }
 `, roleName, templateName),
 				ExpectError: regexp.MustCompile(`(?i)Policies.*cannot be empty|Error updating template`),
+			},
+		},
+	})
+}
+
+// TestIntKeyfactorTemplateRoleBindingResource_Import discovers an existing
+// template role binding in the lab and imports it by role name. Verifies that
+// ImportState correctly discovers and populates template_short_names.
+//
+// This test is read-only and does not require Create to work — it uses
+// pre-existing role bindings already in the lab.
+func TestIntKeyfactorTemplateRoleBindingResource_Import(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	roleName, _ := discoverRoleBinding(t, client)
+
+	resourceName := "keyfactor_template_role_binding.import_test"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             nil,
+		Steps: []resource.TestStep{
+			{
+				Config:            testAccKeyfactorTemplateRoleBindingImportConfig(roleName),
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateId:     roleName,
+				ImportStateVerify: false,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "role_name", roleName),
+					resource.TestCheckResourceAttrSet(resourceName, "template_short_names.#"),
+				),
 			},
 		},
 	})

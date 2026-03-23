@@ -31,7 +31,7 @@ type certificateTestCase struct {
 }
 
 // CsrContent is a fixed PEM-encoded CSR with only a CN subject field.
-// Using a simple CN-only CSR avoids EJBCA/template subject field restrictions
+// Using a simple CN-only CSR avoids template subject field restrictions
 // (e.g. "Wrong number of LOCALITY fields"). This constant is shared between
 // unit tests (VCR cassette recording/replay) and the legacy acceptance tests.
 const CsrContent = `-----BEGIN CERTIFICATE REQUEST-----\nMIICaDCCAVACAQAwIzEhMB8GA1UEAxMYdGYtdW5pdC10ZXN0LmV4YW1wbGUuY29t\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApgDKa9ldruZ0AL3rZDkG\nrsXXSihTcU3qB/OUUHoUHG1HMqVGm+jCVBWXm1z+hXmYq2DdesW82ESRQleBwZr5\nDyyKeoypY6ZfqRcmZoHo/sG7e3pYf3fmdn+MnHoNCA7GEipJEV92zYe28WZVCO0U\npe8LTnOt0Dep3F+4no2hO6rRKIYkvlAB58Rp88U/Fnj4xsMrADI0f71+rQPEWMaP\n5oMm+BFCG2m7mvKLciHCqj0oB3OU73ly6Xfw5ezdtDER3CrGSz6SJFBVkzpCqXeP\nfqk1a1o5Vp7kSe6LavaB/bPrPwLFazThZ9JOmaRItX8YVjEdB/oAEpcIFKycxBA3\n/wIDAQABoAAwDQYJKoZIhvcNAQELBQADggEBAGJy5PiPu5KCGDtCrmQxNXtlpmEI\n2u0uN/TxYsbpFof8OhqeW0A4JXaS4UZ19A0sIun2GGqTtTHKVbUGLNxWNt7JzOFV\ngA2TrKL1H8J20sXRzNZxZYptfspuAI5Z1BpYpguvGJU+AGA78pw80U5KJN7mFuCf\nX5k143EhCplvclf9FoEgnOXeXSifqTXNvJytNbxLK+RC1urHvg2FpWlRRdcTn+n2\nyxwcTV2W3DruoswVBhnOlvDyoKpjMLSElIhOHg+X3xPtf0RekAmp+wI4LSwf1N3R\ntmwlPVTD69bkiQay2yt0ZX6UZQvcY6QpOEol4MadEhrK6IoXKeZHT+CGzAM=\n-----END CERTIFICATE REQUEST-----\n`
@@ -1375,6 +1375,246 @@ func TestIntKeyfactorCertificateResource_SANs(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Unit tests: Key types — PFX and CSR (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorCertificateResource_PFX_KeyTypes verifies PFX enrollment with
+// explicit key_type / key_size / curve values for each supported algorithm.
+// One cassette per key type; tests skip if the cassette has not been recorded yet.
+//
+// To record all cassettes:
+//
+//	RECORD_CASSETTES=1 make testunit-record-keytypes
+func TestUnitKeyfactorCertificateResource_PFX_KeyTypes(t *testing.T) {
+	cases := []struct {
+		name              string
+		keyType           string
+		keySize           int
+		curve             string
+		expectPolicyError bool // expected to fail with "policy settings" until Command API bug is fixed
+		skipPEMCheck      bool // cert PEM or key type check unavailable for this key type
+	}{
+		// RSA variants
+		{name: "rsa2048", keyType: "RSA", keySize: 2048},
+		{name: "rsa3072", keyType: "RSA", keySize: 3072},
+		{name: "rsa4096", keyType: "RSA", keySize: 4096},
+		{name: "rsa8192", keyType: "RSA", keySize: 8192},
+		// ECDSA variants
+		{name: "ecc_p256", keyType: "ECC", curve: "P-256"},
+		{name: "ecc_p384", keyType: "ECC", curve: "P-384"},
+		{name: "ecc_p521", keyType: "ECC", curve: "P-521"},
+		// EdDSA variants
+		{name: "ed25519", keyType: "Ed25519"},
+		{name: "ed448", keyType: "Ed448"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cassetteName := "certificate_resource_pfx_" + tc.name
+			cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+			var labPolicySkip bool
+			t.Cleanup(func() {
+				// Remove cassette for unexpectedly-unsupported key types (not the
+				// policy-error cases, which keep their cassettes intentionally).
+				if labPolicySkip && !tc.expectPolicyError {
+					os.Remove(cassettePath + ".yaml")
+					os.Remove(cassettePath + ".params.json")
+				}
+			})
+
+			var config string
+			if os.Getenv("RECORD_CASSETTES") == "1" {
+				client := newTestClient(t)
+				ca := discoverCA(t, client)
+				cn := randomTestCN("tf-unit-pfx-" + tc.name)
+				enrollmentPattern := discoverEnrollmentPattern(t, client)
+				var templateName string
+				if enrollmentPattern != "" {
+					config = testAccCertPFXConfigWithKeyTypeAndPattern(
+						enrollmentPattern, ca, cn, tc.keyType, tc.keySize, tc.curve)
+				} else {
+					templateName = discoverTemplate(t, client)
+					config = testAccCertPFXConfigWithKeyType(
+						templateName, ca, cn, tc.keyType, tc.keySize, tc.curve)
+				}
+				writeCertPFXKeyTypeTestParams(cassettePath, certPFXKeyTypeTestParams{
+					TemplateName:      templateName,
+					CA:                ca,
+					EnrollmentPattern: enrollmentPattern,
+					CN:                cn,
+					KeyType:           tc.keyType,
+					KeySize:           tc.keySize,
+					Curve:             tc.curve,
+				})
+			} else {
+				params := readCertPFXKeyTypeTestParams(cassettePath, tc.keyType, tc.keySize, tc.curve)
+				if params.EnrollmentPattern != "" {
+					config = testAccCertPFXConfigWithKeyTypeAndPattern(
+						params.EnrollmentPattern, params.CA, params.CN,
+						tc.keyType, tc.keySize, tc.curve)
+				} else {
+					config = testAccCertPFXConfigWithKeyType(
+						params.TemplateName, params.CA, params.CN,
+						tc.keyType, tc.keySize, tc.curve)
+				}
+			}
+
+			factories, cleanup := newVCRProviderFactories(t, cassetteName)
+			defer cleanup()
+
+			var step resource.TestStep
+			if tc.expectPolicyError {
+				// These key sizes are known to fail with the Command enrollment pattern
+				// API. The cassette captures the error response. Remove expectPolicyError
+				// and re-record when the Command API bug is fixed.
+				step = resource.TestStep{
+					Config:      config,
+					ExpectError: regexp.MustCompile(`policy settings`),
+				}
+			} else {
+				params := readCertPFXKeyTypeTestParams(cassettePath, tc.keyType, tc.keySize, tc.curve)
+				checks := []resource.TestCheckFunc{
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "is_expired", "false"),
+				}
+				// skipPEMCheck: certificate_pem may be unavailable when the CA returns BER-encoded
+				// P7B (e.g. EJBCA Ed448) or when Go's x509 library cannot parse the cert. Skip all
+				// certificate_pem-dependent checks in those cases.
+				if !tc.skipPEMCheck {
+					checks = append(checks,
+						resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+						testCheckCertPEMIsLeaf("keyfactor_certificate.test", "certificate_pem"),
+						testCheckCertPEMCommonName("keyfactor_certificate.test", "certificate_pem", params.CN),
+					)
+				}
+				if tc.keyType != "" {
+					checks = append(checks, resource.TestCheckResourceAttr(
+						"keyfactor_certificate.test", "key_type", tc.keyType))
+					if !tc.skipPEMCheck {
+						// Verify key type from the actual certificate PEM, not just server metadata.
+						checks = append(checks, testCheckCertPEMKeyType(
+							"keyfactor_certificate.test", "certificate_pem", tc.keyType, tc.curve))
+					}
+				}
+				if tc.curve != "" {
+					checks = append(checks, resource.TestCheckResourceAttr(
+						"keyfactor_certificate.test", "curve", tc.curve))
+				}
+				if tc.keySize > 0 {
+					checks = append(checks, resource.TestCheckResourceAttr(
+						"keyfactor_certificate.test", "key_size",
+						strconv.Itoa(tc.keySize)))
+				}
+				step = resource.TestStep{Config: config, Check: resource.ComposeAggregateTestCheckFunc(checks...)}
+			}
+
+			resource.UnitTest(t, resource.TestCase{
+				ProtoV6ProviderFactories: factories,
+				ErrorCheck:               labKeyTypePolicyErrorCheck(t, tc.name, &labPolicySkip),
+				Steps:                    []resource.TestStep{step},
+			})
+		})
+	}
+}
+
+// TestUnitKeyfactorCertificateResource_CSR_KeyTypes verifies CSR enrollment for
+// each supported key algorithm. The CSR is generated locally with the target key
+// type; the server receives the CSR and returns a signed certificate.
+// One cassette per key type; tests skip if no cassette has been recorded yet.
+//
+// To record all cassettes:
+//
+//	RECORD_CASSETTES=1 make testunit-record-keytypes
+func TestUnitKeyfactorCertificateResource_CSR_KeyTypes(t *testing.T) {
+	cases := []struct {
+		name    string
+		keyType string // used for CSR generation
+		keySize int    // RSA only; 0 = default (2048)
+		curve   string // ECC only; "" for RSA/EdDSA
+	}{
+		// RSA variants
+		{name: "rsa2048", keyType: "RSA", keySize: 2048, curve: ""},
+		{name: "rsa3072", keyType: "RSA", keySize: 3072, curve: ""},
+		{name: "rsa4096", keyType: "RSA", keySize: 4096, curve: ""},
+		{name: "rsa8192", keyType: "RSA", keySize: 8192, curve: ""},
+		// ECDSA variants
+		{name: "ecc_p256", keyType: "ECC", keySize: 0, curve: "P-256"},
+		{name: "ecc_p384", keyType: "ECC", keySize: 0, curve: "P-384"},
+		{name: "ecc_p521", keyType: "ECC", keySize: 0, curve: "P-521"},
+		// EdDSA variants
+		{name: "ed25519", keyType: "Ed25519", keySize: 0, curve: ""},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cassetteName := "certificate_resource_csr_" + tc.name
+			cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+			var labPolicySkip bool
+			t.Cleanup(func() {
+				if labPolicySkip {
+					os.Remove(cassettePath + ".yaml")
+					os.Remove(cassettePath + ".params.json")
+				}
+			})
+
+			var config string
+			if os.Getenv("RECORD_CASSETTES") == "1" {
+				client := newTestClient(t)
+				ca := discoverCA(t, client)
+				cn := randomTestCN("tf-unit-csr-" + tc.name)
+				csrPem := generateCSRWithKeyType(t, cn, tc.keyType, tc.curve, tc.keySize)
+				enrollmentPattern := discoverEnrollmentPattern(t, client)
+				var templateName string
+				if enrollmentPattern == "" {
+					templateName = discoverTemplate(t, client)
+				}
+				config = testAccCertCSRConfigWithKeyType(enrollmentPattern, templateName, ca, csrPem)
+				writeCertCSRTestParams(cassettePath, certCSRTestParams{
+					TemplateName:      templateName,
+					CA:                ca,
+					CSRPem:            csrPem,
+					EnrollmentPattern: enrollmentPattern,
+				})
+			} else {
+				params := readCertCSRTestParams(cassettePath)
+				csrPem := params.CSRPem
+				if csrPem == "" {
+					csrPem = generateCSRWithKeyType(t, "tf-unit-csr-"+tc.name+".example.com", tc.keyType, tc.curve, tc.keySize)
+				}
+				config = testAccCertCSRConfigWithKeyType(params.EnrollmentPattern, params.TemplateName, params.CA, csrPem)
+			}
+
+			factories, cleanup := newVCRProviderFactories(t, cassetteName)
+			defer cleanup()
+
+			resource.UnitTest(t, resource.TestCase{
+				ProtoV6ProviderFactories: factories,
+				ErrorCheck:               labKeyTypePolicyErrorCheck(t, tc.name, &labPolicySkip),
+				Steps: []resource.TestStep{
+					{
+						Config: config,
+						Check: resource.ComposeAggregateTestCheckFunc(
+							resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "id"),
+							resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+							resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
+							resource.TestCheckResourceAttr("keyfactor_certificate.test_csr", "is_expired", "false"),
+							testCheckCertPEMIsLeaf("keyfactor_certificate.test_csr", "certificate_pem"),
+							// Verify key type from the actual certificate PEM, not just server metadata.
+							testCheckCertPEMKeyType("keyfactor_certificate.test_csr", "certificate_pem", tc.keyType, tc.curve),
+						),
+					},
+				},
+			})
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Unit tests: Full Subject and SANs (VCR cassettes)
 // ---------------------------------------------------------------------------
 
@@ -1831,44 +2071,69 @@ func TestUnitKeyfactorCertificateResource_PFX_Metadata(t *testing.T) {
 // explicit key_type, key_size, and curve values. Each sub-test enrolls a fresh
 // certificate and checks that the issued key algorithm is reflected in state.
 //
-// Supported key types depend on the CA/template configuration in the lab.
-// Sub-tests that fail due to unsupported key types will report the CA error.
+// Uses enrollment pattern when available (Command v25+), falls back to template.
+// Sub-tests skip rather than fail when the lab CA does not support a key type.
 func TestIntKeyfactorCertificateResource_PFX_KeyTypes(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	ca := discoverCA(t, client)
-	templateName := discoverTemplate(t, client)
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	templateName := ""
+	if enrollmentPattern == "" {
+		templateName = discoverTemplate(t, client)
+	}
 
 	type keyTestCase struct {
-		name     string
-		keyType  string
-		keySize  int
-		curve    string
-		wantType string // expected key_type in state (KeyAlgorithm from server)
+		name         string
+		keyType      string
+		keySize      int
+		curve        string
+		skipPEMCheck bool // cert PEM or key type check unavailable for this key type
 	}
 	cases := []keyTestCase{
-		{name: "RSA-2048", keyType: "RSA", keySize: 2048, curve: "", wantType: "RSA"},
-		{name: "RSA-4096", keyType: "RSA", keySize: 4096, curve: "", wantType: "RSA"},
-		{name: "ECC-P256", keyType: "ECC", keySize: 0, curve: "P-256", wantType: "ECC"},
-		{name: "ECC-P384", keyType: "ECC", keySize: 0, curve: "P-384", wantType: "ECC"},
-		{name: "ECC-P521", keyType: "ECC", keySize: 0, curve: "P-521", wantType: "ECC"},
+		{name: "RSA-2048", keyType: "RSA", keySize: 2048},
+		{name: "RSA-3072", keyType: "RSA", keySize: 3072},
+		{name: "RSA-4096", keyType: "RSA", keySize: 4096},
+		{name: "RSA-8192", keyType: "RSA", keySize: 8192},
+		{name: "ECC-P256", keyType: "ECC", curve: "P-256"},
+		{name: "ECC-P384", keyType: "ECC", curve: "P-384"},
+		{name: "ECC-P521", keyType: "ECC", curve: "P-521"},
+		{name: "Ed25519", keyType: "Ed25519"},
+		{name: "Ed448", keyType: "Ed448"},
 	}
 
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			var labPolicySkip bool
 			cn := randomTestCN("tf-int-key-" + strings.ToLower(tc.name))
-			config := testAccCertPFXConfigWithKeyType(templateName, ca, cn, tc.keyType, tc.keySize, tc.curve)
+			var config string
+			if enrollmentPattern != "" {
+				config = testAccCertPFXConfigWithKeyTypeAndPattern(enrollmentPattern, ca, cn, tc.keyType, tc.keySize, tc.curve)
+			} else {
+				config = testAccCertPFXConfigWithKeyType(templateName, ca, cn, tc.keyType, tc.keySize, tc.curve)
+			}
+
+			const resourceName = "keyfactor_certificate.test"
+			checks := resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttrSet(resourceName, "id"),
+				resource.TestCheckResourceAttrSet(resourceName, "serial_number"),
+				resource.TestCheckResourceAttrSet(resourceName, "thumbprint"),
+				resource.TestCheckResourceAttr(resourceName, "key_type", tc.keyType),
+			)
+			if !tc.skipPEMCheck {
+				checks = resource.ComposeAggregateTestCheckFunc(
+					checks,
+					testCheckCertPEMKeyType(resourceName, "certificate_pem", tc.keyType, tc.curve),
+				)
+			}
+
 			resource.Test(t, resource.TestCase{
 				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				ErrorCheck:               labKeyTypePolicyErrorCheck(t, tc.name, &labPolicySkip),
 				Steps: []resource.TestStep{
 					{
 						Config: config,
-						Check: resource.ComposeAggregateTestCheckFunc(
-							resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
-							resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
-							resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
-							resource.TestCheckResourceAttr("keyfactor_certificate.test", "key_type", tc.keyType),
-						),
+						Check:  checks,
 					},
 				},
 			})
@@ -1877,42 +2142,66 @@ func TestIntKeyfactorCertificateResource_PFX_KeyTypes(t *testing.T) {
 }
 
 // TestIntKeyfactorCertificateResource_CSR_KeyTypes verifies CSR enrollment
-// using CSRs generated with different key algorithms (RSA, ECC, Ed25519).
+// using CSRs generated with different key algorithms (RSA, ECC, Ed25519, Ed448).
 // The key type is embedded in the CSR itself; no key_type field is set in HCL.
+//
+// Uses enrollment pattern when available (Command v25+), falls back to template.
 func TestIntKeyfactorCertificateResource_CSR_KeyTypes(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	ca := discoverCA(t, client)
-	templateName := discoverTemplate(t, client)
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	templateName := ""
+	if enrollmentPattern == "" {
+		templateName = discoverTemplate(t, client)
+	}
 
 	type csrKeyCase struct {
-		name    string
-		keyType string
-		curve   string
+		name         string
+		keyType      string
+		curve        string
+		keySize      int
+		skipPEMCheck bool // Ed448: Go crypto cannot parse Ed448 certificates
 	}
 	cases := []csrKeyCase{
-		{name: "RSA-2048", keyType: "RSA", curve: ""},
+		{name: "RSA-2048", keyType: "RSA", keySize: 2048},
+		{name: "RSA-3072", keyType: "RSA", keySize: 3072},
+		{name: "RSA-4096", keyType: "RSA", keySize: 4096},
+		{name: "RSA-8192", keyType: "RSA", keySize: 8192},
 		{name: "ECC-P256", keyType: "ECC", curve: "P-256"},
 		{name: "ECC-P384", keyType: "ECC", curve: "P-384"},
 		{name: "ECC-P521", keyType: "ECC", curve: "P-521"},
-		{name: "Ed25519", keyType: "Ed25519", curve: ""},
+		{name: "Ed25519", keyType: "Ed25519"},
+		// Ed448 omitted: Go stdlib does not support Ed448 key/CSR generation.
 	}
 
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			var labPolicySkip bool
 			cn := randomTestCN("tf-int-csrkey-" + strings.ToLower(tc.name))
-			csr := generateCSRWithKeyType(t, cn, tc.keyType, tc.curve)
-			config := testAccCertCSRConfig(templateName, ca, csr)
+			csr := generateCSRWithKeyType(t, cn, tc.keyType, tc.curve, tc.keySize)
+			config := testAccCertCSRConfigWithKeyType(enrollmentPattern, templateName, ca, csr)
+
+			const resourceName = "keyfactor_certificate.test_csr"
+			checks := resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttrSet(resourceName, "id"),
+				resource.TestCheckResourceAttrSet(resourceName, "serial_number"),
+				resource.TestCheckResourceAttrSet(resourceName, "thumbprint"),
+			)
+			if !tc.skipPEMCheck {
+				checks = resource.ComposeAggregateTestCheckFunc(
+					checks,
+					testCheckCertPEMKeyType(resourceName, "certificate_pem", tc.keyType, tc.curve),
+				)
+			}
+
 			resource.Test(t, resource.TestCase{
 				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				ErrorCheck:               labKeyTypePolicyErrorCheck(t, tc.name, &labPolicySkip),
 				Steps: []resource.TestStep{
 					{
 						Config: config,
-						Check: resource.ComposeAggregateTestCheckFunc(
-							resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "id"),
-							resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
-							resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
-						),
+						Check:  checks,
 					},
 				},
 			})

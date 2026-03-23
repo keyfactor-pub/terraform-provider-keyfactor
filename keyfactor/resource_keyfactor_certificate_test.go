@@ -787,6 +787,85 @@ resource "keyfactor_certificate" "test" {
 	})
 }
 
+// TestIntKeyfactorCertificateResource_KeyParamsWithCSR_Rejected verifies that
+// specifying key_type, key_size, or curve alongside csr is rejected at plan
+// time with a "Conflicting Attributes" error. Since the validator fires before
+// any API call, the test uses real lab-discovered CA/template names but never
+// actually contacts the Command server during the test step.
+func TestIntKeyfactorCertificateResource_KeyParamsWithCSR_Rejected(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var templateName string
+	if enrollmentPattern != "" {
+		templateName = discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+	} else {
+		templateName = discoverTemplate(t, client)
+	}
+
+	csr := generateSimpleCSR(t, randomTestCN("tf-int-csr-reject"))
+	// Decode literal \n to real newlines for the heredoc
+	csrDecoded := strings.ReplaceAll(csr, `\n`, "\n")
+
+	cases := []struct {
+		name   string
+		config string
+	}{
+		{
+			name: "key_type+csr",
+			config: fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  certificate_authority = %q
+  certificate_template  = %q
+  key_type              = "RSA"
+  csr                   = <<-EOT
+%s
+EOT
+}`, ca, templateName, strings.TrimRight(csrDecoded, "\n")),
+		},
+		{
+			name: "key_size+csr",
+			config: fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  certificate_authority = %q
+  certificate_template  = %q
+  key_size              = 2048
+  csr                   = <<-EOT
+%s
+EOT
+}`, ca, templateName, strings.TrimRight(csrDecoded, "\n")),
+		},
+		{
+			name: "curve+csr",
+			config: fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  certificate_authority = %q
+  certificate_template  = %q
+  curve                 = "P-256"
+  csr                   = <<-EOT
+%s
+EOT
+}`, ca, templateName, strings.TrimRight(csrDecoded, "\n")),
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				Steps: []resource.TestStep{
+					{
+						Config:      tc.config,
+						ExpectError: regexp.MustCompile(`(?i)conflicting attributes|cannot be set when`),
+					},
+				},
+			})
+		})
+	}
+}
+
 // TestUnitKeyfactorCertificateResource_KeyParamsWithCSR verifies that
 // specifying key_type, key_size, or curve alongside csr is rejected with a
 // validation error (the key type is already embedded in the CSR).
@@ -1219,6 +1298,59 @@ func TestIntKeyfactorCertificateResource_CSR(t *testing.T) {
 	})
 }
 
+// TestIntKeyfactorCertificateResource_CSR_RootFirstChain is the integration
+// counterpart to TestUnitKeyfactorCertificateResource_CSR_RootFirstChain.
+// It enrolls a real CSR certificate against the lab and uses a two-step test to
+// exercise the Read path specifically:
+//
+//   - Step 1: Create — enrollment response always carries the correct leaf cert.
+//   - Step 2: RefreshState — triggers ReadResource → DownloadCertificate.
+//     If the P7B returned by the server is root-first, DownloadCertificate will
+//     pick the CA cert as certs[0]. testCheckCertPEMIsLeaf will then FAIL,
+//     confirming the bug. After the fix it PASSES.
+func TestIntKeyfactorCertificateResource_CSR_RootFirstChain(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var templateName string
+	if enrollmentPattern != "" {
+		templateName = discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+	} else {
+		templateName = discoverTemplate(t, client)
+	}
+
+	cn := randomTestCN("tf-int-csr-rootfirst")
+	csr := generateSimpleCSR(t, cn)
+	config := testAccCertCSRConfig(templateName, ca, csr)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: Create. No chain-ordering check here — the enrollment
+				// response's Certificates[0] is always the correct leaf.
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_chain"),
+				),
+			},
+			{
+				// Step 2: RefreshState triggers ReadResource → DownloadCertificate.
+				// If the server returns a root-first P7B, certs[0] is the CA cert
+				// and testCheckCertPEMIsLeaf will FAIL — catching the bug.
+				RefreshState: true,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test_csr", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test_csr", "certificate_pem", cn),
+				),
+			},
+		},
+	})
+}
+
 // TestIntKeyfactorCertificateResource_FullSubject verifies that all DN subject
 // fields (L, O, ST, C, OU) are accepted and preserved correctly.
 func TestIntKeyfactorCertificateResource_FullSubject(t *testing.T) {
@@ -1546,6 +1678,7 @@ func TestUnitKeyfactorCertificateResource_CSR_KeyTypes(t *testing.T) {
 		{name: "ecc_p521", keyType: "ECC", keySize: 0, curve: "P-521"},
 		// EdDSA variants
 		{name: "ed25519", keyType: "Ed25519", keySize: 0, curve: ""},
+		{name: "ed448", keyType: "Ed448", keySize: 0, curve: ""},
 	}
 
 	for _, tc := range cases {

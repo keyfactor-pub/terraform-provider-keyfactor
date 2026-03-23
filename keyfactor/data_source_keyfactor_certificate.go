@@ -633,13 +633,13 @@ func (r dataSourceCertificate) Read(
 
 	if certGetResp != nil {
 		if certGetResp.KeyAlgorithm != "" {
-			result.KeyType = types.String{Value: certGetResp.KeyAlgorithm}
+			result.KeyType = types.String{Value: normalizeKeyAlgorithm(certGetResp.KeyAlgorithm)}
 		}
 		if certGetResp.KeySizeInBits > 0 {
 			result.KeySize = types.Int64{Value: int64(certGetResp.KeySizeInBits)}
 		}
 		if certGetResp.Curve != "" {
-			result.Curve = types.String{Value: certGetResp.Curve}
+			result.Curve = types.String{Value: curveOIDToName(certGetResp.Curve)}
 		}
 	}
 

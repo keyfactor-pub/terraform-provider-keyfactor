@@ -718,6 +718,16 @@ func recoverPrivateKeyFromKeyfactorCommand(
 		tflog.Debug(ctx, "Unpacking PFX data to extract private key.")
 		pfxPrivateKey, pfxLeaf, pfxChain, unpackErr := api.UnpackPkcs12(rawBytes, lookupPassword)
 		if unpackErr != nil {
+			// Unknown algorithm (e.g. Ed448 OID 1.3.101.113) means Go's pkcs12/x509
+			// library cannot parse the key — log a warning and return empty strings
+			// without adding an error so callers can fall back gracefully.
+			if strings.Contains(unpackErr.Error(), "unknown algorithm") {
+				tflog.Warn(ctx, fmt.Sprintf(
+					"Cannot unpack PFX for certificate %d — unsupported key algorithm: %v",
+					certId, unpackErr,
+				))
+				return "", "", "", rawBytes, diags
+			}
 			errMsg := fmt.Sprintf("Unable to unpack PFX data for certificate '%v': %v", certId, unpackErr.Error())
 			tflog.Error(ctx, errMsg)
 			diags.AddError("Error unpacking PFX data", errMsg)

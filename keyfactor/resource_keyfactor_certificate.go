@@ -604,6 +604,7 @@ Triggers replacement of resource when true.
 					"If omitted, the CA/template default is used. " +
 					"Populated from the issued certificate on read. " +
 					"Cannot be set when `csr` is also set.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 				Validators: []tfsdk.AttributeValidator{
 					conflictsWithAttrValidator{otherAttr: "csr"},
 				},
@@ -616,6 +617,7 @@ Triggers replacement of resource when true.
 					"If omitted, the CA/template default is used. " +
 					"Populated from the issued certificate on read. " +
 					"Cannot be set when `csr` is also set.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 				Validators: []tfsdk.AttributeValidator{
 					conflictsWithAttrValidator{otherAttr: "csr"},
 				},
@@ -628,6 +630,7 @@ Triggers replacement of resource when true.
 					"Only relevant when key_type=ECC. " +
 					"Populated from the issued certificate on read. " +
 					"Cannot be set when `csr` is also set.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 				Validators: []tfsdk.AttributeValidator{
 					conflictsWithAttrValidator{otherAttr: "csr"},
 				},
@@ -1080,13 +1083,13 @@ func (r resourceCommandCertificate) Read(
 			}
 		}
 		if certGetResp.KeyAlgorithm != "" {
-			result.KeyType = types.String{Value: certGetResp.KeyAlgorithm}
+			result.KeyType = types.String{Value: normalizeKeyAlgorithm(certGetResp.KeyAlgorithm)}
 		}
 		if certGetResp.KeySizeInBits > 0 {
 			result.KeySize = types.Int64{Value: int64(certGetResp.KeySizeInBits)}
 		}
 		if certGetResp.Curve != "" {
-			result.Curve = types.String{Value: certGetResp.Curve}
+			result.Curve = types.String{Value: curveOIDToName(certGetResp.Curve)}
 		}
 
 	}
@@ -1929,13 +1932,13 @@ func (r resourceCommandCertificate) ImportState(
 			}
 		}
 		if certGetResp.KeyAlgorithm != "" {
-			result.KeyType = types.String{Value: certGetResp.KeyAlgorithm}
+			result.KeyType = types.String{Value: normalizeKeyAlgorithm(certGetResp.KeyAlgorithm)}
 		}
 		if certGetResp.KeySizeInBits > 0 {
 			result.KeySize = types.Int64{Value: int64(certGetResp.KeySizeInBits)}
 		}
 		if certGetResp.Curve != "" {
-			result.Curve = types.String{Value: certGetResp.Curve}
+			result.Curve = types.String{Value: curveOIDToName(certGetResp.Curve)}
 		}
 	}
 
@@ -2368,6 +2371,37 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			}
 		}
 
+	} else if !plan.CertificateTemplate.IsNull() && plan.CertificateTemplate.Value != "" {
+		// No enrollment pattern specified but a template was given.  On v25+
+		// Command servers require an enrollment pattern — look up the default
+		// one for this template. On pre-v25 servers this returns (0, nil) and
+		// enrollment proceeds with the template name alone.
+		var epErr error
+		enrollmentPatternId, epErr = r.LookupEnrollmentPatternIDByTemplateName(
+			ctx,
+			plan.CertificateTemplate.Value,
+		)
+		if epErr != nil {
+			diags.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+				fmt.Sprintf(
+					"Could not look up enrollment pattern for template '%s': %s",
+					plan.CertificateTemplate.Value,
+					epErr.Error(),
+				),
+			)
+			return nil, diags
+		}
+	}
+
+	// When an enrollment pattern is used, do not also send the Template name.
+	// On v25+ EJBCA, sending both causes the API to validate that the template
+	// name matches the pattern's linked template exactly (by short name), which
+	// fails when the user supplied the display name.  The enrollment pattern
+	// already encodes the template; omitting Template is safe per the API docs.
+	enrollTemplate := plan.CertificateTemplate.Value
+	if enrollmentPatternId > 0 {
+		enrollTemplate = ""
 	}
 
 	tflog.Debug(ctx, "Creating API request.")
@@ -2376,7 +2410,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		Password:                    lookupPassword,
 		PopulateMissingValuesFromAD: false, //TODO: Add support for this
 		CertificateAuthority:        plan.CertificateAuthority.Value,
-		Template:                    plan.CertificateTemplate.Value,
+		Template:                    enrollTemplate,
 		IncludeChain:                true,              //TODO: Add support for this
 		CertFormat:                  certificateFormat, // Get certificate from data source
 		EnrollmentPatternId:         enrollmentPatternId,
@@ -2398,13 +2432,36 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		},
 	}
 	if !plan.KeyType.Null && !plan.KeyType.Unknown && plan.KeyType.Value != "" {
-		PFXArgs.KeyType = plan.KeyType.Value
-	}
-	if !plan.KeySize.Null && !plan.KeySize.Unknown && plan.KeySize.Value > 0 {
-		PFXArgs.KeyLength = int(plan.KeySize.Value)
+		// Normalize "ECDSA" → "ECC" — the Command API only accepts "ECC".
+		kt := plan.KeyType.Value
+		if strings.EqualFold(kt, "ECDSA") {
+			kt = "ECC"
+		}
+		PFXArgs.KeyType = kt
+
+		// The Command API requires KeyLength alongside KeyType for all algorithms.
+		// For Ed25519/Ed448 the size is fixed; for ECC derive it from key_size or
+		// curve; for RSA use key_size directly.
+		switch {
+		case strings.EqualFold(kt, "Ed25519"):
+			PFXArgs.KeyLength = 255
+		case strings.EqualFold(kt, "Ed448"):
+			PFXArgs.KeyLength = 448
+		case strings.EqualFold(kt, "ECC"):
+			if !plan.KeySize.Null && !plan.KeySize.Unknown && plan.KeySize.Value > 0 {
+				PFXArgs.KeyLength = int(plan.KeySize.Value)
+			} else if !plan.Curve.Null && !plan.Curve.Unknown && plan.Curve.Value != "" {
+				PFXArgs.KeyLength = curveNameToKeyLength(plan.Curve.Value)
+			}
+		default: // RSA and any future types
+			if !plan.KeySize.Null && !plan.KeySize.Unknown && plan.KeySize.Value > 0 {
+				PFXArgs.KeyLength = int(plan.KeySize.Value)
+			}
+		}
 	}
 	if !plan.Curve.Null && !plan.Curve.Unknown && plan.Curve.Value != "" {
-		PFXArgs.Curve = plan.Curve.Value
+		// Curve OID alongside KeyLength further constrains the exact curve for ECC.
+		PFXArgs.Curve = curveNameToOID(plan.Curve.Value)
 	}
 	tflog.Debug(ctx, "API PFXArgs created.")
 
@@ -2647,24 +2704,36 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		chainPEM = strings.Join(pChain, "")
 
 		if pfxErr != nil {
-			tflog.Error(ctx, "Error unpacking PKCS12 blob, attempting to recover private key.")
-			//attempt to recover private key
-			rErr := diag.Diagnostics{}
-			pKeyPEM, leafPEM, chainPEM, _, rErr = recoverPrivateKeyFromKeyfactorCommand(
-				ctx,
-				enrolledId,
-				collectionIdInt,
-				lookupPassword,
-				r.p.client,
-				"PFX",
-			)
-			diags.Append(rErr...)
-			if diags.HasError() {
-				diags.AddError(
-					"Private key recovery failed.",
-					"Could not recover private key from Keyfactor Command: "+pfxErr.Error(),
+			// If the PKCS#12 contains a key algorithm unsupported by Go's pkcs12/x509
+			// libraries (e.g. Ed448, OID 1.3.101.113), private key extraction is not
+			// possible at all — skip it and fall back to a PEM download for cert data.
+			if strings.Contains(pfxErr.Error(), "unknown algorithm") {
+				tflog.Warn(ctx, fmt.Sprintf(
+					"Cannot extract private key from PFX for certificate %d — unsupported algorithm: %v",
+					enrolledId, pfxErr,
+				))
+				leafPEM, chainPEM, _, _ = downloadCertificateFromKeyfactorCommand(ctx, enrolledId, collectionIdInt, r.p.client)
+				// pKeyPEM remains empty; PrivateKey will be null in state
+			} else {
+				tflog.Error(ctx, "Error unpacking PKCS12 blob, attempting to recover private key.")
+				//attempt to recover private key
+				rErr := diag.Diagnostics{}
+				pKeyPEM, leafPEM, chainPEM, _, rErr = recoverPrivateKeyFromKeyfactorCommand(
+					ctx,
+					enrolledId,
+					collectionIdInt,
+					lookupPassword,
+					r.p.client,
+					"PFX",
 				)
-				return nil, diags
+				diags.Append(rErr...)
+				if diags.HasError() {
+					diags.AddError(
+						"Private key recovery failed.",
+						"Could not recover private key from Keyfactor Command: "+pfxErr.Error(),
+					)
+					return nil, diags
+				}
 			}
 		}
 
@@ -2787,6 +2856,119 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByName(
 	return 0, fmt.Errorf("enrollment pattern with name '%s' not found", patternName)
 }
 
+// LookupEnrollmentPatternIDByTemplateName finds the default enrollment pattern
+// for the given template short name. Returns (0, nil) if no enrollment patterns
+// exist (pre-v25 / standalone CA) so the caller can fall through to
+// template-only enrollment. Returns an error only on API failure.
+func (r resourceCommandCertificate) LookupEnrollmentPatternIDByTemplateName(
+	ctx context.Context,
+	templateName string,
+) (int, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Looking up default enrollment pattern for template: %s", templateName))
+	patterns, err := r.p.client.GetEnrollmentPatterns()
+	if err != nil {
+		// Pre-v25 servers may return 404/501 — treat as "not found" and fall through.
+		tflog.Warn(ctx, fmt.Sprintf("Could not list enrollment patterns (may be pre-v25): %s", err.Error()))
+		return 0, nil
+	}
+	// Prefer the pattern explicitly marked as the template default.
+	for _, pattern := range patterns {
+		if pattern.Template != nil &&
+			pattern.Template.TemplateName == templateName &&
+			pattern.TemplateDefault {
+			tflog.Debug(
+				ctx, fmt.Sprintf(
+					"Found default enrollment pattern '%s' (ID=%d) for template '%s'",
+					pattern.Name, pattern.ID, templateName,
+				),
+			)
+			return pattern.ID, nil
+		}
+	}
+	// Fall back to any pattern linked to this template.
+	for _, pattern := range patterns {
+		if pattern.Template != nil && pattern.Template.TemplateName == templateName {
+			tflog.Debug(
+				ctx, fmt.Sprintf(
+					"Found enrollment pattern '%s' (ID=%d) for template '%s' (not marked default)",
+					pattern.Name, pattern.ID, templateName,
+				),
+			)
+			return pattern.ID, nil
+		}
+	}
+	tflog.Debug(ctx, fmt.Sprintf("No enrollment pattern found for template '%s', proceeding without one", templateName))
+	return 0, nil
+}
+
+// normalizeKeyAlgorithm maps OID strings returned by EJBCA and some CA
+// implementations to the provider's canonical key-type names.  If the value
+// is already a friendly name or is unrecognized it is returned unchanged.
+func normalizeKeyAlgorithm(algo string) string {
+	switch algo {
+	case "1.2.840.113549.1.1.1":
+		return "RSA"
+	case "1.2.840.10045.2.1":
+		return "ECC"
+	case "ECDSA":
+		return "ECC"
+	case "1.3.101.112":
+		return "Ed25519"
+	case "1.3.101.113":
+		return "Ed448"
+	default:
+		return algo
+	}
+}
+
+// curveNameToKeyLength returns the KeyLength value the Command API needs for
+// a given ECC curve name. Returns 0 if the curve is unrecognized (caller
+// should leave KeyLength unset rather than send 0).
+func curveNameToKeyLength(curve string) int {
+	switch curve {
+	case "P-256", "prime256v1", "secp256r1":
+		return 256
+	case "P-384", "secp384r1":
+		return 384
+	case "P-521", "secp521r1":
+		return 521
+	default:
+		return 0
+	}
+}
+
+// curveNameToOID converts a user-friendly ECC curve name to the OID string
+// required by the Keyfactor Command PFX enrollment API.  Per the API docs,
+// "ECC curves must be specified using the OID for the ECC algorithm."
+// If the value is already an OID or unrecognized it is returned unchanged.
+func curveNameToOID(curve string) string {
+	switch curve {
+	case "P-256", "prime256v1", "secp256r1":
+		return "1.2.840.10045.3.1.7"
+	case "P-384", "secp384r1":
+		return "1.3.132.0.34"
+	case "P-521", "secp521r1":
+		return "1.3.132.0.35"
+	default:
+		return curve // pass through if already OID or unknown name
+	}
+}
+
+// curveOIDToName converts an OID returned by the API back to the user-friendly
+// curve name stored in provider state.
+func curveOIDToName(oid string) string {
+	switch oid {
+	case "1.2.840.10045.3.1.7":
+		return "P-256"
+	case "1.3.132.0.34":
+		return "P-384"
+	case "1.3.132.0.35":
+		return "P-521"
+	default:
+		return oid
+	}
+}
+
 // knownMetadataFromPlan returns plan.Metadata if it is a known value, or an
 // empty map if it is Unknown (i.e. Computed and not set in config). This
 // ensures the provider never stores an unknown metadata value in state.
@@ -2901,13 +3083,41 @@ func (r resourceCommandCertificate) enrollCSR(
 			}
 		}
 
+	} else if !plan.CertificateTemplate.IsNull() && plan.CertificateTemplate.Value != "" {
+		// No enrollment pattern specified but a template was given.  On v25+
+		// Command servers require an enrollment pattern — look up the default
+		// one for this template. On pre-v25 servers this returns (0, nil) and
+		// enrollment proceeds with the template name alone.
+		var epErr error
+		enrollmentPatternId, epErr = r.LookupEnrollmentPatternIDByTemplateName(
+			ctx,
+			plan.CertificateTemplate.Value,
+		)
+		if epErr != nil {
+			diags.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+				fmt.Sprintf(
+					"Could not look up enrollment pattern for template '%s': %s",
+					plan.CertificateTemplate.Value,
+					epErr.Error(),
+				),
+			)
+			return nil, diags
+		}
+	}
+
+	// When an enrollment pattern is used, do not also send the Template name.
+	// See the same comment in enrollPFXV2 for details.
+	enrollCSRTemplate := plan.CertificateTemplate.Value
+	if enrollmentPatternId > 0 {
+		enrollCSRTemplate = ""
 	}
 
 	tflog.Debug(ctx, "Creating certificate from CSR.")
 	CSRArgs := &api.EnrollCSRFctArgs{
 		CSR:                  csr,
 		CertificateAuthority: plan.CertificateAuthority.Value,
-		Template:             plan.CertificateTemplate.Value,
+		Template:             enrollCSRTemplate,
 		EnrollmentPatternId:  enrollmentPatternId,
 		IncludeChain:         true,
 		CertFormat:           certificateFormat,

@@ -27,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	circlEd448 "github.com/cloudflare/circl/sign/ed448"
+
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
@@ -1221,6 +1223,24 @@ func readRoleBindingTestParams(cassettePath string) roleBindingTestParams {
 	return params
 }
 
+// discoverRoleBinding finds a template in the lab that has at least one allowed
+// requester role. Returns the first role name and the template's CommonName.
+// Skips the test if no such binding exists in the lab.
+func discoverRoleBinding(t *testing.T, client *api.Client) (roleName, templateName string) {
+	t.Helper()
+	templates, err := client.GetTemplates()
+	if err != nil {
+		t.Skipf("Skipping: could not fetch templates: %v", err)
+	}
+	for _, tmpl := range templates {
+		if tmpl.UseAllowedRequesters && len(tmpl.AllowedRequesters) > 0 {
+			return tmpl.AllowedRequesters[0], tmpl.CommonName
+		}
+	}
+	t.Skip("Skipping: no template role bindings found in lab")
+	return "", ""
+}
+
 // ---------------------------------------------------------------------------
 // Unique CN generator
 // ---------------------------------------------------------------------------
@@ -1821,8 +1841,79 @@ func generateSimpleCSR(t *testing.T, cn string) string {
 	return string(csrPEM)
 }
 
+// generateEd448CSR creates a PEM-encoded certificate signing request using an
+// Ed448 key pair.  Go's crypto/x509 package does not support Ed448, so the CSR
+// DER is constructed manually per RFC 2986 / RFC 8410.
+func generateEd448CSR(t *testing.T, cn string) string {
+	t.Helper()
+
+	oidEd448 := asn1.ObjectIdentifier{1, 3, 101, 113}
+
+	pub, priv, err := circlEd448.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generateEd448CSR: generate key: %v", err)
+	}
+
+	// Marshal the subject Name.
+	rawSubject, err := asn1.Marshal(pkix.Name{CommonName: cn}.ToRDNSequence())
+	if err != nil {
+		t.Fatalf("generateEd448CSR: marshal subject: %v", err)
+	}
+
+	// SubjectPublicKeyInfo: AlgorithmIdentifier (no params) + BIT STRING key.
+	type algID struct{ Algorithm asn1.ObjectIdentifier }
+	type spkiT struct {
+		Algorithm algID
+		PublicKey asn1.BitString
+	}
+	spkiDER, err := asn1.Marshal(spkiT{
+		Algorithm: algID{Algorithm: oidEd448},
+		PublicKey: asn1.BitString{Bytes: []byte(pub), BitLength: len(pub) * 8},
+	})
+	if err != nil {
+		t.Fatalf("generateEd448CSR: marshal SPKI: %v", err)
+	}
+
+	// CertificationRequestInfo (TBS).
+	type tbsT struct {
+		Version    int
+		Subject    asn1.RawValue
+		SPKI       asn1.RawValue
+		Attributes asn1.RawValue `asn1:"tag:0,optional"`
+	}
+	tbsDER, err := asn1.Marshal(tbsT{
+		Version:    0,
+		Subject:    asn1.RawValue{FullBytes: rawSubject},
+		SPKI:       asn1.RawValue{FullBytes: spkiDER},
+		Attributes: asn1.RawValue{Tag: 0, Class: 2, IsCompound: true},
+	})
+	if err != nil {
+		t.Fatalf("generateEd448CSR: marshal TBS: %v", err)
+	}
+
+	// Ed448 signs the full message with an empty context (RFC 8410 §6).
+	sig := circlEd448.Sign(priv, tbsDER, "")
+
+	// CertificationRequest = TBS + AlgorithmIdentifier + Signature.
+	type csrT struct {
+		TBS                asn1.RawValue
+		SignatureAlgorithm algID
+		Signature          asn1.BitString
+	}
+	csrDER, err := asn1.Marshal(csrT{
+		TBS:                asn1.RawValue{FullBytes: tbsDER},
+		SignatureAlgorithm: algID{Algorithm: oidEd448},
+		Signature:          asn1.BitString{Bytes: sig, BitLength: len(sig) * 8},
+	})
+	if err != nil {
+		t.Fatalf("generateEd448CSR: marshal CSR: %v", err)
+	}
+
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER}))
+}
+
 // generateCSRWithKeyType creates a PEM-encoded CSR using the specified key type.
-// keyType is one of "RSA", "ECC", "Ed25519". curve is used for ECC (e.g. "P-256", "P-384", "P-521").
+// keyType is one of "RSA", "ECC", "Ed25519", "Ed448". curve is used for ECC (e.g. "P-256", "P-384", "P-521").
 // keySize controls RSA key size (0 defaults to 2048).
 func generateCSRWithKeyType(t *testing.T, cn, keyType, curve string, keySize ...int) string {
 	t.Helper()
@@ -1848,6 +1939,10 @@ func generateCSRWithKeyType(t *testing.T, cn, keyType, curve string, keySize ...
 		signer, err = ecdsa.GenerateKey(c, rand.Reader)
 	case "ED25519":
 		_, signer, err = ed25519.GenerateKey(rand.Reader)
+	case "ED448":
+		// x509.CreateCertificateRequest doesn't support Ed448; delegate to a
+		// helper that constructs the CSR DER manually.
+		return generateEd448CSR(t, cn)
 	default:
 		t.Fatalf("generateCSRWithKeyType: unsupported key type %q", keyType)
 	}

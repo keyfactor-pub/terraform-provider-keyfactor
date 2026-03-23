@@ -53,6 +53,21 @@ resource "tls_cert_request" "rsa_2048" {
 }
 
 # -------------------------------------------------------------------------
+# RSA 3072-bit key
+# -------------------------------------------------------------------------
+resource "tls_private_key" "rsa_3072" {
+  algorithm = "RSA"
+  rsa_bits  = 3072
+}
+
+resource "tls_cert_request" "rsa_3072" {
+  private_key_pem = tls_private_key.rsa_3072.private_key_pem
+  subject {
+    common_name = "tf-demo-csr-rsa3072${var.suffix}.example.com"
+  }
+}
+
+# -------------------------------------------------------------------------
 # RSA 4096-bit key
 # -------------------------------------------------------------------------
 resource "tls_private_key" "rsa_4096" {
@@ -64,6 +79,21 @@ resource "tls_cert_request" "rsa_4096" {
   private_key_pem = tls_private_key.rsa_4096.private_key_pem
   subject {
     common_name = "tf-demo-csr-rsa4096${var.suffix}.example.com"
+  }
+}
+
+# -------------------------------------------------------------------------
+# RSA 8192-bit key
+# -------------------------------------------------------------------------
+resource "tls_private_key" "rsa_8192" {
+  algorithm = "RSA"
+  rsa_bits  = 8192
+}
+
+resource "tls_cert_request" "rsa_8192" {
+  private_key_pem = tls_private_key.rsa_8192.private_key_pem
+  subject {
+    common_name = "tf-demo-csr-rsa8192${var.suffix}.example.com"
   }
 }
 
@@ -125,5 +155,22 @@ resource "tls_cert_request" "ed25519" {
   private_key_pem = tls_private_key.ed25519.private_key_pem
   subject {
     common_name = "tf-demo-csr-ed25519${var.suffix}.example.com"
+  }
+}
+
+# -------------------------------------------------------------------------
+# Ed448 key + CSR — generated via OpenSSL through the external data source
+#
+# The hashicorp/tls provider does not support Ed448. gen_ed448_csr.sh uses
+# openssl (>= 1.1.1) to generate a stable private key (.ed448_key.pem) and
+# a deterministic CSR (Ed448 signatures are deterministic per RFC 8032, so
+# the same key + subject always produces identical CSR bytes — no drift).
+#
+# Prerequisites: openssl >= 1.1.1, python3 (both already required by README)
+# -------------------------------------------------------------------------
+data "external" "ed448_csr" {
+  program = ["bash", "${path.module}/gen_ed448_csr.sh"]
+  query = {
+    suffix = var.suffix
   }
 }

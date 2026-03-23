@@ -71,7 +71,20 @@ resource "keyfactor_certificate" "rsa_2048" {
 }
 
 # -------------------------------------------------------------------------
-# Example 4: RSA 4096-bit key
+# Example 4: RSA 3072-bit key
+# -------------------------------------------------------------------------
+resource "keyfactor_certificate" "rsa_3072" {
+  common_name           = "tf-demo-rsa3072${var.suffix}.example.com"
+  certificate_authority = var.certificate_authority
+  certificate_template  = var.certificate_template
+  key_password          = var.key_password
+
+  key_type = "RSA"
+  key_size = 3072
+}
+
+# -------------------------------------------------------------------------
+# Example 5: RSA 4096-bit key
 # -------------------------------------------------------------------------
 resource "keyfactor_certificate" "rsa_4096" {
   common_name           = "tf-demo-rsa4096${var.suffix}.example.com"
@@ -84,7 +97,22 @@ resource "keyfactor_certificate" "rsa_4096" {
 }
 
 # -------------------------------------------------------------------------
-# Example 5: ECC P-256 key
+# Example 6: RSA 8192-bit key
+#
+# Very large key — enrollment may take longer than other key sizes.
+# -------------------------------------------------------------------------
+resource "keyfactor_certificate" "rsa_8192" {
+  common_name           = "tf-demo-rsa8192${var.suffix}.example.com"
+  certificate_authority = var.certificate_authority
+  certificate_template  = var.certificate_template
+  key_password          = var.key_password
+
+  key_type = "RSA"
+  key_size = 8192
+}
+
+# -------------------------------------------------------------------------
+# Example 7: ECC P-256 key
 # -------------------------------------------------------------------------
 resource "keyfactor_certificate" "ecc_p256" {
   common_name           = "tf-demo-ecc256${var.suffix}.example.com"
@@ -97,7 +125,7 @@ resource "keyfactor_certificate" "ecc_p256" {
 }
 
 # -------------------------------------------------------------------------
-# Example 6: ECC P-384 key
+# Example 8: ECC P-384 key
 # -------------------------------------------------------------------------
 resource "keyfactor_certificate" "ecc_p384" {
   common_name           = "tf-demo-ecc384${var.suffix}.example.com"
@@ -110,7 +138,7 @@ resource "keyfactor_certificate" "ecc_p384" {
 }
 
 # -------------------------------------------------------------------------
-# Example 7: ECC P-521 key
+# Example 9: ECC P-521 key
 # -------------------------------------------------------------------------
 resource "keyfactor_certificate" "ecc_p521" {
   common_name           = "tf-demo-ecc521${var.suffix}.example.com"
@@ -123,7 +151,7 @@ resource "keyfactor_certificate" "ecc_p521" {
 }
 
 # -------------------------------------------------------------------------
-# Example 8: Ed25519 key
+# Example 10: Ed25519 key
 #
 # Requires Command v11.7+ and a CA configured to issue Ed25519 certificates.
 # Not all CAs or templates support this algorithm — the enrollment will fail
@@ -136,4 +164,20 @@ resource "keyfactor_certificate" "ed25519" {
   key_password          = var.key_password
 
   key_type = "Ed25519"
+}
+
+# -------------------------------------------------------------------------
+# Example 11: Ed448 key
+#
+# Requires Command v11.7+ and a CA explicitly configured for Ed448.
+# Not widely supported — the enrollment will fail with a CA error if the
+# CA or template does not support this algorithm.
+# -------------------------------------------------------------------------
+resource "keyfactor_certificate" "ed448" {
+  common_name           = "tf-demo-ed448${var.suffix}.example.com"
+  certificate_authority = var.certificate_authority
+  certificate_template  = var.certificate_template
+  key_password          = var.key_password
+
+  key_type = "Ed448"
 }

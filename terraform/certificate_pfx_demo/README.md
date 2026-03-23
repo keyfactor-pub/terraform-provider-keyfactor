@@ -1,9 +1,9 @@
 # Certificate PFX Enrollment Demo
 
-End-to-end demonstration of `keyfactor_certificate` PFX enrollment: eight certificates
+End-to-end demonstration of `keyfactor_certificate` PFX enrollment: eleven certificates
 covering the minimal case, a fully configured example, and one certificate per supported
-key algorithm (RSA-2048, RSA-4096, ECC P-256/P-384/P-521, Ed25519). Includes import and
-zero-drift verification.
+key algorithm (RSA-2048/3072/4096/8192, ECC P-256/P-384/P-521, Ed25519, Ed448). Includes
+import and zero-drift verification.
 
 ## Prerequisites
 
@@ -43,9 +43,11 @@ export TF_VAR_certificate_template="2YearTestWebServer"
 
 | File | Purpose |
 |---|---|
-| `main.tf` | Provider config and outputs |
+| `versions.tf` | `terraform` block and `required_providers` |
+| `providers.tf` | Provider configurations |
 | `variables.tf` | Input variables (suffix, CA, template, key_password) |
-| `certificates.tf` | Eight `keyfactor_certificate` resources |
+| `certificates.tf` | Eleven `keyfactor_certificate` resources |
+| `outputs.tf` | Output values (thumbprints, key types, IDs, PEMs, private keys) |
 | `_export_ids.py` | Extracts `tf_name → certificate_id` pairs from state JSON |
 | `.terraformrc` | Dev override pointing Terraform at the locally built provider binary |
 | `GNUmakefile` | All workflow targets |
@@ -75,7 +77,7 @@ make build          Compile and install provider to ~/go/bin
 make init           terraform init
 make validate       terraform validate
 make plan           terraform plan
-make apply          terraform apply -auto-approve (enrolls 8 certificates)
+make apply          terraform apply -auto-approve (enrolls 11 certificates)
 make import-all     Capture state, remove resources, re-import each by certificate ID
 make drift-check    terraform plan — should show "No changes" after import
 make destroy        terraform destroy -auto-approve
@@ -89,15 +91,18 @@ make clean          Remove generated files
 | `minimal_pfx` | `tf-demo-minimal-pfx<SUFFIX>.example.com` | CA/template default |
 | `full_pfx` | `tf-demo-full-pfx<SUFFIX>.example.com` | ECC P-521, SANs, metadata, renewal |
 | `rsa_2048` | `tf-demo-rsa2048<SUFFIX>.example.com` | RSA 2048-bit |
+| `rsa_3072` | `tf-demo-rsa3072<SUFFIX>.example.com` | RSA 3072-bit |
 | `rsa_4096` | `tf-demo-rsa4096<SUFFIX>.example.com` | RSA 4096-bit |
+| `rsa_8192` | `tf-demo-rsa8192<SUFFIX>.example.com` | RSA 8192-bit |
 | `ecc_p256` | `tf-demo-ecc256<SUFFIX>.example.com` | ECC P-256 |
 | `ecc_p384` | `tf-demo-ecc384<SUFFIX>.example.com` | ECC P-384 |
 | `ecc_p521` | `tf-demo-ecc521<SUFFIX>.example.com` | ECC P-521 |
 | `ed25519` | `tf-demo-ed25519<SUFFIX>.example.com` | Ed25519 |
+| `ed448` | `tf-demo-ed448<SUFFIX>.example.com` | Ed448 |
 
 ## How it works
 
-1. **`make apply`** enrolls eight certificates. For each, Keyfactor Command generates the
+1. **`make apply`** enrolls eleven certificates. For each, Keyfactor Command generates the
    key pair (PFX enrollment), signs the certificate, and returns the signed cert and
    private key (if the template has KeyRetention enabled).
 

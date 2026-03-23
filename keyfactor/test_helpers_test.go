@@ -11,6 +11,7 @@ import (
 	"crypto/sha1"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -708,9 +709,10 @@ func readCertPFXTestParams(cassettePath string) certPFXTestParams {
 // The CSRPem is stored so replay mode uses the exact same CSR that was enrolled,
 // ensuring the cert still exists in the lab if needed (though VCR doesn't require it).
 type certCSRTestParams struct {
-	TemplateName string `json:"template_name"`
-	CA           string `json:"ca"`
-	CSRPem       string `json:"csr_pem"`
+	TemplateName      string `json:"template_name"`
+	CA                string `json:"ca"`
+	CSRPem            string `json:"csr_pem"`
+	EnrollmentPattern string `json:"enrollment_pattern,omitempty"`
 }
 
 func writeCertCSRTestParams(cassettePath string, params certCSRTestParams) {
@@ -1254,6 +1256,7 @@ func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func
 		r, err := recorder.New(cassettePath,
 			recorder.WithMode(recorder.ModeReplayOnly),
 			recorder.WithMatcher(matcher),
+			recorder.WithSkipRequestLatency(true),
 		)
 		if err != nil {
 			t.Skipf("No cassette found for %q. Run with RECORD_CASSETTES=1 against a live lab to record.", cassetteName)
@@ -1438,6 +1441,21 @@ func parseCNFromCSRPEM(csrPEM string) string {
 	return csr.Subject.CommonName
 }
 
+// labKeyTypePolicyErrorCheck returns a resource.TestCase ErrorCheck function that
+// skips the test (rather than failing it) when the error indicates the lab's
+// enrollment pattern does not support the requested key type or size.
+//
+// labKeyTypePolicyErrorCheck returns a resource.TestCase ErrorCheck function that
+// propagates all errors unchanged. The *skip flag is available for callers that
+// need to clean up partial cassette files in a t.Cleanup when a skip occurs
+// through other means.
+func labKeyTypePolicyErrorCheck(t *testing.T, caseName string, skip *bool) func(error) error {
+	t.Helper()
+	return func(err error) error {
+		return err
+	}
+}
+
 // testCheckCertPEMIsLeaf returns a TestCheckFunc that parses the PEM certificate
 // stored in the named state attribute and asserts it is an end-entity (IsCA=false).
 //
@@ -1498,6 +1516,93 @@ func testCheckCertPEMCommonName(resourceName, attrName, expectedCN string) sdkre
 				"certificate CN in %q on %s = %q, want %q — possible P7B chain ordering bug",
 				attrName, resourceName, cert.Subject.CommonName, expectedCN,
 			)
+		}
+		return nil
+	}
+}
+
+// testCheckCertPEMKeyType returns a TestCheckFunc that parses the PEM certificate
+// in the named state attribute and asserts its public key algorithm and curve
+// match the expected values. This provides ground-truth validation from the
+// actual certificate bytes rather than from server metadata fields (which can
+// silently return the wrong key type if the CA ignores the request).
+//
+// keyType is case-insensitive: "RSA", "ECC", "ECDSA", "Ed25519".
+// curve is the friendly curve name ("P-256", "P-384", "P-521") and is only
+// checked when keyType is ECC/ECDSA; pass "" to skip curve validation.
+func testCheckCertPEMKeyType(resourceName, attrName, keyType, curve string) sdkresource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("resource %q not found in state", resourceName)
+		}
+		pemStr, ok := rs.Primary.Attributes[attrName]
+		if !ok || pemStr == "" {
+			return fmt.Errorf("attribute %q not set or empty on %s", attrName, resourceName)
+		}
+		block, _ := pem.Decode([]byte(pemStr))
+		if block == nil {
+			return fmt.Errorf("attribute %q on %s is not a valid PEM block", attrName, resourceName)
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return fmt.Errorf("parse certificate from %q on %s: %v", attrName, resourceName, err)
+		}
+
+		switch strings.ToUpper(keyType) {
+		case "RSA":
+			if cert.PublicKeyAlgorithm != x509.RSA {
+				return fmt.Errorf("certificate %q on %s: expected RSA key, got %v",
+					attrName, resourceName, cert.PublicKeyAlgorithm)
+			}
+		case "ECC", "ECDSA":
+			if cert.PublicKeyAlgorithm != x509.ECDSA {
+				return fmt.Errorf("certificate %q on %s: expected ECDSA/ECC key, got %v (key algorithm in cert = %v)",
+					attrName, resourceName, cert.PublicKeyAlgorithm, cert.PublicKeyAlgorithm)
+			}
+			if curve != "" {
+				ecKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
+				if !ok {
+					return fmt.Errorf("certificate %q on %s: ECDSA public key type assertion failed", attrName, resourceName)
+				}
+				var wantCurve elliptic.Curve
+				switch curve {
+				case "P-256":
+					wantCurve = elliptic.P256()
+				case "P-384":
+					wantCurve = elliptic.P384()
+				case "P-521":
+					wantCurve = elliptic.P521()
+				default:
+					return fmt.Errorf("testCheckCertPEMKeyType: unknown curve %q", curve)
+				}
+				if ecKey.Curve != wantCurve {
+					return fmt.Errorf("certificate %q on %s: expected curve %s, got %s",
+						attrName, resourceName, wantCurve.Params().Name, ecKey.Curve.Params().Name)
+				}
+			}
+		case "ED25519":
+			if cert.PublicKeyAlgorithm != x509.Ed25519 {
+				return fmt.Errorf("certificate %q on %s: expected Ed25519 key, got %v",
+					attrName, resourceName, cert.PublicKeyAlgorithm)
+			}
+		case "ED448":
+			// Go's x509 package reports Ed448 as UnknownPublicKeyAlgorithm.
+			// Verify by inspecting the SubjectPublicKeyInfo OID directly.
+			var spki struct {
+				Algorithm pkix.AlgorithmIdentifier
+				PublicKey asn1.BitString
+			}
+			if _, spkiErr := asn1.Unmarshal(cert.RawSubjectPublicKeyInfo, &spki); spkiErr != nil {
+				return fmt.Errorf("certificate %q on %s: failed to parse SPKI: %v", attrName, resourceName, spkiErr)
+			}
+			oidEd448 := asn1.ObjectIdentifier{1, 3, 101, 113}
+			if !spki.Algorithm.Algorithm.Equal(oidEd448) {
+				return fmt.Errorf("certificate %q on %s: expected Ed448 key (OID 1.3.101.113), got OID %v",
+					attrName, resourceName, spki.Algorithm.Algorithm)
+			}
+		default:
+			return fmt.Errorf("testCheckCertPEMKeyType: unsupported keyType %q", keyType)
 		}
 		return nil
 	}
@@ -1718,13 +1823,18 @@ func generateSimpleCSR(t *testing.T, cn string) string {
 
 // generateCSRWithKeyType creates a PEM-encoded CSR using the specified key type.
 // keyType is one of "RSA", "ECC", "Ed25519". curve is used for ECC (e.g. "P-256", "P-384", "P-521").
-func generateCSRWithKeyType(t *testing.T, cn, keyType, curve string) string {
+// keySize controls RSA key size (0 defaults to 2048).
+func generateCSRWithKeyType(t *testing.T, cn, keyType, curve string, keySize ...int) string {
 	t.Helper()
 	var signer crypto.Signer
 	var err error
 	switch strings.ToUpper(keyType) {
 	case "RSA":
-		signer, err = rsa.GenerateKey(rand.Reader, 2048)
+		bits := 2048
+		if len(keySize) > 0 && keySize[0] > 0 {
+			bits = keySize[0]
+		}
+		signer, err = rsa.GenerateKey(rand.Reader, bits)
 	case "ECC":
 		var c elliptic.Curve
 		switch curve {
@@ -2137,4 +2247,108 @@ func certMetadataConfig(enrollmentPattern, templateName, ca, cn string, metadata
 		return testAccCertPFXConfigEnrollmentPatternWithMetadata(enrollmentPattern, ca, cn, metadata)
 	}
 	return testAccCertPFXConfigWithMetadata(templateName, ca, cn, metadata)
+}
+
+// ---------------------------------------------------------------------------
+// Key-type-specific params (cassette-recorded values for PFX + CSR key type tests)
+// ---------------------------------------------------------------------------
+
+// certPFXKeyTypeTestParams extends certPFXTestParams with the key type fields
+// that should be used in the enrollment config. These are not auto-discovered —
+// they are fixed by the test case — so only the lab-dependent fields are stored.
+type certPFXKeyTypeTestParams struct {
+	TemplateName      string `json:"template_name"`
+	CA                string `json:"ca"`
+	EnrollmentPattern string `json:"enrollment_pattern"`
+	CN                string `json:"cn"`
+	KeyType           string `json:"key_type"`
+	KeySize           int    `json:"key_size"`
+	Curve             string `json:"curve"`
+}
+
+func writeCertPFXKeyTypeTestParams(cassettePath string, params certPFXKeyTypeTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readCertPFXKeyTypeTestParams(cassettePath string, defaultKeyType string, defaultKeySize int, defaultCurve string) certPFXKeyTypeTestParams {
+	defaults := certPFXKeyTypeTestParams{
+		TemplateName: "2YearTestWebServer",
+		CA:           "CommandCA1",
+		CN:           "tf-unit-pfx.example.com",
+		KeyType:      defaultKeyType,
+		KeySize:      defaultKeySize,
+		Curve:        defaultCurve,
+	}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params certPFXKeyTypeTestParams
+	if err := json.Unmarshal(data, &params); err != nil {
+		return defaults
+	}
+	// Preserve fixed-by-test values from defaults when not in params file.
+	if params.KeyType == "" {
+		params.KeyType = defaultKeyType
+	}
+	if params.KeySize == 0 {
+		params.KeySize = defaultKeySize
+	}
+	if params.Curve == "" {
+		params.Curve = defaultCurve
+	}
+	return params
+}
+
+// testAccCertPFXConfigWithKeyTypeAndPattern generates HCL for a PFX certificate
+// resource test that includes key_type, key_size, and/or curve, using an
+// enrollment_pattern instead of a template (required for Command v25+).
+func testAccCertPFXConfigWithKeyTypeAndPattern(enrollmentPattern, ca, cn, keyType string, keySize int, curve string) string {
+	var extra string
+	if keyType != "" {
+		extra += fmt.Sprintf("\n  key_type                      = \"%s\"", keyType)
+	}
+	if keySize > 0 {
+		extra += fmt.Sprintf("\n  key_size                      = %d", keySize)
+	}
+	if curve != "" {
+		extra += fmt.Sprintf("\n  curve                         = \"%s\"", curve)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                    = %q
+  certificate_authority          = %q
+  certificate_enrollment_pattern = %q
+  key_password                   = "Tftest123456"%s
+}
+`, cn, ca, enrollmentPattern, extra)
+}
+
+// testAccCertCSRConfigWithKeyType generates HCL for a CSR-based certificate test
+// using a pre-generated CSR PEM. The key type is embedded in the CSR itself;
+// this helper just formats the config.
+func testAccCertCSRConfigWithKeyType(enrollmentPattern, templateName, ca, csrPem string) string {
+	decodedCSR := strings.ReplaceAll(csrPem, `\n`, "\n")
+	trimmedCSR := strings.TrimRight(decodedCSR, "\n")
+	if enrollmentPattern != "" {
+		return fmt.Sprintf(`
+resource "keyfactor_certificate" "test_csr" {
+  certificate_authority            = %q
+  certificate_enrollment_pattern   = %q
+  csr                              = <<-EOT
+%s
+EOT
+}
+`, ca, enrollmentPattern, trimmedCSR)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test_csr" {
+  certificate_authority  = %q
+  certificate_template   = %q
+  csr                    = <<-EOT
+%s
+EOT
+}
+`, ca, templateName, trimmedCSR)
 }

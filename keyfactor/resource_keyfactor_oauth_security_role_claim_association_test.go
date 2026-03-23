@@ -178,6 +178,59 @@ resource "keyfactor_oauth_security_role_claim_association" "test_role_claim_asso
 `, claimValue, roleName)
 }
 
+// TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource_Import tests the
+// import lifecycle using VCR cassettes. Step 1 creates the association; Step 2
+// imports it by composite ID "<roleId>/<claimId>" and verifies state.
+//
+// To record cassettes:
+//
+//	RECORD_CASSETTES=1 make testunit-record-one TEST_NAME=TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource_Import
+func TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testing.T) {
+	cassetteName := "oauth_security_role_claim_association_resource_import"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var roleName1, claimValue string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		ts := time.Now().UnixNano() % 1000000000
+		roleName1 = fmt.Sprintf("tf-unit-role-assoc-imp1-%d", ts)
+		claimValue = fmt.Sprintf("tf-unit-claim-assoc-imp-%d", ts)
+		writeOAuthRoleClaimAssocTestParams(cassettePath, oauthRoleClaimAssocTestParams{
+			RoleName1:  roleName1,
+			ClaimValue: claimValue,
+		})
+	} else {
+		params := readOAuthRoleClaimAssocTestParams(cassettePath)
+		roleName1 = params.RoleName1
+		claimValue = params.ClaimValue
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourcePath := "keyfactor_oauth_security_role_claim_association.test_role_claim_association"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: Create the association.
+				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(roleName1, claimValue),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourcePath, "id"),
+					resource.TestCheckResourceAttrSet(resourcePath, "role_id"),
+					resource.TestCheckResourceAttrSet(resourcePath, "claim_id"),
+				),
+			},
+			{
+				// Step 2: Import by composite ID "<roleId>/<claimId>" and verify.
+				ResourceName:      resourcePath,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Integration tests (auto-discovery)
 // ---------------------------------------------------------------------------
@@ -222,6 +275,47 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(r2.resourcePath, "role_id"),
 					resource.TestCheckResourceAttrSet(r2.resourcePath, "claim_id"),
 				),
+			},
+		},
+	})
+}
+
+// TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource_Import verifies that
+// an existing role-claim association can be imported by its composite ID and that
+// state is fully populated after import.
+func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testing.T) {
+	testAccIntegrationPreCheck(t)
+
+	authScheme := discoverOAuthAuthScheme(t)
+	_ = authScheme
+
+	r := oauthSecurityRoleClaimAssociationTestCase{
+		role1Name:           acctest.RandomWithPrefix("tf-int-role-imp"),
+		claimValue:          acctest.RandomWithPrefix("tf-int-claim-imp"),
+		claimProviderScheme: authScheme,
+		resourceType:        "keyfactor_oauth_security_role_claim_association",
+		resourceName:        "test_role_claim_association",
+		resourcePath:        "keyfactor_oauth_security_role_claim_association.test_role_claim_association",
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: Create the association.
+				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(r.role1Name, r.claimValue),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
+					resource.TestCheckResourceAttrSet(r.resourcePath, "role_id"),
+					resource.TestCheckResourceAttrSet(r.resourcePath, "claim_id"),
+				),
+			},
+			{
+				// Step 2: Import by composite ID "<roleId>/<claimId>" and verify
+				// that role_id and claim_id are correctly re-populated.
+				ResourceName:      r.resourcePath,
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
 		},
 	})

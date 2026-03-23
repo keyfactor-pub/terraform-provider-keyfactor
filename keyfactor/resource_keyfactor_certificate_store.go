@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -730,29 +731,16 @@ func (r resourceCertificateStore) ImportState(
 	request tfsdk.ImportResourceStateRequest,
 	response *tfsdk.ImportResourceStateResponse,
 ) {
-	var state CertificateStore
+	certificateStoreId := request.ID
 
-	tflog.Info(ctx, "Read called on certificate store resource")
-	certificateStoreId := state.ID.Value
-
+	tflog.Info(ctx, "ImportState called on certificate store resource")
 	tflog.SetField(ctx, "id", certificateStoreId)
 
 	readResponse, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
 	if err != nil {
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERT_STORE_READ,
-			"Error reading certificate store: %s"+err.Error(),
-		)
-		return
-	}
-
-	password := state.StorePassword.Value
-	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", certificateStoreId, password))
-
-	if err != nil {
-		response.Diagnostics.AddError(
-			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command: "+err.Error(), certificateStoreId),
+			fmt.Sprintf("Error reading certificate store '%s': "+err.Error(), certificateStoreId),
 		)
 		return
 	}
@@ -762,7 +750,7 @@ func (r resourceCertificateStore) ImportState(
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
 			fmt.Sprintf(
-				"Could not retrieve certificate store type '%s' from Keyfactor Command: "+err.Error(),
+				"Could not retrieve certificate store type '%s' from Keyfactor Command: "+csTypeErr.Error(),
 				readResponse.CertStoreType,
 			),
 		)
@@ -770,24 +758,28 @@ func (r resourceCertificateStore) ImportState(
 	}
 	// Set state
 	result := CertificateStore{
-		ID:              types.String{Value: state.ID.Value},
-		ContainerID:     types.Int64{Value: int64(readResponse.ContainerId)},
-		ClientMachine:   types.String{Value: readResponse.ClientMachine},
-		StorePath:       types.String{Value: readResponse.StorePath},
-		StoreType:       types.String{Value: csType.Name},
-		Approved:        types.Bool{Value: readResponse.Approved},
-		CreateIfMissing: types.Bool{Value: readResponse.CreateIfMissing},
-		//Properties:            plan.Properties,
-		AgentId:       types.String{Value: readResponse.AgentId},
-		AgentAssigned: types.Bool{Value: readResponse.AgentAssigned},
-		ContainerName: types.String{Value: readResponse.ContainerName, Null: isNullString(readResponse.ContainerName)},
-		InventorySchedule: types.String{
-			Unknown: false,
-			Null:    true,
-			Value:   fmt.Sprintf("%v", readResponse.InventorySchedule),
-		},
+		ID:                    types.String{Value: readResponse.Id},
+		ContainerID:           types.Int64{Value: int64(readResponse.ContainerId)},
+		ClientMachine:         types.String{Value: readResponse.ClientMachine},
+		StorePath:             types.String{Value: readResponse.StorePath},
+		StoreType:             types.String{Value: csType.Name},
+		Approved:              types.Bool{Value: readResponse.Approved},
+		CreateIfMissing:       types.Bool{Value: readResponse.CreateIfMissing},
+		Properties:            types.Map{ElemType: types.StringType, Elems: map[string]attr.Value{}},
+		AgentId:               types.String{Value: readResponse.AgentId},
+		AgentIdentifier:       types.String{Null: true},
+		AgentAssigned:         types.Bool{Value: readResponse.AgentAssigned},
+		DisplayName:           types.String{Null: true},
+		ContainerName:         types.String{Value: readResponse.ContainerName, Null: isNullString(readResponse.ContainerName)},
+		InventorySchedule:     types.String{Null: true},
 		SetNewPasswordAllowed: types.Bool{Value: readResponse.SetNewPasswordAllowed},
-		//Password:              plan.StorePassword,
+		// StorePassword, ServerUsername, ServerPassword are write-only in the Command API
+		// and are never returned by GetCertificateStoreByID. They will be null after import
+		// and must be re-supplied in config if needed.
+		StorePassword:  types.String{Null: true},
+		ServerUsername: types.String{Null: true},
+		ServerPassword: types.String{Null: true},
+		ServerUseSsl:   types.Bool{Null: true},
 	}
 	diags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)

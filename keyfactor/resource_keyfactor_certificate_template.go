@@ -14,6 +14,44 @@ import (
 )
 
 // ---------------------------------------------------------------------------
+// Plan modifiers
+// ---------------------------------------------------------------------------
+
+// useStateOrNullModifier is like UseStateForUnknown but also replaces Unknown
+// with null when the prior state is null. This is necessary for read-only list
+// attributes backed by Go slice types (which cannot hold Unknown values): if
+// the resource has no data for the list, the state is null and
+// UseStateForUnknown would leave the plan Unknown, causing a type conversion
+// error when the framework tries to deserialize the plan into the Go struct.
+type useStateOrNullModifier struct{}
+
+func (m useStateOrNullModifier) Description(_ context.Context) string {
+	return "Uses prior state value if known; resolves to null when state is null."
+}
+
+func (m useStateOrNullModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m useStateOrNullModifier) Modify(_ context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() {
+		return
+	}
+	// When state is unknown, we have nothing useful — leave plan as-is.
+	if req.AttributeState.IsUnknown() {
+		return
+	}
+	// Whether state is null or has a value, use the state (null → null, known → known).
+	resp.AttributePlan = req.AttributeState
+}
+
+// ---------------------------------------------------------------------------
 // Schema helpers
 // ---------------------------------------------------------------------------
 
@@ -318,7 +356,7 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				Computed:      true,
 				Description:   "Enrollment policy settings for the template.",
 				Attributes:    tfsdk.SingleNestedAttributes(templatePolicySchema()),
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 
 			// Nested writable lists
@@ -438,8 +476,9 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 
 			// Read-only nested lists
 			"extended_key_usages": {
-				Computed:    true,
-				Description: "Extended key usages defined on the template (read-only).",
+				Computed:      true,
+				Description:   "Extended key usages defined on the template (read-only).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
 						"id": {
@@ -458,8 +497,9 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				),
 			},
 			"key_algorithms": {
-				Computed:    true,
-				Description: "Supported key algorithms reported by the CA (read-only).",
+				Computed:      true,
+				Description:   "Supported key algorithms reported by the CA (read-only).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
 						"algorithm": {

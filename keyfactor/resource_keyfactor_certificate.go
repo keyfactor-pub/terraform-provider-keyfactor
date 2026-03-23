@@ -1861,7 +1861,7 @@ func (r resourceCommandCertificate) ImportState(
 
 	tflog.Debug(ctx, "Creating CommandCertificate object")
 	var result = CommandCertificate{
-		ID:                 state.ID,
+		ID:                 types.String{Value: certificateId},
 		CSR:                state.CSR,
 		CommonName:         cn,
 		Locality:           l,

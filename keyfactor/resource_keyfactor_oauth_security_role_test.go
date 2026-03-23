@@ -278,6 +278,62 @@ func TestIntKeyfactorOAuthRoleResource(t *testing.T) {
 	})
 }
 
+// TestUnitKeyfactorOAuthRoleResource_Import tests the import lifecycle for the
+// keyfactor_oauth_security_role resource using VCR cassettes. Step 1 creates
+// the role; Step 2 imports it by name and verifies state.
+//
+// To record cassettes:
+//
+//	RECORD_CASSETTES=1 make testunit-record-one TEST_NAME=TestUnitKeyfactorOAuthRoleResource_Import
+func TestUnitKeyfactorOAuthRoleResource_Import(t *testing.T) {
+	cassetteName := "oauth_security_role_resource_import"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var roleName string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		roleName = fmt.Sprintf("tf-unit-oauth-role-imp-%d", time.Now().UnixNano()%1000000000)
+		writeOAuthRoleRecordTestParams(cassettePath, oauthRoleRecordTestParams{RoleName: roleName})
+	} else {
+		params := readOAuthRoleRecordTestParams(cassettePath)
+		roleName = params.RoleName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	r := oauthRoleTestCase{
+		name:         roleName,
+		description:  "Unit test OAuth role import",
+		permissions:  []string{"/metadata/types/read/"},
+		emailAddress: "unit-import@example.com",
+		resourceType: "keyfactor_oauth_security_role",
+		resourceName: "unit_import_test",
+		resourcePath: "keyfactor_oauth_security_role.unit_import_test",
+	}
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: Create the role.
+				Config: testAccKeyfactorOAuthRoleResourceConfig(r),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
+					resource.TestCheckResourceAttr(r.resourcePath, "name", r.name),
+					resource.TestCheckResourceAttr(r.resourcePath, "description", r.description),
+				),
+			},
+			{
+				// Step 2: Import by role name and verify state is fully populated.
+				ResourceName:      r.resourcePath,
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateId:     roleName,
+			},
+		},
+	})
+}
+
 func TestIntKeyfactorOAuthRoleResource_Import(t *testing.T) {
 	testAccIntegrationPreCheck(t)
 

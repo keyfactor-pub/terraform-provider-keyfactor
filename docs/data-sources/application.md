@@ -5,7 +5,8 @@ subcategory: ""
 description: |-
   Reads an existing Keyfactor Command Application (certificate store container).
   [!NOTE]
-  Applications are only available in Keyfactor Command v25.0+
+  On Keyfactor Command v25.0+ this data source uses the /Applications endpoint.
+  On pre-v25 Command it automatically falls back to /CertificateStoreContainers.
 ---
 
 # keyfactor_application (Data Source)
@@ -13,7 +14,8 @@ description: |-
 Reads an existing Keyfactor Command Application (certificate store container).
 
 > [!NOTE]
-> Applications are only available in Keyfactor Command v25.0+
+> On Keyfactor Command v25.0+ this data source uses the `/Applications` endpoint.
+> On pre-v25 Command it automatically falls back to `/CertificateStoreContainers`.
 
 ## Example Usage
 
@@ -56,6 +58,12 @@ output "store_ids" {
 - `name` (String) Name of the application.
 - `overwrite_schedules` (Boolean) Whether the application schedule overwrites member certificate store schedules.
 - `schedule_daily_time` (String) Inventory schedule daily time as an ISO 8601 datetime string, if a daily schedule is configured.
+- `schedule_exactly_once_time` (String) ISO 8601 datetime string if inventory is scheduled to run exactly once.
+- `schedule_immediate` (Boolean) True if an immediate one-shot inventory run is configured.
 - `schedule_interval_minutes` (Number) Inventory schedule interval in minutes, if an interval-based schedule is configured.
+- `schedule_monthly_day` (Number) Day of the month for a monthly schedule (1–31).
+- `schedule_monthly_time` (String) Time-of-day for the monthly schedule as an ISO 8601 datetime string.
+- `schedule_weekly_days` (List of String) Days of the week for a weekly schedule (e.g. ["Monday", "Wednesday"]).
+- `schedule_weekly_time` (String) Time-of-day for the weekly schedule as an ISO 8601 datetime string.
 
 

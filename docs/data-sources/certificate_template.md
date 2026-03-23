@@ -62,8 +62,8 @@ data "keyfactor_certificate_template" "by_id" {
 - `template_name` (String) Display name of the template.
 - `template_policy` (Attributes) (see [below for nested schema](#nestedatt--template_policy))
 - `template_regexes` (Attributes List) (see [below for nested schema](#nestedatt--template_regexes))
-- `time_after_expiration` (Number) Time after expiration before cleanup (Command v25+).
-- `time_after_expiration_units` (Number) Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months (Command v25+).
+- `time_after_expiration` (Number)
+- `time_after_expiration_units` (Number)
 - `use_allowed_requesters` (Boolean)
 
 <a id="nestedatt--enrollment_fields"></a>

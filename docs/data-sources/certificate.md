@@ -82,6 +82,7 @@ One of either the Template or the EnrollmentPatternId is required unless the enr
 - `common_name` (String) Subject common name (CN) of the certificate.
 - `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
+- `curve` (String) ECC curve name of the issued certificate (e.g. P-256, P-384, P-521).
 - `dns_sans` (List of String) List of DNS subject alternative names (DNS SANs) of the certificate. Ex: www.example.com
 - `enrollment_password` (String, Sensitive) The password used during certificate issuance. Also used to unlock PFX/PKCS12 and JKS keystores. Only returned if the certificate template has KeyRetention set to a value other than None. Will use `key_password` value if specified else will generate a random password of length12 with a minimum of 4 uppercase, 4 numeric, and 0 special characters. Review this provider's schema docs for more details: https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs#schema
 - `id` (String) Read-only alias of `identifier` for Terraform framework compatibility.
@@ -91,6 +92,8 @@ One of either the Template or the EnrollmentPatternId is required unless the enr
 - `is_revoked` (Boolean) Whether the certificate is revoked
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
 - `jks` (String, Sensitive) Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
+- `key_size` (Number) Key size in bits of the issued certificate (e.g. 2048, 4096, 256).
+- `key_type` (String) Key algorithm of the issued certificate (e.g. RSA, ECC, Ed25519).
 - `locality` (String) Subject locality (L) of the certificate
 - `not_after` (String) Not After date of enrolled certificate
 - `not_before` (String) Not Before date of enrolled certificate

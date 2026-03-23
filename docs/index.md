@@ -10,7 +10,6 @@ description: |-
   |-------------------|------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
   | Certificate       | Certificate https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Certificates.htm                     | keyfactor_certificate https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate                       |
   | Certificate Store | Certificate Store https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/CertificateStores.htm          | keyfactorcertificatestore https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_store           |
-  | Certificate Store Type | Certificate Store Types https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/CertificateStoreTypes.htm | keyfactor_certificate_store_type https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_store_type |
   | Orchestration Job | Orchestration Job https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/OrchestratorJobsPOSTCustom.htm | keyfactorcertificatedeployment https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_deployment |
   | OAuth Security Role | OAuth Security Role https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm | keyfactoroauthsecurity_role https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role   |
   | OAuth Security Claim | OAuth Security Claims https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm      | keyfactoroauthsecurity_claim https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_claim             |
@@ -46,7 +45,6 @@ Below are currently supported resources:
 |-------------------|------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
 | Certificate       | [Certificate](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Certificates.htm)                     | [keyfactor_certificate](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate)                       |
 | Certificate Store | [Certificate Store](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/CertificateStores.htm)          | [keyfactor_certificate_store](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_store)           |
-| Certificate Store Type | [Certificate Store Types](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/CertificateStoreTypes.htm) | [keyfactor_certificate_store_type](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_store_type) |
 | Orchestration Job | [Orchestration Job](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/OrchestratorJobsPOSTCustom.htm) | [keyfactor_certificate_deployment](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_deployment) |
 | OAuth Security Role | [OAuth Security Role](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm) | [keyfactor_oauth_security_role](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role) 	|
 | OAuth Security Claim | [OAuth Security Claims](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm) 	 | [keyfactor_oauth_security_claim](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_claim) 			|
@@ -98,11 +96,11 @@ provider "keyfactor" {
 
 # kerberos auth - password-based
 provider "keyfactor" {
-  hostname         = "mykfinstance.kfdelivery.com"
-  kerberos_realm   = "EXAMPLE.COM"
+  hostname          = "mykfinstance.kfdelivery.com"
+  kerberos_realm    = "EXAMPLE.COM"
   kerberos_username = "svc_terraform"
   kerberos_password = "your_kerberos_password"
-  kerberos_config  = "/etc/krb5.conf" # optional, defaults to /etc/krb5.conf
+  kerberos_config   = "/etc/krb5.conf" # optional, defaults to /etc/krb5.conf
 
   # Disable PA-FX-FAST if authenticating against Active Directory
   kerberos_disable_pafxfast = true

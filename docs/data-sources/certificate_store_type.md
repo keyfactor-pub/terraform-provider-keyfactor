@@ -76,18 +76,6 @@ output "properties" {
 - `supports_enrollment` (Boolean) Whether the store type supports enrollment.
 - `supports_remove` (Boolean) Whether the store type supports removing certificates.
 
-<a id="nestedatt--properties"></a>
-### Nested Schema for `properties`
-
-Read-Only:
-
-- `default_value` (String) Default value for the property.
-- `depends_on` (String) Name of another property this one depends on.
-- `display_name` (String) Human-readable display name.
-- `name` (String) Internal property name.
-- `required` (Boolean) Whether the property is required.
-- `type` (String) Property value type.
-
 <a id="nestedatt--entry_parameters"></a>
 ### Nested Schema for `entry_parameters`
 
@@ -103,3 +91,18 @@ Read-Only:
 - `required_when_on_reenrollment` (Boolean) Required on re-enrollment.
 - `required_when_on_remove` (Boolean) Required when removing a certificate.
 - `type` (String) Parameter value type.
+
+
+<a id="nestedatt--properties"></a>
+### Nested Schema for `properties`
+
+Read-Only:
+
+- `default_value` (String) Default value for the property.
+- `depends_on` (String) Name of another property this one depends on.
+- `display_name` (String) Human-readable display name.
+- `name` (String) Internal property name.
+- `required` (Boolean) Whether the property is required.
+- `type` (String) Property value type.
+
+

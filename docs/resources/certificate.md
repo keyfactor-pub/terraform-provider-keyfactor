@@ -13,7 +13,36 @@ Manages a certificate in Keyfactor Command using the `/Enrollment` and `/Certifi
 ## Example Usage
 
 ```terraform
-# PFX Enrollment
+# PFX Enrollment — RSA-4096 (explicit key type and size)
+resource "keyfactor_certificate" "pfx_rsa4096" {
+  common_name                    = "my-rsa4096.example.com"
+  certificate_authority          = "COMMAND\\MY_CA_01"
+  certificate_enrollment_pattern = "2yrWebServer"
+  key_type                       = "RSA"
+  key_size                       = 4096
+  key_password                   = "Don't put this in your production code!"
+}
+
+# PFX Enrollment — ECC P-384 (using curve name)
+resource "keyfactor_certificate" "pfx_ecc_p384" {
+  common_name                    = "my-ecc.example.com"
+  certificate_authority          = "COMMAND\\MY_CA_01"
+  certificate_enrollment_pattern = "2yrWebServer"
+  key_type                       = "ECC"
+  curve                          = "P-384"
+  key_password                   = "Don't put this in your production code!"
+}
+
+# PFX Enrollment — Ed25519
+resource "keyfactor_certificate" "pfx_ed25519" {
+  common_name                    = "my-ed25519.example.com"
+  certificate_authority          = "COMMAND\\MY_CA_01"
+  certificate_enrollment_pattern = "2yrWebServer"
+  key_type                       = "Ed25519"
+  key_password                   = "Don't put this in your production code!"
+}
+
+# PFX Enrollment — full example with metadata and renewal
 resource "keyfactor_certificate" "pkcs12_enrollment" {
   common_name           = "My PKCS12 Certificate"
   country               = "US"
@@ -117,11 +146,14 @@ Note:  This parameter is considered deprecated as for Keyfactor Command v25.1.0 
 - `common_name` (String) Subject common name (CN) of the certificate.
 - `country` (String) Subject country of the certificate
 - `csr` (String) Base-64 encoded certificate signing request (CSR)
+- `curve` (String) ECC curve name for PFX enrollment (e.g. P-256, P-384, P-521). Only relevant when key_type=ECC. Populated from the issued certificate on read. Cannot be set when `csr` is also set.
 - `dns_sans` (List of String) List of DNS names to use as subjects of the certificate. NOTE: This field **does not work with CSR enrollments**, all SANs should be included in the CSR. Additional SANs added by the CA during enrollment **will not** be reflected in this field
 - `expiry_warn_days` (Number) Number of days before expiry to warn about the certificate. Defaults to 30 days.
 - `friendly_name` (String) Only applicable for PFX enrollments. A friendly name for the certificate. If not provided, the common name will be used unless `use_cn_as_friendly_name` is set to `false`.
 - `ip_sans` (List of String) List of DNS names to use as subjects of the certificate. NOTE: This field **does not work with CSR enrollments**, all SANs should be included in the CSR. Additional SANs added by the CA during enrollment **will not** be reflected in this field
 - `key_password` (String, Sensitive) Password used to recover the private key from Keyfactor Command. NOTE: If no value is provided a random password will be generated for key recovery. This value is not stored and does not encrypt the private key in Terraform state. Also note that if a password is provided it must meet any password complexity requirements enforced by the CA template or creation will fail. Auto-generated passwords will be of length 32 and contain a minimum of 4 of the following: uppercase, lowercase, numeric, and special characters.
+- `key_size` (Number) Key size in bits for PFX enrollment (e.g. 2048, 4096 for RSA; 256, 384, 521 for ECC). If omitted, the CA/template default is used. Populated from the issued certificate on read. Cannot be set when `csr` is also set.
+- `key_type` (String) Key algorithm for PFX enrollment: RSA, ECC, Ed25519, Ed448. If omitted, the CA/template default is used. Populated from the issued certificate on read. Cannot be set when `csr` is also set.
 - `locality` (String) Subject locality (L) of the certificate
 - `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
 - `organization` (String) Subject organization (O) of the certificate
@@ -140,7 +172,7 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 > Only compatible with Keyfactor Command versions v12.3.0 and later.
 - `renewal_config` (Attributes) Configuration for certificate renewal.
 > [!IMPORTANT]
-> This does not deploy the updated certificate to associated certificate store locations. To deploy the updated 
+> This does not deploy the updated certificate to associated certificate store locations. To deploy the updated
 > certificate you must define a "keyfactor_certificate_deployment" Terraform resource that references this
 > certificate or deploy via the Command UI. (see [below for nested schema](#nestedatt--renewal_config))
 - `revoke_on_destroy` (Boolean) Whether to revoke the certificate on resource `destroy`. IMPORTANT: If set to `false` the certificate will not be revoked on `destroy`ing operations. This means the certificate will need to be revoked outside of Terraform. Defaults to `true`.

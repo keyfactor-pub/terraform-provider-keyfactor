@@ -33,6 +33,10 @@
 
 ## Certificates
 
+### Features
+
+- feat: `keyfactor_certificate` resource now supports `key_type`, `key_size`, and `curve` fields for PFX enrollment, allowing explicit control over key algorithm (`RSA`, `ECC`, `Ed25519`, `Ed448`) and key size/curve. These fields are also populated on read and available as read-only attributes on the `keyfactor_certificate` data source.
+
 ### Fixes
 
 - fix: `keyfactor_certificate` `certificate_template` and `enrollment_pattern` can now be specified together (#146)

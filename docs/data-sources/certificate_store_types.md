@@ -84,30 +84,33 @@ Read-Only:
 - `supports_enrollment` (Boolean) Whether the store type supports enrollment.
 - `supports_remove` (Boolean) Whether the store type supports removing certificates.
 
-<a id="nestedatt--store_types--properties"></a>
-### Nested Schema for `store_types.properties`
-
-Read-Only:
-
-- `default_value` (String) Default value for the property.
-- `depends_on` (String) Name of another property this one depends on.
-- `display_name` (String) Human-readable display name.
-- `name` (String) Internal property name.
-- `required` (Boolean) Whether the property is required.
-- `type` (String) Property value type.
-
 <a id="nestedatt--store_types--entry_parameters"></a>
 ### Nested Schema for `store_types.entry_parameters`
 
 Read-Only:
 
-- `default_value` (String) Default value for the parameter.
-- `depends_on` (String) Name of another parameter this one depends on.
-- `display_name` (String) Human-readable display name.
-- `name` (String) Entry parameter name.
-- `options` (String) Comma-separated list of allowed values.
-- `required_when_has_private_key` (Boolean) Required when entry has a private key.
-- `required_when_on_add` (Boolean) Required when adding a certificate.
-- `required_when_on_reenrollment` (Boolean) Required on re-enrollment.
-- `required_when_on_remove` (Boolean) Required when removing a certificate.
-- `type` (String) Parameter value type.
+- `default_value` (String)
+- `depends_on` (String)
+- `display_name` (String)
+- `name` (String)
+- `options` (String)
+- `required_when_has_private_key` (Boolean)
+- `required_when_on_add` (Boolean)
+- `required_when_on_reenrollment` (Boolean)
+- `required_when_on_remove` (Boolean)
+- `type` (String)
+
+
+<a id="nestedatt--store_types--properties"></a>
+### Nested Schema for `store_types.properties`
+
+Read-Only:
+
+- `default_value` (String)
+- `depends_on` (String)
+- `display_name` (String)
+- `name` (String)
+- `required` (Boolean)
+- `type` (String)
+
+

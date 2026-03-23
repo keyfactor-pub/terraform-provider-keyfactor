@@ -30,10 +30,10 @@ resource "keyfactor_certificate_store_type" "example" {
 
   properties = [
     {
-      name         = "LinuxFilePermissionsOnStoreCreation"
-      display_name = "Linux File Permissions on Store Creation"
-      type         = "String"
-      required     = false
+      name          = "LinuxFilePermissionsOnStoreCreation"
+      display_name  = "Linux File Permissions on Store Creation"
+      type          = "String"
+      required      = false
       default_value = "600"
     },
   ]

@@ -6,7 +6,9 @@ description: |-
   Manages a Keyfactor Command Application (certificate store container).
   Applications group certificate stores together and define an optional inventory schedule that applies to all member stores.
   [!NOTE]
-  Applications are only available in Keyfactor Command v25.0+
+  On Keyfactor Command v25.0+ this resource uses the /Applications endpoint.
+  On pre-v25 Command it automatically falls back to /CertificateStoreContainers,
+  which supports the same schedule types and JSON format.
 ---
 
 # keyfactor_application (Resource)
@@ -16,16 +18,18 @@ Manages a Keyfactor Command Application (certificate store container).
 Applications group certificate stores together and define an optional inventory schedule that applies to all member stores.
 
 > [!NOTE]
-> Applications are only available in Keyfactor Command v25.0+
+> On Keyfactor Command v25.0+ this resource uses the `/Applications` endpoint.
+> On pre-v25 Command it automatically falls back to `/CertificateStoreContainers`,
+> which supports the same schedule types and JSON format.
 
 ## Example Usage
 
 ```terraform
 # Application with an interval-based inventory schedule
 resource "keyfactor_application" "interval" {
-  name                       = "My App"
-  overwrite_schedules        = false
-  schedule_interval_minutes  = 60
+  name                      = "My App"
+  overwrite_schedules       = false
+  schedule_interval_minutes = 60
 }
 
 # Application with a daily inventory schedule
@@ -51,8 +55,14 @@ resource "keyfactor_application" "minimal" {
 ### Optional
 
 - `overwrite_schedules` (Boolean) When true, the application schedule overwrites the schedules of all member certificate stores.
-- `schedule_daily_time` (String) Inventory schedule daily time as an ISO 8601 datetime string (e.g. '2023-11-25T23:30:00Z'). Mutually exclusive with schedule_interval_minutes.
-- `schedule_interval_minutes` (Number) Inventory schedule interval in minutes. Set to a positive integer to use an interval-based schedule. Mutually exclusive with schedule_daily_time.
+- `schedule_daily_time` (String) Inventory schedule daily time as an ISO 8601 datetime string (e.g. '2023-11-25T23:30:00Z'). Only the time-of-day portion is significant; the date is normalized by the server. Mutually exclusive with all other schedule_* attributes.
+- `schedule_exactly_once_time` (String) Run inventory exactly once at the specified ISO 8601 UTC datetime (e.g. '2025-06-01T02:00:00Z'). Mutually exclusive with all other schedule_* attributes.
+- `schedule_immediate` (Boolean) When true, schedules an immediate one-shot inventory run. Note: after the job executes the server may convert this to an ExactlyOnce entry, causing plan drift on the next refresh.
+- `schedule_interval_minutes` (Number) Inventory schedule interval in minutes (e.g. 60 for hourly). Mutually exclusive with all other schedule_* attributes.
+- `schedule_monthly_day` (Number) Day of the month (1–31) for a monthly inventory schedule. Requires schedule_monthly_time. Mutually exclusive with all other schedule_* attributes.
+- `schedule_monthly_time` (String) Time-of-day for the monthly schedule as an ISO 8601 datetime string. Required when schedule_monthly_day is set.
+- `schedule_weekly_days` (List of String) Days of the week for a weekly inventory schedule. Accepted values: Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday. Requires schedule_weekly_time. Mutually exclusive with all other schedule_* attributes.
+- `schedule_weekly_time` (String) Time-of-day for the weekly schedule as an ISO 8601 datetime string. Required when schedule_weekly_days is set.
 
 ### Read-Only
 

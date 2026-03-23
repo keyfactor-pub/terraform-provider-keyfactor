@@ -11,5 +11,12 @@ variable "certificate_authority" {
 
 variable "certificate_template" {
   type        = string
-  description = "Short name of the certificate template to use for enrollment."
+  default     = ""
+  description = "Short name of the certificate template to use for enrollment. Mutually exclusive with certificate_enrollment_pattern."
+}
+
+variable "certificate_enrollment_pattern" {
+  type        = string
+  default     = ""
+  description = "Name of the enrollment pattern to use (Command v25+ / EJBCA). Mutually exclusive with certificate_template."
 }

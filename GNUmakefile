@@ -45,6 +45,30 @@ store-type-demo:
 application-demo:
 	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/application_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
 
+# ---------------------------------------------------------------------------
+# ECC PFX debug demo (terraform/ecc_pfx_debug)
+# Iteratively debug ECC PFX enrollment by testing different KeyType/Curve combos.
+# Usage:
+#   make ecc-pfx-debug-build    — build provider + terraform init
+#   make ecc-pfx-debug-plan     — plan the enrollment
+#   make ecc-pfx-debug-apply    — enroll the cert
+#   make ecc-pfx-debug-destroy  — revoke/delete the cert
+# ---------------------------------------------------------------------------
+ECC_PFX_DEBUG_DIR := $(PROVIDER_DIR)/terraform/ecc_pfx_debug
+
+ecc-pfx-debug-build:
+	$(MAKE) build
+	cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) init
+
+ecc-pfx-debug-plan:
+	. $(KEYFACTOR_ENV_FILE) && cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) plan
+
+ecc-pfx-debug-apply:
+	. $(KEYFACTOR_ENV_FILE) && cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) apply
+
+ecc-pfx-debug-destroy:
+	. $(KEYFACTOR_ENV_FILE) && cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) destroy
+
 release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64
 	mv ./bin/${BINARY}_${VERSION}_darwin_amd64 ./bin/terraform-provider-keyfactor
@@ -103,10 +127,19 @@ testunit-record:
 # Record a single unit test cassette. Usage: make testunit-record-one TEST_NAME=TestUnitFoo
 testunit-record-one:
 	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testunit-record-one TEST_NAME=TestUnitFoo"; exit 1; fi
-	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 30m
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 KEYFACTOR_CLIENT_TIMEOUT=300 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 60m
 
 testunit-record-csr:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_CSR" -v -count=1 -timeout 30m
+
+testunit-record-keytypes:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 KEYFACTOR_CLIENT_TIMEOUT=300 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_(PFX|CSR)_KeyTypes" -v -count=1 -timeout 60m
+
+testunit-record-keytypes-pfx:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 KEYFACTOR_CLIENT_TIMEOUT=300 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_PFX_KeyTypes" -v -count=1 -timeout 60m
+
+testunit-record-keytypes-csr:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_CSR_KeyTypes" -v -count=1 -timeout 30m
 
 testunit-record-application:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorApplication" -v -count=1 -timeout 30m
@@ -259,6 +292,14 @@ testint-ca:
 # Run all Certificate Template integration tests
 testint-template:
 	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestInt.*CertificateTemplate" -v -count=1 -timeout 120m
+
+# Run PFX key type integration tests (RSA-2048/4096, ECC P-256/P-384/P-521)
+testint-keytypes-pfx:
+	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestIntKeyfactorCertificateResource_PFX_KeyTypes" -v -count=1 -timeout 120m
+
+# Run CSR key type integration tests (RSA, ECC P-256/P-384/P-521, Ed25519)
+testint-keytypes-csr:
+	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestIntKeyfactorCertificateResource_CSR_KeyTypes" -v -count=1 -timeout 120m
 
 # Run all tests (unit + int + acc). Requires lab connection.
 testall:
@@ -539,11 +580,13 @@ api-get-template:
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
 # Certificate API targets
-#   make api-list-certs                         — list 5 most recent certs
-#   make api-get-cert CERT_ID=123               — get certificate context by ID
-#   make api-download-cert CERT_ID=123          — download cert as P7B
-#   make api-recover-cert CERT_ID=123           — recover cert+key as STORE format
-#   make api-recover-cert-pfx CERT_ID=123       — recover cert+key as PFX
+#   make api-list-certs                              — list 5 most recent certs
+#   make api-get-cert CERT_ID=123                    — get certificate context by ID
+#   make api-download-cert CERT_ID=123               — download cert as P7B (base64 JSON)
+#   make api-inspect-cert-download CERT_ID=123       — download P7B and hex-dump raw bytes (BER investigation)
+#   make api-recover-cert CERT_ID=123                — recover cert+key as STORE format
+#   make api-recover-cert-pfx CERT_ID=123            — recover cert+key as PFX (base64 JSON)
+#   make api-inspect-cert-recover-pfx CERT_ID=123    — recover PFX and hex-dump raw PKCS#12 bytes
 #   make api-recover-cert-pem CERT_ID=123       — recover cert+key as PEM
 CERT_ID ?=
 CERT_PASSWORD ?= Tftest123456
@@ -585,6 +628,27 @@ api-download-cert:
 		-H "Authorization: Bearer $$TOKEN" \
 		-d "{\"CertID\": $(CERT_ID), \"IncludeChain\": true}" | head -200
 
+api-inspect-cert-download:
+	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-inspect-cert-download CERT_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	RESP=$$(curl -sk -X POST \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates/Download" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "x-certificateformat: P7B" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{\"CertID\": $(CERT_ID), \"IncludeChain\": true}") && \
+	B64=$$(echo "$$RESP" | jq -r '.Content // empty') && \
+	if [ -z "$$B64" ] || [ "$$B64" = "null" ]; then echo "No Content field. Full response:"; echo "$$RESP" | jq .; exit 1; fi && \
+	TMPF=$$(mktemp /tmp/cert-download-XXXXXX.bin) && \
+	printf '%s' "$$B64" | tr -d '\n' | base64 -d > "$$TMPF" && \
+	echo "=== P7B download for cert $(CERT_ID) ===" && \
+	echo "Decoded: $$(wc -c < $$TMPF | tr -d ' ') bytes" && \
+	echo "First 64 bytes:" && xxd -l 64 "$$TMPF" && \
+	echo "Last 16 bytes:" && tail -c 16 "$$TMPF" | xxd && \
+	rm -f "$$TMPF"
+
 api-recover-cert:
 	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-recover-cert CERT_ID=<id>"; exit 1; fi
 	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
@@ -611,6 +675,31 @@ api-recover-cert-pfx:
 		-H "Authorization: Bearer $$TOKEN" \
 		-d '{"CertID": $(CERT_ID), "Password": "$(CERT_PASSWORD)", "IncludeChain": true, "CertFormat": "PFX"}' | head -200
 
+api-inspect-cert-recover-pfx:
+	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-inspect-cert-recover-pfx CERT_ID=<id> [CERT_PASSWORD=Tftest123456]"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	RESP=$$(curl -sk -X POST \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates/Recover" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "x-certificateformat: PFX" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{\"CertID\": $(CERT_ID), \"Password\": \"$(CERT_PASSWORD)\", \"IncludeChain\": true}") && \
+	echo "=== JSON keys ===" && echo "$$RESP" | jq 'keys' && \
+	B64=$$(echo "$$RESP" | jq -r '.PFX // .PKCS12Blob // .Content // empty') && \
+	if [ -z "$$B64" ] || [ "$$B64" = "null" ]; then echo "No PFX blob found. Full response:"; echo "$$RESP" | jq .; exit 1; fi && \
+	TMPF=$$(mktemp /tmp/cert-recover-XXXXXX.bin) && \
+	printf '%s' "$$B64" | tr -d '\n' | base64 -d > "$$TMPF" && \
+	OUTF=/tmp/cert-recover-$(CERT_ID).pfx && cp "$$TMPF" "$$OUTF" && rm -f "$$TMPF" && \
+	echo "=== PKCS#12 recover for cert $(CERT_ID) ===" && \
+	echo "Saved: $$OUTF" && \
+	echo "Decoded: $$(wc -c < $$OUTF | tr -d ' ') bytes" && \
+	echo "First 64 bytes:" && xxd -l 64 "$$OUTF" && \
+	echo "Last 16 bytes:" && tail -c 16 "$$OUTF" | xxd && \
+	echo "=== openssl pkcs12 parse ===" && \
+	openssl pkcs12 -in "$$OUTF" -passin "pass:$(CERT_PASSWORD)" -noenc 2>&1 || true
+
 api-recover-cert-pem:
 	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-recover-cert-pem CERT_ID=<id>"; exit 1; fi
 	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
@@ -623,6 +712,233 @@ api-recover-cert-pem:
 		-H "Content-Type: application/json" \
 		-H "Authorization: Bearer $$TOKEN" \
 		-d '{"CertID": $(CERT_ID), "Password": "$(CERT_PASSWORD)", "IncludeChain": true, "CertFormat": "PEM"}' | head -200
+
+# ---------------------------------------------------------------------------
+# Enrollment pattern API targets
+#   make api-list-enrollment-patterns             — list all enrollment patterns
+#   make api-get-enrollment-pattern EP_ID=<id>   — get pattern details (KeyInfo, CAs, etc.)
+# ---------------------------------------------------------------------------
+EP_ID ?= 1
+
+api-list-enrollment-patterns:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/EnrollmentPatterns" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+api-get-enrollment-pattern:
+	@if [ -z "$(EP_ID)" ]; then echo "Usage: make api-get-enrollment-pattern EP_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/EnrollmentPatterns/$(EP_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq .
+
+# ---------------------------------------------------------------------------
+# PFX enrollment API targets — raw curl against POST /Enrollment/PFX
+# Tests all supported key type + size combinations.
+#
+# RSA:
+#   make api-enroll-pfx-rsa-2048  EP_ID=1   — RSA 2048
+#   make api-enroll-pfx-rsa-3072  EP_ID=1   — RSA 3072
+#   make api-enroll-pfx-rsa-4096  EP_ID=1   — RSA 4096
+#   make api-enroll-pfx-rsa-8192  EP_ID=1   — RSA 8192
+#
+# ECC (KeyLength only — curve inferred from size):
+#   make api-enroll-pfx-ecc-p256  EP_ID=1   — ECC P-256  (KeyLength=256)
+#   make api-enroll-pfx-ecc-p384  EP_ID=1   — ECC P-384  (KeyLength=384)
+#   make api-enroll-pfx-ecc-p521  EP_ID=1   — ECC P-521  (KeyLength=521)
+#
+# ECC (KeyLength + Curve OID both set):
+#   make api-enroll-pfx-ecc-p256-both EP_ID=1
+#   make api-enroll-pfx-ecc-p384-both EP_ID=1
+#   make api-enroll-pfx-ecc-p521-both EP_ID=1
+#
+# ECC (debugging variants):
+#   make api-enroll-pfx-ecc-curve EP_ID=1   — KeyType=ECC + Curve OID only (no KeyLength)
+#   make api-enroll-pfx-ecc-nokey EP_ID=1   — Curve OID only, no KeyType
+#
+# Ed:
+#   make api-enroll-pfx-ed25519   EP_ID=1
+#   make api-enroll-pfx-ed448     EP_ID=1
+#
+# Verify issued cert:
+#   make api-check-cert-key CERT_ID=<n>     — show KeyAlgorithm/KeySize/Curve
+#
+# Defaults: EP_ID=1  ENROLL_CA=Sub-CA  ENROLL_CN=tf-curl-debug-ecc.example.com
+# Override: make api-enroll-pfx-ecc-p256 EP_ID=2 ENROLL_CA="MyCA" ENROLL_CN="test.example.com"
+# ---------------------------------------------------------------------------
+ENROLL_CA     ?= Sub-CA
+ENROLL_CN     ?= tf-curl-debug-ecc.example.com
+ENROLL_PW     ?= Tftest123456
+P256_OID      := 1.2.840.10045.3.1.7
+P384_OID      := 1.3.132.0.34
+P521_OID      := 1.3.132.0.35
+
+# Internal helper — token + curl enrollment + jq summary.
+# Each target sets BODY shell var then calls this shared block.
+# NOTE: GNU Make $(call) splits on commas so we avoid it; use explicit targets instead.
+_ENROLL_HDR = -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 2" -H "x-certificateformat: PFX" -H "Content-Type: application/json"
+_ENROLL_JQ  = jq '{disposition: .CertificateInformation.RequestDisposition, id: .CertificateInformation.KeyfactorId, msg: .CertificateInformation.DispositionMessage, err: .Message}'
+_TOKEN_CMD  = curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" -d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" | jq -r '.access_token'
+
+# --- RSA ---
+api-enroll-pfx-rsa-2048:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"RSA\",\"KeyLength\":2048,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-rsa-3072:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"RSA\",\"KeyLength\":3072,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-rsa-4096:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"RSA\",\"KeyLength\":4096,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-rsa-8192:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"RSA\",\"KeyLength\":8192,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-rsa: api-enroll-pfx-rsa-2048
+
+# --- ECC (KeyLength only — P-256/P-384/P-521 inferred from size) ---
+api-enroll-pfx-ecc-p256:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"ECC\",\"KeyLength\":256,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ecc-p384:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"ECC\",\"KeyLength\":384,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ecc-p521:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"ECC\",\"KeyLength\":521,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+# --- ECC (KeyLength + Curve OID both set) ---
+api-enroll-pfx-ecc-p256-both:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"ECC\",\"KeyLength\":256,\"Curve\":\"$(P256_OID)\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ecc-p384-both:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"ECC\",\"KeyLength\":384,\"Curve\":\"$(P384_OID)\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ecc-p521-both:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"ECC\",\"KeyLength\":521,\"Curve\":\"$(P521_OID)\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+# --- ECC (Curve OID only, no KeyLength — for comparison/debugging) ---
+api-enroll-pfx-ecc-curve:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"ECC\",\"Curve\":\"$(P256_OID)\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ecc-keylen: api-enroll-pfx-ecc-p256
+
+api-enroll-pfx-ecc-nokey:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"Curve\":\"$(P256_OID)\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+# --- Ed25519 / Ed448 (EnrollmentPatternId) ---
+api-enroll-pfx-ed25519:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"Ed25519\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ed448:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"Ed448\",\"KeyLength\":448,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+# --- Ed25519 / Ed448 (Template name — UI uses this form; compare against EnrollmentPatternId) ---
+ENROLL_TEMPLATE ?= Server_tlsServerAuth-1y
+
+api-enroll-pfx-ed25519-tmpl:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"Template\":\"$(ENROLL_TEMPLATE)\",\"KeyType\":\"Ed25519\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ed448-tmpl:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"Template\":\"$(ENROLL_TEMPLATE)\",\"KeyType\":\"Ed448\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+# --- Ed25519 / Ed448 (Template + EnrollmentPatternId both set) ---
+api-enroll-pfx-ed25519-both:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"Template\":\"$(ENROLL_TEMPLATE)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"Ed25519\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ed448-both:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"Template\":\"$(ENROLL_TEMPLATE)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"Ed448\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+# --- Ed25519 / Ed448 as AlternativeKeyType (hybrid cert; primary=RSA 2048) ---
+api-enroll-pfx-ed25519-altkey:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"RSA\",\"KeyLength\":2048,\"AlternativeKeyType\":\"Ed25519\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ed448-altkey:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"RSA\",\"KeyLength\":2048,\"AlternativeKeyType\":\"Ed448\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+# --- Ed25519 / Ed448 with explicit KeyLength ---
+api-enroll-pfx-ed25519-255:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"Ed25519\",\"KeyLength\":255,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ed25519-256:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"Ed25519\",\"KeyLength\":256,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ed448-448:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"Ed448\",\"KeyLength\":448,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+# --- Ed25519 / Ed448 with API version 1 (compare against version 2) ---
+_ENROLL_HDR_V1 = -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 1" -H "x-certificateformat: PFX" -H "Content-Type: application/json"
+
+api-enroll-pfx-ed25519-v1:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"Ed25519\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR_V1) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+api-enroll-pfx-ed448-v1:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"Ed448\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
+	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR_V1) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
+
+# --- Check key type of any issued cert ---
+api-check-cert-key:
+	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-check-cert-key CERT_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates/$(CERT_ID)?IncludeHasPrivateKey=true" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" \
+		| jq '{Id, IssuedCN, KeyAlgorithm, KeySizeInBits, Curve}'
 
 # Certificate store targets
 #   make api-list-cert-stores                    — list certificate stores (up to 10)
@@ -650,4 +966,4 @@ api-get-cert-store:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
-.PHONY: store-type-demo application-demo build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-all testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-recover-cert api-recover-cert-pfx api-recover-cert-pem
+.PHONY: store-type-demo application-demo ecc-pfx-debug-build ecc-pfx-debug-plan ecc-pfx-debug-apply ecc-pfx-debug-destroy build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-all testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key

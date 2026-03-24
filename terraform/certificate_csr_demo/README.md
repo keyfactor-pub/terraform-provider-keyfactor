@@ -39,6 +39,11 @@ export TF_VAR_certificate_template="2YearTestWebServer"
 > **Key algorithm support:** Ed25519 and Ed448 require a CA explicitly configured for those
 > algorithms. ECC key support depends on the template's allowed key algorithms.
 
+> **Ed448 stale key conflict:** `gen_ed448_csr.sh` reuses the private key from
+> `.ed448_key.pem` across runs to produce a deterministic CSR. If an old cert with the
+> same subject and key is still active on the server, enrollment will fail with a conflict
+> error. Delete `.ed448_key.pem` before running `make apply` to force a new key.
+
 ## Files
 
 | File | Purpose |
@@ -57,19 +62,26 @@ export TF_VAR_certificate_template="2YearTestWebServer"
 ## Quickstart
 
 ```bash
-# 1. Set required environment variables (see above)
-
-# 2. Build and install the Keyfactor provider locally
+# 1. Build and install the Keyfactor provider locally
 make build
 
-# 3. Initialize Terraform (also downloads hashicorp/tls from the registry)
+# 2. Initialize Terraform (also downloads hashicorp/tls from the registry)
 make init
 
-# 4. Run the full workflow
-make all
+# 3a. Full lifecycle using lab credentials from ~/.env_ses2541 (recommended)
+#     Default suffix: _CSR_DEMO
+make lifecycle
 
-# 5. Use a custom CN suffix to avoid conflicts
-make all SUFFIX=_STAGING
+# 3b. Or set env vars manually and run individual steps
+export KEYFACTOR_HOSTNAME=... # see Environment variables above
+make apply
+make import-all
+make apply        # reconcile — writes write-only params (enrollment_pattern, CSR) into state
+make drift-check  # should show "No changes"
+make destroy
+
+# 3c. Use a custom CN suffix to avoid conflicts with other runs
+make lifecycle SUFFIX=_STAGING
 ```
 
 ## Individual targets
@@ -84,6 +96,26 @@ make import-all     Capture state, remove certificates, re-import each by certif
 make drift-check    terraform plan — should show "No changes" after import
 make destroy        terraform destroy -auto-approve
 make clean          Remove generated files
+```
+
+### Lab convenience targets
+
+These targets source `LAB_ENV_FILE` (default: `~/.env_ses2541`) automatically and set
+`TF_VAR_certificate_authority`, `TF_VAR_certificate_enrollment_pattern`, and
+`KEYFACTOR_CLIENT_TIMEOUT` before delegating to the base target.
+
+```
+make lifecycle        Full test: apply → import-all → apply (reconcile) → drift-check → destroy
+make lab-apply        Apply using lab credentials
+make lab-import-all   Import all certificates using lab credentials
+make lab-drift-check  Drift-check using lab credentials
+make lab-destroy      Destroy using lab credentials
+```
+
+Override any lab setting on the command line:
+
+```bash
+make LAB_ENV_FILE=~/.env_prod LAB_CA="PROD-Sub-CA" LAB_PATTERN="" lifecycle
 ```
 
 ## Certificate inventory
@@ -137,4 +169,4 @@ terraform import keyfactor_certificate.rsa_2048 1042
 | Private key in state | Yes (via `private_key` attribute) | Yes (via `tls_private_key`) |
 | `key_password` required | Yes | No |
 | `key_type` / `key_size` / `curve` | Set in HCL | Embedded in CSR — **cannot** be set in HCL |
-| Key recovery | Command re-issues on import | Key stays local; import recovers cert only |
+| Key recovery on import | Attempted via Command key archival API during `import`; run reconcile `apply` with `key_password` to populate `private_key` in state | Key stays local; import recovers cert only |

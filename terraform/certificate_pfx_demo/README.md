@@ -44,7 +44,7 @@ export TF_VAR_certificate_template="2YearTestWebServer"
 > **⚠ RSA-8192 timeout:** Server-side RSA-8192 key generation can take 4-5 minutes.
 > Set `KEYFACTOR_CLIENT_TIMEOUT=600` (seconds) before running `make apply` to extend
 > the HTTP client timeout to 10 minutes. Without this the default 60-second timeout
-> will cause `rsa_8192` to fail. The `.env` file already includes this setting.
+> will cause `rsa_8192` to fail.
 
 ## Files
 
@@ -62,19 +62,26 @@ export TF_VAR_certificate_template="2YearTestWebServer"
 ## Quickstart
 
 ```bash
-# 1. Set required environment variables (see above)
-
-# 2. Build and install the provider locally
+# 1. Build and install the provider locally
 make build
 
-# 3. Initialize Terraform
+# 2. Initialize Terraform
 make init
 
-# 4. Run the full workflow
-make all
+# 3a. Full lifecycle using lab credentials from ~/.env_ses2541 (recommended)
+#     Default suffix: _PFX_DEMO
+make lifecycle
 
-# 5. Use a custom CN suffix to avoid conflicts
-make all SUFFIX=_STAGING
+# 3b. Or set env vars manually and run individual steps
+export KEYFACTOR_HOSTNAME=... # see Environment variables above
+make apply
+make import-all
+make apply        # reconcile — writes write-only params (key_password, etc.) into state
+make drift-check  # should show "No changes"
+make destroy
+
+# 3c. Use a custom CN suffix to avoid conflicts with other runs
+make lifecycle SUFFIX=_STAGING
 ```
 
 ## Individual targets
@@ -89,6 +96,26 @@ make import-all     Capture state, remove resources, re-import each by certifica
 make drift-check    terraform plan — should show "No changes" after import
 make destroy        terraform destroy -auto-approve
 make clean          Remove generated files
+```
+
+### Lab convenience targets
+
+These targets source `LAB_ENV_FILE` (default: `~/.env_ses2541`) automatically and set
+`TF_VAR_certificate_authority`, `TF_VAR_certificate_enrollment_pattern`, and
+`KEYFACTOR_CLIENT_TIMEOUT` before delegating to the base target.
+
+```
+make lifecycle        Full test: apply → import-all → apply (reconcile) → drift-check → destroy
+make lab-apply        Apply using lab credentials
+make lab-import-all   Import all certificates using lab credentials
+make lab-drift-check  Drift-check using lab credentials
+make lab-destroy      Destroy using lab credentials
+```
+
+Override any lab setting on the command line:
+
+```bash
+make LAB_ENV_FILE=~/.env_prod LAB_CA="PROD-Sub-CA" LAB_PATTERN="" lifecycle
 ```
 
 ## Certificate inventory
@@ -120,7 +147,7 @@ make clean          Remove generated files
 3. **`make drift-check`** runs `terraform plan` and should report `No changes`, proving
    the imported state matches the configuration.
 
-4. **`make destroy`** deletes all eight certificates from the Command instance.
+4. **`make destroy`** deletes all eleven certificates from the Command instance.
 
 ## Import identifier
 

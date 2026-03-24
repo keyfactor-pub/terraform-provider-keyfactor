@@ -22,10 +22,27 @@
 
 PROVIDER_ROOT := $(abspath ../..)
 PROVIDER_BIN  := $(HOME)/go/bin
-SUFFIX        ?= _TF
+SUFFIX        ?= _CSR_DEMO
 
 TF          := TF_CLI_CONFIG_FILE=.terraformrc terraform
 UNSET_BASIC := unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN;
+
+# ---------------------------------------------------------------------------
+# Lab environment helpers
+# Source LAB_ENV_FILE for OAuth credentials, then set required TF_VARs.
+# Override via: make LAB_ENV_FILE=~/.env_other LAB_CA="MyCA" lifecycle
+# ---------------------------------------------------------------------------
+SHELL         := /bin/bash
+LAB_ENV_FILE  ?= $(HOME)/.env_ses2541
+LAB_CA        ?= Sub-CA
+LAB_PATTERN   ?= Default Pattern
+LAB_TIMEOUT   ?= 600
+
+LAB_ENV := source $(LAB_ENV_FILE) && \
+           unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN && \
+           export TF_VAR_certificate_authority="$(LAB_CA)" \
+                  TF_VAR_certificate_enrollment_pattern="$(LAB_PATTERN)" \
+                  KEYFACTOR_CLIENT_TIMEOUT=$(LAB_TIMEOUT) &&
 
 # ---------------------------------------------------------------------------
 # Provider build
@@ -99,4 +116,28 @@ all: build init validate plan apply import-all drift-check destroy
 ## demo-no-destroy: Run workflow without final destroy (leaves certificates on server)
 demo-no-destroy: build init validate plan apply import-all drift-check
 
-.PHONY: build init validate plan apply import-all drift-check destroy clean all demo-no-destroy
+# ---------------------------------------------------------------------------
+# Lab convenience targets (source LAB_ENV_FILE automatically)
+# ---------------------------------------------------------------------------
+
+## lab-apply: Apply using lab credentials from LAB_ENV_FILE
+lab-apply:
+	$(LAB_ENV) $(MAKE) apply
+
+## lab-import-all: Import all certificates using lab credentials
+lab-import-all:
+	$(LAB_ENV) $(MAKE) import-all
+
+## lab-drift-check: Drift-check using lab credentials
+lab-drift-check:
+	$(LAB_ENV) $(MAKE) drift-check
+
+## lab-destroy: Destroy using lab credentials
+lab-destroy:
+	$(LAB_ENV) $(MAKE) destroy
+
+## lifecycle: Full lifecycle test: apply → import-all → apply (reconcile) → drift-check → destroy
+lifecycle: lab-apply lab-import-all lab-apply lab-drift-check lab-destroy
+
+.PHONY: build init validate plan apply import-all drift-check destroy clean all demo-no-destroy \
+        lab-apply lab-import-all lab-drift-check lab-destroy lifecycle

@@ -85,6 +85,65 @@ func (m renewEligibleReplaceOnExpiryWindow) Modify(
 	}
 }
 
+// privateKeyPlanModifier handles plan modifications for the private_key attribute.
+//
+// Normal case (state non-null): preserves the state value (same as UseStateForUnknown).
+//
+// Post-import case (state null, key_password in config): returns Unknown so the
+// Update function is free to attempt key recovery with the provided key_password
+// without triggering a "provider produced inconsistent result" error.
+//
+// No-recovery case (state null, no key_password): resolves to null (same as
+// useStateOrNullModifier), suppressing spurious "(known after apply)" noise.
+type privateKeyPlanModifier struct{}
+
+func (m privateKeyPlanModifier) Description(_ context.Context) string {
+	return "Preserves prior private_key state; enables recovery after import when key_password is set."
+}
+
+func (m privateKeyPlanModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m privateKeyPlanModifier) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+	// Only act when the plan value is Unknown (Computed, not supplied in config).
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() {
+		return
+	}
+	if req.AttributeState.IsUnknown() {
+		return
+	}
+	// State has a known value — preserve it.
+	if !req.AttributeState.IsNull() {
+		resp.AttributePlan = req.AttributeState
+		return
+	}
+	// State is null (e.g. first plan after import). If key_password is set in
+	// the config, recovery is possible in Update — leave plan as Unknown.
+	var config CommandCertificate
+	if diags := req.Config.Get(ctx, &config); !diags.HasError() {
+		if !config.KeyPassword.IsNull() && !config.KeyPassword.Unknown && config.KeyPassword.Value != "" {
+			return // leave plan Unknown — Update will attempt recovery
+		}
+	}
+	// Also allow recovery if enrollment_password is already in state (prior
+	// enrollment with auto-generated password).
+	var state CommandCertificate
+	if diags := req.State.Get(ctx, &state); !diags.HasError() {
+		if !state.EnrollmentPassword.IsNull() && state.EnrollmentPassword.Value != "" {
+			return // leave plan Unknown — Update can use enrollment_password
+		}
+	}
+	// No recovery path available — resolve to null.
+	resp.AttributePlan = req.AttributeState
+}
+
 type resourceCommandCertificateType struct{}
 
 func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
@@ -99,7 +158,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			"csr": {
 				Type:          types.StringType,
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{RequiresReplaceIfPreviouslySet()},
 				Description:   "Base-64 encoded certificate signing request (CSR)",
 			},
 			"key_password": {
@@ -232,9 +291,10 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type: types.MapType{
 					ElemType: types.StringType,
 				},
-				Optional:    true,
-				Computed:    true,
-				Description: "Metadata key-value pairs to be attached to certificate",
+				Optional:      true,
+				Computed:      true,
+				Description:   "Metadata key-value pairs to be attached to certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"serial_number": {
 				Type:          types.StringType,
@@ -329,7 +389,7 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Type:          types.StringType,
 				Computed:      true,
 				Description:   "PEM formatted CA certificate",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"certificate_chain": {
 				Type:          types.StringType,
@@ -342,7 +402,7 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Computed:      true,
 				Sensitive:     true,
 				Description:   "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{privateKeyPlanModifier{}},
 			},
 			"enrollment_password": {
 				Type:      types.StringType,
@@ -359,27 +419,28 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 					fmt.Sprintf("%d", DEFAULT_PFX_PASSWORD_SPECIAL_CHAR_COUNT) + " special characters." +
 					" Review this provider's schema docs for more details: https://registry.terraform." +
 					"io/providers/keyfactor-pub/keyfactor/latest/docs#schema",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"jks": {
 				Type:          types.StringType,
 				Computed:      true,
 				Sensitive:     true,
 				Description:   "Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"pfx": {
 				Type:          types.StringType,
 				Computed:      true,
 				Sensitive:     true,
 				Description:   "Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"zip": {
 				Type:          types.StringType,
 				Computed:      true,
 				Sensitive:     true,
 				Description:   "Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"use_cn_as_friendly_name": {
 				Type:     types.BoolType,
@@ -619,7 +680,7 @@ Triggers replacement of resource when true.
 					"If omitted, the CA/template default is used. " +
 					"Populated from the issued certificate on read. " +
 					"Cannot be set when `csr` is also set.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), RequiresReplaceIfPreviouslySet()},
 				Validators: []tfsdk.AttributeValidator{
 					conflictsWithAttrValidator{otherAttr: "csr"},
 				},
@@ -632,7 +693,7 @@ Triggers replacement of resource when true.
 					"If omitted, the CA/template default is used. " +
 					"Populated from the issued certificate on read. " +
 					"Cannot be set when `csr` is also set.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), RequiresReplaceIfPreviouslySet()},
 				Validators: []tfsdk.AttributeValidator{
 					conflictsWithAttrValidator{otherAttr: "csr"},
 				},
@@ -645,7 +706,7 @@ Triggers replacement of resource when true.
 					"Only relevant when key_type=ECC. " +
 					"Populated from the issued certificate on read. " +
 					"Cannot be set when `csr` is also set.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), RequiresReplaceIfPreviouslySet()},
 				Validators: []tfsdk.AttributeValidator{
 					conflictsWithAttrValidator{otherAttr: "csr"},
 				},
@@ -809,6 +870,24 @@ func (r resourceCommandCertificate) Read(
 		r.p.client,
 		certificateFormat,
 	)
+
+	// If the configured format (e.g. "STORE"→PEM) doesn't return the private key,
+	// do a secondary PFX recovery attempt so that private_key stays populated in
+	// state and drift-check doesn't report "changed outside Terraform".
+	if pKeyPEM == "" && certGetResp != nil && certGetResp.HasPrivateKey {
+		recoverPwd := state.KeyPassword.Value
+		if recoverPwd == "" {
+			recoverPwd = state.EnrollmentPassword.Value
+		}
+		// RecoverCertificate requires a non-empty password (it encrypts the PFX
+		// response with it). Generate one if neither stored password is available.
+		if recoverPwd == "" {
+			recoverPwd = generatePassword(PFXPasswordLength, PFXPasswordSpecialChars, PFXPasswordDigits, PFXPasswordUpperCases)
+		}
+		pKeyPEM, _, _, _, _ = recoverPrivateKeyFromKeyfactorCommand(
+			ctx, certificateID, collectionIdInt, recoverPwd, r.p.client, "PFX",
+		)
+	}
 
 	// Handle leaf PEM encoding for certificates without private keys
 	if certGetResp != nil && leafPEM == "" {
@@ -1041,7 +1120,7 @@ func (r resourceCommandCertificate) Read(
 		PEM:                types.String{Null: true},
 		PEMCACert:          types.String{Null: true},
 		PEMChain:           types.String{Null: true},
-		PrivateKey:         types.String{Null: true},
+		PrivateKey:         types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
 		PFX:                types.String{Null: true},
 		JKS:                types.String{Null: true},
 		Zip:                types.String{Null: true},
@@ -1148,13 +1227,27 @@ func (r resourceCommandCertificate) Read(
 	}
 
 	if !state.CSR.IsNull() {
+		// CSR cert in normal operation: preserve subject fields from state.
+		// (The CN/SANs live in the CSR, not the config, so we must not let
+		// the cert parse overwrite what was there.)
 		result.CommonName = state.CommonName
 		result.Locality = state.Locality
 		result.State = state.State
 		result.Country = state.Country
 		result.Organization = state.Organization
 		result.OrganizationalUnit = state.OrganizationalUnit
-
+	} else if certGetResp != nil && !certGetResp.HasPrivateKey {
+		// CSR cert after import: CSR is null in state (it was never stored
+		// during import), but the cert has no server-side private key, so
+		// this must be a CSR-enrolled cert.  The Terraform config will not
+		// set common_name / SANs (they are embedded in the CSR), so preserve
+		// nulls to avoid RequiresReplace drift on every post-import plan.
+		result.CommonName = state.CommonName
+		result.Locality = state.Locality
+		result.State = state.State
+		result.Country = state.Country
+		result.Organization = state.Organization
+		result.OrganizationalUnit = state.OrganizationalUnit
 	}
 
 	switch certificateFormat {
@@ -1176,6 +1269,14 @@ func (r resourceCommandCertificate) Read(
 		result.PEMCACert = types.String{Value: chainPEM, Null: isNullString(chainPEM)}
 		result.PEMChain = types.String{Value: fullChain, Null: isNullString(fullChain)}
 		result.PrivateKey = types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)}
+	}
+
+	// ca_certificate is public issuer information that never changes for a given
+	// certificate. If the format-specific download path did not populate it (e.g.
+	// STORE/PFX/JKS/ZIP formats, or when key_password is absent after import),
+	// fall back to the prior state value so it doesn't oscillate on every plan.
+	if result.PEMCACert.IsNull() && !state.PEMCACert.IsNull() {
+		result.PEMCACert = state.PEMCACert
 	}
 
 	// Set state
@@ -1400,6 +1501,7 @@ func (r resourceCommandCertificate) Update(
 			PrivateKey:           state.PrivateKey,
 			KeyPassword:          plan.KeyPassword,
 			EnrollmentPassword:   state.EnrollmentPassword,
+			CertificateId:        state.CertificateId,
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
@@ -1419,7 +1521,7 @@ func (r resourceCommandCertificate) Update(
 			RenewalConfig: renewalConfig,
 
 			CertificateFormat: plan.CertificateFormat,
-			EnrollmentPattern: state.EnrollmentPattern,
+			EnrollmentPattern: plan.EnrollmentPattern,
 			OwnerRoleName:     plan.OwnerRoleName,
 			PFX:               state.PFX,
 			JKS:               state.JKS,
@@ -1520,7 +1622,7 @@ func (r resourceCommandCertificate) Update(
 			EnrollmentPassword:   state.EnrollmentPassword,
 			CertificateId:        state.CertificateId,
 			CertificateAuthority: state.CertificateAuthority,
-			CertificateTemplate:  state.CertificateTemplate,
+			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
@@ -1538,7 +1640,7 @@ func (r resourceCommandCertificate) Update(
 			RenewalConfig: renewalConfig,
 
 			CertificateFormat: plan.CertificateFormat,
-			EnrollmentPattern: state.EnrollmentPattern,
+			EnrollmentPattern: plan.EnrollmentPattern,
 			OwnerRoleName:     plan.OwnerRoleName,
 			PFX:               state.PFX,
 			JKS:               state.JKS,
@@ -1618,6 +1720,46 @@ func (r resourceCommandCertificate) Update(
 						result.Zip = types.String{Value: *dlRawData, Null: isNullString(*dlRawData)}
 					}
 				}
+			}
+		}
+
+		// Post-import private key recovery.
+		//
+		// privateKeyPlanModifier leaves plan.PrivateKey as Unknown when
+		// state.PrivateKey is null and key_password is in the config.  That
+		// signals here to attempt key recovery so that the private key is
+		// populated on the first reconcile apply after import.
+		//
+		// If recovery fails (e.g. key is not archived in Command) we simply
+		// store null — the plan was Unknown so either outcome is valid and no
+		// "inconsistent result" error is raised.
+		if plan.PrivateKey.Unknown && certGetResp != nil && certGetResp.HasPrivateKey {
+			recoverPassword := plan.KeyPassword.Value
+			if recoverPassword == "" {
+				recoverPassword = state.EnrollmentPassword.Value
+			}
+			if recoverPassword != "" {
+				tflog.Debug(ctx, fmt.Sprintf(
+					"Attempting post-import private key recovery for certificate %v",
+					state.CertificateId.Value,
+				))
+				pKeyPEM, _, _, _, rDiags := recoverPrivateKeyFromKeyfactorCommand(
+					ctx,
+					int(state.CertificateId.Value),
+					int(state.CollectionId.Value),
+					recoverPassword,
+					r.p.client,
+					"PFX",
+				)
+				if !rDiags.HasError() && pKeyPEM != "" {
+					tflog.Debug(ctx, "Post-import private key recovery succeeded.")
+					result.PrivateKey = types.String{Value: pKeyPEM}
+				} else {
+					tflog.Debug(ctx, "Post-import private key recovery failed; private_key remains null.")
+					result.PrivateKey = types.String{Null: true}
+				}
+			} else {
+				result.PrivateKey = types.String{Null: true}
 			}
 		}
 
@@ -1769,35 +1911,66 @@ func (r resourceCommandCertificate) ImportState(
 	}
 
 	tflog.Info(ctx, fmt.Sprintf("Attempting to retrieve certificate '%s' from Keyfactor Command.", state.ID.Value))
-	tflog.Debug(ctx, "Calling recoverOrDownloadCertificate")
-	leafPEM, chainPEM, pKeyPEM, rawData, rDiags := recoverOrDownloadCertificate(
-		ctx,
-		certificateIdInt,
-		int(state.CollectionId.Value),
-		state.KeyPassword.Value,
-		r.p.client,
-		"PFX",
-	)
-
-	if rDiags.HasError() {
-		tflog.Error(ctx, fmt.Sprintf("Error retrieving certificate '%s' from Keyfactor Command.", certificateId))
-		response.Diagnostics.Append(rDiags...)
-		response.Diagnostics.AddError(
-			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command", certificateId),
-		)
-		return
-	}
 
 	var (
-		enrollmentPatternId int
-		ownerRoleName       string
-		requestId           int
+		leafPEM          string
+		chainPEM         string
+		pKeyPEM          string
+		rawData          *string
+		importRecoverPwd string
+	)
+
+	// CSR-enrolled certificates have no server-side private key.  Attempting
+	// PFX recovery for those certs always fails, so use the PEM download path
+	// directly.  For PFX-enrolled certs (HasPrivateKey==true) we still attempt
+	// recovery so that the private_key attribute is populated in state.
+	if certGetResp != nil && !certGetResp.HasPrivateKey {
+		tflog.Debug(ctx, "Certificate has no server-side private key (CSR enrollment); using PEM download path")
+		leafPEM, chainPEM, _, _ = downloadCertificateFromKeyfactorCommand(ctx, certificateIdInt, 0, r.p.client)
+	} else {
+		tflog.Debug(ctx, "Calling recoverOrDownloadCertificate")
+		var rDiags diag.Diagnostics
+		// Generate a one-time password for import recovery. RecoverCertificate
+		// uses this to encrypt the PFX response (it is NOT the original enrollment
+		// password). Any non-empty password works. We store it as EnrollmentPassword
+		// so that subsequent Read calls can re-recover the key without a reconcile apply.
+		importRecoverPwd = generatePassword(PFXPasswordLength, PFXPasswordSpecialChars, PFXPasswordDigits, PFXPasswordUpperCases)
+		leafPEM, chainPEM, pKeyPEM, rawData, rDiags = recoverOrDownloadCertificate(
+			ctx,
+			certificateIdInt,
+			int(state.CollectionId.Value),
+			importRecoverPwd,
+			r.p.client,
+			"PFX",
+		)
+
+		if rDiags.HasError() {
+			tflog.Error(ctx, fmt.Sprintf("Error retrieving certificate '%s' from Keyfactor Command.", certificateId))
+			response.Diagnostics.Append(rDiags...)
+			response.Diagnostics.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command", certificateId),
+			)
+			return
+		}
+
+		// PFX download without the user-supplied key_password returns the encrypted
+		// blob but cannot extract the chain cert.  Fetch it separately so that
+		// ca_certificate is populated in the imported state and does not show as
+		// "(known after apply)" on every subsequent plan.
+		if chainPEM == "" {
+			_, chainPEM, _, _ = downloadCertificateFromKeyfactorCommand(ctx, certificateIdInt, 0, r.p.client)
+		}
+	}
+	_ = rawData
+
+	var (
+		ownerRoleName string
+		requestId     int
 	)
 
 	// Handle leaf PEM encoding for certificates without private keys
 	if certGetResp != nil && leafPEM == "" {
-		enrollmentPatternId = certGetResp.EnrollmentPatternId
 		ownerRoleName = certGetResp.OwnerRoleName
 		requestId = certGetResp.CertRequestId
 		leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certGetResp.Id)
@@ -1806,7 +1979,6 @@ func (r resourceCommandCertificate) ImportState(
 	}
 
 	if leafPEM == "" {
-		response.Diagnostics.Append(rDiags...)
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
 			fmt.Sprintf(
@@ -1908,8 +2080,10 @@ func (r resourceCommandCertificate) ImportState(
 		PEMCACert:          types.String{Value: chainPEM, Null: isNullString(chainPEM)},
 		PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
 		PrivateKey:         types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
-		KeyPassword:        state.KeyPassword,
-		EnrollmentPassword: state.KeyPassword,
+		KeyPassword: types.String{Null: true}, // write-only; not recoverable from server
+		// Store the recovery password only when key recovery succeeded, enabling
+		// subsequent Read calls to re-recover the private key without a reconcile apply.
+		EnrollmentPassword: types.String{Value: importRecoverPwd, Null: isNullString(pKeyPEM)},
 		CertificateAuthority: types.String{
 			Value: caName,
 			Null:  isNullString(caName),
@@ -1921,24 +2095,37 @@ func (r resourceCommandCertificate) ImportState(
 		FriendlyName:        types.String{Null: true},
 		UseCNAsFriendlyName: types.Bool{Null: true},
 		RequestId:           types.Int64{Value: int64(requestId), Null: isNullId(requestId)},
-		ExpiryWarningDays:   types.Int64{Null: true}, // write-only; isNullId(0)==true means not set
+		ExpiryWarningDays:   types.Int64{Null: true},  // write-only; isNullId(0)==true means not set
 		IsExpired:           types.Bool{Value: false}, // Set to false as we just enrolled the certificate
 		IsRevoked:           types.Bool{Value: false}, // Set to false as we just enrolled the certificate
 		IsPendingRevocation: types.Bool{Null: true},   // Set to false as we just enrolled the certificate
 		RenewalConfig:       state.RenewalConfig,
 		CertificateFormat:   types.String{Null: true}, // write-only; isNullString("")==true means not set
 		OwnerRoleName:       types.String{Value: ownerRoleName, Null: isNullString(ownerRoleName)},
-		EnrollmentPattern: types.String{
-			Value: fmt.Sprintf("%d", enrollmentPatternId),
-			Null:  isNullId(enrollmentPatternId),
-		},
-		NotBefore:         state.NotBefore,
-		NotAfter:          state.NotAfter,
-		RevocationEffDate: state.RevocationEffDate,
-		RevokeOnDestroy:   types.Bool{Null: true}, // write-only; false means not set
-		KeyType:           state.KeyType,
-		KeySize:           state.KeySize,
-		Curve:             state.Curve,
+		EnrollmentPattern:   types.String{Null: true}, // write-only; not recoverable after import (like CertificateTemplate)
+		NotBefore:           state.NotBefore,
+		NotAfter:            state.NotAfter,
+		RevocationEffDate:   state.RevocationEffDate,
+		RevokeOnDestroy:     types.Bool{Null: true}, // write-only; false means not set
+		KeyType:             state.KeyType,
+		KeySize:             state.KeySize,
+		Curve:               state.Curve,
+	}
+
+	// For CSR-enrolled certificates, subject fields (CN, SANs, locality, etc.)
+	// are embedded in the CSR and are not set in the Terraform config.
+	// Null them out so post-import plans show only in-place changes for
+	// write-only enrollment params rather than triggering replacement.
+	if certGetResp != nil && !certGetResp.HasPrivateKey {
+		result.CommonName = types.String{Null: true}
+		result.Locality = types.String{Null: true}
+		result.State = types.String{Null: true}
+		result.Country = types.String{Null: true}
+		result.Organization = types.String{Null: true}
+		result.OrganizationalUnit = types.String{Null: true}
+		result.DNSSANs = DNSSANStoTerraform(nil, false)
+		result.IPSANs = IPSANStoTerraform(nil, false)
+		result.URISANs = URISANStoTerraform(nil, false)
 	}
 
 	if certGetResp != nil {

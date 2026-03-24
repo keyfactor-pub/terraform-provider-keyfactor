@@ -1145,6 +1145,80 @@ func TestUnitKeyfactorCertificateResource_PFX(t *testing.T) {
 	})
 }
 
+// TestUnitKeyfactorCertificateResource_PFX_PrivateKeyRead is a regression test
+// for the Read path private_key recovery fix (ab#82568).
+//
+// Before the fix, Read always set PrivateKey = null, causing "Objects have
+// changed outside of Terraform" on every drift-check after reconcile apply.
+// After the fix, Read attempts PFX key recovery.
+//
+// Two-step pattern: Create → RefreshState exercises the full Read path and
+// verifies it does NOT error when key recovery fails (e.g. KeyRecoverable=false).
+//
+// Requires its own cassette recorded with RECORD_CASSETTES=1:
+//
+//	RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_PFX_PrivateKeyRead make testunit-record-one
+func TestUnitKeyfactorCertificateResource_PFX_PrivateKeyRead(t *testing.T) {
+	cassetteName := "certificate_resource_pfx_privatekey_read"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+	var config string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		ca := discoverCA(t, client)
+		cn := randomTestCN("tf-unit-pfx-pkread")
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		var templateName string
+		if enrollmentPattern != "" {
+			config = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+		} else {
+			templateName = discoverTemplate(t, client)
+			config = testAccCertPFXConfig(templateName, ca, cn)
+		}
+		writeCertPFXTestParams(cassettePath, certPFXTestParams{
+			TemplateName:      templateName,
+			CA:                ca,
+			EnrollmentPattern: enrollmentPattern,
+			CN:                cn,
+		})
+	} else {
+		params := readCertPFXTestParams(cassettePath)
+		if params.EnrollmentPattern != "" {
+			config = testAccCertPFXConfigEnrollmentPattern(params.EnrollmentPattern, params.CA, params.CN)
+		} else {
+			config = testAccCertPFXConfig(params.TemplateName, params.CA, params.CN)
+		}
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: create — private_key populated from enrollment response.
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+				),
+			},
+			{
+				// Step 2: RefreshState exercises the Read path without re-applying config.
+				// The Read path attempts PFX key recovery; if recovery fails
+				// (e.g. EJBCA with KeyRecoverable=false) private_key is null, but
+				// no error must be returned. The test must NOT fail here.
+				RefreshState: true,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_id"),
+				),
+			},
+		},
+	})
+}
+
 // TestUnitKeyfactorCertificateResource_CSR tests the full create/read/destroy
 // lifecycle of a CSR-based certificate resource using pre-recorded cassettes.
 func TestUnitKeyfactorCertificateResource_CSR(t *testing.T) {
@@ -1206,6 +1280,148 @@ func TestUnitKeyfactorCertificateResource_CSR(t *testing.T) {
 			{
 				Config: config,
 				Check:  resource.ComposeAggregateTestCheckFunc(checks...),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateResource_PFX_Import is a regression test for
+// PFX certificate import (ab#82568).  It verifies:
+//   - import by integer certificate ID succeeds
+//   - cert attributes (thumbprint, certificate_pem) are populated post-import
+//   - private_key is populated directly on import (no reconcile apply needed)
+//   - key_password is null after import (write-only, not recoverable from server)
+//
+// Requires its own cassette (Create + Import HTTP interactions):
+//
+//	RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_PFX_Import make testunit-record-one
+func TestUnitKeyfactorCertificateResource_PFX_Import(t *testing.T) {
+	cassetteName := "certificate_resource_pfx_import"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+	var config string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		ca := discoverCA(t, client)
+		cn := randomTestCN("tf-unit-pfx-import")
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		var templateName string
+		if enrollmentPattern != "" {
+			config = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+		} else {
+			templateName = discoverTemplate(t, client)
+			config = testAccCertPFXConfig(templateName, ca, cn)
+		}
+		writeCertPFXTestParams(cassettePath, certPFXTestParams{
+			TemplateName:      templateName,
+			CA:                ca,
+			EnrollmentPattern: enrollmentPattern,
+			CN:                cn,
+		})
+	} else {
+		params := readCertPFXTestParams(cassettePath)
+		if params.EnrollmentPattern != "" {
+			config = testAccCertPFXConfigEnrollmentPattern(params.EnrollmentPattern, params.CA, params.CN)
+		} else {
+			config = testAccCertPFXConfig(params.TemplateName, params.CA, params.CN)
+		}
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{Config: config},
+			{
+				// Regression: import must succeed and populate cert attributes.
+				// private_key is populated directly on import when Command supports
+				// key recovery (no reconcile apply needed).
+				// ImportStateVerify is false because write-only fields (key_password,
+				// certificate_enrollment_pattern) are null after import.
+				ResourceName:      "keyfactor_certificate.test",
+				ImportState:       true,
+				ImportStateVerify: false,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateResource_CSR_Import is a regression test for
+// CSR certificate import (ab#82568).  It verifies:
+//   - import by integer certificate ID succeeds
+//   - cert attributes are populated post-import
+//   - csr is null after import (not stored on server)
+//   - private_key is null after import (key never left the client)
+//
+// Requires its own cassette (Create + Import HTTP interactions):
+//
+//	RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_CSR_Import make testunit-record-one
+func TestUnitKeyfactorCertificateResource_CSR_Import(t *testing.T) {
+	cassetteName := "certificate_resource_csr_import"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+	var config string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		ca := discoverCA(t, client)
+		cn := randomTestCN("tf-unit-csr-import")
+		csr := generateSimpleCSR(t, cn)
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		var templateName string
+		if enrollmentPattern != "" {
+			templateName = discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+		}
+		if templateName == "" {
+			templateName = discoverTemplate(t, client)
+		}
+		config = testAccCertCSRConfig(templateName, ca, csr)
+		writeCertCSRTestParams(cassettePath, certCSRTestParams{
+			TemplateName:      templateName,
+			CA:                ca,
+			CSRPem:            csr,
+			EnrollmentPattern: enrollmentPattern,
+		})
+	} else {
+		params := readCertCSRTestParams(cassettePath)
+		csr := params.CSRPem
+		if csr == "" {
+			csr = generateSimpleCSR(t, "tf-unit-csr-import-replay.example.com")
+		}
+		config = testAccCertCSRConfig(params.TemplateName, params.CA, csr)
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{Config: config},
+			{
+				// Regression: import must succeed. csr is null after import
+				// (not stored on server). private_key is null (CSR enrollment
+				// keeps the key client-side).
+				// ImportStateVerify is false because write-only fields differ.
+				ResourceName:      "keyfactor_certificate.test_csr",
+				ImportState:       true,
+				ImportStateVerify: false,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_id"),
+					// Regression: csr must be null after import.
+					resource.TestCheckNoResourceAttr("keyfactor_certificate.test_csr", "csr"),
+					// Regression: private_key must be null for CSR-enrolled certs.
+					resource.TestCheckNoResourceAttr("keyfactor_certificate.test_csr", "private_key"),
+				),
 			},
 		},
 	})

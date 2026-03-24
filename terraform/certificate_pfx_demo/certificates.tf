@@ -49,8 +49,11 @@ resource "keyfactor_certificate" "full_pfx" {
   dns_sans = [
     "tf-demo-full-pfx${var.suffix}.example.com",
     "alt.tf-demo-full-pfx${var.suffix}.example.com",
+    "MEOW",
   ]
-  ip_sans = ["10.0.0.1"]
+  ip_sans = ["10.0.0.1", "10.1.0.2"]
+
+  uri_sans = ["meow.mix.cat"]
 
   # Custom metadata tracked in Command
   metadata = {
@@ -63,7 +66,7 @@ resource "keyfactor_certificate" "full_pfx" {
     renew_days = 30
   }
 
-  certificate_format = "PFX"
+  certificate_format = "PEM"
 }
 
 # -------------------------------------------------------------------------

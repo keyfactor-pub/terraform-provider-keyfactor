@@ -1018,6 +1018,18 @@ resource "keyfactor_certificate" "test" {
 // from Keyfactor Command, which depends on CA key retention configuration.
 // The integration test (TestIntKeyfactorCertificateResource_FormatChange)
 // exercises the full format matrix on labs that support recovery.
+// TestUnitKeyfactorCertificateResource_FormatChange verifies that changing
+// certificate_format is handled as an in-place update (no resource recreation)
+// and that the correct format-specific output fields are populated.
+//
+// Regression coverage for the "provider produced inconsistent result" bug that
+// occurred when switching from PEM to PFX: the plan modifiers incorrectly
+// locked in the prior PEM-format state values, which the Update then nulled
+// out → Terraform saw a plan/result mismatch.
+//
+// Record cassette:
+//
+//	RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_FormatChange make testunit-record-one
 func TestUnitKeyfactorCertificateResource_FormatChange(t *testing.T) {
 	cassettePath := filepath.Join("testdata", "cassettes", "certificate_resource_format_change")
 
@@ -1053,6 +1065,7 @@ func TestUnitKeyfactorCertificateResource_FormatChange(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
+			// Step 1: default format (equivalent to PEM)
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, ""),
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -1061,10 +1074,34 @@ func TestUnitKeyfactorCertificateResource_FormatChange(t *testing.T) {
 					checkFormatFields("", &originalID),
 				),
 			},
+			// Step 2: explicit PEM (no-op format-wise)
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PEM"),
 				Check:  checkFormatFields("PEM", &originalID),
 			},
+			// Step 3: PEM → PFX — regression for "provider produced inconsistent
+			// result" bug: plan modifiers locked in old PEM state values while
+			// Update correctly nulled them out for the new format.
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PFX"),
+				Check:  checkFormatFields("PFX", &originalID),
+			},
+			// Step 4: PFX → JKS
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "JKS"),
+				Check:  checkFormatFields("JKS", &originalID),
+			},
+			// Step 5: JKS → ZIP
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "ZIP"),
+				Check:  checkFormatFields("ZIP", &originalID),
+			},
+			// Step 6: ZIP → PEM (full round-trip back)
+			{
+				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PEM"),
+				Check:  checkFormatFields("PEM", &originalID),
+			},
+			// Step 7: back to default
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, ""),
 				Check:  checkFormatFields("", &originalID),

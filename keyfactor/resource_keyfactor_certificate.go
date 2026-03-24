@@ -113,12 +113,23 @@ func (m privateKeyPlanModifier) Modify(ctx context.Context, req tfsdk.ModifyAttr
 	if !resp.AttributePlan.IsUnknown() {
 		return
 	}
-	if req.AttributeConfig.IsUnknown() {
+	if req.AttributeConfig.IsUnknown() || req.AttributeState.IsUnknown() {
 		return
 	}
-	if req.AttributeState.IsUnknown() {
-		return
+
+	var config CommandCertificate
+	var state CommandCertificate
+	configOk := !req.Config.Get(ctx, &config).HasError()
+	stateOk := !req.State.Get(ctx, &state).HasError()
+
+	// When certificate_format is changing, leave Unknown so the Update function
+	// can populate (or clear) private_key as appropriate for the new format.
+	if configOk && stateOk {
+		if effectiveCertificateFormat(config.CertificateFormat.Value) != effectiveCertificateFormat(state.CertificateFormat.Value) {
+			return // leave Unknown — format is changing
+		}
 	}
+
 	// State has a known value — preserve it.
 	if !req.AttributeState.IsNull() {
 		resp.AttributePlan = req.AttributeState
@@ -126,21 +137,67 @@ func (m privateKeyPlanModifier) Modify(ctx context.Context, req tfsdk.ModifyAttr
 	}
 	// State is null (e.g. first plan after import). If key_password is set in
 	// the config, recovery is possible in Update — leave plan as Unknown.
-	var config CommandCertificate
-	if diags := req.Config.Get(ctx, &config); !diags.HasError() {
+	if configOk {
 		if !config.KeyPassword.IsNull() && !config.KeyPassword.Unknown && config.KeyPassword.Value != "" {
 			return // leave plan Unknown — Update will attempt recovery
 		}
 	}
 	// Also allow recovery if enrollment_password is already in state (prior
 	// enrollment with auto-generated password).
-	var state CommandCertificate
-	if diags := req.State.Get(ctx, &state); !diags.HasError() {
+	if stateOk {
 		if !state.EnrollmentPassword.IsNull() && state.EnrollmentPassword.Value != "" {
 			return // leave plan Unknown — Update can use enrollment_password
 		}
 	}
 	// No recovery path available — resolve to null.
+	resp.AttributePlan = req.AttributeState
+}
+
+// formatDependentModifier is a plan modifier for format-specific output fields
+// (certificate_pem, certificate_chain, ca_certificate, pfx, jks, zip).
+//
+// When certificate_format is stable (not changing), it behaves like
+// useStateOrNullModifier: preserves the prior state value to suppress
+// spurious "(known after apply)" noise.
+//
+// When certificate_format is changing (e.g. PEM → PFX), it leaves the plan
+// Unknown so the Update function is free to populate the correct field for
+// the new format without triggering a "provider produced inconsistent result"
+// error.
+type formatDependentModifier struct{}
+
+func (m formatDependentModifier) Description(_ context.Context) string {
+	return "Preserves state for stable certificate_format; leaves Unknown when format is changing."
+}
+
+func (m formatDependentModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m formatDependentModifier) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() || req.AttributeState.IsUnknown() {
+		return
+	}
+	// When certificate_format is changing, leave Unknown so the provider can
+	// return the value appropriate for the new format.
+	var config CommandCertificate
+	var state CommandCertificate
+	if diags := req.Config.Get(ctx, &config); diags.HasError() {
+		return
+	}
+	if diags := req.State.Get(ctx, &state); diags.HasError() {
+		return
+	}
+	if effectiveCertificateFormat(config.CertificateFormat.Value) != effectiveCertificateFormat(state.CertificateFormat.Value) {
+		return // leave Unknown — format is changing, value will differ
+	}
+	// Format is stable — preserve state (or null if state is null).
 	resp.AttributePlan = req.AttributeState
 }
 
@@ -383,19 +440,19 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Type:          types.StringType,
 				Computed:      true,
 				Description:   "PEM formatted certificate",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"ca_certificate": {
 				Type:          types.StringType,
 				Computed:      true,
 				Description:   "PEM formatted CA certificate",
-				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"certificate_chain": {
 				Type:          types.StringType,
 				Computed:      true,
 				Description:   "PEM formatted full certificate chain",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"private_key": {
 				Type:          types.StringType,
@@ -426,21 +483,21 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Computed:      true,
 				Sensitive:     true,
 				Description:   "Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"pfx": {
 				Type:          types.StringType,
 				Computed:      true,
 				Sensitive:     true,
 				Description:   "Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"zip": {
 				Type:          types.StringType,
 				Computed:      true,
 				Sensitive:     true,
 				Description:   "Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"use_cn_as_friendly_name": {
 				Type:     types.BoolType,
@@ -2080,7 +2137,7 @@ func (r resourceCommandCertificate) ImportState(
 		PEMCACert:          types.String{Value: chainPEM, Null: isNullString(chainPEM)},
 		PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
 		PrivateKey:         types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
-		KeyPassword: types.String{Null: true}, // write-only; not recoverable from server
+		KeyPassword:        types.String{Null: true}, // write-only; not recoverable from server
 		// Store the recovery password only when key recovery succeeded, enabling
 		// subsequent Read calls to re-recover the private key without a reconcile apply.
 		EnrollmentPassword: types.String{Value: importRecoverPwd, Null: isNullString(pKeyPEM)},

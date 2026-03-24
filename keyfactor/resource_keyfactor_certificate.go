@@ -1790,7 +1790,10 @@ func (r resourceCommandCertificate) Update(
 		// If recovery fails (e.g. key is not archived in Command) we simply
 		// store null — the plan was Unknown so either outcome is valid and no
 		// "inconsistent result" error is raised.
-		if plan.PrivateKey.Unknown && certGetResp != nil && certGetResp.HasPrivateKey {
+		// Only attempt key recovery when the effective format is PEM — for PFX/JKS/ZIP
+		// the private key is embedded in the binary blob; private_key must stay null.
+		if plan.PrivateKey.Unknown && certGetResp != nil && certGetResp.HasPrivateKey &&
+			effectivePlanFmt == "PEM" {
 			recoverPassword := plan.KeyPassword.Value
 			if recoverPassword == "" {
 				recoverPassword = state.EnrollmentPassword.Value

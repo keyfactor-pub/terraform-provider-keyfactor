@@ -603,20 +603,22 @@ func TestIntKeyfactorCertificateResource_PFX(t *testing.T) {
 // checkFormatFields returns a TestCheckFunc that verifies the expected format-specific
 // fields are set and all other format fields are empty. Also verifies the resource ID
 // has not changed (no recreation).
-func checkFormatFields(format string, originalID *string) resource.TestCheckFunc {
+// checkFormatFields verifies that exactly the right set of format-specific state
+// fields are populated after a certificate_format change.
+//
+// hasPrivateKey should be true for PFX-enrolled certs whose template has
+// KeyRetention enabled (private_key is SET in PEM format, null in binary formats).
+// Pass false for CSR-enrolled certs or templates without KeyRetention (private_key
+// is always null regardless of format).
+func checkFormatFields(format string, hasPrivateKey bool, originalID *string) resource.TestCheckFunc {
 	res := "keyfactor_certificate.test"
 
-	// Define which fields each format populates
+	// PEM-only fields (null for all binary formats)
 	pemFields := []string{"certificate_pem", "certificate_chain"}
-	binaryFields := map[string]string{
-		"PFX": "pfx",
-		"JKS": "jks",
-		"ZIP": "zip",
-	}
 
 	var checks []resource.TestCheckFunc
 
-	// ID stability check
+	// ID stability: fail if the resource was recreated instead of updated in-place.
 	checks = append(checks, resource.TestCheckResourceAttrWith(res, "id", func(value string) error {
 		if *originalID != "" && value != *originalID {
 			return fmt.Errorf("certificate was recreated (id changed from %s to %s); expected in-place update", *originalID, value)
@@ -635,14 +637,24 @@ func checkFormatFields(format string, originalID *string) resource.TestCheckFunc
 		for _, f := range pemFields {
 			checks = append(checks, resource.TestCheckResourceAttrSet(res, f))
 		}
-		for _, f := range binaryFields {
-			checks = append(checks, resource.TestCheckNoResourceAttr(res, f))
+		// private_key: set when the cert has an archived key, null otherwise.
+		if hasPrivateKey {
+			checks = append(checks, resource.TestCheckResourceAttrSet(res, "private_key"))
+		} else {
+			checks = append(checks, resource.TestCheckNoResourceAttr(res, "private_key"))
 		}
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "pfx"))
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "jks"))
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "zip"))
 	case "PFX":
 		checks = append(checks, resource.TestCheckResourceAttrSet(res, "pfx"))
 		for _, f := range pemFields {
 			checks = append(checks, resource.TestCheckNoResourceAttr(res, f))
 		}
+		// private_key must be null for binary formats — the key is embedded in the blob.
+		// Regression: post-import recovery block was overwriting the null set by the
+		// format-change block, causing private_key to leak into state for PFX/JKS/ZIP.
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "private_key"))
 		checks = append(checks, resource.TestCheckNoResourceAttr(res, "jks"))
 		checks = append(checks, resource.TestCheckNoResourceAttr(res, "zip"))
 	case "JKS":
@@ -650,6 +662,7 @@ func checkFormatFields(format string, originalID *string) resource.TestCheckFunc
 		for _, f := range pemFields {
 			checks = append(checks, resource.TestCheckNoResourceAttr(res, f))
 		}
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "private_key"))
 		checks = append(checks, resource.TestCheckNoResourceAttr(res, "pfx"))
 		checks = append(checks, resource.TestCheckNoResourceAttr(res, "zip"))
 	case "ZIP":
@@ -657,6 +670,7 @@ func checkFormatFields(format string, originalID *string) resource.TestCheckFunc
 		for _, f := range pemFields {
 			checks = append(checks, resource.TestCheckNoResourceAttr(res, f))
 		}
+		checks = append(checks, resource.TestCheckNoResourceAttr(res, "private_key"))
 		checks = append(checks, resource.TestCheckNoResourceAttr(res, "pfx"))
 		checks = append(checks, resource.TestCheckNoResourceAttr(res, "jks"))
 	}
@@ -699,28 +713,28 @@ func TestIntKeyfactorCertificateResource_FormatChange(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
-					checkFormatFields("", &originalID),
+					checkFormatFields("", true, &originalID),
 				),
 			},
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PEM"),
-				Check:  checkFormatFields("PEM", &originalID),
+				Check:  checkFormatFields("PEM", true, &originalID),
 			},
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PFX"),
-				Check:  checkFormatFields("PFX", &originalID),
+				Check:  checkFormatFields("PFX", true, &originalID),
 			},
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "JKS"),
-				Check:  checkFormatFields("JKS", &originalID),
+				Check:  checkFormatFields("JKS", true, &originalID),
 			},
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "ZIP"),
-				Check:  checkFormatFields("ZIP", &originalID),
+				Check:  checkFormatFields("ZIP", true, &originalID),
 			},
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PEM"),
-				Check:  checkFormatFields("PEM", &originalID),
+				Check:  checkFormatFields("PEM", true, &originalID),
 			},
 		},
 	})
@@ -1071,40 +1085,109 @@ func TestUnitKeyfactorCertificateResource_FormatChange(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
-					checkFormatFields("", &originalID),
+					checkFormatFields("", true, &originalID),
 				),
 			},
 			// Step 2: explicit PEM (no-op format-wise)
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PEM"),
-				Check:  checkFormatFields("PEM", &originalID),
+				Check:  checkFormatFields("PEM", true, &originalID),
 			},
 			// Step 3: PEM → PFX — regression for "provider produced inconsistent
 			// result" bug: plan modifiers locked in old PEM state values while
 			// Update correctly nulled them out for the new format.
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PFX"),
-				Check:  checkFormatFields("PFX", &originalID),
+				Check:  checkFormatFields("PFX", true, &originalID),
 			},
 			// Step 4: PFX → JKS
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "JKS"),
-				Check:  checkFormatFields("JKS", &originalID),
+				Check:  checkFormatFields("JKS", true, &originalID),
 			},
 			// Step 5: JKS → ZIP
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "ZIP"),
-				Check:  checkFormatFields("ZIP", &originalID),
+				Check:  checkFormatFields("ZIP", true, &originalID),
 			},
 			// Step 6: ZIP → PEM (full round-trip back)
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PEM"),
-				Check:  checkFormatFields("PEM", &originalID),
+				Check:  checkFormatFields("PEM", true, &originalID),
 			},
 			// Step 7: back to default
 			{
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, ""),
-				Check:  checkFormatFields("", &originalID),
+				Check:  checkFormatFields("", true, &originalID),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateResource_FormatChange_CSR verifies format changes
+// for a CSR-enrolled certificate (no private key stored in Command).
+//
+// Unlike PFX enrollment, CSR certs never have HasPrivateKey=true — private_key
+// must be null for every format. This is the "no private key" counterpart to
+// TestUnitKeyfactorCertificateResource_FormatChange.
+//
+// Record cassette:
+//
+//	RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_FormatChange_CSR make testunit-record-one
+func TestUnitKeyfactorCertificateResource_FormatChange_CSR(t *testing.T) {
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_resource_format_change_csr")
+
+	var enrollmentPattern, templateName, ca, cn, csrPEM string
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		ca = discoverCA(t, client)
+		cn = randomTestCN("tf-unit-fmt-csr")
+		enrollmentPattern = discoverEnrollmentPattern(t, client)
+		if enrollmentPattern == "" {
+			templateName = discoverTemplate(t, client)
+		}
+		csrPEM = generateSimpleCSR(t, cn)
+		writeCertCSRTestParams(cassettePath, certCSRTestParams{
+			TemplateName:      templateName,
+			CA:                ca,
+			EnrollmentPattern: enrollmentPattern,
+			CSRPem:            csrPEM,
+		})
+	} else {
+		params := readCertCSRTestParams(cassettePath)
+		enrollmentPattern = params.EnrollmentPattern
+		templateName = params.TemplateName
+		ca = params.CA
+		csrPEM = params.CSRPem
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_format_change_csr")
+	defer cleanup()
+
+	var originalID string
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			// Step 1: default format — cert_pem set, private_key always null for CSR
+			{
+				Config: testAccCertCSRConfigWithFormat(enrollmentPattern, templateName, ca, csrPEM, ""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					checkFormatFields("", false, &originalID),
+				),
+			},
+			// Step 2: explicit PEM — private_key still null (no archived key)
+			{
+				Config: testAccCertCSRConfigWithFormat(enrollmentPattern, templateName, ca, csrPEM, "PEM"),
+				Check:  checkFormatFields("PEM", false, &originalID),
+			},
+			// Step 3: back to default
+			{
+				Config: testAccCertCSRConfigWithFormat(enrollmentPattern, templateName, ca, csrPEM, ""),
+				Check:  checkFormatFields("", false, &originalID),
 			},
 		},
 	})

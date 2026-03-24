@@ -2007,6 +2007,36 @@ resource "keyfactor_certificate" "test_csr" {
 `, ca, enrollmentPattern, csr)
 }
 
+// testAccCertCSRConfigWithFormat generates HCL for a CSR-based certificate with an
+// explicit certificate_format. Used in format-change tests for the no-private-key path.
+func testAccCertCSRConfigWithFormat(enrollmentPattern, templateName, ca, csr, certFormat string) string {
+	formatLine := ""
+	if certFormat != "" {
+		formatLine = fmt.Sprintf("\n  certificate_format             = \"%s\"", certFormat)
+	}
+	if enrollmentPattern != "" {
+		// Enrollment pattern path uses a quoted string — CSR must be single-line.
+		singleLine := strings.ReplaceAll(strings.ReplaceAll(csr, "\r\n", `\n`), "\n", `\n`)
+		return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  certificate_authority            = "%s"
+  certificate_enrollment_pattern   = "%s"
+  csr                              = "%s"%s
+}
+`, ca, enrollmentPattern, singleLine, formatLine)
+	}
+	decodedCSR := strings.ReplaceAll(csr, `\n`, "\n")
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  certificate_authority  = "%s"
+  certificate_template   = "%s"
+  csr                    = <<-EOT
+%s
+EOT%s
+}
+`, ca, templateName, strings.TrimRight(decodedCSR, "\n"), formatLine)
+}
+
 // testAccCertDataSourceByID generates HCL for reading a certificate by Keyfactor ID
 func testAccCertDataSourceByID(certResourceRef string) string {
 	return fmt.Sprintf(`

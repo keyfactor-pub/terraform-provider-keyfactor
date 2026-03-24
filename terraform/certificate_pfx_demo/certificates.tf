@@ -66,7 +66,7 @@ resource "keyfactor_certificate" "full_pfx" {
     renew_days = 30
   }
 
-  certificate_format = "PEM"
+  # certificate_format = "PEM"
 }
 
 # -------------------------------------------------------------------------

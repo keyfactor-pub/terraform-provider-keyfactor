@@ -22,25 +22,30 @@ Verifies that changing the `certificate_format` attribute triggers an **in-place
 
 Prior to the fix, `certificate_format` had a `RequiresReplace()` plan modifier, so any change would destroy the certificate and re-enroll a new one. This was incorrect — `certificate_format` only controls the download/output format, the certificate itself doesn't change.
 
-The fix also validates that when switching formats, only the expected format-specific state fields are populated:
+The fix also validates that when switching formats, exactly the right set of state fields are populated:
 
-- **PEM** (or default): `certificate_pem`, `certificate_chain` set; `pfx`, `jks`, `zip` absent
-- **PFX**: `pfx` set; PEM fields and `jks`, `zip` absent
-- **JKS**: `jks` set; PEM fields and `pfx`, `zip` absent
-- **ZIP**: `zip` set; PEM fields and `pfx`, `jks` absent
+| Format | `certificate_pem` | `certificate_chain` | `private_key` | `pfx` | `jks` | `zip` |
+|--------|:-----------------:|:-------------------:|:-------------:|:-----:|:-----:|:-----:|
+| PEM (or default), cert has archived key | ✓ | ✓ | ✓ | — | — | — |
+| PEM (or default), no archived key (CSR) | ✓ | ✓ | — | — | — | — |
+| PFX | — | — | — | ✓ | — | — |
+| JKS | — | — | — | — | ✓ | — |
+| ZIP | — | — | — | — | — | ✓ |
+
+**Regression (ab#82568):** `private_key` was leaking into state for PFX/JKS/ZIP formats. The post-import key recovery block ran unconditionally whenever `plan.PrivateKey.Unknown`, overwriting the null that the format-change block had correctly set. Fixed by guarding recovery with `effectivePlanFmt == "PEM"`.
 
 ### Integration Test: `TestIntKeyfactorCertificateResource_FormatChange`
 
-Full 6-step format matrix: default → PEM → PFX → JKS → ZIP → PEM
+Full 6-step format matrix: default → PEM → PFX → JKS → ZIP → PEM (PFX enrollment, has archived key)
 
 | Step | Config | What Is Validated |
 |------|--------|-------------------|
-| 1 | No `certificate_format` (default) | Certificate created. `serial_number`, `thumbprint`, PEM fields populated. `id` captured. |
-| 2 | `certificate_format = "PEM"` | `id` **unchanged**. PEM fields populated, binary fields absent. |
-| 3 | `certificate_format = "PFX"` | `id` **unchanged**. `pfx` populated, all other format fields absent. |
-| 4 | `certificate_format = "JKS"` | `id` **unchanged**. `jks` populated, all other format fields absent. |
-| 5 | `certificate_format = "ZIP"` | `id` **unchanged**. `zip` populated, all other format fields absent. |
-| 6 | `certificate_format = "PEM"` | `id` **unchanged**. PEM fields populated again. Full round-trip validated. |
+| 1 | No `certificate_format` (default) | Certificate created. `serial_number`, `thumbprint`, PEM fields + `private_key` populated. `id` captured. |
+| 2 | `certificate_format = "PEM"` | `id` **unchanged**. PEM fields + `private_key` populated, binary fields absent. |
+| 3 | `certificate_format = "PFX"` | `id` **unchanged**. `pfx` populated; PEM fields, `private_key`, `jks`, `zip` absent. |
+| 4 | `certificate_format = "JKS"` | `id` **unchanged**. `jks` populated; all other format fields absent. |
+| 5 | `certificate_format = "ZIP"` | `id` **unchanged**. `zip` populated; all other format fields absent. |
+| 6 | `certificate_format = "PEM"` | `id` **unchanged**. PEM fields + `private_key` populated again. Full round-trip validated. |
 
 **Prerequisites:**
 - Lab connection env vars (`KEYFACTOR_HOSTNAME`, OAuth credentials)
@@ -56,18 +61,36 @@ make testint-run TEST_NAME=TestIntKeyfactorCertificateResource_FormatChange
 **Cassette:** `keyfactor/testdata/cassettes/certificate_resource_format_change.yaml`
 **Params:** `keyfactor/testdata/cassettes/certificate_resource_format_change.params.json`
 
-3-step flow (default → PEM → default). Binary format transitions are omitted because they require private key recovery, which depends on CA key retention configuration.
+7-step full format matrix for a **PFX-enrolled cert with archived private key**:
+default → PEM → PFX → JKS → ZIP → PEM → default
+
+Covers the regression where `private_key` leaked into state for binary formats.
 
 ```bash
 # Replay (no lab needed)
 make testunit
 
 # Record a new cassette
-. ~/.env_ses2541 && unset KEYFACTOR_CERTIFICATE_CA_DOMAIN KEYFACTOR_CERTIFICATE_CA_NAME && \
-  RECORD_CASSETTES=1 go test ./keyfactor/ -run TestUnitKeyfactorCertificateResource_FormatChange -v -count=1 -timeout 30m
+RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_FormatChange make testunit-record-one
 ```
 
-**Note:** The default env file may have stale `KEYFACTOR_CERTIFICATE_CA_DOMAIN` / `KEYFACTOR_CERTIFICATE_CA_NAME` overrides. Unsetting them lets the test auto-discover the CA.
+### Unit Test: `TestUnitKeyfactorCertificateResource_FormatChange_CSR`
+
+**Cassette:** `keyfactor/testdata/cassettes/certificate_resource_format_change_csr.yaml`
+**Params:** `keyfactor/testdata/cassettes/certificate_resource_format_change_csr.params.json`
+
+3-step format test for a **CSR-enrolled cert (no private key in Command)**:
+default → PEM → default
+
+Verifies that `private_key` is always null regardless of format when the cert has no archived key (`HasPrivateKey = false`). This is the counterpart to `FormatChange` for the "no private key" path.
+
+```bash
+# Replay (no lab needed)
+make testunit
+
+# Record a new cassette
+RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_FormatChange_CSR make testunit-record-one
+```
 
 ### VCR Details
 

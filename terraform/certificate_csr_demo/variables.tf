@@ -20,3 +20,21 @@ variable "certificate_enrollment_pattern" {
   default     = ""
   description = "Name of the enrollment pattern to use (Command v25+ / EJBCA). Mutually exclusive with certificate_template."
 }
+
+variable "metadata_owner" {
+  type        = string
+  default     = "terraform-demo"
+  description = "Value for the Owner metadata field on the full_csr certificate."
+}
+
+variable "metadata_email" {
+  type        = string
+  default     = "infosec@example.com"
+  description = "Value for the Email-Contact metadata field on the full_csr certificate."
+}
+
+variable "renew_days" {
+  type        = number
+  default     = 30
+  description = "Trigger automatic renewal when fewer than this many days remain before expiry (full_csr only)."
+}

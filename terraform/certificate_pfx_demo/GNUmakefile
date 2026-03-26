@@ -36,7 +36,7 @@ LAB_CA        ?= Sub-CA
 LAB_PATTERN   ?= Default Pattern
 LAB_TIMEOUT   ?= 600
 
-LAB_ENV := source $(LAB_ENV_FILE) && \
+LAB_ENV := set -a && source $(LAB_ENV_FILE) && set +a && \
            unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN && \
            export TF_VAR_certificate_authority="$(LAB_CA)" \
                   TF_VAR_certificate_enrollment_pattern="$(LAB_PATTERN)" \
@@ -118,9 +118,36 @@ demo-no-destroy: build init validate plan apply import-all drift-check
 # Lab convenience targets (source LAB_ENV_FILE automatically)
 # ---------------------------------------------------------------------------
 
+## lab-plan: Plan using lab credentials
+lab-plan:
+	$(LAB_ENV) $(MAKE) plan
+
 ## lab-apply: Apply using lab credentials from LAB_ENV_FILE
 lab-apply:
 	$(LAB_ENV) $(MAKE) apply
+
+## lab-update: Apply with updated metadata and renew_days to verify in-place update path.
+## Also verifies full→minimal: re-applies with no metadata/renewal to confirm they are cleared.
+lab-update:
+	@echo "==> Step 1: update metadata and renew_days (in-place update path)..."
+	$(LAB_ENV) TF_VAR_metadata_owner="terraform-demo-updated" \
+	           TF_VAR_metadata_email="ops@example.com" \
+	           TF_VAR_renew_days=60 \
+	           $(MAKE) apply
+	$(LAB_ENV) TF_VAR_metadata_owner="terraform-demo-updated" \
+	           TF_VAR_metadata_email="ops@example.com" \
+	           TF_VAR_renew_days=60 \
+	           $(MAKE) plan
+	@echo "==> Step 2: full→minimal — remove metadata and renewal_config from config..."
+	@echo "==>   Expect: 1 in-place change (metadata + renewal cleared), 0 to destroy"
+	$(LAB_ENV) TF_VAR_metadata_owner="" \
+	           TF_VAR_metadata_email="" \
+	           TF_VAR_renew_days=0 \
+	           $(MAKE) apply
+	$(LAB_ENV) TF_VAR_metadata_owner="" \
+	           TF_VAR_metadata_email="" \
+	           TF_VAR_renew_days=0 \
+	           $(MAKE) plan
 
 ## lab-import-all: Import all certificates using lab credentials
 lab-import-all:
@@ -134,8 +161,8 @@ lab-drift-check:
 lab-destroy:
 	$(LAB_ENV) $(MAKE) destroy
 
-## lifecycle: Full lifecycle test: apply → import-all → apply (reconcile) → drift-check → destroy
-lifecycle: lab-apply lab-import-all lab-apply lab-drift-check lab-destroy
+## lifecycle: Full lifecycle: apply → update (apply+plan) → import-all → apply (reconcile) → drift-check → destroy
+lifecycle: lab-apply lab-update lab-import-all lab-apply lab-drift-check lab-destroy
 
 .PHONY: build init validate plan apply import-all drift-check destroy clean all demo-no-destroy \
-        lab-apply lab-import-all lab-drift-check lab-destroy lifecycle
+        lab-plan lab-apply lab-update lab-import-all lab-drift-check lab-destroy lifecycle

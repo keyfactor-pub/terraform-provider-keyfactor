@@ -36,16 +36,18 @@ resource "keyfactor_certificate" "full_csr" {
   certificate_enrollment_pattern = local.pattern
   csr                            = tls_cert_request.full_csr.cert_request_pem
 
-  # Custom metadata tracked in Command
-  metadata = {
-    "Owner"         = "terraform-demo"
-    "Email-Contact" = "infosec@example.com"
-  }
+  # Custom metadata tracked in Command (in-place updatable; cleared on server when omitted)
+  # Setting metadata_owner="" omits this block — same as removing it from config.
+  metadata = var.metadata_owner != "" ? {
+    "Owner"         = var.metadata_owner
+    "Email-Contact" = var.metadata_email
+  } : null
 
-  # Trigger automatic renewal when fewer than 30 days remain before expiry
-  renewal_config = {
-    renew_days = 30
-  }
+  # Trigger automatic renewal when fewer than renew_days remain (in-place updatable; disabled when omitted)
+  # Setting renew_days=0 omits this block — same as removing it from config.
+  renewal_config = var.renew_days > 0 ? {
+    renew_days = var.renew_days
+  } : null
 }
 
 # -------------------------------------------------------------------------

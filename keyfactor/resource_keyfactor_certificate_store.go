@@ -22,21 +22,22 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Keyfactor Command certificate store GUID.",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Keyfactor Command certificate store GUID.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"container_id": {
-				Type: types.Int64Type,
-				//Optional: true,
-				Computed:    true,
-				Description: "Container identifier of the store's associated certificate store container.",
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:          types.Int64Type,
+				Computed:      true,
+				Description:   "Container identifier of the store's associated certificate store container.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"display_name": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Display name of the certificate store. Is the concatenation of 'ClientMachine - StorePath'.",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Display name of the certificate store. Is the concatenation of 'ClientMachine - StorePath'.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"client_machine": {
 				Type:          types.StringType,
@@ -57,21 +58,17 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"approved": {
-				Type: types.BoolType,
-				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-				//	// For some reason Terraform detects this particular function as having drift; this function
-				//	// gives us a definitive answer.
-				//	return !d.HasChange(k)
-				//},
-				Description: "Bool that indicates the approval status of store. Unapproved stores come from store Discovery and cannot be used for certificate operations.",
-				Computed:    true,
-				//PlanModifiers:       []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:          types.BoolType,
+				Description:   "Bool that indicates the approval status of store. Unapproved stores come from store Discovery and cannot be used for certificate operations.",
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"create_if_missing": {
-				Type:        types.BoolType,
-				Optional:    true,
-				Description: "Determines whether the store create job will be scheduled. WARNING: If set to TRUE, each apply will trigger a store create job, if the store type support Create. This may cause issues if the store already exists but will depend on the store type.",
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:          types.BoolType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Determines whether the store create job will be scheduled. WARNING: If set to TRUE, each apply will trigger a store create job, if the store type support Create. This may cause issues if the store already exists but will depend on the store type.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"properties": {
 				Type:        types.MapType{ElemType: types.StringType},
@@ -86,21 +83,16 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"agent_id": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "String indicating the Keyfactor Command GUID of the orchestrator for the created store.",
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "String indicating the Keyfactor Command GUID of the orchestrator for the created store.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"agent_assigned": {
-				Type:     types.BoolType,
-				Computed: true,
-				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
-				//	// For some reason Terraform detects this particular function as having drift; this function
-				//	// gives us a definitive answer.
-				//	return !d.HasChange(k)
-				//},
-				Description: "Bool indicating if there is an orchestrator assigned to the new certificate store.",
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:          types.BoolType,
+				Computed:      true,
+				Description:   "Bool indicating if there is an orchestrator assigned to the new certificate store.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"container_name": {
 				Type:     types.StringType,
@@ -121,11 +113,10 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"set_new_password_allowed": {
-				Type: types.BoolType,
-				//Optional:    true,
-				Computed:    true,
-				Description: "Indicates whether the store password can be changed.",
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:          types.BoolType,
+				Computed:      true,
+				Description:   "Indicates whether the store password can be changed.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"store_password": {
 				Type:        types.StringType,
@@ -369,7 +360,7 @@ func (r resourceCertificateStore) Create(
 		StorePath:             types.String{Value: createStoreResponse.Storepath},
 		StoreType:             plan.StoreType,
 		Approved:              types.Bool{Value: createStoreResponse.Approved},
-		CreateIfMissing:       plan.CreateIfMissing,
+		CreateIfMissing:       types.Bool{Value: createStoreResponse.CreateIfMissing},
 		Properties:            plan.Properties,
 		AgentId:               types.String{Value: createStoreResponse.AgentId},
 		AgentIdentifier:       plan.AgentIdentifier,
@@ -424,17 +415,23 @@ func (r resourceCertificateStore) Read(
 			Null:  state.ContainerID.Null,
 			Value: int64(sResp.ContainerId),
 		},
-		ClientMachine:         types.String{Value: sResp.ClientMachine},
-		StorePath:             types.String{Value: sResp.StorePath},
-		StoreType:             state.StoreType,
-		Approved:              types.Bool{Value: sResp.Approved},
-		CreateIfMissing:       state.CreateIfMissing,
-		Properties:            state.Properties, //TODO: Parse this w/o special properties included
-		AgentId:               types.String{Value: sResp.AgentId},
-		AgentIdentifier:       state.AgentIdentifier,
-		AgentAssigned:         types.Bool{Value: sResp.AgentAssigned},
-		ContainerName:         types.String{Value: sResp.ContainerName, Null: isNullString(sResp.ContainerName)},
-		InventorySchedule:     state.InventorySchedule, // TODO: Parse this from sResp.InventorySchedule
+		ClientMachine:   types.String{Value: sResp.ClientMachine},
+		StorePath:       types.String{Value: sResp.StorePath},
+		StoreType:       state.StoreType,
+		Approved:        types.Bool{Value: sResp.Approved},
+		CreateIfMissing: state.CreateIfMissing,
+		Properties:      state.Properties, //TODO: Parse this w/o special properties included
+		AgentId:         types.String{Value: sResp.AgentId},
+		AgentIdentifier: state.AgentIdentifier,
+		AgentAssigned:   types.Bool{Value: sResp.AgentAssigned},
+		ContainerName:   types.String{Value: sResp.ContainerName, Null: isNullString(sResp.ContainerName)},
+		InventorySchedule: func() types.String {
+			s := parseInventorySchedule(&sResp.InventorySchedule)
+			if s == "" {
+				return state.InventorySchedule
+			}
+			return types.String{Value: s}
+		}(),
 		SetNewPasswordAllowed: types.Bool{Value: sResp.SetNewPasswordAllowed},
 		StorePassword:         state.StorePassword,  //TODO: Currently command doesn't return this as of 10.x
 		ServerUsername:        state.ServerUsername, //TODO: Parse this from sResp.Properties
@@ -509,7 +506,12 @@ func (r resourceCertificateStore) Update(
 		containerId = *storeContainer.Id
 	}
 
-	storePassFormatted := createPasswordConfig(plan.StorePassword.Value)
+	var storePassFormatted *api.UpdateStorePasswordConfig
+	if plan.StorePassword.Null {
+		storePassFormatted = nil
+	} else {
+		storePassFormatted = createPasswordConfig(plan.StorePassword.Value)
+	}
 
 	agents, agentErr := r.p.client.GetAgent(plan.AgentIdentifier.Value)
 	agentId := ""
@@ -582,25 +584,17 @@ func (r resourceCertificateStore) Update(
 	}
 	//add existing properties to properties map
 	for k, v := range existingProperties {
-		if k == "ServerUsername" || k == "ServerPassword" {
-			properties[k] = api.SpecialPropertiesSecretValue{Value: api.SecretParamValue{SecretValue: v}}
-		} else if k == "ServerUseSsl" {
-			properties[k] = api.SpecialPropertiesValue{Value: strings.ToLower(v) == "true"}
-		} else {
-			properties[k] = v
-		}
+		properties[k] = v
 	}
 	//Add Special Properties to properties map
 	if !plan.ServerUsername.IsNull() {
-		formattedUsername := api.SecretParamValue{SecretValue: plan.ServerUsername.Value}
-		properties["ServerUsername"] = api.SpecialPropertiesSecretValue{Value: formattedUsername}
+		properties["ServerUsername"] = plan.ServerUsername.Value
 	}
 	if !plan.ServerPassword.IsNull() {
-		formattedPassword := api.SecretParamValue{SecretValue: plan.ServerPassword.Value}
-		properties["ServerPassword"] = api.SpecialPropertiesSecretValue{Value: formattedPassword}
+		properties["ServerPassword"] = plan.ServerPassword.Value
 	}
 	if !plan.ServerUseSsl.IsNull() {
-		properties["ServerUseSsl"] = api.SpecialPropertiesValue{Value: plan.ServerUseSsl.Value}
+		properties["ServerUseSsl"] = strconv.FormatBool(plan.ServerUseSsl.Value)
 	}
 
 	propertiesStr, psErr := mapToEscapedJSONString(properties)
@@ -612,21 +606,39 @@ func (r resourceCertificateStore) Update(
 		return
 	}
 
+	// For Computed fields, use state value when plan is Unknown (zero value would corrupt the request).
+	approvedVal := state.Approved.Value
+	if !plan.Approved.Unknown {
+		approvedVal = plan.Approved.Value
+	}
+	agentAssignedVal := state.AgentAssigned.Value
+	if !plan.AgentAssigned.Unknown {
+		agentAssignedVal = plan.AgentAssigned.Value
+	}
+	setNewPasswordAllowedVal := state.SetNewPasswordAllowed.Value
+	if !plan.SetNewPasswordAllowed.Unknown {
+		setNewPasswordAllowedVal = plan.SetNewPasswordAllowed.Value
+	}
+	createIfMissingVal := state.CreateIfMissing.Value
+	if !plan.CreateIfMissing.Unknown {
+		createIfMissingVal = plan.CreateIfMissing.Value
+	}
+
 	updateStoreArgs := &api.UpdateStoreFctArgs{
 		Id:                    state.ID.Value,
 		ContainerId:           intToPointer(containerId),
 		ClientMachine:         plan.ClientMachine.Value,
 		StorePath:             plan.StorePath.Value,
 		CertStoreType:         csType.StoreType,
-		Approved:              &plan.Approved.Value,
-		CreateIfMissing:       &plan.CreateIfMissing.Value,
+		Approved:              &approvedVal,
+		CreateIfMissing:       &createIfMissingVal,
 		Properties:            properties,
 		PropertiesString:      propertiesStr,
 		AgentId:               agentId,
-		AgentAssigned:         &plan.AgentAssigned.Value,
+		AgentAssigned:         &agentAssignedVal,
 		ContainerName:         &plan.ContainerName.Value,
 		InventorySchedule:     schedule,
-		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
+		SetNewPasswordAllowed: &setNewPasswordAllowedVal,
 		Password:              storePassFormatted,
 	}
 
@@ -665,7 +677,7 @@ func (r resourceCertificateStore) Update(
 		StorePath:             types.String{Value: updateResponse.Storepath},
 		StoreType:             plan.StoreType,
 		Approved:              types.Bool{Value: updateResponse.Approved},
-		CreateIfMissing:       plan.CreateIfMissing,
+		CreateIfMissing:       types.Bool{Value: updateResponse.CreateIfMissing},
 		Properties:            plan.Properties,
 		AgentId:               types.String{Value: updateResponse.AgentId},
 		AgentIdentifier:       plan.AgentIdentifier,
@@ -756,6 +768,26 @@ func (r resourceCertificateStore) ImportState(
 		)
 		return
 	}
+	// Build properties map from server response, excluding special credential properties.
+	specialProps := map[string]bool{"ServerUsername": true, "ServerPassword": true, "ServerUseSsl": true}
+	importedProps := map[string]attr.Value{}
+	for k, v := range readResponse.Properties {
+		if specialProps[k] {
+			continue
+		}
+		importedProps[k] = types.String{Value: fmt.Sprintf("%v", v)}
+	}
+	var importedPropsMap types.Map
+	if len(importedProps) == 0 {
+		importedPropsMap = types.Map{ElemType: types.StringType, Null: true}
+	} else {
+		importedPropsMap = types.Map{ElemType: types.StringType, Elems: importedProps}
+	}
+
+	// Parse inventory schedule from server response.
+	importedSchedule := parseInventorySchedule(&readResponse.InventorySchedule)
+	importedScheduleVal := types.String{Value: importedSchedule, Null: importedSchedule == ""}
+
 	// Set state
 	result := CertificateStore{
 		ID:                    types.String{Value: readResponse.Id},
@@ -765,13 +797,13 @@ func (r resourceCertificateStore) ImportState(
 		StoreType:             types.String{Value: csType.Name},
 		Approved:              types.Bool{Value: readResponse.Approved},
 		CreateIfMissing:       types.Bool{Value: readResponse.CreateIfMissing},
-		Properties:            types.Map{ElemType: types.StringType, Elems: map[string]attr.Value{}},
+		Properties:            importedPropsMap,
 		AgentId:               types.String{Value: readResponse.AgentId},
-		AgentIdentifier:       types.String{Null: true},
+		AgentIdentifier:       types.String{Value: readResponse.AgentId},
 		AgentAssigned:         types.Bool{Value: readResponse.AgentAssigned},
 		DisplayName:           types.String{Null: true},
 		ContainerName:         types.String{Value: readResponse.ContainerName, Null: isNullString(readResponse.ContainerName)},
-		InventorySchedule:     types.String{Null: true},
+		InventorySchedule:     importedScheduleVal,
 		SetNewPasswordAllowed: types.Bool{Value: readResponse.SetNewPasswordAllowed},
 		// StorePassword, ServerUsername, ServerPassword are write-only in the Command API
 		// and are never returned by GetCertificateStoreByID. They will be null after import
@@ -829,13 +861,13 @@ func createInventorySchedule(interval string) (*api.InventorySchedule, error) {
 			return nil, fmt.Errorf("days not supported please use 'm', 'daily' or 'exactly_once'")
 
 		}
-		if interval == "daily" {
-			daily := &api.InventoryDaily{Time: interval}
+		if strings.HasPrefix(interval, "Daily at ") {
+			daily := &api.InventoryDaily{Time: strings.TrimPrefix(interval, "Daily at ")}
 			inventorySchedule.Daily = daily
 			return inventorySchedule, nil
 		}
-		if interval == "exactly_once" {
-			once := &api.InventoryOnce{Time: interval}
+		if strings.HasPrefix(interval, "Exactly once at ") {
+			once := &api.InventoryOnce{Time: strings.TrimPrefix(interval, "Exactly once at ")}
 			inventorySchedule.ExactlyOnce = once
 			return inventorySchedule, nil
 		}
@@ -852,10 +884,19 @@ func parseInventorySchedule(schedule *api.InventorySchedule) string {
 		return fmt.Sprintf("%vm", schedule.Interval.Minutes)
 	}
 	if schedule.Daily != nil {
-		return fmt.Sprintf("Daily at %s", schedule.Daily.Time)
+		t := schedule.Daily.Time
+		// Normalize "2006-01-02T15:04:05Z" → "15:04:05" for stable round-trip
+		if idx := strings.Index(t, "T"); idx >= 0 {
+			t = strings.TrimSuffix(t[idx+1:], "Z")
+		}
+		return fmt.Sprintf("Daily at %s", t)
 	}
 	if schedule.ExactlyOnce != nil {
-		return fmt.Sprintf("Exactly once at %s", schedule.ExactlyOnce.Time)
+		t := schedule.ExactlyOnce.Time
+		if idx := strings.Index(t, "T"); idx >= 0 {
+			t = strings.TrimSuffix(t[idx+1:], "Z")
+		}
+		return fmt.Sprintf("Exactly once at %s", t)
 	}
 
 	return ""

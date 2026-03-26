@@ -50,7 +50,7 @@ export TF_VAR_certificate_template="2YearTestWebServer"
 |---|---|
 | `versions.tf` | `terraform` block and `required_providers` |
 | `providers.tf` | Provider configurations (keyfactor, tls, external) |
-| `variables.tf` | Input variables (suffix, CA, template) |
+| `variables.tf` | Input variables (suffix, CA, template, metadata, renew_days) |
 | `keys.tf` | `tls_private_key`, `tls_cert_request`, and Ed448 `external` data source |
 | `certificates.tf` | Eleven `keyfactor_certificate` resources (CSR enrollment) |
 | `outputs.tf` | Output values (thumbprints, key types, IDs, PEMs, private keys) |
@@ -75,9 +75,10 @@ make lifecycle
 # 3b. Or set env vars manually and run individual steps
 export KEYFACTOR_HOSTNAME=... # see Environment variables above
 make apply
+make lab-update    # modify metadata/renew_days; also tests full→minimal (omit block = clear from server)
 make import-all
-make apply        # reconcile — writes write-only params (enrollment_pattern, CSR) into state
-make drift-check  # should show "No changes"
+make apply         # reconcile — writes write-only params (enrollment_pattern, CSR) into state
+make drift-check   # should show "No changes"
 make destroy
 
 # 3c. Use a custom CN suffix to avoid conflicts with other runs
@@ -105,8 +106,10 @@ These targets source `LAB_ENV_FILE` (default: `~/.env_ses2541`) automatically an
 `KEYFACTOR_CLIENT_TIMEOUT` before delegating to the base target.
 
 ```
-make lifecycle        Full test: apply → import-all → apply (reconcile) → drift-check → destroy
+make lifecycle        Full test: apply → update (apply+plan+minimal+plan) → import-all → apply (reconcile) → drift-check → destroy
+make lab-plan         Plan using lab credentials
 make lab-apply        Apply using lab credentials
+make lab-update       Apply with updated metadata/renew_days + full→minimal; verifies in-place update
 make lab-import-all   Import all certificates using lab credentials
 make lab-drift-check  Drift-check using lab credentials
 make lab-destroy      Destroy using lab credentials

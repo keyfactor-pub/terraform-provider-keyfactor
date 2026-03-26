@@ -89,3 +89,19 @@ Optional overrides (auto-discovered if not set):
 ## Operations
 - Operations/commands that are "useful" and/or repeated should be added to the GNUmakefile
 - Prioritize using makefile targets over raw bash commands
+
+## Demo / Lab Lifecycle Test Strategy
+
+When validating provider changes against a real lab, always follow this lifecycle:
+
+```
+plan → apply → import-all → drift-check → destroy
+```
+
+1. **plan** — `make lab-plan` or `terraform plan` — verify no unexpected changes
+2. **apply** — `make lab-apply` or `terraform apply` — create/update resources
+3. **import-all** — `make lab-import` — import every resource by its real ID; verifies ImportState round-trip
+4. **drift-check** — `make lab-plan` again after import — the only "to change" lines should be write-only fields (e.g., `enrollment_password`, `csr`, `key_password`, `pfx`, `jks`, `zip`, `private_key` if no key recovery); no `to add` or `to destroy`
+5. **destroy** — `make lab-destroy` — clean up; verify plan shows 0 resources after
+
+Use `make lifecycle` / `make lab-lifecycle` Makefile targets when available. Never use ad-hoc shell scripts for lifecycle operations — add a Makefile target instead.

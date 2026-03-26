@@ -27,12 +27,11 @@ resource "keyfactor_certificate" "minimal_pfx" {
 # Demonstrates every commonly used field:
 #   - Explicit EC P-521 key algorithm
 #   - DNS and IP SANs
-#   - Custom metadata fields
-#   - Automatic renewal when fewer than 30 days remain
+#   - Custom metadata fields (in-place updatable — no certificate replacement)
+#   - Automatic renewal config (in-place updatable — no certificate replacement)
 #   - Explicit PEM output format
 #
-# Note: the template must allow EC keys and have KeyRetention enabled for
-# the private key to be returned.
+# The template must have KeyRetention enabled for the private key to be returned.
 # -------------------------------------------------------------------------
 resource "keyfactor_certificate" "full_pfx" {
   common_name                    = "tf-demo-full-pfx${var.suffix}.example.com"
@@ -49,22 +48,21 @@ resource "keyfactor_certificate" "full_pfx" {
   dns_sans = [
     "tf-demo-full-pfx${var.suffix}.example.com",
     "alt.tf-demo-full-pfx${var.suffix}.example.com",
-    "MEOW",
   ]
   ip_sans = ["10.0.0.1", "10.1.0.2"]
 
-  uri_sans = ["meow.mix.cat"]
+  # Custom metadata tracked in Command (in-place updatable; cleared on server when omitted)
+  # Setting metadata_owner="" omits this block — same as removing it from config.
+  metadata = var.metadata_owner != "" ? {
+    "Owner"         = var.metadata_owner
+    "Email-Contact" = var.metadata_email
+  } : null
 
-  # Custom metadata tracked in Command
-  metadata = {
-    "Owner"         = "terraform-demo"
-    "Email-Contact" = "infosec@example.com"
-  }
-
-  # Trigger automatic renewal when fewer than 30 days remain before expiry
-  renewal_config = {
-    renew_days = 30
-  }
+  # Trigger automatic renewal when fewer than renew_days remain (in-place updatable; disabled when 0)
+  # Setting renew_days=0 omits this block — same as removing it from config.
+  renewal_config = var.renew_days > 0 ? {
+    renew_days = var.renew_days
+  } : null
 
   # certificate_format = "PEM"
 }

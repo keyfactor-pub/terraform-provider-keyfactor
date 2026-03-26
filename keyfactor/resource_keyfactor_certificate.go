@@ -348,10 +348,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type: types.MapType{
 					ElemType: types.StringType,
 				},
-				Optional:      true,
-				Computed:      true,
-				Description:   "Metadata key-value pairs to be attached to certificate",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Optional:    true,
+				Description: "Metadata key-value pairs to be attached to certificate. Omit this block or set it to null to clear all metadata on the server. Changes are applied in-place (no certificate replacement).",
 			},
 			"serial_number": {
 				Type:          types.StringType,
@@ -517,16 +515,36 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Optional: true,
 			},
 			"is_expired": {
-				Type:          types.BoolType,
-				Computed:      true,
-				Description:   "Whether the certificate is expired",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether the certificate is expired. When true, Terraform will plan a certificate replacement on the next apply.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.UseStateForUnknown(),
+					tfsdk.RequiresReplaceIf(
+						func(_ context.Context, stateVal attr.Value, _ attr.Value, _ path.Path) (bool, diag.Diagnostics) {
+							b, ok := stateVal.(types.Bool)
+							return ok && b.Value, nil
+						},
+						"Certificate is expired and must be re-enrolled.",
+						"Certificate is expired and must be re-enrolled.",
+					),
+				},
 			},
 			"is_revoked": {
-				Type:          types.BoolType,
-				Computed:      true,
-				Description:   "Whether the certificate is revoked",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether the certificate is revoked. When true, Terraform will plan a certificate replacement on the next apply.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.UseStateForUnknown(),
+					tfsdk.RequiresReplaceIf(
+						func(_ context.Context, stateVal attr.Value, _ attr.Value, _ path.Path) (bool, diag.Diagnostics) {
+							b, ok := stateVal.(types.Bool)
+							return ok && b.Value, nil
+						},
+						"Certificate is revoked and must be re-enrolled.",
+						"Certificate is revoked and must be re-enrolled.",
+					),
+				},
 			},
 			"is_pending_revocation": {
 				Type:          types.BoolType,

@@ -27,3 +27,21 @@ variable "key_password" {
   sensitive   = true
   description = "Password used to protect the PKCS#12/PFX output. Required for private key recovery."
 }
+
+variable "metadata_owner" {
+  type        = string
+  default     = "terraform-demo"
+  description = "Value for the Owner metadata field on the full_pfx certificate."
+}
+
+variable "metadata_email" {
+  type        = string
+  default     = "infosec@example.com"
+  description = "Value for the Email-Contact metadata field on the full_pfx certificate."
+}
+
+variable "renew_days" {
+  type        = number
+  default     = 30
+  description = "Trigger automatic renewal when fewer than this many days remain before expiry (full_pfx only)."
+}

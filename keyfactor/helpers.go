@@ -224,6 +224,12 @@ func flattenMetadata(metadata interface{}) types.Map {
 		}
 	}
 
+	// Return null when there is no metadata so that an absent `metadata` block
+	// in config (plan = null) matches the refreshed state (null) without drift.
+	if len(data) == 0 {
+		return types.Map{Null: true, ElemType: types.StringType}
+	}
+
 	result := types.Map{
 		Elems:    map[string]attr.Value{},
 		ElemType: types.StringType,

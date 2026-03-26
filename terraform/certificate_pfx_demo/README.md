@@ -52,7 +52,7 @@ export TF_VAR_certificate_template="2YearTestWebServer"
 |---|---|
 | `versions.tf` | `terraform` block and `required_providers` |
 | `providers.tf` | Provider configurations |
-| `variables.tf` | Input variables (suffix, CA, template, key_password) |
+| `variables.tf` | Input variables (suffix, CA, template, key_password, metadata, renew_days) |
 | `certificates.tf` | Eleven `keyfactor_certificate` resources |
 | `outputs.tf` | Output values (thumbprints, key types, IDs, PEMs, private keys) |
 | `_export_ids.py` | Extracts `tf_name → certificate_id` pairs from state JSON |
@@ -75,9 +75,11 @@ make lifecycle
 # 3b. Or set env vars manually and run individual steps
 export KEYFACTOR_HOSTNAME=... # see Environment variables above
 make apply
+make lab-update        # modify metadata / renew_days — should show in-place change only
+make plan              # verify no drift
 make import-all
-make apply        # reconcile — writes write-only params (key_password, etc.) into state
-make drift-check  # should show "No changes"
+make apply             # reconcile — writes write-only params (key_password, etc.) into state
+make drift-check       # should show "No changes"
 make destroy
 
 # 3c. Use a custom CN suffix to avoid conflicts with other runs
@@ -93,7 +95,7 @@ make validate       terraform validate
 make plan           terraform plan
 make apply          terraform apply -auto-approve (enrolls 11 certificates)
 make import-all     Capture state, remove resources, re-import each by certificate ID
-make drift-check    terraform plan — should show "No changes" after import
+make drift-check    terraform plan — only write-only fields (key_password) may appear after import
 make destroy        terraform destroy -auto-approve
 make clean          Remove generated files
 ```
@@ -105,8 +107,10 @@ These targets source `LAB_ENV_FILE` (default: `~/.env_ses2541`) automatically an
 `KEYFACTOR_CLIENT_TIMEOUT` before delegating to the base target.
 
 ```
-make lifecycle        Full test: apply → import-all → apply (reconcile) → drift-check → destroy
+make lifecycle        Full test: apply → update → plan → import-all → apply (reconcile) → drift-check → destroy
+make lab-plan         Plan using lab credentials
 make lab-apply        Apply using lab credentials
+make lab-update       Apply with updated metadata/renew_days — verifies in-place update path
 make lab-import-all   Import all certificates using lab credentials
 make lab-drift-check  Drift-check using lab credentials
 make lab-destroy      Destroy using lab credentials

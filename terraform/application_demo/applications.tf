@@ -39,8 +39,8 @@ resource "keyfactor_application" "daily_schedule" {
 # -----------------------------------------------------------------------
 resource "keyfactor_application" "weekly_schedule" {
   name                 = "Demo Weekly Schedule${var.suffix}"
-  schedule_weekly_days = ["Monday", "Thursday"]
-  schedule_weekly_time = "2025-01-01T02:00:00Z"
+  schedule_weekly_days = var.weekly_days
+  schedule_weekly_time = var.weekly_time
 }
 
 # -----------------------------------------------------------------------
@@ -49,8 +49,8 @@ resource "keyfactor_application" "weekly_schedule" {
 # -----------------------------------------------------------------------
 resource "keyfactor_application" "monthly_schedule" {
   name                  = "Demo Monthly Schedule${var.suffix}"
-  schedule_monthly_day  = 1
-  schedule_monthly_time = "2025-01-01T04:00:00Z"
+  schedule_monthly_day  = var.monthly_day
+  schedule_monthly_time = var.monthly_time
 }
 
 # -----------------------------------------------------------------------

@@ -21,7 +21,7 @@ verify zero drift, and destroy.
 |---|---|
 | `main.tf` | Provider config and outputs |
 | `applications.tf` | Seven `keyfactor_application` resources (one per schedule type) |
-| `variables.tf` | Input variables (suffix, interval_minutes, daily_time) |
+| `variables.tf` | Input variables (suffix, interval_minutes, daily_time, weekly_days, weekly_time, monthly_day, monthly_time) |
 | `_export_ids.py` | Reads `tf_state.json`, writes `_import_pairs.txt` for `terraform import` |
 | `.terraformrc` | Dev override pointing Terraform at the locally built provider binary |
 | `GNUmakefile` | All workflow targets |
@@ -106,10 +106,10 @@ make LAB_ENV_FILE=~/.env_prod SUFFIX=_STAGING lifecycle
 
 `make lab-update` runs two steps:
 
-1. **Update**: sets `interval_minutes=30` and `daily_time="2025-01-01T08:00:00Z"`; applies; plans (expect "No changes").
-2. **Revert**: restores defaults (`interval_minutes=60`, `daily_time="2025-01-01T23:30:00Z"`); applies; plans (expect "No changes").
+1. **Update**: changes all variable schedule fields — `interval_minutes=30`, `daily_time="...T08:00:00Z"`, `weekly_days=["Wednesday","Friday"]`, `weekly_time="...T06:00:00Z"`, `monthly_day=15`, `monthly_time="...T10:00:00Z"`; applies; plans (expect "No changes").
+2. **Revert**: restores all defaults; applies; plans (expect "No changes").
 
-Both steps verify in-place update — no application should be destroyed and re-created.
+Both steps verify in-place update — no application should be destroyed and re-created. `schedule_immediate` and `schedule_exactly_once_time` are one-shot triggers and are not parameterized.
 
 ## How it works
 

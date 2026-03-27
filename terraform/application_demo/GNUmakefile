@@ -120,14 +120,22 @@ lab-apply:
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 
 ## lab-update: Apply with updated schedule fields to verify in-place update path.
-## Changes interval_minutes (60→30) and daily_time (23:30→08:00); plan should show No changes after apply.
+## Changes all variable schedule fields; plan after each apply should show "No changes".
 lab-update:
-	@echo "==> Step 1: update interval_minutes and daily_time (in-place update path)..."
+	@echo "==> Step 1: update all schedule fields (in-place update path)..."
 	$(LAB_ENV) TF_VAR_interval_minutes=30 \
 	           TF_VAR_daily_time="2025-01-01T08:00:00Z" \
+	           TF_VAR_weekly_days='["Wednesday","Friday"]' \
+	           TF_VAR_weekly_time="2025-01-01T06:00:00Z" \
+	           TF_VAR_monthly_day=15 \
+	           TF_VAR_monthly_time="2025-01-01T10:00:00Z" \
 	           $(MAKE) apply SUFFIX=$(SUFFIX)
 	$(LAB_ENV) TF_VAR_interval_minutes=30 \
 	           TF_VAR_daily_time="2025-01-01T08:00:00Z" \
+	           TF_VAR_weekly_days='["Wednesday","Friday"]' \
+	           TF_VAR_weekly_time="2025-01-01T06:00:00Z" \
+	           TF_VAR_monthly_day=15 \
+	           TF_VAR_monthly_time="2025-01-01T10:00:00Z" \
 	           $(MAKE) plan SUFFIX=$(SUFFIX)
 	@echo "==> Step 2: revert to defaults — verify no forced replacement..."
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)

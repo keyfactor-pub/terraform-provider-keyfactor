@@ -211,7 +211,10 @@ testunit-record-cert-template:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateTemplate" -v -count=1 -timeout 30m
 
 testunit-record-cert-deploy:
-	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateDeployResource" -v -count=1 -timeout 30m
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateDeployResource$$" -v -count=1 -timeout 30m
+
+testunit-record-cert-deploy-no-inv:
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateDeployResource_NoInvSchedule" -v -count=1 -timeout 30m
 
 testunit-record-template-role-binding:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorTemplateRoleBindingResource" -v -count=1 -timeout 30m
@@ -275,6 +278,7 @@ testunit-record-all:
 	$(MAKE) testunit-record-cert-authority
 	$(MAKE) testunit-record-cert-template
 	$(MAKE) testunit-record-cert-deploy
+	$(MAKE) testunit-record-cert-deploy-no-inv
 	$(MAKE) testunit-record-template-role-binding
 	$(MAKE) testunit-record-template-role-binding-import
 	$(MAKE) testunit-record-cert-store-import

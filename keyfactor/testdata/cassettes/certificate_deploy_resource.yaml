@@ -1797,3 +1797,48 @@ interactions:
         status: 200 OK
         code: 200
         duration: 1.598045747s
+    - id: 37
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/f0cc1ede-3173-44b3-8368-ba1251ddb32e
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1636
+        body: '{"Id":"f0cc1ede-3173-44b3-8368-ba1251ddb32e","ContainerId":null,"DisplayName":"container_uo-25-4 - default/tf-unit-deploy-1773955588664811000","ClientMachine":"container_uo-25-4","Storepath":"default/tf-unit-deploy-1773955588664811000","CertStoreInventoryJobId":"1d4e811b-1b5d-41c2-9769-90ef38d8a794","CertStoreType":154,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":{\"Value\":\"********************\",\"SecretTypeGuid\":\"00000000-0000-0000-0000-000000000000\",\"InstanceId\":null,\"InstanceGuid\":null,\"ProviderTypeParameterValues\":[],\"ProviderId\":null,\"IsManaged\":false,\"SecretType\":0,\"RemoteProviderName\":null,\"HasValue\":true},\"ServerUseSsl\":\"true\",\"ServerUsername\":{\"Value\":\"********************\",\"SecretTypeGuid\":\"00000000-0000-0000-0000-000000000000\",\"InstanceId\":null,\"InstanceGuid\":null,\"ProviderTypeParameterValues\":[],\"ProviderId\":null,\"IsManaged\":false,\"SecretType\":0,\"RemoteProviderName\":null,\"HasValue\":true}}","AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","AgentAssigned":true,"ContainerName":null,"InventorySchedule":{},"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":{"Value":"********************","SecretTypeGuid":"00000000-0000-0000-0000-000000000000","InstanceId":null,"InstanceGuid":null,"ProviderTypeParameterValues":[],"ProviderId":null,"IsManaged":false,"SecretType":0,"RemoteProviderName":null,"HasValue":true}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "1636"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Mar 2026 21:27:14 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "61"
+            X-Keyfactor-Correlation-Id:
+                - a23610c5-4286-4f8f-b4e1-6dcf35856f76
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 173.062255ms

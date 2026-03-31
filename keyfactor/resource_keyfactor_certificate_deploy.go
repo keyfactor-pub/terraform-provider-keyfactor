@@ -275,28 +275,56 @@ func (r resourceCommandCertificateDeployment) Create(
 			return
 		}
 
-		//vErr2 := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 100000)
-		vErr2 := validateDeployment(
-			ctx,
-			kfClient,
-			storeId,
-			certificateAlias,
-			certificateData,
-			1000000,
-		) // Initial check to see if the cert is already deployed
-		if vErr2 != nil {
-			response.Diagnostics.AddError(
-				"Deployment validation error.",
+		// Check whether the store has an inventory schedule. If not, warn and skip the
+		// validation poll: the orchestrator cannot confirm deployment without running inventory,
+		// and we cannot reliably schedule inventory after the add job without a race condition
+		// (the Immediate flag may be consumed before the management job completes). The
+		// deployment job has been submitted; configure an inventory schedule on the store in
+		// Command to enable future validation.
+		storeResp, storeReadErr := kfClient.GetCertificateStoreByID(storeId)
+		hasInventorySchedule := false
+		if storeReadErr == nil {
+			sched := storeResp.InventorySchedule
+			hasInventorySchedule = sched.Immediate != nil || sched.Interval != nil || sched.Daily != nil || sched.ExactlyOnce != nil
+		} else {
+			tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
+		}
+
+		if !hasInventorySchedule {
+			response.Diagnostics.AddWarning(
+				"Deployment submitted without inventory schedule.",
 				fmt.Sprintf(
-					"Unknown error during validation of deploy of certificate '%s' to store '%s (%s)': "+vErr.Error(),
-					certificateId,
-					storeId,
-					certificateAlias,
+					"Certificate '%v' has been submitted for deployment to store '%s' (alias: '%s'), but the store "+
+						"has no inventory schedule configured. Deployment cannot be validated until the orchestrator "+
+						"runs inventory. Configure a daily or immediate inventory schedule on the store in Keyfactor "+
+						"Command to enable deployment validation on future applies.",
+					certificateId, storeId, certificateAlias,
 				),
 			)
-		}
-		if response.Diagnostics.HasError() {
-			return
+		} else {
+			//vErr2 := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 100000)
+			vErr2 := validateDeployment(
+				ctx,
+				kfClient,
+				storeId,
+				certificateAlias,
+				certificateData,
+				1000000,
+			)
+			if vErr2 != nil {
+				response.Diagnostics.AddError(
+					"Deployment validation error.",
+					fmt.Sprintf(
+						"Unknown error during validation of deploy of certificate '%s' to store '%s (%s)': "+vErr.Error(),
+						certificateId,
+						storeId,
+						certificateAlias,
+					),
+				)
+			}
+			if response.Diagnostics.HasError() {
+				return
+			}
 		}
 	}
 

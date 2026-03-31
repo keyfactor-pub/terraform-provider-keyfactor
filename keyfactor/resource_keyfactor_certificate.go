@@ -348,8 +348,10 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type: types.MapType{
 					ElemType: types.StringType,
 				},
-				Optional:    true,
-				Description: "Metadata key-value pairs to be attached to certificate. Omit this block or set it to null to clear all metadata on the server. Changes are applied in-place (no certificate replacement).",
+				Optional:      true,
+				Computed:      true,
+				Description:   "Metadata key-value pairs to be attached to certificate. Set to null or an empty map to clear all metadata on the server. Changes are applied in-place (no certificate replacement).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"serial_number": {
 				Type:          types.StringType,
@@ -556,7 +558,7 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Type:          types.StringType,
 				Computed:      true,
 				Description:   "The effective date of the certificate revocation",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"revoke_on_destroy": {
 				Type:        types.BoolType,
@@ -781,7 +783,7 @@ Triggers replacement of resource when true.
 					"Only relevant when key_type=ECC. " +
 					"Populated from the issued certificate on read. " +
 					"Cannot be set when `csr` is also set.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), RequiresReplaceIfPreviouslySet()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}, RequiresReplaceIfPreviouslySet()},
 				Validators: []tfsdk.AttributeValidator{
 					conflictsWithAttrValidator{otherAttr: "csr"},
 				},

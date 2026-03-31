@@ -224,10 +224,13 @@ func flattenMetadata(metadata interface{}) types.Map {
 		}
 	}
 
-	// Return null when there is no metadata so that an absent `metadata` block
-	// in config (plan = null) matches the refreshed state (null) without drift.
+	// Return an empty map (not null) so that state is always a known value.
+	// The metadata schema is Optional+Computed with useStateOrNullModifier so
+	// an absent config block copies the empty-map state to the plan, producing
+	// zero drift. If the user explicitly sets metadata = null, parseMetadata
+	// sends {} to the server (clearing all entries) and this still returns {}.
 	if len(data) == 0 {
-		return types.Map{Null: true, ElemType: types.StringType}
+		return types.Map{Elems: map[string]attr.Value{}, ElemType: types.StringType}
 	}
 
 	result := types.Map{

@@ -447,7 +447,7 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 		state.PasswordStyle = types.String{Value: resp.PasswordOptions.Style}
 	}
 
-	state.Properties = []CertStoreTypeProperty{}
+	state.Properties = nil
 	if resp.Properties != nil {
 		for _, p := range *resp.Properties {
 			state.Properties = append(state.Properties, CertStoreTypeProperty{
@@ -461,7 +461,7 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 		}
 	}
 
-	state.EntryParameters = []CertStoreTypeEntryParam{}
+	state.EntryParameters = nil
 	if resp.EntryParameters != nil {
 		for _, ep := range *resp.EntryParameters {
 			state.EntryParameters = append(state.EntryParameters, CertStoreTypeEntryParam{

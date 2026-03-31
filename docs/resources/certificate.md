@@ -155,7 +155,7 @@ Note:  This parameter is considered deprecated as for Keyfactor Command v25.1.0 
 - `key_size` (Number) Key size in bits for PFX enrollment (e.g. 2048, 4096 for RSA; 256, 384, 521 for ECC). If omitted, the CA/template default is used. Populated from the issued certificate on read. Cannot be set when `csr` is also set.
 - `key_type` (String) Key algorithm for PFX enrollment: RSA, ECC, Ed25519, Ed448. If omitted, the CA/template default is used. Populated from the issued certificate on read. Cannot be set when `csr` is also set.
 - `locality` (String) Subject locality (L) of the certificate
-- `metadata` (Map of String) Metadata key-value pairs to be attached to certificate
+- `metadata` (Map of String) Metadata key-value pairs to be attached to certificate. Set to null or an empty map to clear all metadata on the server. Changes are applied in-place (no certificate replacement).
 - `organization` (String) Subject organization (O) of the certificate
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate
 - `owner_role_name` (String) A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
@@ -190,9 +190,9 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 - `enrollment_password` (String, Sensitive) The password used during certificate issuance. Also used to unlock PFX/PKCS12 and JKS keystores. Only returned if the certificate template has KeyRetention set to a value other than None. Will use `key_password` value if specified else will generate a random password of length12 with a minimum of 4 uppercase, 4 numeric, and 0 special characters. Review this provider's schema docs for more details: https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs#schema
 - `id` (String) Read-only alias of `identifier` for Terraform framework compatibility.
 - `identifier` (String) Keyfactor certificate identifier. This can be any of the following values: thumbprint, CN, or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must be an exact match and if multiple certificates are returned the certificate that was most recently issued will be returned.
-- `is_expired` (Boolean) Whether the certificate is expired
+- `is_expired` (Boolean) Whether the certificate is expired. When true, Terraform will plan a certificate replacement on the next apply.
 - `is_pending_revocation` (Boolean) Whether the certificate is pending revocation
-- `is_revoked` (Boolean) Whether the certificate is revoked
+- `is_revoked` (Boolean) Whether the certificate is revoked. When true, Terraform will plan a certificate replacement on the next apply.
 - `issuer_dn` (String) Issuer distinguished name that signed the certificate
 - `jks` (String, Sensitive) Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.
 - `not_after` (String) Not After date of enrolled certificate

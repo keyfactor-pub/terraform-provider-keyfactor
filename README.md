@@ -154,118 +154,173 @@ terraform init
 
 ### From GitHub
 
-- Download the release from the [releases page](https://github.com/Keyfactor/terraform-provider-keyfactor/releases)
-- Unzip the release
-- Move the binary to a location in your local Terraform plugins directory (typically
-  `$HOME/.terraform.d/plugins/keyfactor.com/keyfactor/keyfactor` or
-  `%APPDATA%\terraform.d\plugins\keyfactor.com\keyfactor\keyfactor` on Windows)
-  for more information refer to
-  the [Hashicorp documentation](https://www.terraform.io/docs/cli/config/config-file.html#implied-local-mirror-directories)
-- Write a `providers.tf` similar to the example `Provider configuration` below
-- Run `terraform init` to initialize the provider
+Download a pre-built release and install it into Terraform's local filesystem mirror.
 
-#### Provider configuration
+1. Download the release archive for your platform from the [releases page](https://github.com/Keyfactor/terraform-provider-keyfactor/releases).
+2. Unzip the archive.
+3. Move the binary to Terraform's implicit local mirror directory. The path must match the pattern:
 
-When installing from source the provider configuration will be slightly different from an installation from the public
-Terraform
-registry. Below is an example of a `providers.tf` for installs directly from a GitHub release:
+**Linux / macOS**
+```
+~/.terraform.d/plugins/registry.terraform.io/keyfactor-pub/keyfactor/<VERSION>/<OS>_<ARCH>/terraform-provider-keyfactor_v<VERSION>
+```
+
+Example for Linux amd64, version 2.8.0:
+```bash
+PROVIDER_VERSION="2.8.0"
+OS_ARCH="linux_amd64"                  # or darwin_amd64 / darwin_arm64
+PLUGIN_DIR="${HOME}/.terraform.d/plugins/registry.terraform.io/keyfactor-pub/keyfactor/${PROVIDER_VERSION}/${OS_ARCH}"
+mkdir -p "${PLUGIN_DIR}"
+mv terraform-provider-keyfactor_v${PROVIDER_VERSION} "${PLUGIN_DIR}/"
+chmod +x "${PLUGIN_DIR}/terraform-provider-keyfactor_v${PROVIDER_VERSION}"
+```
+
+**Windows (PowerShell)**
+```powershell
+$ProviderVersion = "2.8.0"
+$OSArch = "windows_amd64"              # or windows_arm64
+$PluginDir = "$env:APPDATA\terraform.d\plugins\registry.terraform.io\keyfactor-pub\keyfactor\$ProviderVersion\$OSArch"
+New-Item -ItemType Directory -Force -Path $PluginDir
+Move-Item terraform-provider-keyfactor.exe "$PluginDir\"
+```
+
+4. Use the standard registry source in your `versions.tf` — `terraform init` will find the local binary automatically:
 
 ```terraform
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.3"
   required_providers {
     keyfactor = {
-      # source = "keyfactor-pub/keyfactor" #Use this source path if installing from the Terraform plugin registry. 
-      source = "keyfactor.com/keyfactor/keyfactor" # 
-      version = "2.2.0"
+      source  = "keyfactor-pub/keyfactor"
+      version = "2.8.0"
     }
   }
 }
 ```
+
+For more details on Terraform's implicit local mirror directories see the
+[Terraform CLI configuration documentation](https://developer.hashicorp.com/terraform/cli/config/config-file#implied-local-mirror-directories).
 
 ### From Source
 
-#### Provider configuration
-
-When installing from source the provider configuration will be slightly different from an installation from the public
-Terraform
-registry. Below is an example of a `providers.tf` for build from source installs:
-
-```terraform
-terraform {
-  required_version = ">= 1.0"
-  required_providers {
-    keyfactor = {
-      # source = "keyfactor-pub/keyfactor" #Use this source path if installing from the Terraform plugin registry. 
-      source = "keyfactor.com/keyfactor/keyfactor" # 
-      version = "2.2.0"
-    }
-  }
-}
-```
-
-### Mac OS/Linux
-
-Example build provider from source in bash:
+#### Linux / macOS
 
 ```bash
 git clone https://github.com/Keyfactor/terraform-provider-keyfactor.git
 cd terraform-provider-keyfactor
-export PROVIDER_VERSION="2.2.0"
-export OS_ARCH=$(echo "$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/arm64/arm64/')")
-export BIN_OUTPUT_PATH="${HOME}/.terraform.d/keyfactor.com/keyfactor/${PROVIDER_VERSION}/${OS_ARCH}"
-mkdir -p 
-go build -o "${BIN_OUTPUT_PATH}/keyfactor"
-chmod oug+x "${BIN_OUTPUT_PATH}/keyfactor"
-
-echo "installed terraform-provider-keyfactor at ${BIN_OUTPUT_PATH}"
+PROVIDER_VERSION="2.8.0"
+OS_ARCH="$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/')"
+PLUGIN_DIR="${HOME}/.terraform.d/plugins/registry.terraform.io/keyfactor-pub/keyfactor/${PROVIDER_VERSION}/${OS_ARCH}"
+mkdir -p "${PLUGIN_DIR}"
+go build -o "${PLUGIN_DIR}/terraform-provider-keyfactor_v${PROVIDER_VERSION}"
+echo "Installed to ${PLUGIN_DIR}"
 ```
 
-### Windows
-
-Example build provider from source in powershell:
+#### Windows (PowerShell)
 
 ```powershell
-# Clone the repository
 git clone https://github.com/Keyfactor/terraform-provider-keyfactor.git
 Set-Location terraform-provider-keyfactor
 
-# Set the provider version
-$ProviderVersion = "2.2.0"
+$ProviderVersion = "2.8.0"
+$Arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "386" }
+$PluginDir = "$env:APPDATA\terraform.d\plugins\registry.terraform.io\keyfactor-pub\keyfactor\$ProviderVersion\windows_$Arch"
+New-Item -ItemType Directory -Force -Path $PluginDir
 
-# Determine the OS and architecture
-# Determine the architecture and adjust naming
-$Arch = (Get-CimInstance Win32_Processor).Architecture
-$OSArch = switch ($Arch)
-{
-    9 {
-        "arm64"
-    }      # ARM64
-    5 {
-        "arm"
-    }        # ARM
-    6 {
-        "ia64"
-    }       # Itanium (not typically used in Terraform, but provided for completeness)
-    0 {
-        "386"
-    }        # 32-bit
-    1 {
-        "amd64"
-    }      # x86_64
-    default {
-        "unknown_arch"
+go build -o "$PluginDir\terraform-provider-keyfactor.exe"
+Write-Host "Installed to $PluginDir"
+```
+
+Use the standard registry source in your `versions.tf`:
+
+```terraform
+terraform {
+  required_version = ">= 1.3"
+  required_providers {
+    keyfactor = {
+      source  = "keyfactor-pub/keyfactor"
+      version = "2.8.0"
     }
+  }
 }
+```
 
-# Set the binary output path based on the dynamic OS and architecture
-$BinOutputPath = "$env:APPDATA\terraform.d\plugins\keyfactor.com\keyfactor\$ProviderVersion\windows_$OSArch\keyfactor-provider.exe"
+### Development Overrides
 
-# Build the provider
-go build -o $BinOutputPath
+Development overrides let you test a locally-built provider binary without publishing a release or managing versioned
+plugin directories. Terraform loads the binary directly from a directory you specify — no `terraform init` is required
+(and `init` will print a warning that dev overrides are active, which is expected).
 
-# Confirm that execution permissions have been applied where needed (not always relevant in Windows)
-Write-Host "Provider binary created at $BinOutputPath"
+#### Setup
+
+1. Build and install the provider binary to your Go bin directory:
+
+```bash
+go install .
+# Installs to ~/go/bin/terraform-provider-keyfactor (Linux/macOS)
+# or %GOPATH%\bin\terraform-provider-keyfactor.exe (Windows, same name without version)
+```
+
+2. Add a `dev_overrides` block to your `~/.terraformrc` (Linux/macOS) or `%APPDATA%\terraform.rc` (Windows):
+
+```hcl
+provider_installation {
+  dev_overrides {
+    # Replace the path with the directory containing your provider binary.
+    # On Linux/macOS this is typically ~/go/bin after running `go install .`
+    "keyfactor-pub/keyfactor" = "/home/youruser/go/bin"
+  }
+
+  # Fall through to the public registry for all other providers.
+  direct {}
+}
+```
+
+3. Use the standard registry source in your `versions.tf` — no version constraint is needed:
+
+```terraform
+terraform {
+  required_providers {
+    keyfactor = {
+      source = "keyfactor-pub/keyfactor"
+    }
+  }
+}
+```
+
+4. Run `terraform plan` or `terraform apply` directly. Terraform will use your local binary and print:
+
+```
+╷
+│ Warning: Provider development overrides are in effect
+│
+│   - keyfactor-pub/keyfactor in /home/youruser/go/bin
+│
+│ The behavior may therefore not match any released version of the provider and
+│ applying changes may cause the state to become incompatible with published
+│ releases.
+╵
+```
+
+This warning is expected and can be ignored during local development.
+
+#### Per-directory override (without modifying ~/.terraformrc)
+
+To activate dev overrides only for a specific working directory, point `TF_CLI_CONFIG_FILE` at a local
+`.terraformrc` file:
+
+```bash
+# .terraformrc (in your project directory)
+cat > .terraformrc <<'EOF'
+provider_installation {
+  dev_overrides {
+    "keyfactor-pub/keyfactor" = "/home/youruser/go/bin"
+  }
+  direct {}
+}
+EOF
+
+TF_CLI_CONFIG_FILE=.terraformrc terraform plan
 ```
 
 ## Keyfactor Command Permissions

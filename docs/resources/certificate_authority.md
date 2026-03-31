@@ -3,12 +3,12 @@
 page_title: "keyfactor_certificate_authority Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicitpassword, authcertificate, authcertificatepassword, client_secret) are write-only — the server never returns plaintext values, so provider reads preserve configured values from state.
+  Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicitpassword, authcertificate, authcertificatepassword, clientsecret) are write-only — the server never returns plaintext values, so provider reads preserve configured values from state. The forcesave flag bypasses the server-side connectivity test on create/update and is also write-only.
 ---
 
 # keyfactor_certificate_authority (Resource)
 
-Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicit_password, auth_certificate, auth_certificate_password, client_secret) are write-only — the server never returns plaintext values, so provider reads preserve configured values from state.
+Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicit_password, auth_certificate, auth_certificate_password, client_secret) are write-only — the server never returns plaintext values, so provider reads preserve configured values from state. The force_save flag bypasses the server-side connectivity test on create/update and is also write-only.
 
 ## Example Usage
 
@@ -47,59 +47,60 @@ resource "keyfactor_certificate_authority" "ejbca" {
 
 ### Required
 
-- `ca_type` (Number) CA type: 0 = Microsoft CA, 1 = third-party (e.g. EJBCA). Changing this forces a new resource.
-- `host_name` (String) Hostname or URL of the certificate authority server.
-- `logical_name` (String) Logical name for the certificate authority.
+- `ca_type` (Number) An integer indicating the type of CA: 0 = DCOM (Microsoft ADCS) or 1 = HTTPS (e.g. EJBCA). Changing this forces a new resource.
+- `host_name` (String) A string indicating the DNS hostname or URL of the certificate authority.
+- `logical_name` (String) A string indicating the logical name of the certificate authority.
 
 ### Optional
 
-- `agent` (String) Agent identifier (GUID) for this CA.
-- `allow_one_click_renewals` (Boolean) Whether one-click renewals are allowed.
-- `allowed_enrollment_types` (Number) Bitmask of allowed enrollment types (0=none, 1=PFX, 2=CSR, 3=both).
-- `allowed_requesters` (List of String) List of allowed requester identities.
-- `audience` (String) OAuth audience.
-- `auth_certificate` (String, Sensitive) Base64-encoded PFX data for the authentication certificate. Write-only.
-- `auth_certificate_password` (String, Sensitive) Password for the authentication certificate PFX. Write-only.
-- `client_id` (String) OAuth client ID.
-- `client_secret` (String, Sensitive) OAuth client secret. Write-only; cannot be read back from the server.
-- `configuration_tenant` (String) Configuration tenant for the CA.
-- `connector_pool` (String) Connector pool name.
-- `delegate` (Boolean) Whether the CA is delegated.
-- `delegate_enrollment` (Boolean) Whether enrollment is delegated for this CA.
-- `enforce_unique_dn` (Boolean) Whether to enforce unique distinguished names.
-- `explicit_credentials` (Boolean) Whether explicit credentials are configured for this CA.
-- `explicit_password` (String, Sensitive) Password for explicit credentials. Write-only; cannot be read back from the server.
-- `explicit_user` (String) Username for explicit credentials.
-- `failure_max` (Number) Maximum failure threshold.
-- `forest_root` (String) Forest root for the CA.
-- `full_scan_interval_minutes` (Number) Interval in minutes for full CA scans.
-- `incremental_scan_interval_minutes` (Number) Interval in minutes for incremental CA scans.
-- `issuance_max` (Number) Maximum issuance threshold.
-- `issuance_min` (Number) Minimum issuance threshold.
-- `key_retention` (Number) Key retention policy: 0=None, 1=SettingDriven, 2=Always, 3=Never.
-- `key_retention_days` (Number) Number of days to retain keys.
-- `monitor_thresholds` (Boolean) Whether to monitor thresholds for this CA.
-- `new_end_entity_on_renew_and_reissue` (Boolean) Whether to create a new end entity on renew and reissue (EJBCA).
-- `properties` (String) JSON string of CA properties.
-- `remote` (Boolean) Whether the CA is remote.
-- `rfc_enforcement` (Boolean) Whether to enforce RFC compliance.
-- `scope` (String) OAuth scope.
-- `standalone` (Boolean) Whether the CA is standalone.
-- `subscriber_terms` (Boolean) Whether subscriber terms are enabled.
-- `threshold_check_interval_minutes` (Number) Interval in minutes for threshold checks.
-- `token_url` (String) OAuth token URL for third-party CA authentication.
-- `use_allowed_requesters` (Boolean) Whether to restrict enrollment to specific requesters.
-- `use_ca_connector` (Boolean) Whether to use the CA connector.
+- `agent` (String) A string indicating the GUID of the Keyfactor Universal Orchestrator configured to manage the certificate authority.
+- `allow_one_click_renewals` (Boolean) A Boolean that sets whether the CA will allow One-Click Renewal on certificates.
+- `allowed_enrollment_types` (Number) An integer that sets the type(s) of enrollment that are allowed through Keyfactor Command for the certificate authority: 0=none, 1=PFX, 2=CSR, 3=both. Requires standalone=true.
+- `allowed_requesters` (List of String) An array of strings indicating Keyfactor Command security roles that are allowed to enroll for certificates via Keyfactor Command for this CA. Applies to standalone CAs only. Write-only: not returned by the server GET; preserved from plan/state.
+- `audience` (String) For HTTPS CAs, a string specifying the audience to include in token requests to the identity provider.
+- `auth_certificate` (String, Sensitive) An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only.
+- `auth_certificate_password` (String, Sensitive) An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only.
+- `client_id` (String) For HTTPS CAs, a string specifying the client ID used to authenticate when OAuth authentication is selected.
+- `client_secret` (String, Sensitive) For HTTPS CAs, an object indicating the secret for the client used to authenticate. Write-only; cannot be read back from the server.
+- `configuration_tenant` (String) A string indicating the forest root name or DNS domain name for the certificate authority.
+- `connector_pool` (String) A string indicating the name of the connector pool to use with the CA Connector Client.
+- `delegate` (Boolean) A Boolean that sets whether management interactions should be done in the context of the requesting user.
+- `delegate_enrollment` (Boolean) A Boolean that sets whether enrollment should be done in the context of the requesting user.
+- `enforce_unique_dn` (Boolean) A Boolean that sets whether the unique DN requirement is enforced on the CA. Mutually exclusive with new_end_entity_on_renew_and_reissue=true.
+- `explicit_credentials` (Boolean) A Boolean that sets whether explicit credentials are enabled for this certificate authority.
+- `explicit_password` (String, Sensitive) An object indicating the password information to use for authentication with explicit_user. Write-only; cannot be read back from the server.
+- `explicit_user` (String) A string indicating the username in DOMAIN\username format for service account credentials.
+- `failure_max` (Number) An integer that sets the maximum number of certificate requests that can fail before an alert is triggered.
+- `force_save` (Boolean) A Boolean indicating whether to save the CA record even if the CA connectivity test fails. Useful when provisioning a CA record before the CA server is reachable. Write-only — not returned by the server; preserved from config/state after reads.
+- `forest_root` (String) A string indicating the forest root name or DNS domain name (retained for legacy purposes).
+- `full_scan_interval_minutes` (Number) Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.
+- `incremental_scan_interval_minutes` (Number) Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.
+- `issuance_max` (Number) An integer that sets the maximum number of certificates that can be issued before an alert is triggered.
+- `issuance_min` (Number) An integer that sets the minimum number of certificates that should be issued before an alert is triggered.
+- `key_retention` (Number) An integer that sets the type of key retention to enable for the certificate authority: 0=None, 1=SettingDriven, 2=Always, 3=Never.
+- `key_retention_days` (Number) An integer indicating the number of days for which to retain private keys before deletion.
+- `monitor_thresholds` (Boolean) A Boolean that sets whether threshold monitoring is enabled with email alerts.
+- `new_end_entity_on_renew_and_reissue` (Boolean) A Boolean setting whether renewal requests create new end entities. Required to be true for HTTPS CAs (ca_type=1). Mutually exclusive with enforce_unique_dn=true.
+- `properties` (String) A string indicating additional properties, storing configuration for the Sync External Certificates option.
+- `remote` (Boolean) A Boolean that sets whether communications are done via a Keyfactor Universal Orchestrator.
+- `rfc_enforcement` (Boolean) A Boolean that sets whether enrollments must include at least one DNS SAN.
+- `scope` (String) For HTTPS CAs, a string indicating scopes included in token requests, separated by spaces.
+- `standalone` (Boolean) A Boolean that sets whether the certificate authority is a standalone CA.
+- `subscriber_terms` (Boolean) A Boolean that sets whether to add a checkbox forcing users to agree to terms.
+- `threshold_check_interval_minutes` (Number) Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720.
+- `token_url` (String) For HTTPS CAs, a string indicating the bearer token URL of the identity provider.
+- `use_allowed_requesters` (Boolean) A Boolean that sets whether the allowed requesters option is enabled. Applies to standalone CAs only.
+- `use_ca_connector` (Boolean) A Boolean that sets whether communications are done via a CA Connector Client.
 
 ### Read-Only
 
-- `agent_name` (String) Name of the agent (read-only).
-- `agent_username` (String) Username of the agent (read-only).
+- `agent_name` (String) Name of the orchestrator agent managing this CA (read-only).
+- `agent_username` (String) Username of the orchestrator agent managing this CA (read-only).
 - `auth_certificate_issued_dn` (String) Issued DN of the authentication certificate (read-only).
 - `auth_certificate_issuer_dn` (String) Issuer DN of the authentication certificate (read-only).
 - `auth_certificate_thumbprint` (String) Thumbprint of the authentication certificate (read-only).
 - `denial_max` (Number) Maximum denial count (read-only).
-- `id` (String) Integer ID of the certificate authority.
-- `last_scan` (String) Timestamp of the last scan (read-only).
+- `id` (String) Integer ID of the certificate authority assigned by Keyfactor Command.
+- `last_scan` (String) A string indicating the date in UTC on which a synchronization was last performed (read-only).
 
 

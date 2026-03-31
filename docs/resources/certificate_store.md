@@ -73,5 +73,3 @@ Import is supported using the following syntax:
 ```shell
 terraform import keyfactor_certificate_store.mystore "9f8855f1-80ff-4475-89ec-d82accb32cea" # Where this is the GUID of the certificate store
 ```
-
-~> **Note on write-only fields after import:** The `store_password`, `server_username`, and `server_password` fields are write-only in the Keyfactor Command API — the server never returns their values. After importing a certificate store these fields will be `null` in state. If your store type requires them, you must supply the values in your Terraform configuration after import to avoid drift.

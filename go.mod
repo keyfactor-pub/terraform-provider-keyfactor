@@ -3,7 +3,7 @@ module github.com/keyfactor-pub/terraform-provider-keyfactor
 go 1.24.0
 
 require (
-	github.com/Keyfactor/keyfactor-auth-client-go v1.4.0-rc.0
+	github.com/Keyfactor/keyfactor-auth-client-go v1.5.0
 	github.com/Keyfactor/keyfactor-go-client-sdk/v24 v24.0.2
 	github.com/Keyfactor/keyfactor-go-client/v3 v3.4.0
 	github.com/hashicorp/terraform-plugin-framework v0.10.0

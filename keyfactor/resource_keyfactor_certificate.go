@@ -401,6 +401,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					"granted at the collection level. NOTE: This will *not* assign the cert to the specified collection ID; " +
 					"assignment is based the collection's associated query. For more information on collection permissions see " +
 					"the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"owner_role_name": {
 				Type:     types.StringType,
@@ -1211,7 +1212,7 @@ func (r resourceCommandCertificate) Read(
 		//CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(certificateID), Null: isNullId(certificateID)},
-		CollectionId:        types.Int64{Null: true},  // not recoverable; use isNullId sentinel
+		CollectionId:        state.CollectionId,       // server doesn't return collection context; preserve from state
 		FriendlyName:        types.String{Null: true}, // write-only enrollment param
 		UseCNAsFriendlyName: types.Bool{Null: true},   // write-only enrollment param
 		ExpiryWarningDays:   state.ExpiryWarningDays,
@@ -1407,7 +1408,10 @@ func (r resourceCommandCertificate) Update(
 		return
 	}
 
-	collectionIdInt := int(state.CollectionId.Value)
+	// Use plan.CollectionId so that when the user changes collection_id in config,
+	// the API call uses the new value (collection context is a permission hint, not
+	// a resource-identity field).
+	collectionIdInt := int(plan.CollectionId.Value)
 
 	thumbprint, commonName := determineCertificateIdType(state.ID.Value)
 	certificateID := int(state.CertificateId.Value)
@@ -1584,7 +1588,7 @@ func (r resourceCommandCertificate) Update(
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
-			CollectionId:         state.CollectionId,
+			CollectionId:         plan.CollectionId,
 			ExpiryWarningDays:    plan.ExpiryWarningDays,
 			IsExpired: types.Bool{
 				Value: expired,
@@ -1703,7 +1707,7 @@ func (r resourceCommandCertificate) Update(
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
-			CollectionId:         state.CollectionId,
+			CollectionId:         plan.CollectionId,
 			ExpiryWarningDays:    plan.ExpiryWarningDays,
 			IsExpired: types.Bool{
 				Value: expired,
@@ -1757,7 +1761,7 @@ func (r resourceCommandCertificate) Update(
 			dlLeafPEM, dlChainPEM, dlPKeyPEM, dlRawData, dlDiags := recoverOrDownloadCertificate(
 				ctx,
 				int(state.CertificateId.Value),
-				int(state.CollectionId.Value),
+				int(plan.CollectionId.Value),
 				plan.KeyPassword.Value,
 				r.p.client,
 				effectivePlanFmt,
@@ -1826,7 +1830,7 @@ func (r resourceCommandCertificate) Update(
 				pKeyPEM, _, _, _, rDiags := recoverPrivateKeyFromKeyfactorCommand(
 					ctx,
 					int(state.CertificateId.Value),
-					int(state.CollectionId.Value),
+					int(plan.CollectionId.Value),
 					recoverPassword,
 					r.p.client,
 					"PFX",

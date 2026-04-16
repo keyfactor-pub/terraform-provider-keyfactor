@@ -486,6 +486,39 @@ api-options-application:
 		-H "Authorization: Bearer $$TOKEN" 2>&1 | grep -i "^allow:"
 
 # ---------------------------------------------------------------------------
+# Certificate Store raw API debugging targets
+# Used to inspect raw server responses for fields like ContainerName/ApplicationName.
+# Usage examples:
+#   make api-create-store-raw AGENT_ID=<guid> STORE_TYPE_ID=104 CONTAINER_NAME=tf-int-app-test
+#   make api-delete-store-raw STORE_ID=<guid>
+# ---------------------------------------------------------------------------
+AGENT_ID     ?= 275bcd31-9e7b-4c4a-bce9-1719e0c2168d
+CONTAINER_NAME ?= tf-int-app-test
+
+api-create-store-raw:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X POST \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{\"ClientMachine\":\"container_uo-25-4\",\"Storepath\":\"default/curl-raw-test\",\"CertStoreType\":$(STORE_TYPE_ID),\"ContainerName\":\"$(CONTAINER_NAME)\",\"AgentId\":\"$(AGENT_ID)\",\"Properties\":\"{\\\"KubeSecretType\\\":\\\"tls\\\",\\\"ServerUseSsl\\\":\\\"true\\\"}\",\"ServerUsername\":\"kubeconfig\"}" | jq .
+
+api-delete-store-raw:
+	@if [ -z "$(STORE_ID)" ]; then echo "Usage: make api-delete-store-raw STORE_ID=<guid>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X DELETE \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores/$(STORE_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN"
+
+# ---------------------------------------------------------------------------
 # Certificate Store Type API debugging targets
 # Usage examples:
 #   make api-list-store-types

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 type certificateTestCase struct {
@@ -2680,6 +2681,114 @@ func TestIntKeyfactorCertificateResource_CSR_KeyTypes(t *testing.T) {
 
 // TestUnitKeyfactorCertificateResource_CSR_Metadata tests metadata create,
 // update, and removal for a CSR-based certificate using VCR cassettes.
+// TestUnitKeyfactorCertificateResource_CollectionId is the VCR regression test
+// for the collection_id forces-replacement bug. It verifies:
+//  1. Adding collection_id to an existing cert does NOT create a new resource (same id)
+//  2. collection_id is preserved in state after apply (not nulled by Read)
+//  3. Removing collection_id returns to null without replacement
+//
+// Recording (requires a Command collection and KEYFACTOR_CERTIFICATE_COLLECTION_ID):
+//
+//	KEYFACTOR_CERTIFICATE_COLLECTION_ID=<id> RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_CollectionId make testunit-record-one
+func TestUnitKeyfactorCertificateResource_CollectionId(t *testing.T) {
+	cassetteName := "certificate_resource_collection_id"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var enrollmentPattern, templateName, ca, cn string
+	var collectionId int64
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		colIdStr := os.Getenv("KEYFACTOR_CERTIFICATE_COLLECTION_ID")
+		if colIdStr == "" {
+			t.Skip("KEYFACTOR_CERTIFICATE_COLLECTION_ID not set; create a cert collection in Command and set this env var to record")
+		}
+		var err error
+		collectionId, err = strconv.ParseInt(colIdStr, 10, 64)
+		if err != nil {
+			t.Fatalf("invalid KEYFACTOR_CERTIFICATE_COLLECTION_ID %q: %v", colIdStr, err)
+		}
+		client := newTestClient(t)
+		ca = discoverCA(t, client)
+		cn = randomTestCN("tf-unit-col")
+		enrollmentPattern = discoverEnrollmentPattern(t, client)
+		if enrollmentPattern == "" {
+			templateName = discoverTemplate(t, client)
+		}
+		writeCertPFXTestParams(cassettePath, certPFXTestParams{
+			TemplateName:      templateName,
+			CA:                ca,
+			EnrollmentPattern: enrollmentPattern,
+			CN:                cn,
+			CollectionId:      collectionId,
+		})
+	} else {
+		params := readCertPFXTestParams(cassettePath)
+		enrollmentPattern = params.EnrollmentPattern
+		templateName = params.TemplateName
+		ca = params.CA
+		cn = params.CN
+		collectionId = params.CollectionId
+		if collectionId == 0 {
+			t.Skip("no cassette recorded for certificate_resource_collection_id; run with RECORD_CASSETTES=1 to record")
+		}
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	var originalID string
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			// Step 1: cert without collection_id
+			{
+				Config: certCollectionIdConfig(enrollmentPattern, templateName, ca, cn, 0),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckNoResourceAttr("keyfactor_certificate.test", "collection_id"),
+					func(s *terraform.State) error {
+						rs, ok := s.RootModule().Resources["keyfactor_certificate.test"]
+						if ok {
+							originalID = rs.Primary.ID
+						}
+						return nil
+					},
+				),
+			},
+			// Step 2: add collection_id — regression: must NOT force replacement
+			{
+				Config: certCollectionIdConfig(enrollmentPattern, templateName, ca, cn, collectionId),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(
+						"keyfactor_certificate.test", "collection_id",
+						strconv.FormatInt(collectionId, 10),
+					),
+					resource.TestCheckResourceAttrWith("keyfactor_certificate.test", "id", func(v string) error {
+						if originalID != "" && v != originalID {
+							return fmt.Errorf("certificate was recreated (id %s → %s); expected in-place update", originalID, v)
+						}
+						return nil
+					}),
+				),
+			},
+			// Step 3: remove collection_id — must NOT force replacement
+			{
+				Config: certCollectionIdConfig(enrollmentPattern, templateName, ca, cn, 0),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckNoResourceAttr("keyfactor_certificate.test", "collection_id"),
+					resource.TestCheckResourceAttrWith("keyfactor_certificate.test", "id", func(v string) error {
+						if originalID != "" && v != originalID {
+							return fmt.Errorf("certificate was recreated (id %s → %s); expected in-place update", originalID, v)
+						}
+						return nil
+					}),
+				),
+			},
+		},
+	})
+}
+
 func TestUnitKeyfactorCertificateResource_CSR_Metadata(t *testing.T) {
 	cassetteName := "certificate_resource_csr_metadata"
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
@@ -2725,4 +2834,107 @@ func TestUnitKeyfactorCertificateResource_CSR_Metadata(t *testing.T) {
 			},
 		},
 	})
+}
+
+// TestIntKeyfactorCertificateResource_CollectionIdInPlaceUpdate verifies that
+// adding, changing, or removing collection_id on an existing certificate resource
+// results in an in-place update (NOT a destroy+replace). This is a regression
+// test for the bug where collection_id was always nulled in Read, causing
+// perpetual drift, and the Update function ignored config changes to collection_id.
+func TestIntKeyfactorCertificateResource_CollectionIdInPlaceUpdate(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+	cn := randomTestCN("tf-int-coll")
+
+	// Require a collection ID from the environment. Collection IDs are
+	// lab-specific and there is no discovery API, so skip if not set.
+	collectionIdStr := os.Getenv("KEYFACTOR_CERTIFICATE_COLLECTION_ID")
+	if collectionIdStr == "" {
+		t.Skip("KEYFACTOR_CERTIFICATE_COLLECTION_ID not set; skipping collection_id in-place update test")
+	}
+	collectionId, err := strconv.Atoi(collectionIdStr)
+	if err != nil {
+		t.Fatalf("KEYFACTOR_CERTIFICATE_COLLECTION_ID must be an integer, got %q", collectionIdStr)
+	}
+
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var templateName string
+	if enrollmentPattern == "" {
+		templateName = discoverTemplate(t, client)
+	}
+
+	var originalID string
+	res := "keyfactor_certificate.test"
+
+	// idStabilityCheck returns a TestCheckFunc that fails if the resource ID
+	// changed (i.e., the resource was recreated instead of updated in-place).
+	idStabilityCheck := func() resource.TestCheckFunc {
+		return resource.TestCheckResourceAttrWith(res, "id", func(value string) error {
+			if originalID != "" && value != originalID {
+				return fmt.Errorf(
+					"certificate was recreated (id changed from %s to %s); "+
+						"expected in-place update", originalID, value)
+			}
+			originalID = value
+			return nil
+		})
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Step 1: Create WITHOUT collection_id
+			{
+				Config: testAccCertPFXConfigCollectionIdTest(enrollmentPattern, templateName, ca, cn, 0),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(res, "id"),
+					resource.TestCheckResourceAttrSet(res, "serial_number"),
+					idStabilityCheck(),
+				),
+			},
+			// Step 2: Add collection_id — must be in-place update, NOT replacement
+			{
+				Config: testAccCertPFXConfigCollectionIdTest(enrollmentPattern, templateName, ca, cn, collectionId),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					idStabilityCheck(),
+					resource.TestCheckResourceAttr(res, "collection_id", strconv.Itoa(collectionId)),
+				),
+			},
+			// Step 3: Remove collection_id — must be in-place update, NOT replacement
+			{
+				Config: testAccCertPFXConfigCollectionIdTest(enrollmentPattern, templateName, ca, cn, 0),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					idStabilityCheck(),
+				),
+			},
+		},
+	})
+}
+
+// testAccCertPFXConfigCollectionIdTest generates HCL for a PFX certificate resource
+// with an optional collection_id. When collectionId <= 0, the collection_id line is
+// omitted from the config entirely.
+func testAccCertPFXConfigCollectionIdTest(enrollmentPattern, templateName, ca, cn string, collectionId int) string {
+	collectionLine := ""
+	if collectionId > 0 {
+		collectionLine = fmt.Sprintf("\n  collection_id                   = %d", collectionId)
+	}
+	if enrollmentPattern != "" {
+		return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                      = "%s"
+  certificate_authority            = "%s"
+  certificate_enrollment_pattern   = "%s"
+  key_password                     = "Tftest123456"%s
+}
+`, cn, ca, enrollmentPattern, collectionLine)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                      = "%s"
+  certificate_authority            = "%s"
+  certificate_template             = "%s"
+  key_password                     = "Tftest123456"%s
+}
+`, cn, ca, templateName, collectionLine)
 }

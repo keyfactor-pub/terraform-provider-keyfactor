@@ -417,6 +417,39 @@ func discoverOAuthAuthScheme(t *testing.T) string {
 	return "System"
 }
 
+// discoverApplication returns the name of an existing certificate store
+// container/application in the lab. Checks KEYFACTOR_CERTIFICATE_STORE_CONTAINER_NAME1
+// env var first, then discovers via the API. Returns "" if none are available
+// (caller should skip or test without a container).
+func discoverApplication(t *testing.T, client *api.Client) string {
+	t.Helper()
+
+	if name := os.Getenv("KEYFACTOR_CERTIFICATE_STORE_CONTAINER_NAME1"); name != "" {
+		t.Logf("Using application/container name from env: %s", name)
+		return name
+	}
+
+	containers, err := client.GetStoreContainers()
+	if err != nil {
+		t.Logf("Failed to list store containers for discovery: %s — tests will run without a container", err)
+		return ""
+	}
+
+	if containers == nil || len(*containers) == 0 {
+		t.Logf("No certificate store containers/applications available in the lab")
+		return ""
+	}
+
+	for _, c := range *containers {
+		t.Logf("Available application/container: %s (ID: %d, StoreType: %d)", c.Name, *c.Id, c.CertStoreType)
+	}
+
+	// Return the first one
+	name := (*containers)[0].Name
+	t.Logf("Discovered application/container: %s", name)
+	return name
+}
+
 // discoverStoreType returns a certificate store type short name.
 // Checks KEYFACTOR_CERTIFICATE_STORE_TYPE env var first, then discovers from the lab.
 func discoverStoreType(t *testing.T, client *api.Client) string {
@@ -634,6 +667,7 @@ type storeTestParams struct {
 	ClientMachine string `json:"client_machine"`
 	AgentID       string `json:"agent_id"`
 	StorePath     string `json:"store_path"`
+	ContainerName string `json:"container_name,omitempty"`
 }
 
 // writeStoreTestParams saves recording parameters alongside the cassette file.
@@ -676,6 +710,7 @@ type certPFXTestParams struct {
 	CA                string `json:"ca"`
 	EnrollmentPattern string `json:"enrollment_pattern"`
 	CN                string `json:"cn"`
+	CollectionId      int64  `json:"collection_id,omitempty"`
 }
 
 func writeCertPFXTestParams(cassettePath string, params certPFXTestParams) {
@@ -1447,6 +1482,33 @@ resource "keyfactor_certificate" "test" {
 `, cn, ca, templateName, enrollmentPattern)
 }
 
+// certCollectionIdConfig generates HCL for a PFX certificate resource with an
+// optional collection_id. Pass collectionId=0 to omit the field entirely.
+func certCollectionIdConfig(enrollmentPattern, templateName, ca, cn string, collectionId int64) string {
+	colLine := ""
+	if collectionId != 0 {
+		colLine = fmt.Sprintf("\n  collection_id          = %d", collectionId)
+	}
+	if enrollmentPattern != "" {
+		return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                      = "%s"
+  certificate_authority            = "%s"
+  certificate_enrollment_pattern   = "%s"
+  key_password                     = "Tftest123456"%s
+}
+`, cn, ca, enrollmentPattern, colLine)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name            = "%s"
+  certificate_authority  = "%s"
+  certificate_template   = "%s"
+  key_password           = "Tftest123456"%s
+}
+`, cn, ca, templateName, colLine)
+}
+
 // parseCNFromCSRPEM extracts the CommonName from a PEM-encoded CSR.
 // Returns "" if parsing fails, allowing callers to fall back gracefully.
 func parseCNFromCSRPEM(csrPEM string) string {
@@ -2104,6 +2166,104 @@ resource "keyfactor_certificate_store" "test" {
   store_type       = "%s"
 }
 `, clientMachine, storePath, agentID, storeType)
+}
+
+// testAccCertStoreConfigWithAppName generates HCL for a certificate store resource
+// that uses application_name (the v25+ alias) instead of container_name.
+// Pass appName="" to omit the application_name attribute.
+func testAccCertStoreConfigWithAppName(storeType, clientMachine, agentID, storePath, appName string) string {
+	stLower := strings.ToLower(storeType)
+	appLine := ""
+	if appName != "" {
+		appLine = fmt.Sprintf("  application_name = %q\n", appName)
+	}
+
+	if strings.HasPrefix(stLower, "k8s") {
+		creds := k8sStoreCredentials()
+		kubeSecretType := "tls"
+		switch stLower {
+		case "k8ssecret":
+			kubeSecretType = "opaque"
+		case "k8sjks":
+			kubeSecretType = "jks"
+		case "k8spkcs12":
+			kubeSecretType = "pkcs12"
+		}
+		return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+%s  server_username  = "kubeconfig"
+  server_password  = <<EOT
+%s
+EOT
+  server_use_ssl   = true
+  properties = {
+    KubeSecretType = "%s"
+  }
+}
+`, clientMachine, storePath, agentID, storeType, appLine, creds, kubeSecretType)
+	}
+
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+%s}
+`, clientMachine, storePath, agentID, storeType, appLine)
+}
+
+// testAccCertStoreConfigWithContainerName generates HCL for a certificate store resource
+// that uses the legacy container_name attribute explicitly.
+// Pass containerName="" to omit the container_name attribute.
+func testAccCertStoreConfigWithContainerName(storeType, clientMachine, agentID, storePath, containerName string) string {
+	stLower := strings.ToLower(storeType)
+	containerLine := ""
+	if containerName != "" {
+		containerLine = fmt.Sprintf("  container_name = %q\n", containerName)
+	}
+
+	if strings.HasPrefix(stLower, "k8s") {
+		creds := k8sStoreCredentials()
+		kubeSecretType := "tls"
+		switch stLower {
+		case "k8ssecret":
+			kubeSecretType = "opaque"
+		case "k8sjks":
+			kubeSecretType = "jks"
+		case "k8spkcs12":
+			kubeSecretType = "pkcs12"
+		}
+		return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+%s  server_username  = "kubeconfig"
+  server_password  = <<EOT
+%s
+EOT
+  server_use_ssl   = true
+  properties = {
+    KubeSecretType = "%s"
+  }
+}
+`, clientMachine, storePath, agentID, storeType, containerLine, creds, kubeSecretType)
+	}
+
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+%s}
+`, clientMachine, storePath, agentID, storeType, containerLine)
 }
 
 // testAccCertStoreDataSourceByID generates HCL for reading a cert store by

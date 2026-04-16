@@ -1,6 +1,7 @@
 package keyfactor
 
 import (
+	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -318,6 +319,7 @@ type CertificateStore struct {
 	ID                    types.String `tfsdk:"id"`
 	ContainerID           types.Int64  `tfsdk:"container_id"`
 	ContainerName         types.String `tfsdk:"container_name"`
+	ApplicationName       types.String `tfsdk:"application_name"`
 	AgentId               types.String `tfsdk:"agent_id"`
 	AgentIdentifier       types.String `tfsdk:"agent_identifier"`
 	AgentAssigned         types.Bool   `tfsdk:"agent_assigned"`
@@ -334,6 +336,42 @@ type CertificateStore struct {
 	ServerUseSsl          types.Bool   `tfsdk:"server_use_ssl"`
 	StorePassword         types.String `tfsdk:"store_password"`
 	InventorySchedule     types.String `tfsdk:"inventory_schedule"`
+}
+
+// effectiveContainerName returns the resolved container/application name from the
+// CertificateStore model. It prefers application_name (v25+) over container_name.
+// If both are set, application_name wins. Returns ("", true) when neither is set.
+func (s *CertificateStore) effectiveContainerName() (string, bool) {
+	if !s.ApplicationName.IsNull() && s.ApplicationName.Value != "" {
+		return s.ApplicationName.Value, false
+	}
+	if !s.ContainerName.IsNull() && s.ContainerName.Value != "" {
+		return s.ContainerName.Value, false
+	}
+	return "", true
+}
+
+// syncApplicationAndContainerName ensures both application_name and container_name
+// reflect the same server-side value. Call this when building state from API responses.
+func (s *CertificateStore) syncApplicationAndContainerName(serverValue string) {
+	isNull := isNullString(serverValue)
+	s.ContainerName = types.String{Value: serverValue, Null: isNull}
+	s.ApplicationName = types.String{Value: serverValue, Null: isNull}
+}
+
+// resolveContainerName looks up a container/application name by its numeric ID
+// from a list of CertStoreContainers. Returns "" if the ID is 0, not found,
+// or the list is empty.
+func resolveContainerName(containers []api.CertStoreContainer, containerId int) string {
+	if containerId == 0 {
+		return ""
+	}
+	for _, c := range containers {
+		if c.Id != nil && *c.Id == containerId {
+			return c.Name
+		}
+	}
+	return ""
 }
 
 type CertificateStoreCredential struct {

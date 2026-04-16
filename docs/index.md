@@ -8,15 +8,15 @@ description: |-
   Below are currently supported resources:
   | Command Resource  | Keyfactor Command Doc                                                                                                              | Terraform Resource                                                                                                                               |
   |-------------------|------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-  | Certificate       | [Certificate](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Certificates.htm)                     | [keyfactor_certificate](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate)                       |
-  | Certificate Store | [Certificate Store](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/CertificateStores.htm)          | [keyfactor_certificate_store](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_store)           |
-  | Orchestration Job | [Orchestration Job](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/OrchestratorJobsPOSTCustom.htm) | [keyfactor_certificate_deployment](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_deployment) |
-  | OAuth Security Role | [OAuth Security Role](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm) | [keyfactor_oauth_security_role](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role) 	|
-  | OAuth Security Claim | [OAuth Security Claims](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm) 	 | [keyfactor_oauth_security_claim](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_claim) 			|
-  | OAuth Security Role Claim Association | [OAuth Security Claim Roles](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaimsGETRoles.htm) | [keyfactor_oauth_security_role_claim_association](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role_claim_association) |
-  | Certificate Template Role Binding | [Certificate Templates](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/TemplatesPut.htm) | [keyfactor_template_role_binding](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/template_role_binding) |
-  | Security Identity (deprecated) | [Security Identity](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Security.htm) 	| [keyfactor_identity](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/identity) 									|
-  | Security Roles (deprecated) | [Security Roles](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm) | [keyfactor_role](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/role) 								|
+  | Certificate       | Certificate https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Certificates.htm                     | keyfactor_certificate https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate                       |
+  | Certificate Store | Certificate Store https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/CertificateStores.htm          | keyfactorcertificatestore https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_store           |
+  | Orchestration Job | Orchestration Job https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/OrchestratorJobsPOSTCustom.htm | keyfactorcertificatedeployment https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/certificate_deployment |
+  | OAuth Security Role | OAuth Security Role https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm | keyfactoroauthsecurity_role https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role   |
+  | OAuth Security Claim | OAuth Security Claims https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm      | keyfactoroauthsecurity_claim https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_claim             |
+  | OAuth Security Role Claim Association | OAuth Security Claim Roles https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaimsGETRoles.htm | keyfactoroauthsecurityroleclaim_association https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role_claim_association |
+  | Certificate Template Role Binding | Certificate Templates https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/TemplatesPut.htm | keyfactortemplaterole_binding https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/template_role_binding |
+  | Security Identity (deprecated) | Security Identity https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/Security.htm     | keyfactor_identity https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/identity                                  |
+  | Security Roles (deprecated) | Security Roles https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm | keyfactor_role https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/role                              |
   Support
   In the Keyfactor Community https://www.keyfactor.com/community/, we welcome contributions. Keyfactor Community
   software is open-source and community-supported, meaning that no SLA is applicable.
@@ -93,6 +93,32 @@ provider "keyfactor" {
 
   alias = "keyfactor_command_oauth" # This isn't required
 }
+
+# kerberos auth - password-based
+provider "keyfactor" {
+  hostname          = "mykfinstance.kfdelivery.com"
+  kerberos_realm    = "EXAMPLE.COM"
+  kerberos_username = "svc_terraform"
+  kerberos_password = "your_kerberos_password"
+  kerberos_config   = "/etc/krb5.conf" # optional, defaults to /etc/krb5.conf
+
+  # Disable PA-FX-FAST if authenticating against Active Directory
+  kerberos_disable_pafxfast = true
+}
+
+# kerberos auth - keytab-based (no password required)
+provider "keyfactor" {
+  hostname          = "mykfinstance.kfdelivery.com"
+  kerberos_realm    = "EXAMPLE.COM"
+  kerberos_username = "svc_terraform"
+  kerberos_keytab   = "/etc/keyfactor/svc_terraform.keytab"
+}
+
+# kerberos auth - credential cache (ccache)
+provider "keyfactor" {
+  hostname        = "mykfinstance.kfdelivery.com"
+  kerberos_ccache = "/tmp/krb5cc_1000" # path to an existing ccache obtained via kinit
+}
 ```
 
 <!-- schema generated by tfplugindocs -->
@@ -110,6 +136,14 @@ provider "keyfactor" {
 - `command_ca_certificate` (String) Path to CA certificate to use when connecting to the Keyfactor Command API in PEM format.This can also be set via the `KEYFACTOR_CA_CERT` environment variable.
 - `domain` (String) Domain that Keyfactor Command instance is hosted on. This can also be set via the `KEYFACTOR_DOMAIN` environment variable.
 - `hostname` (String) Hostname of Keyfactor Command instance. Ex: keyfactor.examplecompany.com. This can also be set via the `KEYFACTOR_HOSTNAME` environment variable.
+- `kerberos_ccache` (String) Path to the Kerberos credential cache file for ccache-based authentication. This can also be set via the `KEYFACTOR_AUTH_KRB_CCACHE` environment variable.
+- `kerberos_config` (String) Path to the krb5.conf Kerberos configuration file. Defaults to /etc/krb5.conf. This can also be set via the `KEYFACTOR_AUTH_KRB_CONFIG` environment variable.
+- `kerberos_disable_pafxfast` (Boolean) Disable PA-FX-FAST for Active Directory Kerberos compatibility. Default value is `false`.
+- `kerberos_keytab` (String) Path to the Kerberos keytab file for keytab-based authentication. This can also be set via the `KEYFACTOR_AUTH_KRB_KEYTAB` environment variable.
+- `kerberos_password` (String, Sensitive) Password for password-based Kerberos authentication. This can also be set via the `KEYFACTOR_AUTH_KRB_PASSWORD` environment variable.
+- `kerberos_realm` (String) Kerberos realm for Kerberos/SPNEGO authentication (e.g. EXAMPLE.COM). This can also be set via the `KEYFACTOR_AUTH_KRB_REALM` environment variable.
+- `kerberos_spn` (String) Service Principal Name for Kerberos authentication. Auto-generated from hostname if omitted. This can also be set via the `KEYFACTOR_AUTH_KRB_SPN` environment variable.
+- `kerberos_username` (String) Kerberos principal username for password or keytab-based authentication. Accepts user@REALM format. This can also be set via the `KEYFACTOR_AUTH_KRB_USERNAME` environment variable.
 - `password` (String, Sensitive) Password of Keyfactor Command service account. This can also be set via the `KEYFACTOR_PASSWORD` environment variable.
 - `pfx_password_length` (Number) The length of password to use when generating a PFX. Default value is `12`.
 - `pfx_password_max_special_chars` (Number) The maximum number of to use when generating a PFX password. Default value is `0`.

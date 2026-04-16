@@ -18,9 +18,11 @@ import (
 	rsa2 "crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"math/big"
 	mathRand "math/rand"
 
 	"net"
@@ -222,6 +224,15 @@ func flattenMetadata(metadata interface{}) types.Map {
 		}
 	}
 
+	// Return an empty map (not null) so that state is always a known value.
+	// The metadata schema is Optional+Computed with useStateOrNullModifier so
+	// an absent config block copies the empty-map state to the plan, producing
+	// zero drift. If the user explicitly sets metadata = null, parseMetadata
+	// sends {} to the server (clearing all entries) and this still returns {}.
+	if len(data) == 0 {
+		return types.Map{Elems: map[string]attr.Value{}, ElemType: types.StringType}
+	}
+
 	result := types.Map{
 		Elems:    map[string]attr.Value{},
 		ElemType: types.StringType,
@@ -230,10 +241,6 @@ func flattenMetadata(metadata interface{}) types.Map {
 		result.Elems[k] = types.String{Value: v}
 	}
 
-	//check if elems is empty
-	if len(result.Elems) == 0 {
-		result.Null = true
-	}
 	return result
 }
 
@@ -720,12 +727,22 @@ func recoverPrivateKeyFromKeyfactorCommand(
 		tflog.Debug(ctx, "Unpacking PFX data to extract private key.")
 		pfxPrivateKey, pfxLeaf, pfxChain, unpackErr := api.UnpackPkcs12(rawBytes, lookupPassword)
 		if unpackErr != nil {
+			// Unknown algorithm (e.g. Ed448 OID 1.3.101.113) means Go's pkcs12/x509
+			// library cannot parse the key — log a warning and return empty strings
+			// without adding an error so callers can fall back gracefully.
+			if strings.Contains(unpackErr.Error(), "unknown algorithm") {
+				tflog.Warn(ctx, fmt.Sprintf(
+					"Cannot unpack PFX for certificate %d — unsupported key algorithm: %v",
+					certId, unpackErr,
+				))
+				return "", "", "", rawBytes, diags
+			}
 			errMsg := fmt.Sprintf("Unable to unpack PFX data for certificate '%v': %v", certId, unpackErr.Error())
 			tflog.Error(ctx, errMsg)
 			diags.AddError("Error unpacking PFX data", errMsg)
 			return "", "", "", rawBytes, diags
 		}
-		return pfxPrivateKey, pfxLeaf, strings.Join(pfxChain, "\n"), rawBytes, diags
+		return pfxPrivateKey, pfxLeaf, strings.Join(pfxChain, ""), rawBytes, diags
 	}
 
 	if (certificateFormat == "PEM" || certificateFormat == "pem") && pkey == nil {
@@ -1101,20 +1118,24 @@ func parseProperties(properties string) (types.Map, types.String, types.String, 
 	}
 
 	for k, v := range propsObj {
+		// The single-store GET endpoint may return special properties as nested
+		// objects (e.g. {"Value": {"SecretValue": "..."}}) rather than plain
+		// strings. Use a safe string conversion to avoid panics.
+		strVal, _ := v.(string)
 		switch k {
 		case "ServerUsername":
-			serverUsername = types.String{Value: v.(string)}
+			serverUsername = types.String{Value: strVal}
 		case "ServerPassword":
-			serverPassword = types.String{Value: v.(string)}
+			serverPassword = types.String{Value: strVal}
 		case "ServerUseSsl":
 			// Convert terraform True/False to bool true/false
-			val, valErr := terraformBoolToGoBool(v.(string))
+			val, valErr := terraformBoolToGoBool(strVal)
 			if valErr != nil {
 				val = true // Default to true if we can't convert
 			}
 			serverUseSsl = types.Bool{Value: val}
 		default:
-			propElems[k] = types.String{Value: v.(string)}
+			propElems[k] = types.String{Value: strVal}
 		}
 	}
 
@@ -1207,6 +1228,20 @@ func recoverOrDownloadCertificate(
 		client,
 		certificateFormat,
 	)
+
+	// For binary formats (PFX/JKS/ZIP), recovery is the only path — the P7B
+	// download fallback only produces PEM data so it cannot help.  If we got
+	// rawBytes back that's success for a binary format even without leafPEM.
+	effectiveFmt := effectiveCertificateFormat(certificateFormat)
+	if effectiveFmt == "PFX" || effectiveFmt == "JKS" || effectiveFmt == "ZIP" {
+		if rawBytes != nil && *rawBytes != "" {
+			// Recovery succeeded — clear any non-fatal diagnostics that may
+			// have been added (e.g. "private key not returned").
+			diags = diag.Diagnostics{}
+		}
+		return leafPEM, chainPEM, pKeyPEM, rawBytes, diags
+	}
+
 	if leafPEM == "" || diags.HasError() {
 		// Attempt to download certificate as a fallback
 		tflog.Debug(ctx, "Unable to recover private key. Attempting to download certificate from Keyfactor Command.")
@@ -1257,6 +1292,17 @@ func hasAPIErrors(
 		return true
 	}
 	return false
+}
+
+// effectiveCertificateFormat normalizes a certificate_format value to the
+// effective download format. Empty string and "STORE" both resolve to PEM
+// (since the STORE format produces PEM output in the Read path).
+func effectiveCertificateFormat(format string) string {
+	f := strings.ToUpper(strings.TrimSpace(format))
+	if f == "" || f == "STORE" {
+		return "PEM"
+	}
+	return f
 }
 
 // determineCertificateIdType determines if the given ID is a certificate Thumbprint or CN.
@@ -1825,4 +1871,45 @@ func convertIntArrayToTerraform(lengths any) []attr.Value {
 		}
 	}
 	return result
+}
+
+// normalizeSerialNumber converts a serial number to a canonical uppercase hex format.
+// It handles both hex strings (from the Keyfactor API) and decimal strings (from big.Int.String()).
+func normalizeSerialNumber(sn string) string {
+	if sn == "" || sn == "<nil>" {
+		return ""
+	}
+
+	// Strip any separators like colons or spaces
+	cleaned := strings.ReplaceAll(strings.ReplaceAll(sn, ":", ""), " ", "")
+
+	// Check if the string contains any hex letter characters (a-f, A-F).
+	// If it does, it's unambiguously a hex string.
+	hasHexLetters := strings.ContainsAny(cleaned, "abcdefABCDEF")
+
+	if hasHexLetters {
+		// Validate it's actually valid hex
+		if _, err := hex.DecodeString(cleaned); err == nil && len(cleaned)%2 == 0 {
+			return strings.ToUpper(cleaned)
+		}
+	}
+
+	// Try to parse as decimal (big.Int.String() output or digit-only serial)
+	n := new(big.Int)
+	if _, ok := n.SetString(cleaned, 10); ok {
+		return strings.ToUpper(fmt.Sprintf("%X", n))
+	}
+
+	// Fallback for hex strings with odd length or other edge cases
+	if _, err := hex.DecodeString(cleaned); err == nil {
+		return strings.ToUpper(cleaned)
+	}
+
+	// Last resort: return uppercased as-is
+	return strings.ToUpper(sn)
+}
+
+// normalizeThumbprint normalizes a certificate thumbprint to lowercase hex.
+func normalizeThumbprint(tp string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(tp, ":", ""), " ", ""))
 }

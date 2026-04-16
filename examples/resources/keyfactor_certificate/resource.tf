@@ -1,4 +1,33 @@
-# PFX Enrollment
+# PFX Enrollment — RSA-4096 (explicit key type and size)
+resource "keyfactor_certificate" "pfx_rsa4096" {
+  common_name                    = "my-rsa4096.example.com"
+  certificate_authority          = "COMMAND\\MY_CA_01"
+  certificate_enrollment_pattern = "2yrWebServer"
+  key_type                       = "RSA"
+  key_size                       = 4096
+  key_password                   = "Don't put this in your production code!"
+}
+
+# PFX Enrollment — ECC P-384 (using curve name)
+resource "keyfactor_certificate" "pfx_ecc_p384" {
+  common_name                    = "my-ecc.example.com"
+  certificate_authority          = "COMMAND\\MY_CA_01"
+  certificate_enrollment_pattern = "2yrWebServer"
+  key_type                       = "ECC"
+  curve                          = "P-384"
+  key_password                   = "Don't put this in your production code!"
+}
+
+# PFX Enrollment — Ed25519
+resource "keyfactor_certificate" "pfx_ed25519" {
+  common_name                    = "my-ed25519.example.com"
+  certificate_authority          = "COMMAND\\MY_CA_01"
+  certificate_enrollment_pattern = "2yrWebServer"
+  key_type                       = "Ed25519"
+  key_password                   = "Don't put this in your production code!"
+}
+
+# PFX Enrollment — full example with metadata and renewal
 resource "keyfactor_certificate" "pkcs12_enrollment" {
   common_name           = "My PKCS12 Certificate"
   country               = "US"

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -26,16 +27,16 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Description: "Display name of the certificate store.",
 			},
 			"client_machine": {
-				Type: types.StringType,
-				//Computed:    true,
-				Required:    true,
-				Description: "Client machine name; value depends on certificate store type. See API reference guide",
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Client machine name; value depends on certificate store type. Required when `id` is not set. See API reference guide",
 			},
 			"store_path": {
-				Type: types.StringType,
-				//Computed:    true,
-				Required:    true,
-				Description: "Path to the new certificate store on a target. Format varies depending on type.",
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Path to the new certificate store on a target. Required when `id` is not set. Format varies depending on type.",
 			},
 			"store_type": {
 				Type:        types.StringType,
@@ -98,10 +99,10 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Description: "Indicates whether the store password can be changed.",
 			},
 			"id": {
-				Type: types.StringType,
-				//Required:    true,
+				Type:        types.StringType,
+				Optional:    true,
 				Computed:    true,
-				Description: "Keyfactor certificate store GUID.",
+				Description: "Keyfactor certificate store GUID. When set, the store is looked up directly by GUID instead of by `client_machine` + `store_path`.",
 			},
 			"store_password": {
 				Type:        types.StringType,
@@ -159,51 +160,54 @@ func (r dataSourceCertificateStore) Read(
 	}
 
 	tflog.Info(ctx, "Read called on certificate store resource")
-	//certificateStoreID := state.ID.Value
+	storeGUID := state.ID.Value
 	clientMachine := state.ClientMachine.Value
 	storePath := state.StorePath.Value
 	containerID := state.ContainerID.Value
 
-	//tflog.SetField(ctx, "certificate_id", certificateStoreID)
-	tflog.SetField(ctx, "client_machine", clientMachine)
-	tflog.SetField(ctx, "store_path", storePath)
+	var sResp *api.GetCertificateStoreResponse
 
-	//sResp, err := r.p.client.GetCertificateStoreByID(certificateStoreID)
-	sRespList, err := r.p.client.GetCertificateStoreByClientAndStorePath(clientMachine, storePath, containerID)
-	if err != nil {
-		response.Diagnostics.AddError(
-			ERR_SUMMARY_CERT_STORE_READ,
-			"Error reading certificate store: %s"+err.Error(),
-		)
-		return
+	if storeGUID != "" {
+		tflog.SetField(ctx, "store_id", storeGUID)
+		resp, err := r.p.client.GetCertificateStoreByID(storeGUID)
+		if err != nil {
+			response.Diagnostics.AddError(
+				ERR_SUMMARY_CERT_STORE_READ,
+				fmt.Sprintf("Error reading certificate store by ID '%s': %s", storeGUID, err.Error()),
+			)
+			return
+		}
+		sResp = resp
+	} else {
+		tflog.SetField(ctx, "client_machine", clientMachine)
+		tflog.SetField(ctx, "store_path", storePath)
+		if clientMachine == "" || storePath == "" {
+			response.Diagnostics.AddError(
+				ERR_SUMMARY_CERT_STORE_READ,
+				"Either 'id' or both 'client_machine' and 'store_path' must be specified.",
+			)
+			return
+		}
+		sRespList, err := r.p.client.GetCertificateStoreByClientAndStorePath(clientMachine, storePath, containerID)
+		if err != nil {
+			response.Diagnostics.AddError(
+				ERR_SUMMARY_CERT_STORE_READ,
+				fmt.Sprintf("Error reading certificate store '%s/%s': %s", clientMachine, storePath, err.Error()),
+			)
+			return
+		}
+		if sRespList == nil || len(*sRespList) == 0 {
+			response.Diagnostics.AddError(
+				ERR_SUMMARY_CERT_STORE_READ,
+				fmt.Sprintf("No certificate store found for client_machine '%s' and store_path '%s'", clientMachine, storePath),
+			)
+			return
+		}
+		sResp = &(*sRespList)[0]
 	}
-
-	if sRespList != nil && len(*sRespList) == 0 {
-		response.Diagnostics.AddError(
-			ERR_SUMMARY_CERT_STORE_READ,
-			fmt.Sprintf("Error reading certificate store '%s/%s'", clientMachine, storePath),
-		)
-		return
-	}
-	sRespRef := *sRespList
-	//Because we're looking up by client machine and store path, there should only be one result as that's what Command uses for uniqueness as of KF 9.x
-	sResp := sRespRef[0]
 
 	password := state.StorePassword.Value
 	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", sResp.Id, password))
-
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Certificate store not found",
-			fmt.Sprintf(
-				"Unable to locate certificate store using client machine '%s' and storepath '%s' %s",
-				clientMachine,
-				storePath,
-				err.Error(),
-			),
-		)
-		return
-	}
 
 	// parse inventory schedule
 	invSchedule := parseInventorySchedule(&sResp.InventorySchedule)
@@ -216,6 +220,13 @@ func (r dataSourceCertificateStore) Read(
 		return
 	}
 
+	// Resolve numeric store type ID to short name.
+	csType, csTypeErr := r.p.client.GetCertificateStoreType(sResp.CertStoreType)
+	storeTypeShortName := fmt.Sprintf("%d", sResp.CertStoreType) // fallback: numeric string
+	if csTypeErr == nil && csType != nil {
+		storeTypeShortName = csType.ShortName
+	}
+
 	var result = CertificateStore{
 		ID:                    types.String{Value: sResp.Id},
 		ContainerID:           types.Int64{Value: int64(sResp.ContainerId)},
@@ -223,9 +234,9 @@ func (r dataSourceCertificateStore) Read(
 		AgentId:               types.String{Value: sResp.AgentId},
 		AgentIdentifier:       types.String{Value: sResp.AgentId},
 		AgentAssigned:         types.Bool{Value: sResp.AgentAssigned},
-		ClientMachine:         state.ClientMachine,
-		StorePath:             state.StorePath,
-		StoreType:             types.String{Value: fmt.Sprintf("%v", sResp.CertStoreType)},
+		ClientMachine:         types.String{Value: sResp.ClientMachine},
+		StorePath:             types.String{Value: sResp.StorePath},
+		StoreType:             types.String{Value: storeTypeShortName},
 		Approved:              types.Bool{Value: sResp.Approved},
 		CreateIfMissing:       types.Bool{Value: sResp.CreateIfMissing},
 		Properties:            properties,

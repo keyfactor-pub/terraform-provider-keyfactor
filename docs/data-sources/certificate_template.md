@@ -3,24 +3,24 @@
 page_title: "keyfactor_certificate_template Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Reads a Keyfactor Command Certificate Template by name (common name or display name) or integer ID.
 ---
 
 # keyfactor_certificate_template (Data Source)
 
-
+Reads a Keyfactor Command Certificate Template by name (common name or display name) or integer ID.
 
 ## Example Usage
 
 ```terraform
-provider "keyfactor" {
-  username = "COMMAND\\your_username"
-  password = "your_api_password"
-  hostname = "mykfinstance.kfdelivery.com"
+# Look up a certificate template by common name
+data "keyfactor_certificate_template" "webserver" {
+  identifier = "WebServer"
 }
 
-data "keyfactor_certificate_template" "webserver_template" {
-  short_name = "2yrWebServer" #The template shortname of an existing certificate template to reference.
+# Look up a certificate template by integer ID
+data "keyfactor_certificate_template" "by_id" {
+  identifier = "5"
 }
 ```
 
@@ -29,27 +29,169 @@ data "keyfactor_certificate_template" "webserver_template" {
 
 ### Required
 
-- `short_name` (String) A string containing the common name (short name) of the template. This name typically does not contain spaces. For a template created using a Microsoft management tool, this will be the Microsoft template name. This field is populated from Active Directory and is not configurable.
-
-### Optional
-
-- `allowed_requesters` (List of String) An array containing the list of Keyfactor Command security templates—as strings—that have been granted enroll permission on the template.
+- `identifier` (String) Common name, display name, or integer ID of the template to look up.
 
 ### Read-Only
 
-- `allowed_enrollment_types` (Number) An integer indicating the type of enrollment allowed for the certificate template. Setting these options causes the template to appear in dropdowns in the corresponding section of the Management Portal. In the case of CSR Enrollment and PFX Enrollment, the templates only appear in dropdowns on the enrollment pages if they are available for enrollment from a CA also configured for enrollment within Keyfactor Command.
-- `enrollment_fields` (List of Map of String) An array containing custom enrollment fields. These are configured on a per-template basis to allow you to submit custom fields with CSR enrollments and PFX enrollments to supply custom request attributes to the CA during the enrollment process.
-- `forest_root` (String) Forest root that the template is stored under/created by
-- `friendly_name` (String) Forest root that the template is stored under/created by
-- `id` (Number) An integer indicating the ID of the template in Keyfactor Command.
-- `key_archival` (Boolean) A Boolean indicating whether the template has been configured with the key archival setting in Active Directory (true) or not (false). This is a reference field and is not configurable.
-- `key_retention` (String) A string indicating the type of key retention certificates enrolled with this template will use to store their private key in Keyfactor Command. ClosedShow key retention details.
-- `key_retention_days` (Number) Duration that the private key should be retained
-- `key_size` (String) A string indicating the minimum supported key size of the template. This field is populated from Active Directory and is not configurable.
-- `key_type` (String) A string indicating the key type of the template. This field is populated from Active Directory and is not configurable.
-- `key_usage` (Number) An integer indicating the total key usage of the certificate. Key usage is stored in Active Directory as a single value made of a combination of values.
-- `name` (String) A string containing the name of the template. For a template created using a Microsoft management tool, this will be the Microsoft template display name. This field is populated from Active Directory and is not configurable.
-- `oid` (String) A string containing the object ID of the template in Active Directory. This field is populated from Active Directory and is not configurable.
-- `requires_approval` (Boolean) A Boolean indicating whether certificate enrollments require approval (true) or not (false).
-- `rfc_enforcement` (Boolean) A Boolean indicating whether certificate enrollments made through Keyfactor Command for this template must include at least one DNS SAN (true) or not (false). In the Keyfactor Command Management Portal, this causes the CN entered in PFX enrollment to automatically be replicated as a SAN, which the user can either change or accept.
-- `template_regexes` (List of String) List of regexes that the template will be matched against during enrollment.
+- `allow_one_click_renewals` (Boolean)
+- `allowed_enrollment_types` (Number) Bitmask: 0=none, 1=PFX, 2=CSR, 3=both.
+- `allowed_requesters` (List of String)
+- `certificate_cleanup_enabled` (Boolean)
+- `common_name` (String) Short name (common name) of the template.
+- `configuration_tenant` (String)
+- `delete_with_archived_key` (Boolean)
+- `display_name` (String)
+- `enrollment_fields` (Attributes List) (see [below for nested schema](#nestedatt--enrollment_fields))
+- `extended_key_usages` (Attributes List) (see [below for nested schema](#nestedatt--extended_key_usages))
+- `forest_root` (String)
+- `friendly_name` (String)
+- `id` (Number) Integer ID of the certificate template.
+- `key_algorithms` (Attributes List) (see [below for nested schema](#nestedatt--key_algorithms))
+- `key_archival` (Boolean)
+- `key_retention` (Number)
+- `key_retention_days` (Number)
+- `key_size` (String)
+- `key_type` (String)
+- `key_types` (String)
+- `key_usage` (Number)
+- `manageability` (Number)
+- `metadata_fields` (Attributes List) (see [below for nested schema](#nestedatt--metadata_fields))
+- `oid` (String)
+- `requires_approval` (Boolean)
+- `template_defaults` (Attributes List) (see [below for nested schema](#nestedatt--template_defaults))
+- `template_name` (String) Display name of the template.
+- `template_policy` (Attributes) (see [below for nested schema](#nestedatt--template_policy))
+- `template_regexes` (Attributes List) (see [below for nested schema](#nestedatt--template_regexes))
+- `time_after_expiration` (Number)
+- `time_after_expiration_units` (Number)
+- `use_allowed_requesters` (Boolean)
+
+<a id="nestedatt--enrollment_fields"></a>
+### Nested Schema for `enrollment_fields`
+
+Read-Only:
+
+- `data_type` (Number)
+- `id` (Number)
+- `name` (String)
+- `options` (List of String)
+
+
+<a id="nestedatt--extended_key_usages"></a>
+### Nested Schema for `extended_key_usages`
+
+Read-Only:
+
+- `display_name` (String)
+- `id` (Number)
+- `oid` (String)
+
+
+<a id="nestedatt--key_algorithms"></a>
+### Nested Schema for `key_algorithms`
+
+Read-Only:
+
+- `algorithm` (String)
+- `bit_lengths` (List of Number)
+- `curves` (List of String)
+
+
+<a id="nestedatt--metadata_fields"></a>
+### Nested Schema for `metadata_fields`
+
+Read-Only:
+
+- `case_sensitive` (Boolean)
+- `default_value` (String)
+- `enrollment` (Number)
+- `id` (Number)
+- `message` (String)
+- `metadata_id` (Number)
+- `validation` (String)
+
+
+<a id="nestedatt--template_defaults"></a>
+### Nested Schema for `template_defaults`
+
+Read-Only:
+
+- `subject_part` (String)
+- `value` (String)
+
+
+<a id="nestedatt--template_policy"></a>
+### Nested Schema for `template_policy`
+
+Optional:
+
+- `allow_key_reuse` (Boolean) Whether certificate key reuse is allowed.
+- `allow_wildcards` (Boolean) Whether wildcard SANs are allowed.
+- `certificate_owner_role` (Number) Certificate owner role: 0=None, 1=Requester, 2=Specified.
+- `default_certificate_owner_role_id` (Number) ID of the default certificate owner role.
+- `key_info` (Attributes) Key algorithm constraints for enrollment policy. (see [below for nested schema](#nestedatt--template_policy--key_info))
+- `rfc_enforcement` (Boolean) Whether RFC enforcement (require DNS SAN) is enabled.
+
+Read-Only:
+
+- `default_certificate_owner_role_name` (String) Name of the default certificate owner role (read-only).
+
+<a id="nestedatt--template_policy--key_info"></a>
+### Nested Schema for `template_policy.key_info`
+
+Optional:
+
+- `ecdsa` (Attributes) ECDSA key constraints. (see [below for nested schema](#nestedatt--template_policy--key_info--ecdsa))
+- `ed25519` (Attributes) Ed25519 key constraints. (see [below for nested schema](#nestedatt--template_policy--key_info--ed25519))
+- `ed448` (Attributes) Ed448 key constraints. (see [below for nested schema](#nestedatt--template_policy--key_info--ed448))
+- `rsa` (Attributes) RSA key constraints. (see [below for nested schema](#nestedatt--template_policy--key_info--rsa))
+
+<a id="nestedatt--template_policy--key_info--ecdsa"></a>
+### Nested Schema for `template_policy.key_info.ecdsa`
+
+Optional:
+
+- `bit_lengths` (List of Number) Allowed ECDSA bit lengths.
+- `curves` (List of String) Allowed ECDSA curve OIDs.
+
+
+<a id="nestedatt--template_policy--key_info--ed25519"></a>
+### Nested Schema for `template_policy.key_info.ed25519`
+
+Optional:
+
+- `bit_lengths` (List of Number) Allowed Ed25519 bit lengths.
+- `curves` (List of String) Allowed curves (unused for Ed25519).
+
+
+<a id="nestedatt--template_policy--key_info--ed448"></a>
+### Nested Schema for `template_policy.key_info.ed448`
+
+Optional:
+
+- `bit_lengths` (List of Number) Allowed Ed448 bit lengths.
+- `curves` (List of String) Allowed curves (unused for Ed448).
+
+
+<a id="nestedatt--template_policy--key_info--rsa"></a>
+### Nested Schema for `template_policy.key_info.rsa`
+
+Optional:
+
+- `bit_lengths` (List of Number) Allowed RSA bit lengths.
+- `curves` (List of String) Allowed curves (unused for RSA).
+
+
+
+
+<a id="nestedatt--template_regexes"></a>
+### Nested Schema for `template_regexes`
+
+Read-Only:
+
+- `case_sensitive` (Boolean)
+- `error` (String)
+- `regex` (String)
+- `subject_part` (String)
+
+

@@ -3,6 +3,9 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -11,179 +14,331 @@ import (
 
 type dataSourceCertificateTemplateType struct{}
 
-func (r dataSourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
+func (d dataSourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
+	// Build from the resource schema, adding identifier and making all fields Computed.
 	return tfsdk.Schema{
+		Description: "Reads a Keyfactor Command Certificate Template by name (common name or display name) or integer ID.",
 		Attributes: map[string]tfsdk.Attribute{
+			"identifier": {
+				Type:        types.StringType,
+				Required:    true,
+				Description: "Common name, display name, or integer ID of the template to look up.",
+			},
 			"id": {
 				Type:        types.Int64Type,
 				Computed:    true,
-				Description: "An integer indicating the ID of the template in Keyfactor Command.",
+				Description: "Integer ID of the certificate template.",
 			},
-			"short_name": {
-				Type:        types.StringType,
-				Required:    true,
-				Description: "A string containing the common name (short name) of the template. This name typically does not contain spaces. For a template created using a Microsoft management tool, this will be the Microsoft template name. This field is populated from Active Directory and is not configurable.",
-			},
-			"name": {
+			"common_name": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "A string containing the name of the template. For a template created using a Microsoft management tool, this will be the Microsoft template display name. This field is populated from Active Directory and is not configurable.",
+				Description: "Short name (common name) of the template.",
+			},
+			"template_name": {
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Display name of the template.",
+			},
+			"display_name": {
+				Type:     types.StringType,
+				Computed: true,
 			},
 			"oid": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "A string containing the object ID of the template in Active Directory. This field is populated from Active Directory and is not configurable.",
+				Type:     types.StringType,
+				Computed: true,
 			},
 			"key_size": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "A string indicating the minimum supported key size of the template. This field is populated from Active Directory and is not configurable.",
+				Type:     types.StringType,
+				Computed: true,
 			},
 			"key_type": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "A string indicating the key type of the template. This field is populated from Active Directory and is not configurable.",
+				Type:     types.StringType,
+				Computed: true,
+			},
+			"key_types": {
+				Type:     types.StringType,
+				Computed: true,
 			},
 			"forest_root": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Forest root that the template is stored under/created by",
+				Type:     types.StringType,
+				Computed: true,
 			},
-			"friendly_name": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Forest root that the template is stored under/created by",
-			},
-			"key_retention": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "A string indicating the type of key retention certificates enrolled with this template will use to store their private key in Keyfactor Command. ClosedShow key retention details.",
-			},
-			"key_retention_days": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Duration that the private key should be retained",
+			"configuration_tenant": {
+				Type:     types.StringType,
+				Computed: true,
 			},
 			"key_archival": {
-				Type:        types.BoolType,
-				Computed:    true,
-				Description: "A Boolean indicating whether the template has been configured with the key archival setting in Active Directory (true) or not (false). This is a reference field and is not configurable.",
+				Type:     types.BoolType,
+				Computed: true,
 			},
-			"enrollment_fields": {
-				Type:        types.ListType{ElemType: types.MapType{ElemType: types.StringType}},
-				Computed:    true,
-				Description: "An array containing custom enrollment fields. These are configured on a per-template basis to allow you to submit custom fields with CSR enrollments and PFX enrollments to supply custom request attributes to the CA during the enrollment process.",
+			"friendly_name": {
+				Type:     types.StringType,
+				Computed: true,
+			},
+			"key_retention": {
+				Type:     types.Int64Type,
+				Computed: true,
+			},
+			"key_retention_days": {
+				Type:     types.Int64Type,
+				Computed: true,
 			},
 			"allowed_enrollment_types": {
 				Type:        types.Int64Type,
 				Computed:    true,
-				Description: "An integer indicating the type of enrollment allowed for the certificate template. Setting these options causes the template to appear in dropdowns in the corresponding section of the Management Portal. In the case of CSR Enrollment and PFX Enrollment, the templates only appear in dropdowns on the enrollment pages if they are available for enrollment from a CA also configured for enrollment within Keyfactor Command.",
+				Description: "Bitmask: 0=none, 1=PFX, 2=CSR, 3=both.",
 			},
-			"template_regexes": {
-				Type:        types.ListType{ElemType: types.StringType},
-				Computed:    true,
-				Description: "List of regexes that the template will be matched against during enrollment.",
+			"use_allowed_requesters": {
+				Type:     types.BoolType,
+				Computed: true,
 			},
-			//"use_allowed_requesters": {
-			//	Type:        types.BoolType,
-			//	Computed:    true,
-			//	Description: "A Boolean that indicates whether the Restrict Allowed Requesters option should be enabled (true) or not (false). The Restrict Allowed Requesters option is used to select Keyfactor Command security templates that a user must belong to in order to successfully enroll for certificates in Keyfactor Command using this template. This is typically used for templates for untrusted CAs, since Keyfactor Command cannot make use of the access control model of the CA itself to determine which users can enroll for certificates at either a template or CA level; this setting replaces that functionality.",
-			//},
-
 			"allowed_requesters": {
-				Type:        types.ListType{ElemType: types.StringType},
-				Description: "An array containing the list of Keyfactor Command security templates—as strings—that have been granted enroll permission on the template.",
-				Optional:    true,
-				Computed:    true,
-			},
-			"rfc_enforcement": {
-				Type:        types.BoolType,
-				Computed:    true,
-				Description: "A Boolean indicating whether certificate enrollments made through Keyfactor Command for this template must include at least one DNS SAN (true) or not (false). In the Keyfactor Command Management Portal, this causes the CN entered in PFX enrollment to automatically be replicated as a SAN, which the user can either change or accept.",
+				Type:     types.ListType{ElemType: types.StringType},
+				Computed: true,
 			},
 			"requires_approval": {
-				Type:        types.BoolType,
-				Computed:    true,
-				Description: "A Boolean indicating whether certificate enrollments require approval (true) or not (false).",
+				Type:     types.BoolType,
+				Computed: true,
+			},
+			"allow_one_click_renewals": {
+				Type:     types.BoolType,
+				Computed: true,
 			},
 			"key_usage": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "An integer indicating the total key usage of the certificate. Key usage is stored in Active Directory as a single value made of a combination of values.",
+				Type:     types.Int64Type,
+				Computed: true,
 			},
-			//"extended_key_usage": {
-			//	Type:        types.ListType{ElemType: types.MapType{}},
-			//	Computed:    true,
-			//	Description: "An array containing custom enrollment fields. These are configured on a per-template basis to allow you to submit custom fields with CSR enrollments and PFX enrollments to supply custom request attributes to the CA during the enrollment process.",
-			//},
+
+			"template_policy": {
+				Computed:   true,
+				Attributes: tfsdk.SingleNestedAttributes(templatePolicySchema()),
+			},
+
+			"template_regexes": {
+				Computed: true,
+				Attributes: tfsdk.ListNestedAttributes(map[string]tfsdk.Attribute{
+					"subject_part":   {Type: types.StringType, Computed: true},
+					"regex":          {Type: types.StringType, Computed: true},
+					"error":          {Type: types.StringType, Computed: true},
+					"case_sensitive": {Type: types.BoolType, Computed: true},
+				}),
+			},
+			"template_defaults": {
+				Computed: true,
+				Attributes: tfsdk.ListNestedAttributes(map[string]tfsdk.Attribute{
+					"subject_part": {Type: types.StringType, Computed: true},
+					"value":        {Type: types.StringType, Computed: true},
+				}),
+			},
+			"enrollment_fields": {
+				Computed: true,
+				Attributes: tfsdk.ListNestedAttributes(map[string]tfsdk.Attribute{
+					"id":        {Type: types.Int64Type, Computed: true},
+					"name":      {Type: types.StringType, Computed: true},
+					"data_type": {Type: types.Int64Type, Computed: true},
+					"options":   {Type: types.ListType{ElemType: types.StringType}, Computed: true},
+				}),
+			},
+			"metadata_fields": {
+				Computed: true,
+				Attributes: tfsdk.ListNestedAttributes(map[string]tfsdk.Attribute{
+					"id":             {Type: types.Int64Type, Computed: true},
+					"metadata_id":    {Type: types.Int64Type, Computed: true},
+					"default_value":  {Type: types.StringType, Computed: true},
+					"validation":     {Type: types.StringType, Computed: true},
+					"enrollment":     {Type: types.Int64Type, Computed: true},
+					"message":        {Type: types.StringType, Computed: true},
+					"case_sensitive": {Type: types.BoolType, Computed: true},
+				}),
+			},
+			"extended_key_usages": {
+				Computed: true,
+				Attributes: tfsdk.ListNestedAttributes(map[string]tfsdk.Attribute{
+					"id":           {Type: types.Int64Type, Computed: true},
+					"oid":          {Type: types.StringType, Computed: true},
+					"display_name": {Type: types.StringType, Computed: true},
+				}),
+			},
+			"key_algorithms": {
+				Computed: true,
+				Attributes: tfsdk.ListNestedAttributes(map[string]tfsdk.Attribute{
+					"algorithm":   {Type: types.StringType, Computed: true},
+					"bit_lengths": {Type: types.ListType{ElemType: types.Int64Type}, Computed: true},
+					"curves":      {Type: types.ListType{ElemType: types.StringType}, Computed: true},
+				}),
+			},
+
+			"manageability":               {Type: types.Int64Type, Computed: true},
+			"certificate_cleanup_enabled": {Type: types.BoolType, Computed: true},
+			"time_after_expiration":       {Type: types.Int64Type, Computed: true},
+			"time_after_expiration_units": {Type: types.Int64Type, Computed: true},
+			"delete_with_archived_key":    {Type: types.BoolType, Computed: true},
 		},
 	}, nil
 }
 
-func (r dataSourceCertificateTemplateType) NewDataSource(ctx context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
-	return dataSourceCertificateTemplate{
-		p: *(p.(*provider)),
-	}, nil
+func (d dataSourceCertificateTemplateType) NewDataSource(_ context.Context, p tfsdk.Provider) (tfsdk.DataSource, diag.Diagnostics) {
+	return dataSourceCertificateTemplate{p: *(p.(*provider))}, nil
 }
 
 type dataSourceCertificateTemplate struct {
 	p provider
 }
 
-func (r dataSourceCertificateTemplate) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
-	var state CertificateTemplate
-	diags := request.Config.Get(ctx, &state)
+type KeyfactorCertificateTemplateDataSource struct {
+	Identifier types.String `tfsdk:"identifier"`
+
+	// Same fields as resource state
+	ID                     types.Int64  `tfsdk:"id"`
+	CommonName             types.String `tfsdk:"common_name"`
+	TemplateName           types.String `tfsdk:"template_name"`
+	DisplayName            types.String `tfsdk:"display_name"`
+	OID                    types.String `tfsdk:"oid"`
+	KeySize                types.String `tfsdk:"key_size"`
+	KeyType                types.String `tfsdk:"key_type"`
+	KeyTypes               types.String `tfsdk:"key_types"`
+	ForestRoot             types.String `tfsdk:"forest_root"`
+	ConfigurationTenant    types.String `tfsdk:"configuration_tenant"`
+	KeyArchival            types.Bool   `tfsdk:"key_archival"`
+	FriendlyName           types.String `tfsdk:"friendly_name"`
+	KeyRetention           types.Int64  `tfsdk:"key_retention"`
+	KeyRetentionDays       types.Int64  `tfsdk:"key_retention_days"`
+	AllowedEnrollmentTypes types.Int64  `tfsdk:"allowed_enrollment_types"`
+	UseAllowedRequesters   types.Bool   `tfsdk:"use_allowed_requesters"`
+	AllowedRequesters      types.List   `tfsdk:"allowed_requesters"`
+	RequiresApproval       types.Bool   `tfsdk:"requires_approval"`
+	AllowOneClickRenewals  types.Bool   `tfsdk:"allow_one_click_renewals"`
+	KeyUsage               types.Int64  `tfsdk:"key_usage"`
+
+	TemplatePolicy    *TemplatePolicyState           `tfsdk:"template_policy"`
+	TemplateRegexes   []TemplateRegexEntry           `tfsdk:"template_regexes"`
+	TemplateDefaults  []TemplateDefaultEntry         `tfsdk:"template_defaults"`
+	EnrollmentFields  []TemplateEnrollmentFieldEntry `tfsdk:"enrollment_fields"`
+	MetadataFields    []TemplateMetadataFieldEntry   `tfsdk:"metadata_fields"`
+	ExtendedKeyUsages []TemplateEKUEntry             `tfsdk:"extended_key_usages"`
+	KeyAlgorithms     []TemplateKeyAlgorithmEntry    `tfsdk:"key_algorithms"`
+
+	Manageability             types.Int64 `tfsdk:"manageability"`
+	CertificateCleanupEnabled types.Bool  `tfsdk:"certificate_cleanup_enabled"`
+	TimeAfterExpiration       types.Int64 `tfsdk:"time_after_expiration"`
+	TimeAfterExpirationUnits  types.Int64 `tfsdk:"time_after_expiration_units"`
+	DeleteWithArchivedKey     types.Bool  `tfsdk:"delete_with_archived_key"`
+}
+
+func (d dataSourceCertificateTemplate) Read(ctx context.Context, request tfsdk.ReadDataSourceRequest, response *tfsdk.ReadDataSourceResponse) {
+	LogFunctionEntry(ctx, "dataSourceCertificateTemplate.Read")
+
+	var config KeyfactorCertificateTemplateDataSource
+	diags := request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	tflog.Info(ctx, "Read called on certificate template resource")
-	templateId := state.ID.Value
-	templateName := state.CommonName.Value
-	tflog.SetField(ctx, "template_name", templateId)
+	identifier := config.Identifier.Value
+	tflog.Info(ctx, fmt.Sprintf("Reading certificate template with identifier %q", identifier))
 
-	templates, err := r.p.client.GetTemplates()
+	templateAPI := d.p.sdkClient.V1.TemplateApi
 
-	if err != nil {
-		response.Diagnostics.AddError("Error listing templates from Keyfactor.", "Error reading templates: "+err.Error())
+	// Try as integer ID first
+	if id, err := strconv.Atoi(identifier); err == nil {
+		req := templateAPI.NewGetTemplatesByIdRequest(ctx, int32(id))
+		resp, httpResp, err := req.Execute()
+		if err != nil {
+			body := readHTTPResponseBody(httpResp)
+			response.Diagnostics.AddError(
+				"Error reading certificate template.",
+				fmt.Sprintf("Could not read template %d: %s. Details: %s", id, err.Error(), body),
+			)
+			return
+		}
+		rs := templateResponseToState(resp)
+		state := templateResourceToDataSource(rs, config.Identifier)
+		diags = response.State.Set(ctx, &state)
+		response.Diagnostics.Append(diags...)
+		LogFunctionExit(ctx, "dataSourceCertificateTemplate.Read")
+		return
 	}
 
-	var result CertificateTemplate
-	for _, template := range templates {
-		if templateName == template.CommonName {
-			allowedRequesters := flattenAllowedRequesters(template.AllowedRequesters)
-			templateRegexes := flattenTemplateRegexes(template.TemplateRegexes)
-			enrollmentFields := flattenEnrollmentFields(template.EnrollmentFields) //TODO: Fix this it causes a panic...
-			tflog.Debug(ctx, fmt.Sprintf("Enrollment fields: %v", enrollmentFields))
-			tflog.Info(ctx, fmt.Sprintf("Found template with account name: %s", templateName))
-			result = CertificateTemplate{
-				ID:                     types.Int64{Value: int64(template.Id)},
-				CommonName:             types.String{Value: template.CommonName},
-				TemplateName:           types.String{Value: template.TemplateName},
-				OID:                    types.String{Value: template.Oid},
-				KeySize:                types.String{Value: template.KeySize},
-				ForestRoot:             types.String{Value: template.ForestRoot},
-				FriendlyName:           types.String{Value: template.FriendlyName},
-				KeyRetention:           types.String{Value: template.KeyRetention},
-				KeyRetentionDays:       types.Int64{Value: int64(template.KeyRetentionDays)},
-				KeyArchival:            types.Bool{Value: template.KeyArchival},
-				KeyType:                types.String{Value: template.KeyType},
-				EnrollmentFields:       state.EnrollmentFields,
-				AllowedEnrollmentTypes: types.Int64{Value: int64(template.AllowedEnrollmentTypes)},
-				TemplateRegexes:        templateRegexes,
-				AllowedRequesters:      allowedRequesters,
-				RFCEnforcement:         types.Bool{Value: template.RFCEnforcement},
-				RequiresApproval:       types.Bool{Value: template.RequiresApproval},
-				KeyUsage:               types.Int64{Value: int64(template.KeyUsage)},
+	// Search by name (CommonName or TemplateName match)
+	listReq := templateAPI.NewGetTemplatesRequest(ctx)
+	allTemplates, httpResp, err := listReq.Execute()
+	if err != nil {
+		body := readHTTPResponseBody(httpResp)
+		response.Diagnostics.AddError(
+			"Error listing certificate templates.",
+			fmt.Sprintf("Could not list templates: %s. Details: %s", err.Error(), body),
+		)
+		return
+	}
+
+	for _, t := range allTemplates {
+		if strings.EqualFold(t.GetCommonName(), identifier) ||
+			strings.EqualFold(t.GetTemplateName(), identifier) ||
+			strings.EqualFold(t.GetDisplayName(), identifier) {
+
+			// Fetch full details by ID
+			detailReq := templateAPI.NewGetTemplatesByIdRequest(ctx, t.GetId())
+			resp, httpResp, err := detailReq.Execute()
+			if err != nil {
+				body := readHTTPResponseBody(httpResp)
+				response.Diagnostics.AddError(
+					"Error reading certificate template.",
+					fmt.Sprintf("Could not read template %d: %s. Details: %s", t.GetId(), err.Error(), body),
+				)
+				return
 			}
-			break
+			rs := templateResponseToState(resp)
+			state := templateResourceToDataSource(rs, config.Identifier)
+			diags = response.State.Set(ctx, &state)
+			response.Diagnostics.Append(diags...)
+			LogFunctionExit(ctx, "dataSourceCertificateTemplate.Read")
+			return
 		}
 	}
 
-	diags = response.State.Set(ctx, &result)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
-		return
+	response.Diagnostics.AddError(
+		"Certificate template not found.",
+		fmt.Sprintf("No template with identifier %q was found.", identifier),
+	)
+}
+
+func templateResourceToDataSource(rs KeyfactorCertificateTemplateState, identifier types.String) KeyfactorCertificateTemplateDataSource {
+	return KeyfactorCertificateTemplateDataSource{
+		Identifier:             identifier,
+		ID:                     rs.ID,
+		CommonName:             rs.CommonName,
+		TemplateName:           rs.TemplateName,
+		DisplayName:            rs.DisplayName,
+		OID:                    rs.OID,
+		KeySize:                rs.KeySize,
+		KeyType:                rs.KeyType,
+		KeyTypes:               rs.KeyTypes,
+		ForestRoot:             rs.ForestRoot,
+		ConfigurationTenant:    rs.ConfigurationTenant,
+		KeyArchival:            rs.KeyArchival,
+		FriendlyName:           rs.FriendlyName,
+		KeyRetention:           rs.KeyRetention,
+		KeyRetentionDays:       rs.KeyRetentionDays,
+		AllowedEnrollmentTypes: rs.AllowedEnrollmentTypes,
+		UseAllowedRequesters:   rs.UseAllowedRequesters,
+		AllowedRequesters:      rs.AllowedRequesters,
+		RequiresApproval:       rs.RequiresApproval,
+		AllowOneClickRenewals:  rs.AllowOneClickRenewals,
+		KeyUsage:               rs.KeyUsage,
+
+		TemplatePolicy:    rs.TemplatePolicy,
+		TemplateRegexes:   rs.TemplateRegexes,
+		TemplateDefaults:  rs.TemplateDefaults,
+		EnrollmentFields:  rs.EnrollmentFields,
+		MetadataFields:    rs.MetadataFields,
+		ExtendedKeyUsages: rs.ExtendedKeyUsages,
+		KeyAlgorithms:     rs.KeyAlgorithms,
+
+		Manageability:             rs.Manageability,
+		CertificateCleanupEnabled: rs.CertificateCleanupEnabled,
+		TimeAfterExpiration:       rs.TimeAfterExpiration,
+		TimeAfterExpirationUnits:  rs.TimeAfterExpirationUnits,
+		DeleteWithArchivedKey:     rs.DeleteWithArchivedKey,
 	}
 }

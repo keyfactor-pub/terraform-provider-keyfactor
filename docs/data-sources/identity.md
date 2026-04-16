@@ -66,3 +66,5 @@ output "group_metadata" {
 - `id` (Number) An integer containing the Keyfactor Command identifier for the security identity.
 - `identity_type` (String) A string indicating the type of identity—User or Group.
 - `valid` (Boolean) A Boolean that indicates whether the security identity's audit XML is valid (true) or not (false). A security identity may become invalid if Keyfactor Command determines that it appears to have been tampered with.
+
+

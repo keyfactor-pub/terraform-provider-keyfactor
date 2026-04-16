@@ -85,15 +85,137 @@ func (m renewEligibleReplaceOnExpiryWindow) Modify(
 	}
 }
 
+// privateKeyPlanModifier handles plan modifications for the private_key attribute.
+//
+// Normal case (state non-null): preserves the state value (same as UseStateForUnknown).
+//
+// Post-import case (state null, key_password in config): returns Unknown so the
+// Update function is free to attempt key recovery with the provided key_password
+// without triggering a "provider produced inconsistent result" error.
+//
+// No-recovery case (state null, no key_password): resolves to null (same as
+// useStateOrNullModifier), suppressing spurious "(known after apply)" noise.
+type privateKeyPlanModifier struct{}
+
+func (m privateKeyPlanModifier) Description(_ context.Context) string {
+	return "Preserves prior private_key state; enables recovery after import when key_password is set."
+}
+
+func (m privateKeyPlanModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m privateKeyPlanModifier) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+	// Only act when the plan value is Unknown (Computed, not supplied in config).
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() || req.AttributeState.IsUnknown() {
+		return
+	}
+
+	var config CommandCertificate
+	var state CommandCertificate
+	configOk := !req.Config.Get(ctx, &config).HasError()
+	stateOk := !req.State.Get(ctx, &state).HasError()
+
+	// When certificate_format is changing, leave Unknown so the Update function
+	// can populate (or clear) private_key as appropriate for the new format.
+	if configOk && stateOk {
+		if effectiveCertificateFormat(config.CertificateFormat.Value) != effectiveCertificateFormat(state.CertificateFormat.Value) {
+			return // leave Unknown — format is changing
+		}
+	}
+
+	// State has a known value — preserve it.
+	if !req.AttributeState.IsNull() {
+		resp.AttributePlan = req.AttributeState
+		return
+	}
+	// State is null (e.g. first plan after import). If key_password is set in
+	// the config, recovery is possible in Update — leave plan as Unknown.
+	if configOk {
+		if !config.KeyPassword.IsNull() && !config.KeyPassword.Unknown && config.KeyPassword.Value != "" {
+			return // leave plan Unknown — Update will attempt recovery
+		}
+	}
+	// Also allow recovery if enrollment_password is already in state (prior
+	// enrollment with auto-generated password).
+	if stateOk {
+		if !state.EnrollmentPassword.IsNull() && state.EnrollmentPassword.Value != "" {
+			return // leave plan Unknown — Update can use enrollment_password
+		}
+	}
+	// No recovery path available — resolve to null.
+	resp.AttributePlan = req.AttributeState
+}
+
+// formatDependentModifier is a plan modifier for format-specific output fields
+// (certificate_pem, certificate_chain, ca_certificate, pfx, jks, zip).
+//
+// When certificate_format is stable (not changing), it behaves like
+// useStateOrNullModifier: preserves the prior state value to suppress
+// spurious "(known after apply)" noise.
+//
+// When certificate_format is changing (e.g. PEM → PFX), it leaves the plan
+// Unknown so the Update function is free to populate the correct field for
+// the new format without triggering a "provider produced inconsistent result"
+// error.
+type formatDependentModifier struct{}
+
+func (m formatDependentModifier) Description(_ context.Context) string {
+	return "Preserves state for stable certificate_format; leaves Unknown when format is changing."
+}
+
+func (m formatDependentModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m formatDependentModifier) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() || req.AttributeState.IsUnknown() {
+		return
+	}
+	// When certificate_format is changing, leave Unknown so the provider can
+	// return the value appropriate for the new format.
+	var config CommandCertificate
+	var state CommandCertificate
+	if diags := req.Config.Get(ctx, &config); diags.HasError() {
+		return
+	}
+	if diags := req.State.Get(ctx, &state); diags.HasError() {
+		return
+	}
+	if effectiveCertificateFormat(config.CertificateFormat.Value) != effectiveCertificateFormat(state.CertificateFormat.Value) {
+		return // leave Unknown — format is changing, value will differ
+	}
+	// Format is stable — preserve state (or null if state is null).
+	resp.AttributePlan = req.AttributeState
+}
+
 type resourceCommandCertificateType struct{}
 
 func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
+			"id": {
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Read-only alias of `identifier` for Terraform framework compatibility.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+			},
 			"csr": {
 				Type:          types.StringType,
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{RequiresReplaceIfPreviouslySet()},
 				Description:   "Base-64 encoded certificate signing request (CSR)",
 			},
 			"key_password": {
@@ -156,22 +278,22 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type:          types.StringType,
 				Required:      false,
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{RequiresReplaceIfPreviouslySet()},
 				Description:   "A string that sets the name of the certificate template that should be used to issue the certificate. The template short name should be used. See also EnrollmentPatternId.\n\nOne of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern.\n\nImportant:  The template must be configured with at least one enrollment pattern in order to be used for enrollment (see POST Enrollment Patterns).\nNote:  This parameter is considered deprecated as for Keyfactor Command v25.1.0 and may be removed in a future release.",
 				Validators: []tfsdk.AttributeValidator{
-					xorValidator{otherAttr: "certificate_enrollment_pattern"},
+					atLeastOneOfValidator{otherAttr: "certificate_enrollment_pattern"},
 				},
 			},
 			"certificate_enrollment_pattern": {
 				Type:          types.StringType,
 				Required:      false,
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{RequiresReplaceIfPreviouslySet()},
 				Description: "Either the `name` or internal `ID` (" +
 					"integer) indicating the enrollment pattern to use when" +
 					" requesting the certificate. If this value is not provided, the default enrollment pattern defined for the template provided in the request (see the Template parameter) will be used.\n\nOne of either the Template or the EnrollmentPatternId is required unless the enrollment is being done against a standalone CA. If both the Template and EnrollmentPatternId are provided, the settings from the enrollment pattern take precedence. If both are specified, the enrollment will fail if the Template does not match the one defined by the specified enrollment pattern. IMPORTANT: Requires Keyfactor Command v25.1.0+",
 				Validators: []tfsdk.AttributeValidator{
-					xorValidator{otherAttr: "certificate_template"},
+					atLeastOneOfValidator{otherAttr: "certificate_template"},
 				},
 			},
 			"dns_sans": {
@@ -221,39 +343,45 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					"Valid PFX enrollment options are: `PEM, PFX, JKS, " +
 					"Zip`. Valid CSR enrollment options are `PEM, DER`. Defaults to: `PEM`",
 				//Validators: []tfsdk.AttributeValidator{},
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"metadata": {
 				Type: types.MapType{
 					ElemType: types.StringType,
 				},
-				Optional:    true,
-				Description: "Metadata key-value pairs to be attached to certificate",
+				Optional:      true,
+				Computed:      true,
+				Description:   "Metadata key-value pairs to be attached to certificate. Set to null or an empty map to clear all metadata on the server. Changes are applied in-place (no certificate replacement).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"serial_number": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Serial number of newly enrolled certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Serial number of newly enrolled certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"issuer_dn": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Issuer distinguished name that signed the certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Issuer distinguished name that signed the certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"thumbprint": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Thumbprint of newly enrolled certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Thumbprint of newly enrolled certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"not_before": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Not Before date of enrolled certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Not Before date of enrolled certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"not_after": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "Not After date of enrolled certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "Not After date of enrolled certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"identifier": {
 				Type:     types.StringType,
@@ -263,6 +391,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					"or Keyfactor Command Certificate ID. If using CN to lookup the last issued certificate, the CN must " +
 					"be an exact match and if multiple certificates are returned the certificate that was most recently " +
 					"issued will be returned. ",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"collection_id": {
 				Type:     types.Int64Type,
@@ -272,7 +401,6 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					"granted at the collection level. NOTE: This will *not* assign the cert to the specified collection ID; " +
 					"assignment is based the collection's associated query. For more information on collection permissions see " +
 					"the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"owner_role_name": {
 				Type:     types.StringType,
@@ -297,35 +425,41 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"certificate_id": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Keyfactor Command certificate ID.",
+				Type:          types.Int64Type,
+				Computed:      true,
+				Description:   "Keyfactor Command certificate ID.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"command_request_id": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Keyfactor request ID.",
+				Type:          types.Int64Type,
+				Computed:      true,
+				Description:   "Keyfactor request ID.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"certificate_pem": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "PEM formatted certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "PEM formatted certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"ca_certificate": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "PEM formatted CA certificate",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "PEM formatted CA certificate",
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"certificate_chain": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "PEM formatted full certificate chain",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "PEM formatted full certificate chain",
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"private_key": {
-				Type:        types.StringType,
-				Computed:    true,
-				Sensitive:   true,
-				Description: "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+				Type:          types.StringType,
+				Computed:      true,
+				Sensitive:     true,
+				Description:   "PEM formatted PKCS#1 private key imported if cert_template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{privateKeyPlanModifier{}},
 			},
 			"enrollment_password": {
 				Type:      types.StringType,
@@ -342,24 +476,28 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 					fmt.Sprintf("%d", DEFAULT_PFX_PASSWORD_SPECIAL_CHAR_COUNT) + " special characters." +
 					" Review this provider's schema docs for more details: https://registry.terraform." +
 					"io/providers/keyfactor-pub/keyfactor/latest/docs#schema",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"jks": {
-				Type:        types.StringType,
-				Computed:    true,
-				Sensitive:   true,
-				Description: "Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+				Type:          types.StringType,
+				Computed:      true,
+				Sensitive:     true,
+				Description:   "Base64 encoded JKS keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None, and the certificate was not enrolled using a CSR.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"pfx": {
-				Type:        types.StringType,
-				Computed:    true,
-				Sensitive:   true,
-				Description: "Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.",
+				Type:          types.StringType,
+				Computed:      true,
+				Sensitive:     true,
+				Description:   "Base64 encoded PFX keystore containing the certificate, private key (if available), and certificate chain. Only returned if the certificate template has KeyRetention set to a value other than None.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"zip": {
-				Type:        types.StringType,
-				Computed:    true,
-				Sensitive:   true,
-				Description: "Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.",
+				Type:          types.StringType,
+				Computed:      true,
+				Sensitive:     true,
+				Description:   "Base64 encoded ZIP archive containing the certificate, private key (if available), and certificate chain in PEM and DER formats. Only returned if the certificate template has KeyRetention set to a value other than None.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{formatDependentModifier{}},
 			},
 			"use_cn_as_friendly_name": {
 				Type:     types.BoolType,
@@ -368,8 +506,7 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 					" certificate. Defaults to `true`. " +
 					"NOTE: Keyfactor Command must be configured to `allow custom friendly name` for this to work" +
 					" under `Application Settings > Enrollment > PFX`.",
-				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Optional: true,
 			},
 			"friendly_name": {
 				Type:     types.StringType,
@@ -377,30 +514,51 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 				Description: "Only applicable for PFX enrollments. A friendly name for the certificate. " +
 					"If not provided, " +
 					"the common name will be used unless `use_cn_as_friendly_name` is set to `false`.",
-				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Optional: true,
 			},
 			"is_expired": {
-				Type:          types.BoolType,
-				Computed:      true,
-				Description:   "Whether the certificate is expired",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-			},
-			"is_revoked": {
-				Type:          types.BoolType,
-				Computed:      true,
-				Description:   "Whether the certificate is revoked",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-			},
-			"is_pending_revocation": {
 				Type:        types.BoolType,
 				Computed:    true,
-				Description: "Whether the certificate is pending revocation",
+				Description: "Whether the certificate is expired. When true, Terraform will plan a certificate replacement on the next apply.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.UseStateForUnknown(),
+					tfsdk.RequiresReplaceIf(
+						func(_ context.Context, stateVal attr.Value, _ attr.Value, _ path.Path) (bool, diag.Diagnostics) {
+							b, ok := stateVal.(types.Bool)
+							return ok && b.Value, nil
+						},
+						"Certificate is expired and must be re-enrolled.",
+						"Certificate is expired and must be re-enrolled.",
+					),
+				},
+			},
+			"is_revoked": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether the certificate is revoked. When true, Terraform will plan a certificate replacement on the next apply.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.UseStateForUnknown(),
+					tfsdk.RequiresReplaceIf(
+						func(_ context.Context, stateVal attr.Value, _ attr.Value, _ path.Path) (bool, diag.Diagnostics) {
+							b, ok := stateVal.(types.Bool)
+							return ok && b.Value, nil
+						},
+						"Certificate is revoked and must be re-enrolled.",
+						"Certificate is revoked and must be re-enrolled.",
+					),
+				},
+			},
+			"is_pending_revocation": {
+				Type:          types.BoolType,
+				Computed:      true,
+				Description:   "Whether the certificate is pending revocation",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"revocation_effective_date": {
-				Type:        types.StringType,
-				Computed:    true,
-				Description: "The effective date of the certificate revocation",
+				Type:          types.StringType,
+				Computed:      true,
+				Description:   "The effective date of the certificate revocation",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"revoke_on_destroy": {
 				Type:        types.BoolType,
@@ -586,10 +744,49 @@ Triggers replacement of resource when true.
 					" or deploy via the Command UI.",
 				MarkdownDescription: `Configuration for certificate renewal.
 > [!IMPORTANT]
-> This does not deploy the updated certificate to associated certificate store locations. To deploy the updated 
+> This does not deploy the updated certificate to associated certificate store locations. To deploy the updated
 > certificate you must define a "keyfactor_certificate_deployment" Terraform resource that references this
 > certificate or deploy via the Command UI.
 `,
+			},
+			"key_type": {
+				Type:     types.StringType,
+				Optional: true,
+				Computed: true,
+				Description: "Key algorithm for PFX enrollment: RSA, ECC, Ed25519, Ed448. " +
+					"If omitted, the CA/template default is used. " +
+					"Populated from the issued certificate on read. " +
+					"Cannot be set when `csr` is also set.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), RequiresReplaceIfPreviouslySet()},
+				Validators: []tfsdk.AttributeValidator{
+					conflictsWithAttrValidator{otherAttr: "csr"},
+				},
+			},
+			"key_size": {
+				Type:     types.Int64Type,
+				Optional: true,
+				Computed: true,
+				Description: "Key size in bits for PFX enrollment (e.g. 2048, 4096 for RSA; 256, 384, 521 for ECC). " +
+					"If omitted, the CA/template default is used. " +
+					"Populated from the issued certificate on read. " +
+					"Cannot be set when `csr` is also set.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), RequiresReplaceIfPreviouslySet()},
+				Validators: []tfsdk.AttributeValidator{
+					conflictsWithAttrValidator{otherAttr: "csr"},
+				},
+			},
+			"curve": {
+				Type:     types.StringType,
+				Optional: true,
+				Computed: true,
+				Description: "ECC curve name for PFX enrollment (e.g. P-256, P-384, P-521). " +
+					"Only relevant when key_type=ECC. " +
+					"Populated from the issued certificate on read. " +
+					"Cannot be set when `csr` is also set.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}, RequiresReplaceIfPreviouslySet()},
+				Validators: []tfsdk.AttributeValidator{
+					conflictsWithAttrValidator{otherAttr: "csr"},
+				},
 			},
 		},
 		Description: "Manages a certificate in Keyfactor Command using the `/Enrollment` and `/Certificates` APIs",
@@ -662,6 +859,7 @@ func (r resourceCommandCertificate) Create(
 		}
 
 		tflog.Debug(ctx, "Setting state")
+		result.syncTfId()
 		diags = response.State.Set(ctx, result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -687,6 +885,7 @@ func (r resourceCommandCertificate) Create(
 		}
 
 		tflog.Debug(ctx, "Setting state")
+		result.syncTfId()
 		diags = response.State.Set(ctx, *result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -749,6 +948,24 @@ func (r resourceCommandCertificate) Read(
 		certificateFormat,
 	)
 
+	// If the configured format (e.g. "STORE"→PEM) doesn't return the private key,
+	// do a secondary PFX recovery attempt so that private_key stays populated in
+	// state and drift-check doesn't report "changed outside Terraform".
+	if pKeyPEM == "" && certGetResp != nil && certGetResp.HasPrivateKey {
+		recoverPwd := state.KeyPassword.Value
+		if recoverPwd == "" {
+			recoverPwd = state.EnrollmentPassword.Value
+		}
+		// RecoverCertificate requires a non-empty password (it encrypts the PFX
+		// response with it). Generate one if neither stored password is available.
+		if recoverPwd == "" {
+			recoverPwd = generatePassword(PFXPasswordLength, PFXPasswordSpecialChars, PFXPasswordDigits, PFXPasswordUpperCases)
+		}
+		pKeyPEM, _, _, _, _ = recoverPrivateKeyFromKeyfactorCommand(
+			ctx, certificateID, collectionIdInt, recoverPwd, r.p.client, "PFX",
+		)
+	}
+
 	// Handle leaf PEM encoding for certificates without private keys
 	if certGetResp != nil && leafPEM == "" {
 		leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certificateID)
@@ -789,9 +1006,10 @@ func (r resourceCommandCertificate) Read(
 
 	notBeforeStr := leaf.NotBefore.UTC().Format(time.RFC3339)
 	notAfterStr := leaf.NotAfter.UTC().Format(time.RFC3339)
-	sn := leaf.SerialNumber.String()
+	sn := normalizeSerialNumber(leaf.SerialNumber.String())
 	issuerDN := leaf.Issuer.String()
 	tp, _ := api.GetCertificateThumbprint(leaf)
+	tp = normalizeThumbprint(tp)
 	fullChain := chainPEM
 	if !strings.Contains(fullChain, leafPEM) {
 		fullChain = leafPEM + chainPEM
@@ -819,7 +1037,28 @@ func (r resourceCommandCertificate) Read(
 	revoked, _, expired, cDiags = checkCertDiags(ctx, certGetResp, warningDays, leaf)
 	response.Diagnostics.Append(cDiags...)
 	if certGetResp != nil {
-		caName = certGetResp.CertificateAuthorityName
+		// Preserve the user's original certificate_authority value when the server
+		// returns a fully-qualified name (e.g. "hostname\\LogicalName") but the user
+		// specified only the logical name.  This prevents spurious plan drift on
+		// an attribute that carries RequiresReplace semantics.
+		remoteCaName := certGetResp.CertificateAuthorityName
+		if remoteCaName != "" && caName != "" && remoteCaName != caName {
+			// Check if the remote CA name ends with the state value (logical name match)
+			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
+				tflog.Debug(
+					ctx,
+					fmt.Sprintf(
+						"Preserving user-supplied certificate_authority %q (remote returned %q)",
+						caName,
+						remoteCaName,
+					),
+				)
+			} else {
+				caName = remoteCaName
+			}
+		} else if remoteCaName != "" {
+			caName = remoteCaName
+		}
 		certificateID = certGetResp.Id
 		//templateName = certGetResp.TemplateName
 		metadata = flattenMetadata(certGetResp.Metadata)
@@ -958,8 +1197,9 @@ func (r resourceCommandCertificate) Read(
 		PEM:                types.String{Null: true},
 		PEMCACert:          types.String{Null: true},
 		PEMChain:           types.String{Null: true},
-		PrivateKey:         types.String{Null: true},
+		PrivateKey:         types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
 		PFX:                types.String{Null: true},
+		JKS:                types.String{Null: true},
 		Zip:                types.String{Null: true},
 		KeyPassword:        state.KeyPassword,
 		EnrollmentPassword: state.EnrollmentPassword,
@@ -971,9 +1211,9 @@ func (r resourceCommandCertificate) Read(
 		//CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(certificateID), Null: isNullId(certificateID)},
-		CollectionId:        state.CollectionId,
-		FriendlyName:        state.FriendlyName,
-		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
+		CollectionId:        types.Int64{Null: true},  // not recoverable; use isNullId sentinel
+		FriendlyName:        types.String{Null: true}, // write-only enrollment param
+		UseCNAsFriendlyName: types.Bool{Null: true},   // write-only enrollment param
 		ExpiryWarningDays:   state.ExpiryWarningDays,
 		IsExpired: types.Bool{
 			Value: expired,
@@ -982,7 +1222,7 @@ func (r resourceCommandCertificate) Read(
 			Value: revoked,
 		},
 		IsPendingRevocation: types.Bool{
-			Null: true, // todo: implement pending revocation check
+			Value: certGetResp != nil && strings.Contains(strings.ToLower(certGetResp.CertStateString), "pending"),
 		},
 		RenewalConfig: renewalConfig,
 		OwnerRoleName: types.String{
@@ -1001,6 +1241,9 @@ func (r resourceCommandCertificate) Read(
 		},
 		RevocationEffDate: state.RevocationEffDate,
 		RevokeOnDestroy:   state.RevokeOnDestroy,
+		KeyType:           state.KeyType,
+		KeySize:           state.KeySize,
+		Curve:             state.Curve,
 	}
 
 	if certGetResp != nil {
@@ -1010,14 +1253,22 @@ func (r resourceCommandCertificate) Read(
 				Null:  isNullString(certGetResp.RevocationEffDate),
 			}
 		}
+		if certGetResp.KeyAlgorithm != "" {
+			result.KeyType = types.String{Value: normalizeKeyAlgorithm(certGetResp.KeyAlgorithm)}
+		}
+		if certGetResp.KeySizeInBits > 0 {
+			result.KeySize = types.Int64{Value: int64(certGetResp.KeySizeInBits)}
+		}
+		if certGetResp.Curve != "" {
+			result.Curve = types.String{Value: curveOIDToName(certGetResp.Curve)}
+		}
 
 	}
 
 	// handle template name + enrollment pattern sets
-	// If template name AND enrollment pattern name are set, enrollment pattern takes precedence
-	// else if only template name is set, use that and set enrollment pattern to null to not force a replacement
-	if (state.CertificateTemplate.Null || state.CertificateTemplate.Unknown) && !state.EnrollmentPattern.Null {
-		// Check if the state value matches the fetched value, if not update it
+	// Both may be set (enrollment pattern takes precedence per API docs).
+	// Update state values if the server returned different names.
+	if !state.EnrollmentPattern.Null && !state.EnrollmentPattern.Unknown {
 		if state.EnrollmentPattern.Value != enrollmentPatternName {
 			result.EnrollmentPattern = types.String{
 				Value: enrollmentPatternName,
@@ -1031,8 +1282,8 @@ func (r resourceCommandCertificate) Read(
 				),
 			)
 		}
-	} else if !state.CertificateTemplate.Null && (state.EnrollmentPattern.Null || state.EnrollmentPattern.Unknown) {
-		//check if template name has changed
+	}
+	if !state.CertificateTemplate.Null && !state.CertificateTemplate.Unknown {
 		if state.CertificateTemplate.Value != templateName {
 			result.CertificateTemplate = types.String{
 				Value: templateName,
@@ -1043,21 +1294,37 @@ func (r resourceCommandCertificate) Read(
 				fmt.Sprintf("Setting template name to '%s' from fetched value", templateName),
 			)
 		}
-		// Set enrollment pattern to null to avoid forcing a replacement on next run
+	}
+	// If only template is set (no enrollment pattern), null out enrollment pattern
+	// to avoid forcing a replacement on next run.
+	if !state.CertificateTemplate.Null && (state.EnrollmentPattern.Null || state.EnrollmentPattern.Unknown) {
 		result.EnrollmentPattern = types.String{
 			Null: true,
 		}
-
 	}
 
 	if !state.CSR.IsNull() {
+		// CSR cert in normal operation: preserve subject fields from state.
+		// (The CN/SANs live in the CSR, not the config, so we must not let
+		// the cert parse overwrite what was there.)
 		result.CommonName = state.CommonName
 		result.Locality = state.Locality
 		result.State = state.State
 		result.Country = state.Country
 		result.Organization = state.Organization
 		result.OrganizationalUnit = state.OrganizationalUnit
-
+	} else if certGetResp != nil && !certGetResp.HasPrivateKey {
+		// CSR cert after import: CSR is null in state (it was never stored
+		// during import), but the cert has no server-side private key, so
+		// this must be a CSR-enrolled cert.  The Terraform config will not
+		// set common_name / SANs (they are embedded in the CSR), so preserve
+		// nulls to avoid RequiresReplace drift on every post-import plan.
+		result.CommonName = state.CommonName
+		result.Locality = state.Locality
+		result.State = state.State
+		result.Country = state.Country
+		result.Organization = state.Organization
+		result.OrganizationalUnit = state.OrganizationalUnit
 	}
 
 	switch certificateFormat {
@@ -1081,8 +1348,17 @@ func (r resourceCommandCertificate) Read(
 		result.PrivateKey = types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)}
 	}
 
+	// ca_certificate is public issuer information that never changes for a given
+	// certificate. If the format-specific download path did not populate it (e.g.
+	// STORE/PFX/JKS/ZIP formats, or when key_password is absent after import),
+	// fall back to the prior state value so it doesn't oscillate on every plan.
+	if result.PEMCACert.IsNull() && !state.PEMCACert.IsNull() {
+		result.PEMCACert = state.PEMCACert
+	}
+
 	// Set state
 	tflog.Debug(ctx, "Setting state")
+	result.syncTfId()
 	sDiags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(sDiags...)
 	response.Diagnostics.Append(diags...)
@@ -1249,9 +1525,9 @@ func (r resourceCommandCertificate) Update(
 			return
 		}
 
-		certificateIdInt, cIdErr := strconv.Atoi(plan.ID.Value)
+		certificateIdInt, cIdErr := strconv.Atoi(state.ID.Value)
 		if cIdErr != nil {
-			certificateIdInt = -1
+			certificateIdInt = int(state.CertificateId.Value)
 		}
 
 		sans := append(dnsSANs, ipSANs...)
@@ -1302,9 +1578,10 @@ func (r resourceCommandCertificate) Update(
 			PrivateKey:           state.PrivateKey,
 			KeyPassword:          plan.KeyPassword,
 			EnrollmentPassword:   state.EnrollmentPassword,
+			CertificateId:        state.CertificateId,
 			CertificateAuthority: plan.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
-			Metadata:             plan.Metadata,
+			Metadata:             knownMetadataFromPlan(plan.Metadata),
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
 			CollectionId:         state.CollectionId,
@@ -1316,12 +1593,12 @@ func (r resourceCommandCertificate) Update(
 				Value: revoked,
 			},
 			IsPendingRevocation: types.Bool{
-				Null: true, // todo: implement pending revocation check
+				Value: certGetResp != nil && strings.Contains(strings.ToLower(certGetResp.CertStateString), "pending"),
 			},
 			RenewalConfig: renewalConfig,
 
 			CertificateFormat: plan.CertificateFormat,
-			EnrollmentPattern: state.EnrollmentPattern,
+			EnrollmentPattern: plan.EnrollmentPattern,
 			OwnerRoleName:     plan.OwnerRoleName,
 			PFX:               state.PFX,
 			JKS:               state.JKS,
@@ -1330,6 +1607,9 @@ func (r resourceCommandCertificate) Update(
 			NotAfter:          state.NotAfter,
 			RevocationEffDate: state.RevocationEffDate,
 			RevokeOnDestroy:   plan.RevokeOnDestroy,
+			KeyType:           state.KeyType,
+			KeySize:           state.KeySize,
+			Curve:             state.Curve,
 		}
 
 		if (certGetResp != nil) && (certGetResp.RevocationEffDate != "") {
@@ -1351,6 +1631,7 @@ func (r resourceCommandCertificate) Update(
 
 		// Set state
 		tflog.Debug(ctx, "Setting state")
+		result.syncTfId()
 		diags = response.State.Set(ctx, &result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -1418,8 +1699,8 @@ func (r resourceCommandCertificate) Update(
 			EnrollmentPassword:   state.EnrollmentPassword,
 			CertificateId:        state.CertificateId,
 			CertificateAuthority: state.CertificateAuthority,
-			CertificateTemplate:  state.CertificateTemplate,
-			Metadata:             plan.Metadata,
+			CertificateTemplate:  plan.CertificateTemplate,
+			Metadata:             knownMetadataFromPlan(plan.Metadata),
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
 			CollectionId:         state.CollectionId,
@@ -1431,12 +1712,12 @@ func (r resourceCommandCertificate) Update(
 				Value: revoked,
 			},
 			IsPendingRevocation: types.Bool{
-				Null: true, // This is always null for updates, as we don't support pending revocation on updates.
+				Value: certGetResp != nil && strings.Contains(strings.ToLower(certGetResp.CertStateString), "pending"),
 			},
 			RenewalConfig: renewalConfig,
 
 			CertificateFormat: plan.CertificateFormat,
-			EnrollmentPattern: state.EnrollmentPattern,
+			EnrollmentPattern: plan.EnrollmentPattern,
 			OwnerRoleName:     plan.OwnerRoleName,
 			PFX:               state.PFX,
 			JKS:               state.JKS,
@@ -1445,6 +1726,9 @@ func (r resourceCommandCertificate) Update(
 			NotAfter:          state.NotAfter,
 			RevocationEffDate: state.RevocationEffDate,
 			RevokeOnDestroy:   plan.RevokeOnDestroy,
+			KeyType:           state.KeyType,
+			KeySize:           state.KeySize,
+			Curve:             state.Curve,
 		}
 
 		if (certGetResp != nil) && (certGetResp.RevocationEffDate != "") {
@@ -1454,6 +1738,112 @@ func (r resourceCommandCertificate) Update(
 			}
 		}
 
+		// If the effective certificate_format changed, re-download in the new
+		// format so that format-specific state fields (PEM, PFX, JKS, Zip) are
+		// refreshed without forcing resource recreation. (Fixes #150)
+		//
+		// Normalize: "" and "STORE" both produce PEM output in Read, so they
+		// are effectively equivalent and don't require a re-download.
+		effectivePlanFmt := effectiveCertificateFormat(plan.CertificateFormat.Value)
+		effectiveStateFmt := effectiveCertificateFormat(state.CertificateFormat.Value)
+		if effectivePlanFmt != effectiveStateFmt {
+			tflog.Info(
+				ctx, fmt.Sprintf(
+					"certificate_format changed from %q to %q (effective: %q → %q), re-downloading certificate.",
+					state.CertificateFormat.Value, plan.CertificateFormat.Value,
+					effectiveStateFmt, effectivePlanFmt,
+				),
+			)
+			dlLeafPEM, dlChainPEM, dlPKeyPEM, dlRawData, dlDiags := recoverOrDownloadCertificate(
+				ctx,
+				int(state.CertificateId.Value),
+				int(state.CollectionId.Value),
+				plan.KeyPassword.Value,
+				r.p.client,
+				effectivePlanFmt,
+			)
+			if dlDiags.HasError() {
+				response.Diagnostics.Append(dlDiags...)
+			} else {
+				// Clear all format-specific fields
+				result.PEM = types.String{Null: true}
+				result.PEMCACert = types.String{Null: true}
+				result.PEMChain = types.String{Null: true}
+				result.PrivateKey = types.String{Null: true}
+				result.PFX = types.String{Null: true}
+				result.JKS = types.String{Null: true}
+				result.Zip = types.String{Null: true}
+
+				switch effectivePlanFmt {
+				case "PEM":
+					dlFullChain := dlChainPEM
+					if !strings.Contains(dlFullChain, dlLeafPEM) {
+						dlFullChain = dlLeafPEM + dlChainPEM
+					}
+					result.PEM = types.String{Value: dlLeafPEM, Null: isNullString(dlLeafPEM)}
+					result.PEMCACert = types.String{Value: dlChainPEM, Null: isNullString(dlChainPEM)}
+					result.PEMChain = types.String{Value: dlFullChain, Null: isNullString(dlFullChain)}
+					result.PrivateKey = types.String{Value: dlPKeyPEM, Null: isNullString(dlPKeyPEM)}
+				case "JKS":
+					if dlRawData != nil {
+						result.JKS = types.String{Value: *dlRawData, Null: isNullString(*dlRawData)}
+					}
+				case "PFX":
+					if dlRawData != nil {
+						result.PFX = types.String{Value: *dlRawData, Null: isNullString(*dlRawData)}
+					}
+				case "ZIP":
+					if dlRawData != nil {
+						result.Zip = types.String{Value: *dlRawData, Null: isNullString(*dlRawData)}
+					}
+				}
+			}
+		}
+
+		// Post-import private key recovery.
+		//
+		// privateKeyPlanModifier leaves plan.PrivateKey as Unknown when
+		// state.PrivateKey is null and key_password is in the config.  That
+		// signals here to attempt key recovery so that the private key is
+		// populated on the first reconcile apply after import.
+		//
+		// If recovery fails (e.g. key is not archived in Command) we simply
+		// store null — the plan was Unknown so either outcome is valid and no
+		// "inconsistent result" error is raised.
+		// Only attempt key recovery when the effective format is PEM — for PFX/JKS/ZIP
+		// the private key is embedded in the binary blob; private_key must stay null.
+		if plan.PrivateKey.Unknown && certGetResp != nil && certGetResp.HasPrivateKey &&
+			effectivePlanFmt == "PEM" {
+			recoverPassword := plan.KeyPassword.Value
+			if recoverPassword == "" {
+				recoverPassword = state.EnrollmentPassword.Value
+			}
+			if recoverPassword != "" {
+				tflog.Debug(ctx, fmt.Sprintf(
+					"Attempting post-import private key recovery for certificate %v",
+					state.CertificateId.Value,
+				))
+				pKeyPEM, _, _, _, rDiags := recoverPrivateKeyFromKeyfactorCommand(
+					ctx,
+					int(state.CertificateId.Value),
+					int(state.CollectionId.Value),
+					recoverPassword,
+					r.p.client,
+					"PFX",
+				)
+				if !rDiags.HasError() && pKeyPEM != "" {
+					tflog.Debug(ctx, "Post-import private key recovery succeeded.")
+					result.PrivateKey = types.String{Value: pKeyPEM}
+				} else {
+					tflog.Debug(ctx, "Post-import private key recovery failed; private_key remains null.")
+					result.PrivateKey = types.String{Null: true}
+				}
+			} else {
+				result.PrivateKey = types.String{Null: true}
+			}
+		}
+
+		result.syncTfId()
 		diags = response.State.Set(ctx, result)
 		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
@@ -1601,35 +1991,66 @@ func (r resourceCommandCertificate) ImportState(
 	}
 
 	tflog.Info(ctx, fmt.Sprintf("Attempting to retrieve certificate '%s' from Keyfactor Command.", state.ID.Value))
-	tflog.Debug(ctx, "Calling recoverOrDownloadCertificate")
-	leafPEM, chainPEM, pKeyPEM, rawData, rDiags := recoverOrDownloadCertificate(
-		ctx,
-		certificateIdInt,
-		int(state.CollectionId.Value),
-		state.KeyPassword.Value,
-		r.p.client,
-		"PFX",
-	)
-
-	if rDiags.HasError() {
-		tflog.Error(ctx, fmt.Sprintf("Error retrieving certificate '%s' from Keyfactor Command.", certificateId))
-		response.Diagnostics.Append(rDiags...)
-		response.Diagnostics.AddError(
-			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
-			fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command", certificateId),
-		)
-		return
-	}
 
 	var (
-		enrollmentPatternId int
-		ownerRoleName       string
-		requestId           int
+		leafPEM          string
+		chainPEM         string
+		pKeyPEM          string
+		rawData          *string
+		importRecoverPwd string
+	)
+
+	// CSR-enrolled certificates have no server-side private key.  Attempting
+	// PFX recovery for those certs always fails, so use the PEM download path
+	// directly.  For PFX-enrolled certs (HasPrivateKey==true) we still attempt
+	// recovery so that the private_key attribute is populated in state.
+	if certGetResp != nil && !certGetResp.HasPrivateKey {
+		tflog.Debug(ctx, "Certificate has no server-side private key (CSR enrollment); using PEM download path")
+		leafPEM, chainPEM, _, _ = downloadCertificateFromKeyfactorCommand(ctx, certificateIdInt, 0, r.p.client)
+	} else {
+		tflog.Debug(ctx, "Calling recoverOrDownloadCertificate")
+		var rDiags diag.Diagnostics
+		// Generate a one-time password for import recovery. RecoverCertificate
+		// uses this to encrypt the PFX response (it is NOT the original enrollment
+		// password). Any non-empty password works. We store it as EnrollmentPassword
+		// so that subsequent Read calls can re-recover the key without a reconcile apply.
+		importRecoverPwd = generatePassword(PFXPasswordLength, PFXPasswordSpecialChars, PFXPasswordDigits, PFXPasswordUpperCases)
+		leafPEM, chainPEM, pKeyPEM, rawData, rDiags = recoverOrDownloadCertificate(
+			ctx,
+			certificateIdInt,
+			int(state.CollectionId.Value),
+			importRecoverPwd,
+			r.p.client,
+			"PFX",
+		)
+
+		if rDiags.HasError() {
+			tflog.Error(ctx, fmt.Sprintf("Error retrieving certificate '%s' from Keyfactor Command.", certificateId))
+			response.Diagnostics.Append(rDiags...)
+			response.Diagnostics.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+				fmt.Sprintf("Could not retrieve certificate '%s' from Keyfactor Command", certificateId),
+			)
+			return
+		}
+
+		// PFX download without the user-supplied key_password returns the encrypted
+		// blob but cannot extract the chain cert.  Fetch it separately so that
+		// ca_certificate is populated in the imported state and does not show as
+		// "(known after apply)" on every subsequent plan.
+		if chainPEM == "" {
+			_, chainPEM, _, _ = downloadCertificateFromKeyfactorCommand(ctx, certificateIdInt, 0, r.p.client)
+		}
+	}
+	_ = rawData
+
+	var (
+		ownerRoleName string
+		requestId     int
 	)
 
 	// Handle leaf PEM encoding for certificates without private keys
 	if certGetResp != nil && leafPEM == "" {
-		enrollmentPatternId = certGetResp.EnrollmentPatternId
 		ownerRoleName = certGetResp.OwnerRoleName
 		requestId = certGetResp.CertRequestId
 		leafPEM, _ = encodeCertificate(ctx, certGetResp.ContentBytes, certGetResp.Id)
@@ -1638,7 +2059,6 @@ func (r resourceCommandCertificate) ImportState(
 	}
 
 	if leafPEM == "" {
-		response.Diagnostics.Append(rDiags...)
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
 			fmt.Sprintf(
@@ -1649,12 +2069,22 @@ func (r resourceCommandCertificate) ImportState(
 		return
 	}
 
-	leaf := x509.Certificate{
-		Raw: []byte(leafPEM),
+	leaf, lDiags := parseLeafCert(ctx, leafPEM)
+	response.Diagnostics.Append(lDiags...)
+	if response.Diagnostics.HasError() || leaf == nil {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf(
+				"Failed to parse certificate '%s' during import. "+
+					"Please check the certificate ID and try again.", state.ID.Value,
+			),
+		)
+		return
 	}
-	sn := leaf.SerialNumber.String()
+	sn := normalizeSerialNumber(leaf.SerialNumber.String())
 	issuerDN := leaf.Issuer.String()
-	tp, _ := api.GetCertificateThumbprint(&leaf)
+	tp, _ := api.GetCertificateThumbprint(leaf)
+	tp = normalizeThumbprint(tp)
 	fullChain := chainPEM
 	if !strings.Contains(fullChain, leafPEM) {
 		fullChain = leafPEM + chainPEM
@@ -1665,9 +2095,39 @@ func (r resourceCommandCertificate) ImportState(
 	metadata := state.Metadata
 	if certGetResp != nil {
 		// Info that can only be retrieved with `Read Certificates` permissions
-		caName = certGetResp.CertificateAuthorityName
+		remoteCaName := certGetResp.CertificateAuthorityName
+		if remoteCaName != "" && caName != "" && remoteCaName != caName {
+			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
+				tflog.Debug(
+					ctx,
+					fmt.Sprintf(
+						"Preserving user-supplied certificate_authority %q (remote returned %q)",
+						caName,
+						remoteCaName,
+					),
+				)
+			} else {
+				caName = remoteCaName
+			}
+		} else if remoteCaName != "" {
+			// caName is empty (import path): extract the logical name from the
+			// server-returned CA path.  Handles Windows "HOST\\LogicalName" and
+			// EJBCA URL format "http://ejbca.../ejbca\\LogicalName" so that the
+			// imported state stores the short logical name and matches the typical
+			// user-supplied certificate_authority value without causing drift.
+			if idx := strings.LastIndex(remoteCaName, "\\"); idx >= 0 {
+				caName = remoteCaName[idx+1:]
+			} else {
+				caName = remoteCaName
+			}
+		}
 		certificateIdInt = certGetResp.Id
-		templateName = certGetResp.TemplateName
+		// Do not update templateName from server during import: certificate_template
+		// and certificate_enrollment_pattern are write-only enrollment parameters
+		// that cannot be recovered from the certificate record.  Leaving templateName
+		// as "" stores null in state; users should add lifecycle.ignore_changes for
+		// these attributes after importing certs enrolled via enrollment patterns.
+		// templateName = certGetResp.TemplateName
 		metadata = flattenMetadata(certGetResp.Metadata)
 		revoked := isRevoked(certGetResp)
 		if revoked {
@@ -1678,12 +2138,12 @@ func (r resourceCommandCertificate) ImportState(
 		}
 	}
 
-	cn, l, s, c, o, ou := parseSubjectToTfState(leaf)
+	cn, l, s, c, o, ou := parseSubjectToTfState(*leaf)
 
 	tflog.Debug(ctx, "Creating CommandCertificate object")
 	var result = CommandCertificate{
-		ID:                 state.ID,
-		CSR:                state.CSR,
+		ID:                 types.String{Value: certificateId},
+		CSR:                types.String{Null: true}, // write-only; not recoverable from server
 		CommonName:         cn,
 		Locality:           l,
 		State:              s,
@@ -1700,8 +2160,10 @@ func (r resourceCommandCertificate) ImportState(
 		PEMCACert:          types.String{Value: chainPEM, Null: isNullString(chainPEM)},
 		PEMChain:           types.String{Value: fullChain, Null: isNullString(fullChain)},
 		PrivateKey:         types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)},
-		KeyPassword:        state.KeyPassword,
-		EnrollmentPassword: state.KeyPassword,
+		KeyPassword:        types.String{Null: true}, // write-only; not recoverable from server
+		// Store the recovery password only when key recovery succeeded, enabling
+		// subsequent Read calls to re-recover the private key without a reconcile apply.
+		EnrollmentPassword: types.String{Value: importRecoverPwd, Null: isNullString(pKeyPEM)},
 		CertificateAuthority: types.String{
 			Value: caName,
 			Null:  isNullString(caName),
@@ -1709,25 +2171,41 @@ func (r resourceCommandCertificate) ImportState(
 		CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(certificateIdInt), Null: isNullId(certificateIdInt)},
-		CollectionId:        state.CollectionId,
-		FriendlyName:        state.FriendlyName,
-		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
+		CollectionId:        types.Int64{Null: true},
+		FriendlyName:        types.String{Null: true},
+		UseCNAsFriendlyName: types.Bool{Null: true},
 		RequestId:           types.Int64{Value: int64(requestId), Null: isNullId(requestId)},
-		ExpiryWarningDays:   state.ExpiryWarningDays,
+		ExpiryWarningDays:   types.Int64{Null: true},  // write-only; isNullId(0)==true means not set
 		IsExpired:           types.Bool{Value: false}, // Set to false as we just enrolled the certificate
 		IsRevoked:           types.Bool{Value: false}, // Set to false as we just enrolled the certificate
 		IsPendingRevocation: types.Bool{Null: true},   // Set to false as we just enrolled the certificate
 		RenewalConfig:       state.RenewalConfig,
-		CertificateFormat:   state.CertificateFormat,
+		CertificateFormat:   types.String{Null: true}, // write-only; isNullString("")==true means not set
 		OwnerRoleName:       types.String{Value: ownerRoleName, Null: isNullString(ownerRoleName)},
-		EnrollmentPattern: types.String{
-			Value: fmt.Sprintf("%d", enrollmentPatternId),
-			Null:  isNullId(enrollmentPatternId),
-		},
-		NotBefore:         state.NotBefore,
-		NotAfter:          state.NotAfter,
-		RevocationEffDate: state.RevocationEffDate,
-		RevokeOnDestroy:   state.RevokeOnDestroy,
+		EnrollmentPattern:   types.String{Null: true}, // write-only; not recoverable after import (like CertificateTemplate)
+		NotBefore:           state.NotBefore,
+		NotAfter:            state.NotAfter,
+		RevocationEffDate:   state.RevocationEffDate,
+		RevokeOnDestroy:     types.Bool{Null: true}, // write-only; false means not set
+		KeyType:             state.KeyType,
+		KeySize:             state.KeySize,
+		Curve:               state.Curve,
+	}
+
+	// For CSR-enrolled certificates, subject fields (CN, SANs, locality, etc.)
+	// are embedded in the CSR and are not set in the Terraform config.
+	// Null them out so post-import plans show only in-place changes for
+	// write-only enrollment params rather than triggering replacement.
+	if certGetResp != nil && !certGetResp.HasPrivateKey {
+		result.CommonName = types.String{Null: true}
+		result.Locality = types.String{Null: true}
+		result.State = types.String{Null: true}
+		result.Country = types.String{Null: true}
+		result.Organization = types.String{Null: true}
+		result.OrganizationalUnit = types.String{Null: true}
+		result.DNSSANs = DNSSANStoTerraform(nil, false)
+		result.IPSANs = IPSANStoTerraform(nil, false)
+		result.URISANs = URISANStoTerraform(nil, false)
 	}
 
 	if certGetResp != nil {
@@ -1749,10 +2227,20 @@ func (r resourceCommandCertificate) ImportState(
 				Null:  isNullString(certGetResp.NotAfter),
 			}
 		}
+		if certGetResp.KeyAlgorithm != "" {
+			result.KeyType = types.String{Value: normalizeKeyAlgorithm(certGetResp.KeyAlgorithm)}
+		}
+		if certGetResp.KeySizeInBits > 0 {
+			result.KeySize = types.Int64{Value: int64(certGetResp.KeySizeInBits)}
+		}
+		if certGetResp.Curve != "" {
+			result.Curve = types.String{Value: curveOIDToName(certGetResp.Curve)}
+		}
 	}
 
 	// Set state
 	tflog.Debug(ctx, "Setting state")
+	result.syncTfId()
 	diags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -2179,6 +2667,37 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			}
 		}
 
+	} else if !plan.CertificateTemplate.IsNull() && plan.CertificateTemplate.Value != "" {
+		// No enrollment pattern specified but a template was given.  On v25+
+		// Command servers require an enrollment pattern — look up the default
+		// one for this template. On pre-v25 servers this returns (0, nil) and
+		// enrollment proceeds with the template name alone.
+		var epErr error
+		enrollmentPatternId, epErr = r.LookupEnrollmentPatternIDByTemplateName(
+			ctx,
+			plan.CertificateTemplate.Value,
+		)
+		if epErr != nil {
+			diags.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+				fmt.Sprintf(
+					"Could not look up enrollment pattern for template '%s': %s",
+					plan.CertificateTemplate.Value,
+					epErr.Error(),
+				),
+			)
+			return nil, diags
+		}
+	}
+
+	// When an enrollment pattern is used, do not also send the Template name.
+	// On v25+ EJBCA, sending both causes the API to validate that the template
+	// name matches the pattern's linked template exactly (by short name), which
+	// fails when the user supplied the display name.  The enrollment pattern
+	// already encodes the template; omitting Template is safe per the API docs.
+	enrollTemplate := plan.CertificateTemplate.Value
+	if enrollmentPatternId > 0 {
+		enrollTemplate = ""
 	}
 
 	tflog.Debug(ctx, "Creating API request.")
@@ -2187,7 +2706,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		Password:                    lookupPassword,
 		PopulateMissingValuesFromAD: false, //TODO: Add support for this
 		CertificateAuthority:        plan.CertificateAuthority.Value,
-		Template:                    plan.CertificateTemplate.Value,
+		Template:                    enrollTemplate,
 		IncludeChain:                true,              //TODO: Add support for this
 		CertFormat:                  certificateFormat, // Get certificate from data source
 		EnrollmentPatternId:         enrollmentPatternId,
@@ -2207,6 +2726,38 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			SubjectOrganizationalUnit: plan.OrganizationalUnit.Value,
 			SubjectState:              plan.State.Value,
 		},
+	}
+	if !plan.KeyType.Null && !plan.KeyType.Unknown && plan.KeyType.Value != "" {
+		// Normalize "ECDSA" → "ECC" — the Command API only accepts "ECC".
+		kt := plan.KeyType.Value
+		if strings.EqualFold(kt, "ECDSA") {
+			kt = "ECC"
+		}
+		PFXArgs.KeyType = kt
+
+		// The Command API requires KeyLength alongside KeyType for all algorithms.
+		// For Ed25519/Ed448 the size is fixed; for ECC derive it from key_size or
+		// curve; for RSA use key_size directly.
+		switch {
+		case strings.EqualFold(kt, "Ed25519"):
+			PFXArgs.KeyLength = 255
+		case strings.EqualFold(kt, "Ed448"):
+			PFXArgs.KeyLength = 448
+		case strings.EqualFold(kt, "ECC"):
+			if !plan.KeySize.Null && !plan.KeySize.Unknown && plan.KeySize.Value > 0 {
+				PFXArgs.KeyLength = int(plan.KeySize.Value)
+			} else if !plan.Curve.Null && !plan.Curve.Unknown && plan.Curve.Value != "" {
+				PFXArgs.KeyLength = curveNameToKeyLength(plan.Curve.Value)
+			}
+		default: // RSA and any future types
+			if !plan.KeySize.Null && !plan.KeySize.Unknown && plan.KeySize.Value > 0 {
+				PFXArgs.KeyLength = int(plan.KeySize.Value)
+			}
+		}
+	}
+	if !plan.Curve.Null && !plan.Curve.Unknown && plan.Curve.Value != "" {
+		// Curve OID alongside KeyLength further constrains the exact curve for ECC.
+		PFXArgs.Curve = curveNameToOID(plan.Curve.Value)
 	}
 	tflog.Debug(ctx, "API PFXArgs created.")
 
@@ -2364,9 +2915,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		DNSSANs:            plan.DNSSANs,
 		IPSANs:             plan.IPSANs,
 		URISANs:            plan.URISANs,
-		SerialNumber:       types.String{Value: enrolledSerialNumber},
+		SerialNumber:       types.String{Value: normalizeSerialNumber(enrolledSerialNumber)},
 		IssuerDN:           types.String{Value: enrolledIssuerDN},
-		Thumbprint:         types.String{Value: enrolledThumbprint},
+		Thumbprint:         types.String{Value: normalizeThumbprint(enrolledThumbprint)},
 		//PEM:                  types.String{Value: leafPEM}, //This is set below depending out output format
 		//PEMCACert:            types.String{Value: chainPEM}, //This is set below depending out output format
 		//PEMChain:             types.String{Value: chainPEM}, //This is set below depending out output format
@@ -2377,14 +2928,14 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		CertificateTemplate:  plan.CertificateTemplate,
 		CertificateId:        types.Int64{Value: int64(enrolledId)},
 		RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
-		Metadata:             plan.Metadata,
+		Metadata:             knownMetadataFromPlan(plan.Metadata),
 		CollectionId:         plan.CollectionId,
 		FriendlyName:         plan.FriendlyName,
 		UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
 		ExpiryWarningDays:    plan.ExpiryWarningDays,
 		IsExpired:            types.Bool{Value: false}, // Set to false as we just enrolled the certificate
 		IsRevoked:            types.Bool{Value: false}, // Set to false as we just enrolled the certificate
-		IsPendingRevocation:  types.Bool{Null: true},   // Set to false as we just enrolled the certificate
+		IsPendingRevocation:  types.Bool{Value: false}, // Newly enrolled certificates are not pending revocation
 		RenewalConfig:        plan.RenewalConfig,
 		CertificateFormat:    plan.CertificateFormat,
 		OwnerRoleName:        plan.OwnerRoleName,
@@ -2393,6 +2944,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		NotAfter:             types.String{Null: true}, // Not provided in enroll response
 		RevocationEffDate:    types.String{Null: true}, // Not provided in enroll response
 		RevokeOnDestroy:      plan.RevokeOnDestroy,
+		KeyType:              knownStringFromPlan(plan.KeyType),
+		KeySize:              knownInt64FromPlan(plan.KeySize),
+		Curve:                knownStringFromPlan(plan.Curve),
 	}
 
 	switch certificateFormat {
@@ -2443,34 +2997,54 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			enrollResponse.CertificateInformation.PKCS12Blob,
 			lookupPassword,
 		)
-		chainPEM = strings.Join(pChain, "\n")
+		chainPEM = strings.Join(pChain, "")
 
 		if pfxErr != nil {
-			tflog.Error(ctx, "Error unpacking PKCS12 blob, attempting to recover private key.")
-			//attempt to recover private key
-			rErr := diag.Diagnostics{}
-			pKeyPEM, leafPEM, chainPEM, _, rErr = recoverPrivateKeyFromKeyfactorCommand(
-				ctx,
-				enrolledId,
-				collectionIdInt,
-				lookupPassword,
-				r.p.client,
-				"PFX",
-			)
-			diags.Append(rErr...)
-			if diags.HasError() {
-				diags.AddError(
-					"Private key recovery failed.",
-					"Could not recover private key from Keyfactor Command: "+pfxErr.Error(),
+			// If the PKCS#12 contains a key algorithm unsupported by Go's pkcs12/x509
+			// libraries (e.g. Ed448, OID 1.3.101.113), private key extraction is not
+			// possible at all — skip it and fall back to a PEM download for cert data.
+			if strings.Contains(pfxErr.Error(), "unknown algorithm") {
+				tflog.Warn(ctx, fmt.Sprintf(
+					"Cannot extract private key from PFX for certificate %d — unsupported algorithm: %v",
+					enrolledId, pfxErr,
+				))
+				leafPEM, chainPEM, _, _ = downloadCertificateFromKeyfactorCommand(ctx, enrolledId, collectionIdInt, r.p.client)
+				// pKeyPEM remains empty; PrivateKey will be null in state
+			} else {
+				tflog.Error(ctx, "Error unpacking PKCS12 blob, attempting to recover private key.")
+				//attempt to recover private key
+				rErr := diag.Diagnostics{}
+				pKeyPEM, leafPEM, chainPEM, _, rErr = recoverPrivateKeyFromKeyfactorCommand(
+					ctx,
+					enrolledId,
+					collectionIdInt,
+					lookupPassword,
+					r.p.client,
+					"PFX",
 				)
-				return nil, diags
+				diags.Append(rErr...)
+				if diags.HasError() {
+					diags.AddError(
+						"Private key recovery failed.",
+						"Could not recover private key from Keyfactor Command: "+pfxErr.Error(),
+					)
+					return nil, diags
+				}
 			}
 		}
 
 		result.PEM = types.String{Value: leafPEM, Null: isNullString(leafPEM)}
 		result.PEMCACert = types.String{Value: chainPEM, Null: isNullString(chainPEM)}
-		result.PEMChain = types.String{Value: leafPEM + "\n" + chainPEM, Null: isNullString(leafPEM + "\n" + chainPEM)}
+		result.PEMChain = types.String{Value: leafPEM + chainPEM, Null: isNullString(leafPEM + chainPEM)}
 		result.PrivateKey = types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)}
+		// Parse leaf to populate validity window fields from the enrolled certificate.
+		if leafPEM != "" {
+			if leafObj, leafParseErr := parseLeafCert(ctx, leafPEM); !leafParseErr.HasError() && leafObj != nil {
+				result.NotBefore = types.String{Value: leafObj.NotBefore.UTC().Format(time.RFC3339)}
+				result.NotAfter = types.String{Value: leafObj.NotAfter.UTC().Format(time.RFC3339)}
+				result.IsExpired = types.Bool{Value: time.Now().After(leafObj.NotAfter)}
+			}
+		}
 	default:
 		tflog.Error(ctx, "Invalid certificate format, this should have been caught earlier.")
 		diags.AddError(
@@ -2578,6 +3152,147 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByName(
 	return 0, fmt.Errorf("enrollment pattern with name '%s' not found", patternName)
 }
 
+// LookupEnrollmentPatternIDByTemplateName finds the default enrollment pattern
+// for the given template short name. Returns (0, nil) if no enrollment patterns
+// exist (pre-v25 / standalone CA) so the caller can fall through to
+// template-only enrollment. Returns an error only on API failure.
+func (r resourceCommandCertificate) LookupEnrollmentPatternIDByTemplateName(
+	ctx context.Context,
+	templateName string,
+) (int, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Looking up default enrollment pattern for template: %s", templateName))
+	patterns, err := r.p.client.GetEnrollmentPatterns()
+	if err != nil {
+		// Pre-v25 servers may return 404/501 — treat as "not found" and fall through.
+		tflog.Warn(ctx, fmt.Sprintf("Could not list enrollment patterns (may be pre-v25): %s", err.Error()))
+		return 0, nil
+	}
+	// Prefer the pattern explicitly marked as the template default.
+	for _, pattern := range patterns {
+		if pattern.Template != nil &&
+			pattern.Template.TemplateName == templateName &&
+			pattern.TemplateDefault {
+			tflog.Debug(
+				ctx, fmt.Sprintf(
+					"Found default enrollment pattern '%s' (ID=%d) for template '%s'",
+					pattern.Name, pattern.ID, templateName,
+				),
+			)
+			return pattern.ID, nil
+		}
+	}
+	// Fall back to any pattern linked to this template.
+	for _, pattern := range patterns {
+		if pattern.Template != nil && pattern.Template.TemplateName == templateName {
+			tflog.Debug(
+				ctx, fmt.Sprintf(
+					"Found enrollment pattern '%s' (ID=%d) for template '%s' (not marked default)",
+					pattern.Name, pattern.ID, templateName,
+				),
+			)
+			return pattern.ID, nil
+		}
+	}
+	tflog.Debug(ctx, fmt.Sprintf("No enrollment pattern found for template '%s', proceeding without one", templateName))
+	return 0, nil
+}
+
+// normalizeKeyAlgorithm maps OID strings returned by EJBCA and some CA
+// implementations to the provider's canonical key-type names.  If the value
+// is already a friendly name or is unrecognized it is returned unchanged.
+func normalizeKeyAlgorithm(algo string) string {
+	switch algo {
+	case "1.2.840.113549.1.1.1":
+		return "RSA"
+	case "1.2.840.10045.2.1":
+		return "ECC"
+	case "ECDSA":
+		return "ECC"
+	case "1.3.101.112":
+		return "Ed25519"
+	case "1.3.101.113":
+		return "Ed448"
+	default:
+		return algo
+	}
+}
+
+// curveNameToKeyLength returns the KeyLength value the Command API needs for
+// a given ECC curve name. Returns 0 if the curve is unrecognized (caller
+// should leave KeyLength unset rather than send 0).
+func curveNameToKeyLength(curve string) int {
+	switch curve {
+	case "P-256", "prime256v1", "secp256r1":
+		return 256
+	case "P-384", "secp384r1":
+		return 384
+	case "P-521", "secp521r1":
+		return 521
+	default:
+		return 0
+	}
+}
+
+// curveNameToOID converts a user-friendly ECC curve name to the OID string
+// required by the Keyfactor Command PFX enrollment API.  Per the API docs,
+// "ECC curves must be specified using the OID for the ECC algorithm."
+// If the value is already an OID or unrecognized it is returned unchanged.
+func curveNameToOID(curve string) string {
+	switch curve {
+	case "P-256", "prime256v1", "secp256r1":
+		return "1.2.840.10045.3.1.7"
+	case "P-384", "secp384r1":
+		return "1.3.132.0.34"
+	case "P-521", "secp521r1":
+		return "1.3.132.0.35"
+	default:
+		return curve // pass through if already OID or unknown name
+	}
+}
+
+// curveOIDToName converts an OID returned by the API back to the user-friendly
+// curve name stored in provider state.
+func curveOIDToName(oid string) string {
+	switch oid {
+	case "1.2.840.10045.3.1.7":
+		return "P-256"
+	case "1.3.132.0.34":
+		return "P-384"
+	case "1.3.132.0.35":
+		return "P-521"
+	default:
+		return oid
+	}
+}
+
+// knownMetadataFromPlan returns plan.Metadata if it is a known value, or an
+// empty map if it is Unknown (i.e. Computed and not set in config). This
+// ensures the provider never stores an unknown metadata value in state.
+func knownMetadataFromPlan(m types.Map) types.Map {
+	if m.Unknown {
+		return types.Map{ElemType: types.StringType, Elems: map[string]attr.Value{}}
+	}
+	return m
+}
+
+// knownStringFromPlan returns plan value if known, otherwise types.String{Null: true}.
+// Prevents storing Unknown in state for Computed string fields.
+func knownStringFromPlan(s types.String) types.String {
+	if s.Unknown {
+		return types.String{Null: true}
+	}
+	return s
+}
+
+// knownInt64FromPlan returns plan value if known, otherwise types.Int64{Null: true}.
+// Prevents storing Unknown in state for Computed int64 fields.
+func knownInt64FromPlan(i types.Int64) types.Int64 {
+	if i.Unknown {
+		return types.Int64{Null: true}
+	}
+	return i
+}
+
 func (r resourceCommandCertificate) parseMetadata(
 	ctx context.Context,
 	plan *CommandCertificate,
@@ -2664,13 +3379,41 @@ func (r resourceCommandCertificate) enrollCSR(
 			}
 		}
 
+	} else if !plan.CertificateTemplate.IsNull() && plan.CertificateTemplate.Value != "" {
+		// No enrollment pattern specified but a template was given.  On v25+
+		// Command servers require an enrollment pattern — look up the default
+		// one for this template. On pre-v25 servers this returns (0, nil) and
+		// enrollment proceeds with the template name alone.
+		var epErr error
+		enrollmentPatternId, epErr = r.LookupEnrollmentPatternIDByTemplateName(
+			ctx,
+			plan.CertificateTemplate.Value,
+		)
+		if epErr != nil {
+			diags.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+				fmt.Sprintf(
+					"Could not look up enrollment pattern for template '%s': %s",
+					plan.CertificateTemplate.Value,
+					epErr.Error(),
+				),
+			)
+			return nil, diags
+		}
+	}
+
+	// When an enrollment pattern is used, do not also send the Template name.
+	// See the same comment in enrollPFXV2 for details.
+	enrollCSRTemplate := plan.CertificateTemplate.Value
+	if enrollmentPatternId > 0 {
+		enrollCSRTemplate = ""
 	}
 
 	tflog.Debug(ctx, "Creating certificate from CSR.")
 	CSRArgs := &api.EnrollCSRFctArgs{
 		CSR:                  csr,
 		CertificateAuthority: plan.CertificateAuthority.Value,
-		Template:             plan.CertificateTemplate.Value,
+		Template:             enrollCSRTemplate,
 		EnrollmentPatternId:  enrollmentPatternId,
 		IncludeChain:         true,
 		CertFormat:           certificateFormat,
@@ -2779,9 +3522,9 @@ func (r resourceCommandCertificate) enrollCSR(
 		DNSSANs:            plan.DNSSANs,
 		IPSANs:             plan.IPSANs,
 		URISANs:            plan.URISANs,
-		SerialNumber:       types.String{Value: enrollResponse.CertificateInformation.SerialNumber},
+		SerialNumber:       types.String{Value: normalizeSerialNumber(enrollResponse.CertificateInformation.SerialNumber)},
 		IssuerDN:           types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
-		Thumbprint:         types.String{Value: enrollResponse.CertificateInformation.Thumbprint},
+		Thumbprint:         types.String{Value: normalizeThumbprint(enrollResponse.CertificateInformation.Thumbprint)},
 		PEM:                types.String{Value: leaf},
 		PEMCACert:          types.String{Value: caCert},
 		PEMChain:           types.String{Value: fullChain},
@@ -2797,14 +3540,14 @@ func (r resourceCommandCertificate) enrollCSR(
 		CertificateAuthority: plan.CertificateAuthority,
 		CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
 		CertificateTemplate:  plan.CertificateTemplate,
-		Metadata:             plan.Metadata,
+		Metadata:             knownMetadataFromPlan(plan.Metadata),
 		CollectionId:         plan.CollectionId,
 		FriendlyName:         plan.FriendlyName,
 		UseCNAsFriendlyName:  plan.UseCNAsFriendlyName,
 		ExpiryWarningDays:    plan.ExpiryWarningDays,
 		IsExpired:            types.Bool{Value: false}, //Assuming the certificate is not expired as it should be newly created
 		IsRevoked:            types.Bool{Value: false}, //Assuming the certificate is not revoked as it should be newly created
-		IsPendingRevocation:  types.Bool{Null: true},   // Set to false as we just enrolled the certificate
+		IsPendingRevocation:  types.Bool{Value: false}, // Newly enrolled certificates are not pending revocation
 		RenewalConfig:        plan.RenewalConfig,
 		EnrollmentPattern:    plan.EnrollmentPattern,
 		CertificateFormat:    plan.CertificateFormat,
@@ -2816,6 +3559,9 @@ func (r resourceCommandCertificate) enrollCSR(
 		NotAfter:             types.String{Null: true}, // Null because CSR enrollment does not provide NotAfter
 		RevocationEffDate:    types.String{Null: true}, // Not provided in enroll response
 		RevokeOnDestroy:      plan.RevokeOnDestroy,
+		KeyType:              types.String{Null: true}, // Not applicable for CSR enrollment
+		KeySize:              types.Int64{Null: true},  // Not applicable for CSR enrollment
+		Curve:                types.String{Null: true}, // Not applicable for CSR enrollment
 	}
 
 	leafObj, leafErr := parseLeafCert(ctx, leaf)

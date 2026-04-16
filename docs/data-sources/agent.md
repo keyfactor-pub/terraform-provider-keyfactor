@@ -40,6 +40,7 @@ data "keyfactor_agent" "agent_lookup_client_machine" {
 - `blueprint` (String) A string indicating the name of the blueprint associated with the orchestrator.
 - `capabilities` (List of String) An array of strings indicating the capabilities reported by the orchestrator. These may be built-in or custom capabilities.
 - `client_machine` (String) A string indicating the client machine on which the orchestrator is installed.
+- `id` (String) Read-only mirror of agent_id for Terraform test framework compatibility.
 - `last_error_code` (Number) An integer indicating the last error code, if any, reported from the orchestrator when trying to register a session. This code is cleared on successful session registration.
 - `last_error_message` (String) A string indicating the last error message, if any, reported from the orchestrator when trying to register a session. This message is cleared on successful session registration.
 - `last_seen` (String) The time, in UTC, at which the orchestrator last contacted Keyfactor Command.
@@ -49,3 +50,5 @@ data "keyfactor_agent" "agent_lookup_client_machine" {
 - `thumbprint` (String) A string indicating the thumbprint of the certificate that Keyfactor Command is expecting the orchestrator to use for client certificate authentication.
 - `username` (String) A string indicating the Active Directory user or service account the orchestrator is using to connect to Keyfactor Command.
 - `version` (String) A string indicating the version of the orchestrator.
+
+

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -296,15 +297,65 @@ func (r resourceCertificateTemplateRoleBinding) ImportState(
 	request tfsdk.ImportResourceStateRequest,
 	response *tfsdk.ImportResourceStateResponse,
 ) {
-	var state CertificateTemplateRoleBinding
-	var diags diag.Diagnostics
-	//diags := request.ID
-	diags.AddError("Import not implemented", "Import is not implemented for this resource")
+	tflog.Info(ctx, "ImportState called on certificate template role binding resource")
+
+	roleName := request.ID
+	if roleName == "" {
+		response.Diagnostics.AddError(
+			"Invalid import ID",
+			"Expected role name as import ID, got empty string.",
+		)
+		return
+	}
+
+	kfClient := r.p.client
+
+	// Discover all templates where this role is listed as an allowed requester.
+	diags, templateIds := findTemplateRoleAttachments(ctx, kfClient, roleName)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
-	response.State.Set(ctx, state)
+
+	// Map template IDs back to short names via the full template list.
+	kfTemplates, err := kfClient.GetTemplates()
+	if err != nil {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_TEMPLATE_READ,
+			"There was an error getting templates from Keyfactor Command: "+err.Error(),
+		)
+		return
+	}
+
+	idSet := make(map[int]struct{}, len(templateIds))
+	for _, id := range templateIds {
+		idSet[id.(int)] = struct{}{}
+	}
+
+	var templateNames []string
+	for _, t := range kfTemplates {
+		if _, ok := idSet[t.Id]; ok {
+			templateNames = append(templateNames, t.CommonName)
+		}
+	}
+
+	// Recompute the stable ID hash (same algorithm as Create).
+	tNameStr := strings.Join(templateNames, "-")
+	hid := fmt.Sprintf("%s-%s", roleName, tNameStr)
+
+	elems := make([]attr.Value, 0, len(templateNames))
+	for _, n := range templateNames {
+		elems = append(elems, types.String{Value: n})
+	}
+
+	result := CertificateTemplateRoleBinding{
+		ID:            types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
+		RoleName:      types.String{Value: roleName},
+		TemplateNames: types.List{ElemType: types.StringType, Elems: elems},
+	}
+
+	diags2 := response.State.Set(ctx, result)
+	response.Diagnostics.Append(diags2...)
 }
 
 func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateResponse, templateNames []string) (

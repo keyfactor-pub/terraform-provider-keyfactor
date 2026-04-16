@@ -1,3 +1,67 @@
+# v2.8.0
+
+## Applications
+
+### Features
+
+- feat: `keyfactor_application` resource and data source
+
+## Agents
+
+### Features
+
+- feat: `keyfactor_agents` data source for listing all orchestrator agents
+
+## Certificate Authorities
+
+### Features
+
+- feat: `keyfactor_certificate_authority` resource and data source with import support
+
+## Certificate Store Types
+
+### Features
+
+- feat: `keyfactor_certificate_store_type` resource and data source
+- feat: `keyfactor_certificate_store_types` data source for listing all store types
+
+## Certificate Templates
+
+### Features
+
+- feat: `keyfactor_certificate_template` resource and data source (replaces legacy SDK-based data source)
+
+## Certificates
+
+### Features
+
+- feat: `keyfactor_certificate` resource now supports `key_type`, `key_size`, and `curve` fields for PFX enrollment, allowing explicit control over key algorithm (`RSA`, `ECC`, `Ed25519`, `Ed448`) and key size/curve. These fields are also populated on read and available as read-only attributes on the `keyfactor_certificate` data source.
+
+### Fixes
+
+- fix: `keyfactor_certificate` `certificate_template` and `enrollment_pattern` can now be specified together (#146)
+- fix: `keyfactor_certificate` changing `certificate_format` no longer forces resource replacement (#150)
+- fix: `keyfactor_certificate` serial number and thumbprint normalized to uppercase hex
+
+## Certificate Stores
+
+### Features
+
+- feat: `keyfactor_certificate_store` data source now supports lookup by GUID via the `id` field; `client_machine` and `store_path` are no longer required when `id` is provided
+
+## Certificate Deployments
+
+### Fixes
+
+- fix: `keyfactor_certificate_deployment` overwrite semantics corrected; K8S store credential support fixed
+
+## PAM Providers
+
+### Features
+
+- feat: `keyfactor_pam_provider` resource and data source
+- feat: `keyfactor_pam_provider_type` resource and data source
+
 # 2.7.1
 
 ## Certificates

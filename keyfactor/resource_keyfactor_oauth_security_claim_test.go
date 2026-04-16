@@ -2,7 +2,10 @@ package keyfactor
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -194,6 +197,71 @@ func TestAccKeyfactorOAuthClaimImportState(t *testing.T) {
 	})
 }
 
+// ---------------------------------------------------------------------------
+// Unit tests (VCR cassettes)
+// ---------------------------------------------------------------------------
+
+// TestUnitKeyfactorOAuthClaimResource tests the keyfactor_oauth_security_claim
+// resource create/update lifecycle using VCR cassettes.
+func TestUnitKeyfactorOAuthClaimResource(t *testing.T) {
+	cassetteName := "oauth_security_claim_resource"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var claimValue, authScheme string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		claimValue = fmt.Sprintf("tf-unit-claim-%d", time.Now().UnixNano()%1000000000)
+		authScheme = discoverOAuthAuthScheme(t)
+		writeOAuthClaimRecordTestParams(cassettePath, oauthClaimRecordTestParams{
+			ClaimValue: claimValue,
+			AuthScheme: authScheme,
+		})
+	} else {
+		params := readOAuthClaimRecordTestParams(cassettePath)
+		claimValue = params.ClaimValue
+		authScheme = params.AuthScheme
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	r := oauthClaimTestCase{
+		description:        "Unit test claim",
+		claimValue:         claimValue,
+		claimType:          "OAuthSubject",
+		providerAuthScheme: authScheme,
+		resourceType:       "keyfactor_oauth_security_claim",
+		resourceName:       "unit_test",
+		resourcePath:       "keyfactor_oauth_security_claim.unit_test",
+	}
+	r2 := r
+	r2.description = "Unit test claim updated"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKeyfactorOAuthClaimResourceConfig(r),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
+					resource.TestCheckResourceAttr(r.resourcePath, "description", r.description),
+					resource.TestCheckResourceAttr(r.resourcePath, "claim_value", r.claimValue),
+					resource.TestCheckResourceAttr(r.resourcePath, "claim_type", r.claimType),
+					resource.TestCheckResourceAttr(r.resourcePath, "provider_authentication_scheme", authScheme),
+				),
+			},
+			{
+				Config: testAccKeyfactorOAuthClaimResourceConfig(r2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r2.resourcePath, "id"),
+					resource.TestCheckResourceAttr(r2.resourcePath, "description", r2.description),
+					resource.TestCheckResourceAttr(r2.resourcePath, "claim_value", r2.claimValue),
+					resource.TestCheckResourceAttr(r2.resourcePath, "claim_type", r2.claimType),
+				),
+			},
+		},
+	})
+}
+
 func testAccKeyfactorOAuthClaimResourceConfig(t oauthClaimTestCase) string {
 	output := fmt.Sprintf(`
 resource "%s" "%s" {
@@ -204,4 +272,84 @@ resource "%s" "%s" {
 }
 `, t.resourceType, t.resourceName, t.claimType, t.claimValue, t.providerAuthScheme, t.description)
 	return output
+}
+
+// ---------------------------------------------------------------------------
+// Integration tests (auto-discovery)
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorOAuthClaimResource(t *testing.T) {
+	testAccIntegrationPreCheck(t)
+
+	authScheme := discoverOAuthAuthScheme(t)
+
+	r := oauthClaimTestCase{
+		description:        "Integration test claim",
+		claimValue:         acctest.RandomWithPrefix("tf-int-claim"),
+		claimType:          "OAuthSubject",
+		providerAuthScheme: authScheme,
+		resourceType:       "keyfactor_oauth_security_claim",
+		resourceName:       "int_test",
+		resourcePath:       "keyfactor_oauth_security_claim.int_test",
+	}
+
+	r2 := r
+	r2.description = "Integration test claim updated"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKeyfactorOAuthClaimResourceConfig(r),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
+					resource.TestCheckResourceAttr(r.resourcePath, "description", r.description),
+					resource.TestCheckResourceAttr(r.resourcePath, "claim_value", r.claimValue),
+					resource.TestCheckResourceAttr(r.resourcePath, "claim_type", r.claimType),
+				),
+			},
+			// Update description
+			{
+				Config: testAccKeyfactorOAuthClaimResourceConfig(r2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r2.resourcePath, "id"),
+					resource.TestCheckResourceAttr(r2.resourcePath, "description", r2.description),
+					resource.TestCheckResourceAttr(r2.resourcePath, "claim_value", r2.claimValue),
+				),
+			},
+		},
+	})
+}
+
+func TestIntKeyfactorOAuthClaimResource_Import(t *testing.T) {
+	testAccIntegrationPreCheck(t)
+
+	authScheme := discoverOAuthAuthScheme(t)
+
+	r := oauthClaimTestCase{
+		description:        "Integration test claim import",
+		claimValue:         acctest.RandomWithPrefix("tf-int-claim-imp"),
+		claimType:          "OAuthSubject",
+		providerAuthScheme: authScheme,
+		resourceType:       "keyfactor_oauth_security_claim",
+		resourceName:       "int_import_test",
+		resourcePath:       "keyfactor_oauth_security_claim.int_import_test",
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccKeyfactorOAuthClaimResourceConfig(r),
+			},
+			{
+				ResourceName:      r.resourcePath,
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateIdFunc: func(state *terraform.State) (string, error) {
+					return getResourceIdFromTerraformState(state, r.resourcePath)
+				},
+			},
+		},
+	})
 }

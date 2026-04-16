@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 
 	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -341,4 +343,84 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 	}
 
 	tflog.Debug(ctx, "OAuth security role claim association created successfully.")
+}
+
+// ImportState imports a role-claim association by its composite ID "<roleId>/<claimId>".
+func (r resourceOAuthSecurityRoleClaimAssociation) ImportState(
+	ctx context.Context,
+	request tfsdk.ImportResourceStateRequest,
+	response *tfsdk.ImportResourceStateResponse,
+) {
+	tflog.Info(ctx, "ImportState called on OAuth security role claim association resource")
+
+	parts := strings.SplitN(request.ID, "/", 2)
+	if len(parts) != 2 {
+		response.Diagnostics.AddError(
+			"Invalid import ID",
+			fmt.Sprintf("Expected import ID in format '<roleId>/<claimId>', got %q.", request.ID),
+		)
+		return
+	}
+
+	roleId64, err := strconv.ParseInt(parts[0], 10, 32)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Invalid role ID",
+			fmt.Sprintf("Role ID %q is not a valid integer: %s", parts[0], err.Error()),
+		)
+		return
+	}
+
+	claimId64, err := strconv.ParseInt(parts[1], 10, 32)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Invalid claim ID",
+			fmt.Sprintf("Claim ID %q is not a valid integer: %s", parts[1], err.Error()),
+		)
+		return
+	}
+
+	roleId := int32(roleId64)
+	claimId := int32(claimId64)
+
+	tflog.SetField(ctx, "role_id", roleId)
+	tflog.SetField(ctx, "claim_id", claimId)
+
+	// Verify the role exists and the claim is associated with it.
+	api := r.p.sdkClient.V2.SecurityRolesApi
+	req := api.NewGetSecurityRolesByIdRequest(ctx, roleId)
+	remoteState, httpResp, err := req.Execute()
+	if httpResp != nil && httpResp.StatusCode == 404 {
+		response.Diagnostics.AddError(
+			"Role not found",
+			fmt.Sprintf("OAuth security role ID %d not found in Keyfactor Command.", roleId),
+		)
+		return
+	}
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error reading role",
+			fmt.Sprintf("Could not read OAuth security role ID %d: %s", roleId, err.Error()),
+		)
+		return
+	}
+
+	claimFound := false
+	for _, claim := range remoteState.Claims {
+		if claim.Id != nil && *claim.Id == claimId {
+			claimFound = true
+			break
+		}
+	}
+	if !claimFound {
+		response.Diagnostics.AddError(
+			"Claim association not found",
+			fmt.Sprintf("Claim ID %d is not associated with role ID %d in Keyfactor Command.", claimId, roleId),
+		)
+		return
+	}
+
+	result := mapOAuthSecurityRoleClaimAssociation(ctx, roleId, claimId)
+	diags := response.State.Set(ctx, &result)
+	response.Diagnostics.Append(diags...)
 }

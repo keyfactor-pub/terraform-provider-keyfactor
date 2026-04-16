@@ -19,13 +19,6 @@ func TestAccKeyfactorCertificateStoreDataSource(t *testing.T) {
 			sID = "1"
 		}
 	}
-	var sPass = os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PASS")
-	if sPass == "" {
-		sPass = os.Getenv("TEST_CERTIFICATE_STORE_PASS")
-		if sPass == "" {
-			sPass = "password1234!"
-		}
-	}
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -33,10 +26,9 @@ func TestAccKeyfactorCertificateStoreDataSource(t *testing.T) {
 		Steps: []resource.TestStep{
 			// Read testing
 			{
-				Config: testAccDataSourceKeyfactorCertificateStoreBasic(sID, sPass),
+				Config: testAccDataSourceKeyfactorCertificateStoreBasic(sID),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "id", sID),
-					resource.TestCheckResourceAttr(resourceName, "password", sPass),
 					resource.TestCheckResourceAttrSet(resourceName, "store_path"),
 					resource.TestCheckResourceAttrSet(resourceName, "store_type"),
 					resource.TestCheckResourceAttrSet(resourceName, "approved"),
@@ -54,13 +46,12 @@ func TestAccKeyfactorCertificateStoreDataSource(t *testing.T) {
 	})
 }
 
-func testAccDataSourceKeyfactorCertificateStoreBasic(resourceName string, password string) string {
+func testAccDataSourceKeyfactorCertificateStoreBasic(resourceName string) string {
 	return fmt.Sprintf(`
 	data "keyfactor_certificate_store" "test" {
 		id = "%s"
-		password = "%s"
 	}
-	`, resourceName, password)
+	`, resourceName)
 }
 
 // ---------------------------------------------------------------------------

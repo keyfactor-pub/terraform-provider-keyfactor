@@ -1,6 +1,7 @@
 package keyfactor
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 	"testing"
 
+	keyfactor "github.com/Keyfactor/keyfactor-go-client-sdk/v24"
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -166,23 +168,40 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 			return
 		}
 
-		// Unmarshal into a generic map so we can restore without depending on a
-		// Go struct that may be missing server-only fields (e.g. UseForEnrollment).
-		var caMap map[string]interface{}
-		if err := json.Unmarshal(rawCAJSON, &caMap); err != nil {
+		// Unmarshal the snapshot into the typed SDK request struct.  The GET
+		// response and PUT request share all relevant JSON field names, so a
+		// straight unmarshal works for the restore.  Server-only fields that
+		// don't appear in the request struct are simply ignored.
+		var caReq v1.CertificateAuthoritiesCertificateAuthorityRequest
+		if err := json.Unmarshal(rawCAJSON, &caReq); err != nil {
 			t.Logf("cleanup: could not parse CA snapshot JSON: %s — skipping restore", err)
 			return
 		}
 
-		// Overwrite monitor_thresholds back to the original value captured before
-		// the test toggled it.
-		caMap["MonitorThresholds"] = ca.MonitorThresholds
+		// Overwrite MonitorThresholds back to the original value captured
+		// before the test toggled it.
+		origVal := ca.MonitorThresholds
+		caReq.MonitorThresholds = &origVal
 
-		body, status, err := commandHTTPDo(client, "PUT",
-			fmt.Sprintf("CertificateAuthority/%s?forceSave=true", caID), caMap)
+		// Use the SDK directly so the request goes to PUT /CertificateAuthority
+		// (no ID in the URL path — the ID lives in the request body), matching
+		// what the provider's own Update function does.  commandHTTPDo cannot be
+		// used here because it embeds the query string in the URL path segment,
+		// which net/url percent-encodes the '?' and causes a 405.
+		sdkClient := keyfactor.NewAPIClientWithAuth(client.AuthClient)
+		ctx := context.Background()
+		_, httpResp, err := sdkClient.V1.CertificateAuthorityApi.
+			NewUpdateCertificateAuthorityRequest(ctx).
+			CertificateAuthoritiesCertificateAuthorityRequest(caReq).
+			ForceSave(true).
+			Execute()
+		status := 0
+		if httpResp != nil {
+			status = httpResp.StatusCode
+		}
 		if err != nil || status < 200 || status >= 300 {
-			t.Logf("cleanup: CA %s restore PUT failed (status=%d): %s — body: %s",
-				caID, status, err, string(body))
+			t.Logf("cleanup: CA %s restore PUT failed (status=%d): %s",
+				caID, status, err)
 			return
 		}
 		t.Logf("cleanup: CA %s restored to pre-test state (status=%d)", caID, status)

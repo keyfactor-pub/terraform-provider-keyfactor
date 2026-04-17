@@ -581,6 +581,22 @@ api-list-cas-short:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq '[.[] | {Id, LogicalName, HostName, CAType, Standalone, Remote}]'
 
+# api-update-ca: PUT /CertificateAuthority?forceSave=true using the CA JSON snapshot
+# piped via stdin.  Useful for verifying the correct PUT URL (no ID in path).
+# Usage: make api-get-ca CA_ID=1 | make api-update-ca
+api-update-ca:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	BODY=$$(cat) && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X PUT \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority?forceSave=true" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "$$BODY" | jq .
+
 # ---------------------------------------------------------------------------
 # PAM Providers API debugging targets (uses KEYFACTOR_ENV_FILE credentials)
 # Usage examples:

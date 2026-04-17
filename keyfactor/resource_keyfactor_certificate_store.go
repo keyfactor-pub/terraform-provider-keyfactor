@@ -99,25 +99,21 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				Optional:      true,
 				Computed:      true,
 				Description:   "Name of the container/application to associate with the certificate store. Kept for backwards compatibility; prefer `application_name` for Command v25.x+. NOTE: The container/application must already exist and be of the same certificate store type.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"application_name": {
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
 				Description:   "Name of the application (formerly 'container') to associate with the certificate store. Preferred field as of Keyfactor Command v25.x. Functionally equivalent to `container_name`. NOTE: The application must already exist and be of the same certificate store type.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"inventory_schedule": {
-				Type:     types.StringType,
-				Optional: true,
-				Description: `String indicating the schedule for inventory updates. Valid formats are:
-					"immediate" - schedules and immediate job
-					"1d" - schedules a daily job
-					"12h" - schedules a job every 12 hours
-					"30m" - schedules a job every 30 minutes
-				`,
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				Description:   `String indicating the schedule for inventory updates. Valid formats are: "immediate", "Daily at HH:MM:SS", "Exactly once at HH:MM:SS", or interval notation like "30m", "12h".`,
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"set_new_password_allowed": {
 				Type:          types.BoolType,
@@ -374,7 +370,7 @@ func (r resourceCertificateStore) Create(
 		AgentId:               types.String{Value: createStoreResponse.AgentId},
 		AgentIdentifier:       plan.AgentIdentifier,
 		AgentAssigned:         types.Bool{Value: createStoreResponse.AgentAssigned},
-		InventorySchedule:     plan.InventorySchedule,
+		InventorySchedule:     resolveInventoryScheduleState(plan.InventorySchedule, &createStoreResponse.InventorySchedule),
 		SetNewPasswordAllowed: types.Bool{Value: createStoreResponse.SetNewPasswordAllowed},
 		StorePassword:         plan.StorePassword,
 		ServerUsername:        plan.ServerUsername,
@@ -720,7 +716,7 @@ func (r resourceCertificateStore) Update(
 		AgentId:               types.String{Value: updateResponse.AgentId},
 		AgentIdentifier:       plan.AgentIdentifier,
 		AgentAssigned:         types.Bool{Value: updateResponse.AgentAssigned},
-		InventorySchedule:     plan.InventorySchedule,
+		InventorySchedule:     resolveInventoryScheduleState(plan.InventorySchedule, &updateResponse.InventorySchedule),
 		SetNewPasswordAllowed: types.Bool{Value: updateResponse.SetNewPasswordAllowed},
 		StorePassword:         plan.StorePassword,
 		ServerUsername:        plan.ServerUsername,
@@ -882,6 +878,25 @@ func (r resourceCertificateStore) ImportState(
 	if response.Diagnostics.HasError() {
 		return
 	}
+}
+
+// resolveInventoryScheduleState returns a known types.String for inventory_schedule.
+// It prefers the plan value when known (user explicitly configured a schedule), then
+// falls back to the server response, and finally to null when neither is present.
+// This ensures the Create/Update result never contains an Unknown value for the field.
+func resolveInventoryScheduleState(planVal types.String, serverSched *api.InventorySchedule) types.String {
+	// If the plan has a known (non-Unknown) value, honour it.
+	if !planVal.Unknown {
+		return planVal
+	}
+	// Plan is Unknown (field not in config). Use the server-returned schedule if any.
+	if serverSched != nil {
+		if s := parseInventorySchedule(serverSched); s != "" {
+			return types.String{Value: s}
+		}
+	}
+	// No schedule on the server either — return known null.
+	return types.String{Null: true}
 }
 
 func createPasswordConfig(p string) *api.UpdateStorePasswordConfig {

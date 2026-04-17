@@ -903,9 +903,16 @@ func (r resourceCertificateAuthority) Delete(ctx context.Context, request tfsdk.
 	httpResp, err := deleteReq.Execute()
 	if err != nil {
 		body := readHTTPResponseBody(httpResp)
-		// If the CA has periodic sync tasks associated with it, clear the scan
-		// schedules via a ForceSave PUT and then retry the delete.
-		if strings.Contains(body, "0xA0110029") || strings.Contains(body, "periodic task") {
+		// If the CA has Windows Task Scheduler entries associated with it (DCOM
+		// CAs only), clear the scan schedules via a ForceSave PUT and then retry
+		// the delete.  We check for "periodic task" / "task scheduler" in the
+		// body rather than the raw error code 0xA0110029, because that same code
+		// is also returned on EJBCA (HTTPS) labs when the CA has associated
+		// certificates — a completely different condition that must NOT trigger
+		// the clear-schedule path (which would corrupt the CA record).
+		isTaskSchedulerError := strings.Contains(strings.ToLower(body), "periodic task") ||
+			strings.Contains(strings.ToLower(body), "task scheduler")
+		if isTaskSchedulerError {
 			tflog.Info(ctx, fmt.Sprintf("CA %d has periodic tasks; clearing scan schedules before delete", id))
 			clearState := state
 			clearState.FullScanIntervalMinutes = types.Int64{Null: true}

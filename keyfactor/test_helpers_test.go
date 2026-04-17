@@ -2709,6 +2709,58 @@ func commandHTTPDo(client *api.Client, method, endpoint string, payload interfac
 	return body, resp.StatusCode, nil
 }
 
+// commandHTTPDoRaw executes an HTTP request against the Command API using a
+// pre-marshalled body ([]byte).  queryParams is appended to the URL as a raw
+// query string (e.g. "forceSave=true").  This differs from commandHTTPDo in two
+// ways:
+//  1. The body is sent verbatim — no re-marshalling through Go structs that
+//     might drop unknown JSON fields (e.g. UseForEnrollment).
+//  2. Query parameters are set via url.URL.RawQuery so they are never
+//     percent-encoded into the path segment.
+func commandHTTPDoRaw(client *api.Client, method, endpoint string, queryParams string, rawBody []byte) ([]byte, int, error) {
+	reqURL, err := buildCommandURL(client, endpoint)
+	if err != nil {
+		return nil, 0, err
+	}
+	if queryParams != "" {
+		// Parse and re-attach query params without touching the path.
+		parsed, parseErr := url.Parse(reqURL)
+		if parseErr != nil {
+			return nil, 0, fmt.Errorf("parse URL: %w", parseErr)
+		}
+		parsed.RawQuery = queryParams
+		reqURL = parsed.String()
+	}
+
+	var bodyReader io.Reader
+	if rawBody != nil {
+		bodyReader = bytes.NewReader(rawBody)
+	}
+
+	req, err := http.NewRequest(method, reqURL, bodyReader)
+	if err != nil {
+		return nil, 0, fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-keyfactor-api-version", "1")
+	req.Header.Set("x-keyfactor-requested-with", "APIClient")
+
+	httpClient, cErr := client.AuthClient.GetHttpClient()
+	if cErr != nil {
+		return nil, 0, fmt.Errorf("get http client: %w", cErr)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("http do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	return body, resp.StatusCode, nil
+}
+
 // createTestCollection creates a certificate collection via the Command REST API
 // and returns its integer ID. The collection uses a simple query that won't match
 // most certificates (keeps it harmless).

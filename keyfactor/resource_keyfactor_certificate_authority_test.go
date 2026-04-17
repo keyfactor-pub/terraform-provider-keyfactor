@@ -1,7 +1,6 @@
 package keyfactor
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,7 +8,6 @@ import (
 	"strconv"
 	"testing"
 
-	keyfactor "github.com/Keyfactor/keyfactor-go-client-sdk/v24"
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
@@ -168,40 +166,33 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 			return
 		}
 
-		// Unmarshal the snapshot into the typed SDK request struct.  The GET
-		// response and PUT request share all relevant JSON field names, so a
-		// straight unmarshal works for the restore.  Server-only fields that
-		// don't appear in the request struct are simply ignored.
-		var caReq v1.CertificateAuthoritiesCertificateAuthorityRequest
-		if err := json.Unmarshal(rawCAJSON, &caReq); err != nil {
+		// Patch the snapshot JSON in-place: overwrite MonitorThresholds back to
+		// the original value without re-marshalling through a typed Go struct.
+		// Re-marshalling through CertificateAuthoritiesCertificateAuthorityRequest
+		// would silently drop any server-side fields that are not defined in the
+		// SDK struct (e.g. UseForEnrollment on v25+ servers), causing those fields
+		// to be reset to their server defaults on the subsequent PUT.
+		var rawMap map[string]interface{}
+		if err := json.Unmarshal(rawCAJSON, &rawMap); err != nil {
 			t.Logf("cleanup: could not parse CA snapshot JSON: %s — skipping restore", err)
 			return
 		}
-
-		// Overwrite MonitorThresholds back to the original value captured
-		// before the test toggled it.
-		origVal := ca.MonitorThresholds
-		caReq.MonitorThresholds = &origVal
-
-		// Use the SDK directly so the request goes to PUT /CertificateAuthority
-		// (no ID in the URL path — the ID lives in the request body), matching
-		// what the provider's own Update function does.  commandHTTPDo cannot be
-		// used here because it embeds the query string in the URL path segment,
-		// which net/url percent-encodes the '?' and causes a 405.
-		sdkClient := keyfactor.NewAPIClientWithAuth(client.AuthClient)
-		ctx := context.Background()
-		_, httpResp, err := sdkClient.V1.CertificateAuthorityApi.
-			NewUpdateCertificateAuthorityRequest(ctx).
-			CertificateAuthoritiesCertificateAuthorityRequest(caReq).
-			ForceSave(true).
-			Execute()
-		status := 0
-		if httpResp != nil {
-			status = httpResp.StatusCode
+		rawMap["MonitorThresholds"] = ca.MonitorThresholds
+		patchedJSON, err := json.Marshal(rawMap)
+		if err != nil {
+			t.Logf("cleanup: could not re-marshal patched CA JSON: %s — skipping restore", err)
+			return
 		}
-		if err != nil || status < 200 || status >= 300 {
-			t.Logf("cleanup: CA %s restore PUT failed (status=%d): %s",
-				caID, status, err)
+
+		// PUT the raw bytes directly so every field from the original GET response
+		// is sent back verbatim.  commandHTTPDoRaw sets query params via
+		// url.URL.RawQuery so they are not percent-encoded into the path.
+		respBody, status, putErr := commandHTTPDoRaw(
+			client, "PUT", "CertificateAuthority", "forceSave=true", patchedJSON,
+		)
+		if putErr != nil || status < 200 || status >= 300 {
+			t.Logf("cleanup: CA %s restore PUT failed (status=%d err=%v body=%s)",
+				caID, status, putErr, string(respBody))
 			return
 		}
 		t.Logf("cleanup: CA %s restored to pre-test state (status=%d)", caID, status)

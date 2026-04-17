@@ -1,12 +1,15 @@
 package keyfactor
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 
+	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
@@ -119,6 +122,9 @@ func TestUnitKeyfactorCertificateAuthorityResource(t *testing.T) {
 // Note: delete is called by the test framework at the end (cleanup); for CAs
 // this may fail if the server rejects deletion of in-use CAs, which is
 // acceptable — the test only verifies the update path.
+//
+// A t.Cleanup restores the CA to its pre-test state (best-effort) so that
+// re-runs of this test see consistent initial conditions.
 func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	if client == nil {
@@ -138,6 +144,49 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 
 	t.Logf("Using CA: ID=%s Name=%q Host=%q, toggling monitor_thresholds %v→%v",
 		caID, caName, caHost, ca.MonitorThresholds, newMonitorThresholds)
+
+	// Snapshot the full CA config via raw GET before the test runs so we can
+	// restore it afterwards. This is needed because:
+	//   1. The test deliberately mutates monitor_thresholds.
+	//   2. The Terraform destroy step always fails (CA has certificates), so the
+	//      provider's own restore logic in Delete never runs for this code path.
+	//   3. The delete attempt clears FullScan/IncrementalScan schedules before
+	//      realising it cannot delete the CA, leaving the CA in a degraded state.
+	// We capture the raw JSON response and PUT it back verbatim after the test
+	// so that subsequent test runs start from a known-good baseline.
+	rawCAJSON, _, snapshotErr := commandHTTPDo(client, "GET",
+		fmt.Sprintf("CertificateAuthority/%s", caID), nil)
+	if snapshotErr != nil {
+		t.Logf("WARNING: could not snapshot CA %s before test: %s — cleanup will be skipped", caID, snapshotErr)
+	}
+
+	t.Cleanup(func() {
+		if snapshotErr != nil || len(rawCAJSON) == 0 {
+			t.Logf("cleanup: no CA snapshot available, skipping restore")
+			return
+		}
+
+		// Unmarshal into a generic map so we can restore without depending on a
+		// Go struct that may be missing server-only fields (e.g. UseForEnrollment).
+		var caMap map[string]interface{}
+		if err := json.Unmarshal(rawCAJSON, &caMap); err != nil {
+			t.Logf("cleanup: could not parse CA snapshot JSON: %s — skipping restore", err)
+			return
+		}
+
+		// Overwrite monitor_thresholds back to the original value captured before
+		// the test toggled it.
+		caMap["MonitorThresholds"] = ca.MonitorThresholds
+
+		body, status, err := commandHTTPDo(client, "PUT",
+			fmt.Sprintf("CertificateAuthority/%s?forceSave=true", caID), caMap)
+		if err != nil || status < 200 || status >= 300 {
+			t.Logf("cleanup: CA %s restore PUT failed (status=%d): %s — body: %s",
+				caID, status, err, string(body))
+			return
+		}
+		t.Logf("cleanup: CA %s restored to pre-test state (status=%d)", caID, status)
+	})
 
 	resourceName := "keyfactor_certificate_authority.test"
 
@@ -205,4 +254,122 @@ resource "keyfactor_certificate_authority" "test" {
   configuration_tenant = "ejbca"
 }
 `, logicalName, hostName, monitorThresholds)
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests — caResponseToState nil-safe conversion
+// ---------------------------------------------------------------------------
+
+// TestUnitCertificateAuthorityResponseToState verifies that caResponseToState
+// returns types.Bool{Null:true} / types.Int64{Null:true} for pointer fields
+// that are nil in the server response, rather than the Go zero value (false/0).
+//
+// This is the regression test for the nil-safe helper fix: before the fix,
+// GetDelegateEnrollment() on a nil pointer returned false, which subsequent PUT
+// requests would then send, silently overwriting the server's "use for
+// enrollment" setting.
+func TestUnitCertificateAuthorityResponseToState(t *testing.T) {
+	t.Parallel()
+
+	caType := v1.CSSCMSCoreEnumsCertificateAuthorityType(1)
+
+	t.Run("nil pointer fields become Null", func(t *testing.T) {
+		t.Parallel()
+
+		// Build a minimal response with all pointer fields left as nil.
+		resp := &v1.CertificateAuthoritiesCertificateAuthorityResponse{}
+		resp.SetId(42)
+		resp.SetLogicalName("Test-CA")
+		resp.SetHostName("http://ca.example.com/ejbca")
+		resp.CAType = &caType
+
+		state := caResponseToState(resp)
+
+		if !state.DelegateEnrollment.Null {
+			t.Errorf("DelegateEnrollment: want Null=true (nil ptr), got Value=%v Null=%v",
+				state.DelegateEnrollment.Value, state.DelegateEnrollment.Null)
+		}
+		if !state.Delegate.Null {
+			t.Errorf("Delegate: want Null=true (nil ptr), got Value=%v Null=%v",
+				state.Delegate.Value, state.Delegate.Null)
+		}
+		if !state.MonitorThresholds.Null {
+			t.Errorf("MonitorThresholds: want Null=true (nil ptr), got Value=%v Null=%v",
+				state.MonitorThresholds.Value, state.MonitorThresholds.Null)
+		}
+		if !state.AllowedEnrollmentTypes.Null {
+			t.Errorf("AllowedEnrollmentTypes: want Null=true (nil ptr), got Value=%v Null=%v",
+				state.AllowedEnrollmentTypes.Value, state.AllowedEnrollmentTypes.Null)
+		}
+		if !state.NewEndEntityOnRenewAndReissue.Null {
+			t.Errorf("NewEndEntityOnRenewAndReissue: want Null=true (nil ptr), got Value=%v Null=%v",
+				state.NewEndEntityOnRenewAndReissue.Value, state.NewEndEntityOnRenewAndReissue.Null)
+		}
+		if !state.EnforceUniqueDN.Null {
+			t.Errorf("EnforceUniqueDN: want Null=true (nil ptr), got Value=%v Null=%v",
+				state.EnforceUniqueDN.Value, state.EnforceUniqueDN.Null)
+		}
+	})
+
+	t.Run("non-nil pointer fields carry their value", func(t *testing.T) {
+		t.Parallel()
+
+		delegateEnroll := true
+		monitorThresh := false
+		et := v1.CSSCMSCoreEnumsEnrollmentType(3) // both PFX and CSR
+		newEE := true
+
+		resp := &v1.CertificateAuthoritiesCertificateAuthorityResponse{}
+		resp.SetId(7)
+		resp.SetLogicalName("Lab-CA")
+		resp.SetHostName("http://ca.lab/ejbca")
+		resp.CAType = &caType
+		resp.DelegateEnrollment = &delegateEnroll
+		resp.MonitorThresholds = &monitorThresh
+		resp.AllowedEnrollmentTypes = &et
+		resp.NewEndEntityOnRenewAndReissue = &newEE
+
+		state := caResponseToState(resp)
+
+		assertBool := func(name string, got types.Bool, wantNull bool, wantVal bool) {
+			t.Helper()
+			if got.Null != wantNull {
+				t.Errorf("%s: Null mismatch: want %v got %v", name, wantNull, got.Null)
+			}
+			if !got.Null && got.Value != wantVal {
+				t.Errorf("%s: Value mismatch: want %v got %v", name, wantVal, got.Value)
+			}
+		}
+		assertInt64 := func(name string, got types.Int64, wantNull bool, wantVal int64) {
+			t.Helper()
+			if got.Null != wantNull {
+				t.Errorf("%s: Null mismatch: want %v got %v", name, wantNull, got.Null)
+			}
+			if !got.Null && got.Value != wantVal {
+				t.Errorf("%s: Value mismatch: want %v got %v", name, wantVal, got.Value)
+			}
+		}
+
+		assertBool("DelegateEnrollment", state.DelegateEnrollment, false, true)
+		assertBool("MonitorThresholds", state.MonitorThresholds, false, false)
+		assertBool("NewEndEntityOnRenewAndReissue", state.NewEndEntityOnRenewAndReissue, false, true)
+		assertInt64("AllowedEnrollmentTypes", state.AllowedEnrollmentTypes, false, 3)
+	})
+
+	t.Run("force_save is always Null from server", func(t *testing.T) {
+		t.Parallel()
+
+		resp := &v1.CertificateAuthoritiesCertificateAuthorityResponse{}
+		resp.SetId(1)
+		resp.SetLogicalName("CA")
+		resp.SetHostName("http://ca/ejbca")
+		resp.CAType = &caType
+
+		state := caResponseToState(resp)
+
+		if !state.ForceSave.Null {
+			t.Errorf("ForceSave: want Null=true (write-only), got Value=%v Null=%v",
+				state.ForceSave.Value, state.ForceSave.Null)
+		}
+	})
 }

@@ -2846,16 +2846,10 @@ func TestIntKeyfactorCertificateResource_CollectionIdInPlaceUpdate(t *testing.T)
 	ca := discoverCA(t, client)
 	cn := randomTestCN("tf-int-coll")
 
-	// Require a collection ID from the environment. Collection IDs are
-	// lab-specific and there is no discovery API, so skip if not set.
-	collectionIdStr := os.Getenv("KEYFACTOR_CERTIFICATE_COLLECTION_ID")
-	if collectionIdStr == "" {
-		t.Skip("KEYFACTOR_CERTIFICATE_COLLECTION_ID not set; skipping collection_id in-place update test")
-	}
-	collectionId, err := strconv.Atoi(collectionIdStr)
-	if err != nil {
-		t.Fatalf("KEYFACTOR_CERTIFICATE_COLLECTION_ID must be an integer, got %q", collectionIdStr)
-	}
+	// Discover or create a certificate collection. If KEYFACTOR_CERTIFICATE_COLLECTION_ID
+	// is set, use it; otherwise create a temporary collection and clean it up
+	// at the end of the test.
+	collectionId := discoverOrCreateTestCollection(t, client)
 
 	enrollmentPattern := discoverEnrollmentPattern(t, client)
 	var templateName string

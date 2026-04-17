@@ -1,6 +1,7 @@
 package keyfactor
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -17,12 +18,14 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -2636,4 +2639,147 @@ resource "keyfactor_certificate" "test_csr" {
 EOT
 }
 `, ca, templateName, trimmedCSR)
+}
+
+// ---------------------------------------------------------------------------
+// Certificate Collection helpers (direct REST calls — no client library support)
+// ---------------------------------------------------------------------------
+
+// buildCommandURL constructs a full URL for a Command API endpoint using the
+// client's server config (host + API path).
+func buildCommandURL(client *api.Client, endpoint string) (string, error) {
+	serverConfig := client.AuthClient.GetServerConfig()
+	if serverConfig == nil {
+		return "", fmt.Errorf("nil server config on client")
+	}
+	u, err := url.Parse(serverConfig.Host)
+	if err != nil {
+		return "", fmt.Errorf("parse host %q: %w", serverConfig.Host, err)
+	}
+	if u.Scheme != "https" {
+		u.Scheme = "https"
+	}
+	apiPath := serverConfig.APIPath
+	if apiPath == "" {
+		apiPath = "KeyfactorAPI"
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/" + strings.Trim(apiPath, "/") + "/" + strings.TrimLeft(endpoint, "/")
+	return u.String(), nil
+}
+
+// commandHTTPDo executes an HTTP request against the Command API, returning the
+// response body bytes and the status code. It handles auth via the client's
+// AuthClient.GetHttpClient().
+func commandHTTPDo(client *api.Client, method, endpoint string, payload interface{}) ([]byte, int, error) {
+	reqURL, err := buildCommandURL(client, endpoint)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var bodyReader io.Reader
+	if payload != nil {
+		jsonBytes, jErr := json.Marshal(payload)
+		if jErr != nil {
+			return nil, 0, fmt.Errorf("marshal payload: %w", jErr)
+		}
+		bodyReader = bytes.NewReader(jsonBytes)
+	}
+
+	req, err := http.NewRequest(method, reqURL, bodyReader)
+	if err != nil {
+		return nil, 0, fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-keyfactor-api-version", "1")
+	req.Header.Set("x-keyfactor-requested-with", "APIClient")
+
+	httpClient, cErr := client.AuthClient.GetHttpClient()
+	if cErr != nil {
+		return nil, 0, fmt.Errorf("get http client: %w", cErr)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("http do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	return body, resp.StatusCode, nil
+}
+
+// createTestCollection creates a certificate collection via the Command REST API
+// and returns its integer ID. The collection uses a simple query that won't match
+// most certificates (keeps it harmless).
+func createTestCollection(t *testing.T, client *api.Client, name string) int {
+	t.Helper()
+
+	payload := map[string]interface{}{
+		"Name":        name,
+		"Description": "Auto-created by terraform-provider integration test",
+		"Query":       fmt.Sprintf("CN -contains %q", name),
+	}
+
+	body, status, err := commandHTTPDo(client, "POST", "CertificateCollections", payload)
+	if err != nil {
+		t.Fatalf("createTestCollection: request failed: %s", err)
+	}
+	if status < 200 || status >= 300 {
+		t.Fatalf("createTestCollection: unexpected status %d: %s", status, string(body))
+	}
+
+	var result struct {
+		Id int `json:"Id"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("createTestCollection: decode response: %s (body: %s)", err, string(body))
+	}
+	if result.Id <= 0 {
+		t.Fatalf("createTestCollection: got invalid collection ID %d (body: %s)", result.Id, string(body))
+	}
+
+	t.Logf("Created test certificate collection %q with ID %d", name, result.Id)
+	return result.Id
+}
+
+// deleteTestCollection deletes a certificate collection by ID via the Command
+// REST API. Errors are logged but do not fail the test (cleanup best-effort).
+func deleteTestCollection(t *testing.T, client *api.Client, id int) {
+	t.Helper()
+
+	endpoint := fmt.Sprintf("CertificateCollections/%d", id)
+	body, status, err := commandHTTPDo(client, "DELETE", endpoint, nil)
+	if err != nil {
+		t.Logf("deleteTestCollection: request failed (ID %d): %s", id, err)
+		return
+	}
+	if status < 200 || status >= 300 {
+		t.Logf("deleteTestCollection: unexpected status %d (ID %d): %s", status, id, string(body))
+		return
+	}
+	t.Logf("Deleted test certificate collection ID %d", id)
+}
+
+// discoverOrCreateTestCollection returns a certificate collection ID for use in
+// tests. If KEYFACTOR_CERTIFICATE_COLLECTION_ID is set, it uses that value.
+// Otherwise it creates a new collection and registers a t.Cleanup to delete it.
+func discoverOrCreateTestCollection(t *testing.T, client *api.Client) int {
+	t.Helper()
+
+	if idStr := os.Getenv("KEYFACTOR_CERTIFICATE_COLLECTION_ID"); idStr != "" {
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			t.Fatalf("KEYFACTOR_CERTIFICATE_COLLECTION_ID must be an integer, got %q", idStr)
+		}
+		t.Logf("Using collection ID from env: %d", id)
+		return id
+	}
+
+	name := fmt.Sprintf("tf-int-test-%d", time.Now().UnixNano())
+	id := createTestCollection(t, client, name)
+	t.Cleanup(func() {
+		deleteTestCollection(t, client, id)
+	})
+	return id
 }

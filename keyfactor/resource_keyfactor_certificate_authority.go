@@ -467,44 +467,49 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 		HostName:    types.String{Value: resp.GetHostName()},
 		CAType:      types.Int64{Value: int64(resp.GetCAType())},
 
-		Delegate:            types.Bool{Value: resp.GetDelegate()},
-		DelegateEnrollment:  types.Bool{Value: resp.GetDelegateEnrollment()},
-		ForestRoot:          types.String{Value: resp.GetForestRoot()},
-		ConfigurationTenant: types.String{Value: resp.GetConfigurationTenant()},
-		Remote:              types.Bool{Value: resp.GetRemote()},
-		Standalone:          types.Bool{Value: resp.GetStandalone()},
-		UseCAConnector:      types.Bool{Value: resp.GetUseCAConnector()},
-		ConnectorPool:       types.String{Value: resp.GetConnectorPool()},
+		// Use nil-safe helpers for all pointer fields. GetXxx() returns the Go zero
+		// value (false/0/"") when the server omits a field; that zero value would then
+		// be sent on subsequent PUTs, silently overwriting server settings. Using
+		// boolPtrToTfBool / enrollmentTypePtrToTfInt64 / nullableStringToTfString
+		// returns Null instead, so setBoolIfKnown/setStringIfKnown skips those fields.
+		Delegate:            boolPtrToTfBool(resp.Delegate),
+		DelegateEnrollment:  boolPtrToTfBool(resp.DelegateEnrollment),
+		ForestRoot:          nullableStringToTfString(resp.ForestRoot),
+		ConfigurationTenant: nullableStringToTfString(resp.ConfigurationTenant),
+		Remote:              boolPtrToTfBool(resp.Remote),
+		Standalone:          boolPtrToTfBool(resp.Standalone),
+		UseCAConnector:      boolPtrToTfBool(resp.UseCAConnector),
+		ConnectorPool:       nullableStringToTfString(resp.ConnectorPool),
 
-		MonitorThresholds: types.Bool{Value: resp.GetMonitorThresholds()},
+		MonitorThresholds: boolPtrToTfBool(resp.MonitorThresholds),
 		IssuanceMax:       nullableInt32ToTfInt64(resp.IssuanceMax),
 		IssuanceMin:       nullableInt32ToTfInt64(resp.IssuanceMin),
 		FailureMax:        nullableInt32ToTfInt64(resp.FailureMax),
 
-		RFCEnforcement:                types.Bool{Value: resp.GetRFCEnforcement()},
-		Properties:                    types.String{Value: resp.GetProperties()},
-		AllowedEnrollmentTypes:        types.Int64{Value: int64(resp.GetAllowedEnrollmentTypes())},
-		KeyRetention:                  types.Int64{Value: int64(resp.GetKeyRetention())},
+		RFCEnforcement:                boolPtrToTfBool(resp.RFCEnforcement),
+		Properties:                    nullableStringToTfString(resp.Properties),
+		AllowedEnrollmentTypes:        enrollmentTypePtrToTfInt64(resp.AllowedEnrollmentTypes),
+		KeyRetention:                  keyRetentionPtrToTfInt64(resp.KeyRetention),
 		KeyRetentionDays:              nullableInt32ToTfInt64(resp.KeyRetentionDays),
-		EnforceUniqueDN:               types.Bool{Value: resp.GetEnforceUniqueDN()},
-		SubscriberTerms:               types.Bool{Value: resp.GetSubscriberTerms()},
-		AllowOneClickRenewals:         types.Bool{Value: resp.GetAllowOneClickRenewals()},
-		NewEndEntityOnRenewAndReissue: types.Bool{Value: resp.GetNewEndEntityOnRenewAndReissue()},
+		EnforceUniqueDN:               boolPtrToTfBool(resp.EnforceUniqueDN),
+		SubscriberTerms:               boolPtrToTfBool(resp.SubscriberTerms),
+		AllowOneClickRenewals:         boolPtrToTfBool(resp.AllowOneClickRenewals),
+		NewEndEntityOnRenewAndReissue: boolPtrToTfBool(resp.NewEndEntityOnRenewAndReissue),
 
-		UseAllowedRequesters: types.Bool{Value: resp.GetUseAllowedRequesters()},
+		UseAllowedRequesters: boolPtrToTfBool(resp.UseAllowedRequesters),
 
-		ExplicitCredentials: types.Bool{Value: resp.GetExplicitCredentials()},
+		ExplicitCredentials: boolPtrToTfBool(resp.ExplicitCredentials),
 		ExplicitUser:        nullableStringToTfString(resp.ExplicitUser),
 
-		TokenURL: types.String{Value: resp.GetTokenURL()},
-		ClientID: types.String{Value: resp.GetClientId()},
-		Scope:    types.String{Value: resp.GetScope()},
-		Audience: types.String{Value: resp.GetAudience()},
+		TokenURL: nullableStringToTfString(resp.TokenURL),
+		ClientID: nullableStringToTfString(resp.ClientId),
+		Scope:    nullableStringToTfString(resp.Scope),
+		Audience: nullableStringToTfString(resp.Audience),
 
 		AgentName:     nullableStringToTfString(resp.AgentName),
 		AgentUsername: nullableStringToTfString(resp.AgentUsername),
 		DenialMax:     nullableInt32ToTfInt64(resp.DenialMax),
-		LastScan:      types.String{Value: resp.GetLastScan()},
+		LastScan:      nullableStringToTfString(resp.LastScan),
 	}
 
 	// Agent GUID
@@ -559,6 +564,34 @@ func nullableStringToTfString(v v1.NullableString) types.String {
 		return types.String{Null: true}
 	}
 	return types.String{Value: *v.Get()}
+}
+
+// boolPtrToTfBool converts a *bool pointer from the SDK response to a types.Bool.
+// When the server omits a field (nil pointer), returns Null so that subsequent PUTs
+// do not send a zero-value false and inadvertently overwrite server settings.
+func boolPtrToTfBool(v *bool) types.Bool {
+	if v == nil {
+		return types.Bool{Null: true}
+	}
+	return types.Bool{Value: *v}
+}
+
+// enrollmentTypePtrToTfInt64 converts a *CSSCMSCoreEnumsEnrollmentType pointer to types.Int64.
+// Nil (server field absent) becomes Null so the value is not sent on PUT.
+func enrollmentTypePtrToTfInt64(v *v1.CSSCMSCoreEnumsEnrollmentType) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
+}
+
+// keyRetentionPtrToTfInt64 converts a *CSSCMSCoreEnumsKeyRetentionPolicy pointer to types.Int64.
+// Nil (server field absent) becomes Null so the value is not sent on PUT.
+func keyRetentionPtrToTfInt64(v *v1.CSSCMSCoreEnumsKeyRetentionPolicy) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
 }
 
 func stringSliceToTfList(vals []string) types.List {
@@ -897,6 +930,17 @@ func (r resourceCertificateAuthority) Delete(ctx context.Context, request tfsdk.
 			httpResp3, err3 := caAPI.NewDeleteCertificateAuthorityByIdRequest(ctx, int32(id)).Execute()
 			if err3 != nil {
 				body3 := readHTTPResponseBody(httpResp3)
+				// Delete still failed. Restore the original scan schedules so the CA
+				// is not left in a corrupted state (no schedules) after a failed delete.
+				tflog.Warn(ctx, fmt.Sprintf("CA %d delete retry failed; restoring original scan schedules", id))
+				restoreReq := buildCARequest(ctx, state)
+				restoreReq.Id = &idInt32
+				restoreAPIReq := caAPI.NewUpdateCertificateAuthorityRequest(ctx).
+					CertificateAuthoritiesCertificateAuthorityRequest(restoreReq).
+					ForceSave(true)
+				if _, _, restoreErr := restoreAPIReq.Execute(); restoreErr != nil {
+					tflog.Error(ctx, fmt.Sprintf("CA %d schedule restore also failed: %s", id, restoreErr.Error()))
+				}
 				response.Diagnostics.AddError(
 					"Error deleting certificate authority.",
 					fmt.Sprintf("Could not delete certificate authority %d: %s. Details: %s", id, err3.Error(), body3),

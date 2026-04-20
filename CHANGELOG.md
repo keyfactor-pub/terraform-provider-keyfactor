@@ -1,3 +1,29 @@
+# v2.8.1
+
+## Certificate Authorities
+
+### Fixes
+
+- fix: `keyfactor_certificate_authority` Read no longer corrupts server settings (e.g. `use_for_enrollment`, scan schedules) due to nil pointer zero-value coercion on update
+- fix: `keyfactor_certificate_authority` Delete no longer incorrectly clears scan schedules on EJBCA/HTTPS CAs when the CA has associated certificates
+
+## Certificate Stores
+
+### Features
+
+- feat: `keyfactor_certificate_store` now supports `application_name` as an alias for `container_name` (preferred on Command v25.x+); both fields are fully supported and interchangeable without forcing resource replacement
+- feat: `keyfactor_certificate_store` `inventory_schedule` is now `Computed` — no longer drops to null when omitted from config
+
+### Fixes
+
+- fix: `keyfactor_certificate_store` Read now populates `application_name`, `container_name`, and `inventory_schedule` correctly from the server response
+
+## Certificates
+
+### Fixes
+
+- fix: `keyfactor_certificate` `collection_id` no longer causes perpetual plan drift or forces resource replacement on in-place updates
+
 # v2.8.0
 
 ## Applications

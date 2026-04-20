@@ -4,5 +4,6 @@
 # Command application/container concept.
 # ---------------------------------------------------------------------------
 resource "keyfactor_application" "demo" {
-  name = "Store Container Demo${var.suffix}"
+  name                = "Store Container Demo${var.suffix}"
+  schedule_daily_time = "2026-01-01T12:00:00Z"
 }

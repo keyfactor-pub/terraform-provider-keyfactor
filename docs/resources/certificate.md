@@ -24,12 +24,35 @@ resource "keyfactor_certificate" "pfx" {
 }
 ```
 
-### Full PFX enrollment
+### Minimal CSR enrollment
 
 ```terraform
-# Full PFX enrollment with all optional fields.
-# certificate_template is the pre-v25 style; for Command v25+ use:
-#   certificate_enrollment_pattern = "2yrWebServer"
+# Minimal CSR enrollment — the private key never leaves the client.
+# For Command v25+, replace certificate_template with certificate_enrollment_pattern.
+resource "tls_private_key" "example" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "tls_cert_request" "example" {
+  private_key_pem = tls_private_key.example.private_key_pem
+  subject {
+    common_name = "my.example.com"
+  }
+}
+
+resource "keyfactor_certificate" "csr" {
+  csr                   = tls_cert_request.example.cert_request_pem
+  certificate_authority = "MYCA\\My Issuing CA"
+  certificate_template  = "2yrWebServer"
+  # certificate_enrollment_pattern = "2yrWebServer"  # v25+ alternative
+}
+```
+
+### Full PFX enrollment (certificate_template — pre-v25)
+
+```terraform
+# Full PFX enrollment with all optional fields — Command pre-v25 style.
 resource "keyfactor_certificate" "pfx_full" {
   # Subject fields
   common_name         = "my.example.com"
@@ -44,10 +67,9 @@ resource "keyfactor_certificate" "pfx_full" {
   ip_sans  = ["192.168.1.10"]
   uri_sans = ["spiffe://cluster.local/ns/default/sa/my-service"]
 
-  # Enrollment method (pre-v25 template style)
+  # Enrollment method
   certificate_authority = "MYCA\\My Issuing CA"
   certificate_template  = "2yrWebServer"
-  # certificate_enrollment_pattern = "2yrWebServer"  # v25+ alternative
 
   # Key options (omit to accept CA defaults)
   key_type     = "RSA"
@@ -76,37 +98,59 @@ resource "keyfactor_certificate" "pfx_full" {
 }
 ```
 
-### Minimal CSR enrollment
+### Full PFX enrollment (certificate_enrollment_pattern — v25+)
 
 ```terraform
-# Minimal CSR enrollment — the private key never leaves the client.
-# For Command v25+, replace certificate_template with certificate_enrollment_pattern.
-resource "tls_private_key" "example" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
+# Command v25+ style — use certificate_enrollment_pattern instead of certificate_template.
+resource "keyfactor_certificate" "pfx_full" {
+  # Subject fields
+  common_name         = "my.example.com"
+  country             = "US"
+  state               = "Ohio"
+  locality            = "Cleveland"
+  organization        = "Acme Corp"
+  organizational_unit = "Engineering"
 
-resource "tls_cert_request" "example" {
-  private_key_pem = tls_private_key.example.private_key_pem
-  subject {
-    common_name = "my.example.com"
+  # SANs
+  dns_sans = ["my.example.com", "alt.example.com"]
+  ip_sans  = ["192.168.1.10"]
+  uri_sans = ["spiffe://cluster.local/ns/default/sa/my-service"]
+
+  # Enrollment method
+  certificate_authority        = "MYCA\\My Issuing CA"
+  certificate_enrollment_pattern = "2yrWebServer"
+
+  # Key options (omit to accept CA defaults)
+  key_type     = "RSA"
+  key_size     = 4096
+  key_password = "MyStr0ngPassw0rd!"
+
+  # Display / organization
+  friendly_name   = "my-cert"
+  owner_role_name = "my-role"
+  collection_id   = 6
+
+  # Lifecycle
+  expiry_warn_days = 90
+
+  renewal_config = {
+    renew_days      = 30
+    revoke_on_renew = true
+    force_renewal   = false
   }
-}
 
-resource "keyfactor_certificate" "csr" {
-  csr                   = tls_cert_request.example.cert_request_pem
-  certificate_authority = "MYCA\\My Issuing CA"
-  certificate_template  = "2yrWebServer"
-  # certificate_enrollment_pattern = "2yrWebServer"  # v25+ alternative
+  # Metadata keys must already exist in Keyfactor Command
+  metadata = {
+    "Email-Contact" = "admin@example.com"
+    "Owner"         = "platform-team@example.com"
+  }
 }
 ```
 
-### Full CSR enrollment
+### Full CSR enrollment (certificate_template — pre-v25)
 
 ```terraform
-# Full CSR enrollment with all subject fields and optional settings.
-# certificate_template is the pre-v25 style; for Command v25+ use:
-#   certificate_enrollment_pattern = "2yrWebServer"
+# Full CSR enrollment with all subject fields and optional settings — Command pre-v25 style.
 resource "tls_private_key" "csr_full" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -129,10 +173,60 @@ resource "tls_cert_request" "csr_full" {
 resource "keyfactor_certificate" "csr_full" {
   csr = tls_cert_request.csr_full.cert_request_pem
 
-  # Enrollment method (pre-v25 template style)
+  # Enrollment method
   certificate_authority = "MYCA\\My Issuing CA"
   certificate_template  = "2yrWebServer"
-  # certificate_enrollment_pattern = "2yrWebServer"  # v25+ alternative
+
+  # Display / organization
+  owner_role_name = "my-role"
+  collection_id   = 6
+
+  # Lifecycle
+  expiry_warn_days = 90
+
+  renewal_config = {
+    renew_days      = 30
+    revoke_on_renew = true
+    force_renewal   = false
+  }
+
+  # Metadata keys must already exist in Keyfactor Command
+  metadata = {
+    "Email-Contact" = "admin@example.com"
+    "Owner"         = "platform-team@example.com"
+  }
+}
+```
+
+### Full CSR enrollment (certificate_enrollment_pattern — v25+)
+
+```terraform
+# Command v25+ style — use certificate_enrollment_pattern instead of certificate_template.
+resource "tls_private_key" "csr_full" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "tls_cert_request" "csr_full" {
+  private_key_pem = tls_private_key.csr_full.private_key_pem
+
+  subject {
+    common_name         = "my.example.com"
+    organization        = "Acme Corp"
+    country             = "US"
+    locality            = "Cleveland"
+    organizational_unit = "Engineering"
+    province            = "Ohio"
+    street_address      = "123 Main St"
+  }
+}
+
+resource "keyfactor_certificate" "csr_full" {
+  csr = tls_cert_request.csr_full.cert_request_pem
+
+  # Enrollment method
+  certificate_authority          = "MYCA\\My Issuing CA"
+  certificate_enrollment_pattern = "2yrWebServer"
 
   # Display / organization
   owner_role_name = "my-role"

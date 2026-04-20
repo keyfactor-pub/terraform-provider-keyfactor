@@ -15,17 +15,25 @@ description: |-
 
 {{ tffile "examples/resources/keyfactor_certificate/resource.tf" }}
 
-### Full PFX enrollment
-
-{{ tffile "examples/resources/keyfactor_certificate/resource_pfx_verbose.tf" }}
-
 ### Minimal CSR enrollment
 
 {{ tffile "examples/resources/keyfactor_certificate/resource_csr_minimal.tf" }}
 
-### Full CSR enrollment
+### Full PFX enrollment (certificate_template — pre-v25)
 
-{{ tffile "examples/resources/keyfactor_certificate/resource_csr_verbose.tf" }}
+{{ tffile "examples/resources/keyfactor_certificate/resource_pfx_template.tf" }}
+
+### Full PFX enrollment (certificate_enrollment_pattern — v25+)
+
+{{ tffile "examples/resources/keyfactor_certificate/resource_pfx_enrollment_pattern.tf" }}
+
+### Full CSR enrollment (certificate_template — pre-v25)
+
+{{ tffile "examples/resources/keyfactor_certificate/resource_csr_template.tf" }}
+
+### Full CSR enrollment (certificate_enrollment_pattern — v25+)
+
+{{ tffile "examples/resources/keyfactor_certificate/resource_csr_enrollment_pattern.tf" }}
 
 {{ .SchemaMarkdown | trimspace }}
 

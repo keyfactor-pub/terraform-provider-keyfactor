@@ -1,6 +1,4 @@
-# Full PFX enrollment with all optional fields.
-# certificate_template is the pre-v25 style; for Command v25+ use:
-#   certificate_enrollment_pattern = "2yrWebServer"
+# Full PFX enrollment with all optional fields — Command pre-v25 style.
 resource "keyfactor_certificate" "pfx_full" {
   # Subject fields
   common_name         = "my.example.com"
@@ -15,10 +13,9 @@ resource "keyfactor_certificate" "pfx_full" {
   ip_sans  = ["192.168.1.10"]
   uri_sans = ["spiffe://cluster.local/ns/default/sa/my-service"]
 
-  # Enrollment method (pre-v25 template style)
+  # Enrollment method
   certificate_authority = "MYCA\\My Issuing CA"
   certificate_template  = "2yrWebServer"
-  # certificate_enrollment_pattern = "2yrWebServer"  # v25+ alternative
 
   # Key options (omit to accept CA defaults)
   key_type     = "RSA"

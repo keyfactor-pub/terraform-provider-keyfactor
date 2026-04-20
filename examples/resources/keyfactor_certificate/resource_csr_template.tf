@@ -1,6 +1,4 @@
-# Full CSR enrollment with all subject fields and optional settings.
-# certificate_template is the pre-v25 style; for Command v25+ use:
-#   certificate_enrollment_pattern = "2yrWebServer"
+# Full CSR enrollment with all subject fields and optional settings — Command pre-v25 style.
 resource "tls_private_key" "csr_full" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -23,10 +21,9 @@ resource "tls_cert_request" "csr_full" {
 resource "keyfactor_certificate" "csr_full" {
   csr = tls_cert_request.csr_full.cert_request_pem
 
-  # Enrollment method (pre-v25 template style)
+  # Enrollment method
   certificate_authority = "MYCA\\My Issuing CA"
   certificate_template  = "2yrWebServer"
-  # certificate_enrollment_pattern = "2yrWebServer"  # v25+ alternative
 
   # Display / organization
   owner_role_name = "my-role"

@@ -11,13 +11,21 @@ description: |-
 
 ## Example Usage
 
-### Minimal PFX enrollment
+### Minimal PFX enrollment (certificate_template — pre-v25)
 
 {{ tffile "examples/resources/keyfactor_certificate/resource.tf" }}
 
-### Minimal CSR enrollment
+### Minimal PFX enrollment (certificate_enrollment_pattern — v25+)
+
+{{ tffile "examples/resources/keyfactor_certificate/resource_pfx_enrollment_pattern_minimal.tf" }}
+
+### Minimal CSR enrollment (certificate_template — pre-v25)
 
 {{ tffile "examples/resources/keyfactor_certificate/resource_csr_minimal.tf" }}
+
+### Minimal CSR enrollment (certificate_enrollment_pattern — v25+)
+
+{{ tffile "examples/resources/keyfactor_certificate/resource_csr_enrollment_pattern_minimal.tf" }}
 
 ### Full PFX enrollment (certificate_template — pre-v25)
 

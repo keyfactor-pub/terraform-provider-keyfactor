@@ -11,7 +11,7 @@ Manages a certificate in Keyfactor Command using the `/Enrollment` and `/Certifi
 
 ## Example Usage
 
-### Minimal PFX enrollment
+### Minimal PFX enrollment (certificate_template — pre-v25)
 
 ```terraform
 # Minimal PFX enrollment — server generates the private key.
@@ -24,11 +24,23 @@ resource "keyfactor_certificate" "pfx" {
 }
 ```
 
-### Minimal CSR enrollment
+### Minimal PFX enrollment (certificate_enrollment_pattern — v25+)
+
+```terraform
+# Minimal PFX enrollment using an enrollment pattern (Command v25+).
+# certificate_authority is optional — Command automatically selects a CA
+# associated with the pattern. Specify it only to pin to a particular CA.
+resource "keyfactor_certificate" "pfx_pattern" {
+  common_name                    = "my.example.com"
+  certificate_enrollment_pattern = "2yrWebServer"
+  key_password                   = "MyStr0ngPassw0rd!"
+}
+```
+
+### Minimal CSR enrollment (certificate_template — pre-v25)
 
 ```terraform
 # Minimal CSR enrollment — the private key never leaves the client.
-# For Command v25+, replace certificate_template with certificate_enrollment_pattern.
 resource "tls_private_key" "example" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -45,7 +57,30 @@ resource "keyfactor_certificate" "csr" {
   csr                   = tls_cert_request.example.cert_request_pem
   certificate_authority = "MYCA\\My Issuing CA"
   certificate_template  = "2yrWebServer"
-  # certificate_enrollment_pattern = "2yrWebServer"  # v25+ alternative
+}
+```
+
+### Minimal CSR enrollment (certificate_enrollment_pattern — v25+)
+
+```terraform
+# Minimal CSR enrollment using an enrollment pattern (Command v25+).
+# certificate_authority is optional — Command automatically selects a CA
+# associated with the pattern. Specify it only to pin to a particular CA.
+resource "tls_private_key" "example_pattern" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "tls_cert_request" "example_pattern" {
+  private_key_pem = tls_private_key.example_pattern.private_key_pem
+  subject {
+    common_name = "my.example.com"
+  }
+}
+
+resource "keyfactor_certificate" "csr_pattern" {
+  csr                            = tls_cert_request.example_pattern.cert_request_pem
+  certificate_enrollment_pattern = "2yrWebServer"
 }
 ```
 

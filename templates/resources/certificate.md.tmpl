@@ -1,0 +1,36 @@
+---
+page_title: "{{.Type}} {{.Name}} - {{.ProviderName}}"
+subcategory: ""
+description: |-
+{{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
+---
+
+# {{.Type}} {{.Name}}
+
+{{ .Description | trimspace }}
+
+## Example Usage
+
+### Minimal PFX enrollment
+
+{{ tffile "examples/resources/keyfactor_certificate/resource.tf" }}
+
+### Full PFX enrollment
+
+{{ tffile "examples/resources/keyfactor_certificate/resource_pfx_verbose.tf" }}
+
+### Minimal CSR enrollment
+
+{{ tffile "examples/resources/keyfactor_certificate/resource_csr_minimal.tf" }}
+
+### Full CSR enrollment
+
+{{ tffile "examples/resources/keyfactor_certificate/resource_csr_verbose.tf" }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+Import is supported using the following syntax:
+
+{{ codefile "shell" "examples/resources/keyfactor_certificate/import.sh" }}

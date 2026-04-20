@@ -270,9 +270,9 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			},
 			"certificate_authority": {
 				Type:          types.StringType,
-				Required:      true,
+				Optional:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
+				Description:   "Name of the certificate authority to use for enrollment. Optional when using a certificate template or enrollment pattern — Command will automatically select a CA associated with the template or pattern. Required when enrolling against a standalone CA. Example: \"MYCA\\\\My Issuing CA\"",
 			},
 			"certificate_template": {
 				Type:          types.StringType,

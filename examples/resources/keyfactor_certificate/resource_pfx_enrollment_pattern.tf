@@ -14,7 +14,10 @@ resource "keyfactor_certificate" "pfx_full" {
   uri_sans = ["spiffe://cluster.local/ns/default/sa/my-service"]
 
   # Enrollment method
-  certificate_authority          = "MYCA\\My Issuing CA"
+  # certificate_authority is optional when using an enrollment pattern —
+  # Command automatically selects a CA associated with the pattern.
+  # Specify it only if you need to pin to a particular CA.
+  # certificate_authority          = "MYCA\\My Issuing CA"
   certificate_enrollment_pattern = "2yrWebServer"
 
   # Key options (omit to accept CA defaults)

@@ -22,7 +22,10 @@ resource "keyfactor_certificate" "csr_full" {
   csr = tls_cert_request.csr_full.cert_request_pem
 
   # Enrollment method
-  certificate_authority          = "MYCA\\My Issuing CA"
+  # certificate_authority is optional when using an enrollment pattern —
+  # Command automatically selects a CA associated with the pattern.
+  # Specify it only if you need to pin to a particular CA.
+  # certificate_authority          = "MYCA\\My Issuing CA"
   certificate_enrollment_pattern = "2yrWebServer"
 
   # Display / organization

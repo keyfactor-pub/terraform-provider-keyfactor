@@ -49,6 +49,12 @@ store-type-demo:
 application-demo:
 	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/application_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
 
+## store-container-demo: Run full lifecycle demo in terraform/store_container_demo/
+## Tests container_name (pre-v25) and application_name (v25+) on cert stores.
+##   Usage: make store-container-demo [SUFFIX=_TF]
+store-container-demo:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/store_container_demo && $(MAKE) lifecycle SUFFIX="$(SUFFIX)"
+
 ## k8s-orchestrator-demo: Run full lifecycle demo in terraform/k8s_orchestrator_demo/
 ##   (build, init, validate, plan, apply, import, drift-check, destroy)
 ##   Usage: make k8s-orchestrator-demo

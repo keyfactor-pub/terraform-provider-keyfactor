@@ -1,0 +1,488 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: kftrain.keyfactor.lab
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://kftrain.keyfactor.lab/KeyfactorAPI/Security/Identities
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1028
+        body: '[{"Id":2,"AccountName":"KEYFACTOR\\SVC_AppPool","IdentityType":"User","Roles":[{"Id":2,"Description":"Default Role For Dashboard use","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"Reporting API Access","Permissions":[]}],"Valid":true},{"Id":1,"AccountName":"KEYFACTOR\\Administrator","IdentityType":"User","Roles":[{"Id":1,"Description":"Built-in management portal administration role","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"Administrator","Permissions":[]}],"Valid":true},{"Id":3,"AccountName":"KEYFACTOR\\kfadmin","IdentityType":"User","Roles":[{"Id":3,"Description":"kfadmin","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"kfadmin","Permissions":[]}],"Valid":true}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "1028"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 18 Mar 2026 18:44:31 GMT
+            Server:
+                - Microsoft-IIS/10.0
+            X-Keyfactor-Correlation-Id:
+                - 0c8cadc0-e83e-44bc-8804-a6cde16e0d95
+            X-Keyfactor-Product-Version:
+                - 25.4.1+bec54275b9f2b7d3e25b827709b121d4f0e571b2
+            X-Powered-By:
+                - ASP.NET
+            X-Total-Count:
+                - "3"
+        status: 200 OK
+        code: 200
+        duration: 20.925014ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: kftrain.keyfactor.lab
+        body: "null"
+        form:
+            pq.queryString:
+                - name -eq "Reporting API Access"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://kftrain.keyfactor.lab/KeyfactorAPI/Security/Roles?pq.queryString=name%20-eq%20%22Reporting%20API%20Access%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 417
+        body: '[{"Id":2,"Description":"Default Role For Dashboard use","EmailAddress":null,"Enabled":true,"Immutable":true,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[{"Id":2,"AccountName":"KEYFACTOR\\SVC_AppPool","IdentityType":"User","SID":"S-1-5-21-3347429598-2051010716-1335198688-1104"}],"Name":"Reporting API Access","Permissions":["AdminPortal:Read","Dashboard:Read"]}]'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "417"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 18 Mar 2026 18:44:31 GMT
+            Server:
+                - Microsoft-IIS/10.0
+            X-Keyfactor-Correlation-Id:
+                - 7611b31c-f578-4341-bea9-871ae4f6ac3b
+            X-Keyfactor-Product-Version:
+                - 25.4.1+bec54275b9f2b7d3e25b827709b121d4f0e571b2
+            X-Powered-By:
+                - ASP.NET
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 86.097675ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: kftrain.keyfactor.lab
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://kftrain.keyfactor.lab/KeyfactorAPI/Security/Identities
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1028
+        body: '[{"Id":2,"AccountName":"KEYFACTOR\\SVC_AppPool","IdentityType":"User","Roles":[{"Id":2,"Description":"Default Role For Dashboard use","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"Reporting API Access","Permissions":[]}],"Valid":true},{"Id":1,"AccountName":"KEYFACTOR\\Administrator","IdentityType":"User","Roles":[{"Id":1,"Description":"Built-in management portal administration role","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"Administrator","Permissions":[]}],"Valid":true},{"Id":3,"AccountName":"KEYFACTOR\\kfadmin","IdentityType":"User","Roles":[{"Id":3,"Description":"kfadmin","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"kfadmin","Permissions":[]}],"Valid":true}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "1028"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 18 Mar 2026 18:44:31 GMT
+            Server:
+                - Microsoft-IIS/10.0
+            X-Keyfactor-Correlation-Id:
+                - 6334dc43-87ee-4f14-9d37-39403cfe7fbe
+            X-Keyfactor-Product-Version:
+                - 25.4.1+bec54275b9f2b7d3e25b827709b121d4f0e571b2
+            X-Powered-By:
+                - ASP.NET
+            X-Total-Count:
+                - "3"
+        status: 200 OK
+        code: 200
+        duration: 23.099429ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: kftrain.keyfactor.lab
+        body: "null"
+        form:
+            pq.queryString:
+                - name -eq "Reporting API Access"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://kftrain.keyfactor.lab/KeyfactorAPI/Security/Roles?pq.queryString=name%20-eq%20%22Reporting%20API%20Access%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 417
+        body: '[{"Id":2,"Description":"Default Role For Dashboard use","EmailAddress":null,"Enabled":true,"Immutable":true,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[{"Id":2,"AccountName":"KEYFACTOR\\SVC_AppPool","IdentityType":"User","SID":"S-1-5-21-3347429598-2051010716-1335198688-1104"}],"Name":"Reporting API Access","Permissions":["AdminPortal:Read","Dashboard:Read"]}]'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "417"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 18 Mar 2026 18:44:31 GMT
+            Server:
+                - Microsoft-IIS/10.0
+            X-Keyfactor-Correlation-Id:
+                - 2e3b6c3a-1808-42ee-8c60-3bd9e069a054
+            X-Keyfactor-Product-Version:
+                - 25.4.1+bec54275b9f2b7d3e25b827709b121d4f0e571b2
+            X-Powered-By:
+                - ASP.NET
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 35.257629ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: kftrain.keyfactor.lab
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://kftrain.keyfactor.lab/KeyfactorAPI/Security/Identities
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1028
+        body: '[{"Id":2,"AccountName":"KEYFACTOR\\SVC_AppPool","IdentityType":"User","Roles":[{"Id":2,"Description":"Default Role For Dashboard use","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"Reporting API Access","Permissions":[]}],"Valid":true},{"Id":1,"AccountName":"KEYFACTOR\\Administrator","IdentityType":"User","Roles":[{"Id":1,"Description":"Built-in management portal administration role","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"Administrator","Permissions":[]}],"Valid":true},{"Id":3,"AccountName":"KEYFACTOR\\kfadmin","IdentityType":"User","Roles":[{"Id":3,"Description":"kfadmin","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"kfadmin","Permissions":[]}],"Valid":true}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "1028"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 18 Mar 2026 18:44:32 GMT
+            Server:
+                - Microsoft-IIS/10.0
+            X-Keyfactor-Correlation-Id:
+                - f2550931-3b2b-4f75-bff5-25dd57396850
+            X-Keyfactor-Product-Version:
+                - 25.4.1+bec54275b9f2b7d3e25b827709b121d4f0e571b2
+            X-Powered-By:
+                - ASP.NET
+            X-Total-Count:
+                - "3"
+        status: 200 OK
+        code: 200
+        duration: 23.634289ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: kftrain.keyfactor.lab
+        body: "null"
+        form:
+            pq.queryString:
+                - name -eq "Reporting API Access"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://kftrain.keyfactor.lab/KeyfactorAPI/Security/Roles?pq.queryString=name%20-eq%20%22Reporting%20API%20Access%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 417
+        body: '[{"Id":2,"Description":"Default Role For Dashboard use","EmailAddress":null,"Enabled":true,"Immutable":true,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[{"Id":2,"AccountName":"KEYFACTOR\\SVC_AppPool","IdentityType":"User","SID":"S-1-5-21-3347429598-2051010716-1335198688-1104"}],"Name":"Reporting API Access","Permissions":["AdminPortal:Read","Dashboard:Read"]}]'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "417"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 18 Mar 2026 18:44:32 GMT
+            Server:
+                - Microsoft-IIS/10.0
+            X-Keyfactor-Correlation-Id:
+                - 822544a6-b1aa-4869-b812-0afc749d14e5
+            X-Keyfactor-Product-Version:
+                - 25.4.1+bec54275b9f2b7d3e25b827709b121d4f0e571b2
+            X-Powered-By:
+                - ASP.NET
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 48.907698ms
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: kftrain.keyfactor.lab
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://kftrain.keyfactor.lab/KeyfactorAPI/Security/Identities
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1028
+        body: '[{"Id":2,"AccountName":"KEYFACTOR\\SVC_AppPool","IdentityType":"User","Roles":[{"Id":2,"Description":"Default Role For Dashboard use","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"Reporting API Access","Permissions":[]}],"Valid":true},{"Id":1,"AccountName":"KEYFACTOR\\Administrator","IdentityType":"User","Roles":[{"Id":1,"Description":"Built-in management portal administration role","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"Administrator","Permissions":[]}],"Valid":true},{"Id":3,"AccountName":"KEYFACTOR\\kfadmin","IdentityType":"User","Roles":[{"Id":3,"Description":"kfadmin","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"kfadmin","Permissions":[]}],"Valid":true}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "1028"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 18 Mar 2026 18:44:32 GMT
+            Server:
+                - Microsoft-IIS/10.0
+            X-Keyfactor-Correlation-Id:
+                - 9b514741-cfaf-419a-9bff-e9116abc5b11
+            X-Keyfactor-Product-Version:
+                - 25.4.1+bec54275b9f2b7d3e25b827709b121d4f0e571b2
+            X-Powered-By:
+                - ASP.NET
+            X-Total-Count:
+                - "3"
+        status: 200 OK
+        code: 200
+        duration: 19.202526ms
+    - id: 7
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: kftrain.keyfactor.lab
+        body: "null"
+        form:
+            pq.queryString:
+                - name -eq "Reporting API Access"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://kftrain.keyfactor.lab/KeyfactorAPI/Security/Roles?pq.queryString=name%20-eq%20%22Reporting%20API%20Access%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 417
+        body: '[{"Id":2,"Description":"Default Role For Dashboard use","EmailAddress":null,"Enabled":true,"Immutable":true,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[{"Id":2,"AccountName":"KEYFACTOR\\SVC_AppPool","IdentityType":"User","SID":"S-1-5-21-3347429598-2051010716-1335198688-1104"}],"Name":"Reporting API Access","Permissions":["AdminPortal:Read","Dashboard:Read"]}]'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "417"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 18 Mar 2026 18:44:32 GMT
+            Server:
+                - Microsoft-IIS/10.0
+            X-Keyfactor-Correlation-Id:
+                - 72e24f06-6be2-4a10-862a-c68323d3fe4d
+            X-Keyfactor-Product-Version:
+                - 25.4.1+bec54275b9f2b7d3e25b827709b121d4f0e571b2
+            X-Powered-By:
+                - ASP.NET
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 40.792045ms
+    - id: 8
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: kftrain.keyfactor.lab
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://kftrain.keyfactor.lab/KeyfactorAPI/Security/Identities
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1028
+        body: '[{"Id":2,"AccountName":"KEYFACTOR\\SVC_AppPool","IdentityType":"User","Roles":[{"Id":2,"Description":"Default Role For Dashboard use","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"Reporting API Access","Permissions":[]}],"Valid":true},{"Id":1,"AccountName":"KEYFACTOR\\Administrator","IdentityType":"User","Roles":[{"Id":1,"Description":"Built-in management portal administration role","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"Administrator","Permissions":[]}],"Valid":true},{"Id":3,"AccountName":"KEYFACTOR\\kfadmin","IdentityType":"User","Roles":[{"Id":3,"Description":"kfadmin","EmailAddress":null,"Enabled":false,"Immutable":false,"Valid":null,"Private":false,"PermissionSetId":"00000000-0000-0000-0000-000000000000","Identities":[],"Name":"kfadmin","Permissions":[]}],"Valid":true}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "1028"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 18 Mar 2026 18:44:32 GMT
+            Server:
+                - Microsoft-IIS/10.0
+            X-Keyfactor-Correlation-Id:
+                - db3e42ff-cf69-4db9-9f15-aa6d348f4565
+            X-Keyfactor-Product-Version:
+                - 25.4.1+bec54275b9f2b7d3e25b827709b121d4f0e571b2
+            X-Powered-By:
+                - ASP.NET
+            X-Total-Count:
+                - "3"
+        status: 200 OK
+        code: 200
+        duration: 19.963401ms
+    - id: 9
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: kftrain.keyfactor.lab
+        body: "null"
+        form:
+            pq.queryString:
+                - name -eq "Reporting API Access"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://kftrain.keyfactor.lab/KeyfactorAPI/Security/Roles?pq.queryString=name%20-eq%20%22Reporting%20API%20Access%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 417
+        body: '[{"Id":2,"Description":"Default Role For Dashboard use","EmailAddress":null,"Enabled":true,"Immutable":true,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[{"Id":2,"AccountName":"KEYFACTOR\\SVC_AppPool","IdentityType":"User","SID":"S-1-5-21-3347429598-2051010716-1335198688-1104"}],"Name":"Reporting API Access","Permissions":["AdminPortal:Read","Dashboard:Read"]}]'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "417"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 18 Mar 2026 18:44:32 GMT
+            Server:
+                - Microsoft-IIS/10.0
+            X-Keyfactor-Correlation-Id:
+                - 1a556462-b614-42ee-9f59-e6ebce06f66e
+            X-Keyfactor-Product-Version:
+                - 25.4.1+bec54275b9f2b7d3e25b827709b121d4f0e571b2
+            X-Powered-By:
+                - ASP.NET
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 38.311469ms

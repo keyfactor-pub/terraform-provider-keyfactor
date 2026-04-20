@@ -1,0 +1,339 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/EnrollmentPatterns
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4885
+        body: '[{"Id":1,"Name":"Default Pattern","Description":"A default enrollment pattern","Template":{"Id":4,"TemplateName":"Server (tlsServerAuth-1y)","CommonName":"Server_tlsServerAuth-1y","ConfigurationTenant":"ejbca","RequiresApproval":false,"FriendlyName":null},"TemplateDefault":true,"UseADPermissions":false,"AssociatedRoles":[{"Id":2,"Name":"InstanceOwner"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":7,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":true,"AllowWildcards":true,"RFCEnforcement":null,"CertificateOwnerRole":0,"DefaultCertificateOwnerRoleId":null,"DefaultCertificateOwnerRoleName":null,"DefaultCertificateOwnerOverride":false,"KeyInfo":{"ECDSA":{"name":"ECDSA","bit_lengths":[256,384,521,163,233,283,409,571,160,160,192,192,224,224,256,256,320,320,384,384,512,512,163,163,163,176,208,272,304,368,191,191,191,239,239,239,359,431,256,163,233,283,409,571,192,224,192,192,239,239,239,112,112,128,128,160,160,160,192,224,256,113,113,131,131,163,193,193,239,256,192],"curves":["1.2.840.10045.3.1.7","1.3.132.0.34","1.3.132.0.35","1.3.132.0.15","1.3.132.0.27","1.3.132.0.17","1.3.132.0.37","1.3.132.0.39","1.3.36.3.3.2.8.1.1.1","1.3.36.3.3.2.8.1.1.2","1.3.36.3.3.2.8.1.1.3","1.3.36.3.3.2.8.1.1.4","1.3.36.3.3.2.8.1.1.5","1.3.36.3.3.2.8.1.1.6","1.3.36.3.3.2.8.1.1.7","1.3.36.3.3.2.8.1.1.8","1.3.36.3.3.2.8.1.1.9","1.3.36.3.3.2.8.1.1.10","1.3.36.3.3.2.8.1.1.11","1.3.36.3.3.2.8.1.1.12","1.3.36.3.3.2.8.1.1.13","1.3.36.3.3.2.8.1.1.14","1.2.840.10045.3.0.1","1.2.840.10045.3.0.2","1.2.840.10045.3.0.3","1.2.840.10045.3.0.4","1.2.840.10045.3.0.10","1.2.840.10045.3.0.16","1.2.840.10045.3.0.17","1.2.840.10045.3.0.19","1.2.840.10045.3.0.5","1.2.840.10045.3.0.6","1.2.840.10045.3.0.7","1.2.840.10045.3.0.11","1.2.840.10045.3.0.12","1.2.840.10045.3.0.13","1.2.840.10045.3.0.18","1.2.840.10045.3.0.20","1.2.250.1.223.101.256.1","1.3.132.0.1","1.3.132.0.26","1.3.132.0.16","1.3.132.0.36","1.3.132.0.38","1.2.840.10045.3.1.1","1.3.132.0.33","1.2.840.10045.3.1.2","1.2.840.10045.3.1.3","1.2.840.10045.3.1.4","1.2.840.10045.3.1.5","1.2.840.10045.3.1.6","1.3.132.0.6","1.3.132.0.7","1.3.132.0.28","1.3.132.0.29","1.3.132.0.9","1.3.132.0.8","1.3.132.0.30","1.3.132.0.31","1.3.132.0.32","1.3.132.0.10","1.3.132.0.4","1.3.132.0.5","1.3.132.0.22","1.3.132.0.23","1.3.132.0.2","1.3.132.0.24","1.3.132.0.25","1.3.132.0.3","1.2.156.10197.1.301","1.2.156.10197.1.301.101"]},"RSA":{"name":"RSA","bit_lengths":[2048,3072,4096,6144,8192],"curves":[]},"Ed448":{"name":"Ed448","bit_lengths":[448],"curves":[]},"Ed25519":{"name":"Ed25519","bit_lengths":[255],"curves":[]},"MLDSA44":{"name":"ML-DSA-44","bit_lengths":[],"curves":[]},"MLDSA65":{"name":"ML-DSA-65","bit_lengths":[],"curves":[]},"MLDSA87":{"name":"ML-DSA-87","bit_lengths":[],"curves":[]}},"PrimaryKeyAlgorithms":[{"name":"ECDSA","bit_lengths":[256,384,521,163,233,283,409,571,160,160,192,192,224,224,256,256,320,320,384,384,512,512,163,163,163,176,208,272,304,368,191,191,191,239,239,239,359,431,256,163,233,283,409,571,192,224,192,192,239,239,239,112,112,128,128,160,160,160,192,224,256,113,113,131,131,163,193,193,239,256,192],"curves":["1.2.840.10045.3.1.7","1.3.132.0.34","1.3.132.0.35","1.3.132.0.15","1.3.132.0.27","1.3.132.0.17","1.3.132.0.37","1.3.132.0.39","1.3.36.3.3.2.8.1.1.1","1.3.36.3.3.2.8.1.1.2","1.3.36.3.3.2.8.1.1.3","1.3.36.3.3.2.8.1.1.4","1.3.36.3.3.2.8.1.1.5","1.3.36.3.3.2.8.1.1.6","1.3.36.3.3.2.8.1.1.7","1.3.36.3.3.2.8.1.1.8","1.3.36.3.3.2.8.1.1.9","1.3.36.3.3.2.8.1.1.10","1.3.36.3.3.2.8.1.1.11","1.3.36.3.3.2.8.1.1.12","1.3.36.3.3.2.8.1.1.13","1.3.36.3.3.2.8.1.1.14","1.2.840.10045.3.0.1","1.2.840.10045.3.0.2","1.2.840.10045.3.0.3","1.2.840.10045.3.0.4","1.2.840.10045.3.0.10","1.2.840.10045.3.0.16","1.2.840.10045.3.0.17","1.2.840.10045.3.0.19","1.2.840.10045.3.0.5","1.2.840.10045.3.0.6","1.2.840.10045.3.0.7","1.2.840.10045.3.0.11","1.2.840.10045.3.0.12","1.2.840.10045.3.0.13","1.2.840.10045.3.0.18","1.2.840.10045.3.0.20","1.2.250.1.223.101.256.1","1.3.132.0.1","1.3.132.0.26","1.3.132.0.16","1.3.132.0.36","1.3.132.0.38","1.2.840.10045.3.1.1","1.3.132.0.33","1.2.840.10045.3.1.2","1.2.840.10045.3.1.3","1.2.840.10045.3.1.4","1.2.840.10045.3.1.5","1.2.840.10045.3.1.6","1.3.132.0.6","1.3.132.0.7","1.3.132.0.28","1.3.132.0.29","1.3.132.0.9","1.3.132.0.8","1.3.132.0.30","1.3.132.0.31","1.3.132.0.32","1.3.132.0.10","1.3.132.0.4","1.3.132.0.5","1.3.132.0.22","1.3.132.0.23","1.3.132.0.2","1.3.132.0.24","1.3.132.0.25","1.3.132.0.3","1.2.156.10197.1.301","1.2.156.10197.1.301.101"]},{"name":"RSA","bit_lengths":[2048,3072,4096,6144,8192],"curves":[]},{"name":"Ed448","bit_lengths":[448],"curves":[]},{"name":"Ed25519","bit_lengths":[255],"curves":[]},{"name":"ML-DSA-44","bit_lengths":[],"curves":[]},{"name":"ML-DSA-65","bit_lengths":[],"curves":[]},{"name":"ML-DSA-87","bit_lengths":[],"curves":[]}],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "4885"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Mon, 23 Mar 2026 14:22:49 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "96"
+            X-Keyfactor-Correlation-Id:
+                - 7a1d7112-8fd9-4e0a-ba66-f4486c3ac237
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 987.261802ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 375
+        host: int25-4-1.kftestlab.com
+        body: '{"CertificateAuthority":"Sub-CA","Curve":"1.3.132.0.34","CustomFriendlyName":"tf-unit-pfx-ecc_p384-413922000.example.com","EnrollmentPatternId":1,"IncludeChain":true,"KeyLength":384,"KeyType":"ECC","Password":"[REDACTED]","PopulateMissingValuesFromAD":false,"SANs":{},"Subject":"CN=tf-unit-pfx-ecc_p384-413922000.example.com","Template":"","Timestamp":"2026-03-23T14:22:51Z"}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Certificateformat:
+                - STORE
+            X-Keyfactor-Api-Version:
+                - "2"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Enrollment/PFX
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 5088
+        body: '{"SuccessfulStores":null,"CertificateInformation":{"SerialNumber":"1CA13B0E215F73F3FCDAB38B764B69B69724E020","IssuerDN":"CN=Sub-CA","Thumbprint":"12D0435FF024295DAA1501EB45D18ACC01F590B2","KeyfactorId":2726,"Pkcs12Blob":"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","Password":null,"WorkflowInstanceId":"2fd525d3-26ca-4c76-acf9-bd3ba1ae261c","WorkflowReferenceId":688,"StoreIdsInvalidForRenewal":[],"ChainFailedToBuild":false,"KeyfactorRequestId":0,"RequestDisposition":"ISSUED","DispositionMessage":"The private key was successfully retained.","EnrollmentContext":null},"Metadata":{"Owner":""}}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "5088"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Mon, 23 Mar 2026 14:22:52 GMT
+            Server:
+                - istio-envoy
+            X-Certificatefile:
+                - tf-unit-pfx-ecc_p384-413922000.example.com.store
+            X-Envoy-Upstream-Service-Time:
+                - "2064"
+            X-Keyfactor-Correlation-Id:
+                - b34c7288-8dd1-4a4a-b137-9fbf1fdddfd3
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Privatekeystatus:
+                - Saved
+        status: 200 OK
+        code: 200
+        duration: 2.223073097s
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        form:
+            includeHasPrivateKey:
+                - "true"
+            includeLocations:
+                - "true"
+            includeMetadata:
+                - "true"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/2726?includeHasPrivateKey=true&includeLocations=true&includeMetadata=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3217
+        body: '{"IsCACertificate":false,"PathLengthConstraint":null,"Id":2726,"Thumbprint":"12D0435FF024295DAA1501EB45D18ACC01F590B2","SerialNumber":"1CA13B0E215F73F3FCDAB38B764B69B69724E020","IssuedDN":"CN=tf-unit-pfx-ecc_p384-413922000.example.com","IssuedCN":"tf-unit-pfx-ecc_p384-413922000.example.com","ImportDate":"2026-03-23T14:22:52.763Z","NotBefore":"2026-03-23T14:12:52Z","NotAfter":"2027-03-23T14:12:51Z","IssuerDN":"CN=Sub-CA","PrincipalId":null,"OwnerRoleId":null,"OwnerRoleName":null,"TemplateId":4,"CertState":1,"KeySizeInBits":384,"KeyType":3,"KeyAlgorithm":"1.2.840.10045.2.1","AltKeyAlgorithm":null,"AltKeySizeInBits":0,"AltKeyType":null,"RequesterId":5,"IssuedOU":null,"IssuedEmail":null,"KeyUsage":160,"SigningAlgorithm":"SHA-256withRSA","AltSigningAlgorithm":null,"CertStateString":"Active (1)","KeyTypeString":"ECC","AltKeyTypeString":null,"RevocationEffDate":null,"RevocationReason":null,"RevocationComment":null,"CertificateAuthorityId":1,"CertificateAuthorityName":"http://ejbca-ca.int25-4-1.svc.cluster.local:8082/ejbca\\Sub-CA","TemplateName":"Server (tlsServerAuth-1y)","ArchivedKey":false,"HasPrivateKey":true,"HasAltPrivateKey":false,"PrincipalName":null,"CertRequestId":null,"RequesterName":"alpha-rho-rho-alpha-82852","ContentBytes":"MIIDQjCCAiqgAwIBAgIUHKE7DiFfc/P82rOLdktptpck4CAwDQYJKoZIhvcNAQELBQAwETEPMA0GA1UEAwwGU3ViLUNBMB4XDTI2MDMyMzE0MTI1MloXDTI3MDMyMzE0MTI1MVowNTEzMDEGA1UEAwwqdGYtdW5pdC1wZngtZWNjX3AzODQtNDEzOTIyMDAwLmV4YW1wbGUuY29tMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE6VRJRsQBDtSWYaM3gGqlK83d26v1kDgpsS9j28a+RknKW/zW43D+82ImdTBRpheHjYyl59uQDI7PI70sZvb+NHmnOfkEkGXhlxR0nhO4sB6QmlEa/QQ6zSoksegKDx0no4IBGjCCARYwHwYDVR0jBBgwFoAUoxmb/mycljHiUvHH3QJk/AR41JkwDwYDVR0lBAgwBgYEVR0lADCBsgYDVR0fBIGqMIGnMIGkoG2ga4ZpaHR0cDovL2ludDI1LTQtMS5rZnRlc3RsYWIuY29tOjgwL2VqYmNhL3B1YmxpY3dlYi93ZWJkaXN0L2NlcnRkaXN0P2NtZD1jcmwmaXNzdWVyPUNOPVRlc3RDQSxPPUFuYVRvbSxDPVNFojOkMTAvMQ8wDQYDVQQDDAZUZXN0Q0ExDzANBgNVBAoMBkFuYVRvbTELMAkGA1UEBhMCU0UwHQYDVR0OBBYEFHXX2qDCNT5X452qrkBuK18/oJ3oMA4GA1UdDwEB/wQEAwIFoDANBgkqhkiG9w0BAQsFAAOCAQEApajqtPmt/KfyCmw9ohN3wwEbTCYoGaPxv6yIDoWxc/PsgAlFa5d3l05U9KYAxfMR0i7x1uejCsrnwU2+nwSZxWoh9Ptpto3vzwrBflGiJEGzXZnGlF5KD7mwp+C/+j7jfOEnosKYn8ELFVWcyK8U19mP/MW708D5nVxI5DRb+1cSHsMIxnQcEn7a2sM/nTvBJq21rpScNrXa4EtxqYJGvPKZYxHw221NJqN2vE/7r2UyT704rKaFGvf6tHy+xZsxlwlJgBKpwwEWLmPHx3lhpUaR4rVjVHgN1mreaY01tPGbFlq7X8OV48U9grITqDfZ1thPqa+zprP7Zg7HQ4lRmw==","ExtendedKeyUsages":[{"Id":24,"Oid":"2.5.29.37.0","DisplayName":"Any Purpose"}],"SubjectAltNameElements":[],"CRLDistributionPoints":[{"Id":7,"Url":"http://int25-4-1.kftestlab.com:80/ejbca/publicweb/webdist/certdist?cmd=crl&issuer=CN=TestCA,O=AnaTom,C=SE","UrlHash":"258B1BFF67DABDFE03808EBB7A4C355B"},{"Id":8,"Url":"CN=TestCA,O=AnaTom,C=SE","UrlHash":"F37C532D126FEF6DADCAEFC160355CB5"}],"LocationsCount":[],"SSLLocations":[],"Locations":[],"Metadata":{},"CARowIndex":null,"CARecordId":"1CA13B0E215F73F3FCDAB38B764B69B69724E020","DetailedKeyUsage":{"CrlSign":false,"DataEncipherment":false,"DecipherOnly":false,"DigitalSignature":true,"EncipherOnly":false,"KeyAgreement":false,"KeyCertSign":false,"KeyEncipherment":true,"NonRepudiation":false,"HexCode":"a0"},"KeyRecoverable":false,"Curve":"1.3.132.0.34","EnrollmentPatternId":1,"Lifespan":365}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "3217"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Mon, 23 Mar 2026 14:22:55 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "156"
+            X-Keyfactor-Correlation-Id:
+                - 232b35b9-6c05-41fb-ac2a-d9905a63a45e
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 268.024747ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 59
+        host: int25-4-1.kftestlab.com
+        body: '{"CertId":2726,"IncludeChain":true,"Password":"[REDACTED]"}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Certificateformat:
+                - STORE
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/Recover
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        transfer_encoding:
+            - chunked
+        content_length: -1
+        body: '{"ErrorCode":"0xA0110008","Message":"The format \u0027STORE\u0027 is invalid."}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Mon, 23 Mar 2026 14:22:56 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "325"
+            X-Keyfactor-Correlation-Id:
+                - e76dfab2-e99c-497d-bd0b-25854dcb0518
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 400 Bad Request
+        code: 400
+        duration: 437.396097ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 65
+        host: int25-4-1.kftestlab.com
+        body: '{"CertID":2726,"IncludeChain":true,"ChainOrder":"EndEntityFirst"}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Certificateformat:
+                - P7B
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/Download
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3314
+        body: '{"Content":"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"}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "3314"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Mon, 23 Mar 2026 14:22:57 GMT
+            Server:
+                - istio-envoy
+            X-Certificatefile:
+                - tf-unit-pfx-ecc_p384-413922000.example.com.p7b
+            X-Envoy-Upstream-Service-Time:
+                - "264"
+            X-Keyfactor-Correlation-Id:
+                - 3be1fa64-a0c4-4818-8a7e-5b5dc363f4aa
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 512.741003ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/EnrollmentPatterns/1
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4883
+        body: '{"Id":1,"Name":"Default Pattern","Description":"A default enrollment pattern","Template":{"Id":4,"TemplateName":"Server (tlsServerAuth-1y)","CommonName":"Server_tlsServerAuth-1y","ConfigurationTenant":"ejbca","RequiresApproval":false,"FriendlyName":null},"TemplateDefault":true,"UseADPermissions":false,"AssociatedRoles":[{"Id":2,"Name":"InstanceOwner"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":7,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":true,"AllowWildcards":true,"RFCEnforcement":null,"CertificateOwnerRole":0,"DefaultCertificateOwnerRoleId":null,"DefaultCertificateOwnerRoleName":null,"DefaultCertificateOwnerOverride":false,"KeyInfo":{"ECDSA":{"name":"ECDSA","bit_lengths":[256,384,521,163,233,283,409,571,160,160,192,192,224,224,256,256,320,320,384,384,512,512,163,163,163,176,208,272,304,368,191,191,191,239,239,239,359,431,256,163,233,283,409,571,192,224,192,192,239,239,239,112,112,128,128,160,160,160,192,224,256,113,113,131,131,163,193,193,239,256,192],"curves":["1.2.840.10045.3.1.7","1.3.132.0.34","1.3.132.0.35","1.3.132.0.15","1.3.132.0.27","1.3.132.0.17","1.3.132.0.37","1.3.132.0.39","1.3.36.3.3.2.8.1.1.1","1.3.36.3.3.2.8.1.1.2","1.3.36.3.3.2.8.1.1.3","1.3.36.3.3.2.8.1.1.4","1.3.36.3.3.2.8.1.1.5","1.3.36.3.3.2.8.1.1.6","1.3.36.3.3.2.8.1.1.7","1.3.36.3.3.2.8.1.1.8","1.3.36.3.3.2.8.1.1.9","1.3.36.3.3.2.8.1.1.10","1.3.36.3.3.2.8.1.1.11","1.3.36.3.3.2.8.1.1.12","1.3.36.3.3.2.8.1.1.13","1.3.36.3.3.2.8.1.1.14","1.2.840.10045.3.0.1","1.2.840.10045.3.0.2","1.2.840.10045.3.0.3","1.2.840.10045.3.0.4","1.2.840.10045.3.0.10","1.2.840.10045.3.0.16","1.2.840.10045.3.0.17","1.2.840.10045.3.0.19","1.2.840.10045.3.0.5","1.2.840.10045.3.0.6","1.2.840.10045.3.0.7","1.2.840.10045.3.0.11","1.2.840.10045.3.0.12","1.2.840.10045.3.0.13","1.2.840.10045.3.0.18","1.2.840.10045.3.0.20","1.2.250.1.223.101.256.1","1.3.132.0.1","1.3.132.0.26","1.3.132.0.16","1.3.132.0.36","1.3.132.0.38","1.2.840.10045.3.1.1","1.3.132.0.33","1.2.840.10045.3.1.2","1.2.840.10045.3.1.3","1.2.840.10045.3.1.4","1.2.840.10045.3.1.5","1.2.840.10045.3.1.6","1.3.132.0.6","1.3.132.0.7","1.3.132.0.28","1.3.132.0.29","1.3.132.0.9","1.3.132.0.8","1.3.132.0.30","1.3.132.0.31","1.3.132.0.32","1.3.132.0.10","1.3.132.0.4","1.3.132.0.5","1.3.132.0.22","1.3.132.0.23","1.3.132.0.2","1.3.132.0.24","1.3.132.0.25","1.3.132.0.3","1.2.156.10197.1.301","1.2.156.10197.1.301.101"]},"RSA":{"name":"RSA","bit_lengths":[2048,3072,4096,6144,8192],"curves":[]},"Ed448":{"name":"Ed448","bit_lengths":[448],"curves":[]},"Ed25519":{"name":"Ed25519","bit_lengths":[255],"curves":[]},"MLDSA44":{"name":"ML-DSA-44","bit_lengths":[],"curves":[]},"MLDSA65":{"name":"ML-DSA-65","bit_lengths":[],"curves":[]},"MLDSA87":{"name":"ML-DSA-87","bit_lengths":[],"curves":[]}},"PrimaryKeyAlgorithms":[{"name":"ECDSA","bit_lengths":[256,384,521,163,233,283,409,571,160,160,192,192,224,224,256,256,320,320,384,384,512,512,163,163,163,176,208,272,304,368,191,191,191,239,239,239,359,431,256,163,233,283,409,571,192,224,192,192,239,239,239,112,112,128,128,160,160,160,192,224,256,113,113,131,131,163,193,193,239,256,192],"curves":["1.2.840.10045.3.1.7","1.3.132.0.34","1.3.132.0.35","1.3.132.0.15","1.3.132.0.27","1.3.132.0.17","1.3.132.0.37","1.3.132.0.39","1.3.36.3.3.2.8.1.1.1","1.3.36.3.3.2.8.1.1.2","1.3.36.3.3.2.8.1.1.3","1.3.36.3.3.2.8.1.1.4","1.3.36.3.3.2.8.1.1.5","1.3.36.3.3.2.8.1.1.6","1.3.36.3.3.2.8.1.1.7","1.3.36.3.3.2.8.1.1.8","1.3.36.3.3.2.8.1.1.9","1.3.36.3.3.2.8.1.1.10","1.3.36.3.3.2.8.1.1.11","1.3.36.3.3.2.8.1.1.12","1.3.36.3.3.2.8.1.1.13","1.3.36.3.3.2.8.1.1.14","1.2.840.10045.3.0.1","1.2.840.10045.3.0.2","1.2.840.10045.3.0.3","1.2.840.10045.3.0.4","1.2.840.10045.3.0.10","1.2.840.10045.3.0.16","1.2.840.10045.3.0.17","1.2.840.10045.3.0.19","1.2.840.10045.3.0.5","1.2.840.10045.3.0.6","1.2.840.10045.3.0.7","1.2.840.10045.3.0.11","1.2.840.10045.3.0.12","1.2.840.10045.3.0.13","1.2.840.10045.3.0.18","1.2.840.10045.3.0.20","1.2.250.1.223.101.256.1","1.3.132.0.1","1.3.132.0.26","1.3.132.0.16","1.3.132.0.36","1.3.132.0.38","1.2.840.10045.3.1.1","1.3.132.0.33","1.2.840.10045.3.1.2","1.2.840.10045.3.1.3","1.2.840.10045.3.1.4","1.2.840.10045.3.1.5","1.2.840.10045.3.1.6","1.3.132.0.6","1.3.132.0.7","1.3.132.0.28","1.3.132.0.29","1.3.132.0.9","1.3.132.0.8","1.3.132.0.30","1.3.132.0.31","1.3.132.0.32","1.3.132.0.10","1.3.132.0.4","1.3.132.0.5","1.3.132.0.22","1.3.132.0.23","1.3.132.0.2","1.3.132.0.24","1.3.132.0.25","1.3.132.0.3","1.2.156.10197.1.301","1.2.156.10197.1.301.101"]},{"name":"RSA","bit_lengths":[2048,3072,4096,6144,8192],"curves":[]},{"name":"Ed448","bit_lengths":[448],"curves":[]},{"name":"Ed25519","bit_lengths":[255],"curves":[]},{"name":"ML-DSA-44","bit_lengths":[],"curves":[]},{"name":"ML-DSA-65","bit_lengths":[],"curves":[]},{"name":"ML-DSA-87","bit_lengths":[],"curves":[]}],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "4883"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Mon, 23 Mar 2026 14:22:58 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "114"
+            X-Keyfactor-Correlation-Id:
+                - a295af01-12c4-455a-8eb7-2bf6e5913f20
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 223.976506ms
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 148
+        host: int25-4-1.kftestlab.com
+        body: '{"CertificateIds":[2726],"Reason":5,"Comment":"Terraform destroy called on provider with associated cert ID","EffectiveDate":"2026-03-23T14:22:59Z"}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/Revoke
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 41
+        body: '{"RevokedIds":[2726],"SuspendedCerts":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "41"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Mon, 23 Mar 2026 14:23:00 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "1783"
+            X-Keyfactor-Correlation-Id:
+                - 1fdd13b7-1bef-4374-ab0c-c124b487f233
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 1.896052363s

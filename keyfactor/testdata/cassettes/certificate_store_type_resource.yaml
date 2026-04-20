@@ -1,0 +1,269 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 325
+        host: int25-4-1.kftestlab.com
+        body: '{"Name":"tf-unit-store-type-821892000","ShortName":"TFU892000","StoreType":0,"SupportedOperations":{"Add":true,"Create":false,"Discovery":false,"Enrollment":false,"Remove":true},"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"PrivateKeyAllowed":"Optional","CustomAliasAllowed":"Forbidden"}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStoreTypes
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 691
+        body: '{"Name":"tf-unit-store-type-821892000","ShortName":"TFU892000","Capability":"TFU892000","StoreType":545,"ImportType":0,"LocalStore":false,"SupportedOperations":{"Add":true,"Create":false,"Discovery":false,"Enrollment":false,"Remove":true},"Properties":[],"EntryParameters":[],"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"PrivateKeyAllowed":"Optional","CertificateFormat":0,"JobProperties":[],"ServerRequired":false,"PowerShell":false,"BlueprintAllowed":false,"CustomAliasAllowed":"Forbidden","InventoryEndpoint":"/AnyInventory/Update","InventoryJobType":"23823f33-bb59-4b14-ba19-419cd1f5f8f8","ManagementJobType":"75992af5-e89a-4098-ab81-3f0fc5a26d75"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "691"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Mar 2026 19:13:25 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "68"
+            X-Keyfactor-Correlation-Id:
+                - 4f636791-0bc3-41c2-89c1-a74ee1302af7
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 883.089943ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStoreTypes/545
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 691
+        body: '{"Name":"tf-unit-store-type-821892000","ShortName":"TFU892000","Capability":"TFU892000","StoreType":545,"ImportType":0,"LocalStore":false,"SupportedOperations":{"Add":true,"Create":false,"Discovery":false,"Enrollment":false,"Remove":true},"Properties":[],"EntryParameters":[],"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"PrivateKeyAllowed":"Optional","CertificateFormat":0,"JobProperties":[],"ServerRequired":false,"PowerShell":false,"BlueprintAllowed":false,"CustomAliasAllowed":"Forbidden","InventoryEndpoint":"/AnyInventory/Update","InventoryJobType":"23823f33-bb59-4b14-ba19-419cd1f5f8f8","ManagementJobType":"75992af5-e89a-4098-ab81-3f0fc5a26d75"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "691"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Mar 2026 19:13:27 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "33"
+            X-Keyfactor-Correlation-Id:
+                - 5cb81451-ea57-422a-8472-2154ca604d8f
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 142.985345ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStoreTypes/545
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 691
+        body: '{"Name":"tf-unit-store-type-821892000","ShortName":"TFU892000","Capability":"TFU892000","StoreType":545,"ImportType":0,"LocalStore":false,"SupportedOperations":{"Add":true,"Create":false,"Discovery":false,"Enrollment":false,"Remove":true},"Properties":[],"EntryParameters":[],"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"PrivateKeyAllowed":"Optional","CertificateFormat":0,"JobProperties":[],"ServerRequired":false,"PowerShell":false,"BlueprintAllowed":false,"CustomAliasAllowed":"Forbidden","InventoryEndpoint":"/AnyInventory/Update","InventoryJobType":"23823f33-bb59-4b14-ba19-419cd1f5f8f8","ManagementJobType":"75992af5-e89a-4098-ab81-3f0fc5a26d75"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "691"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Mar 2026 19:13:27 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "40"
+            X-Keyfactor-Correlation-Id:
+                - b2285a12-4156-43ac-8130-9110f6920e5b
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 144.883476ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 330
+        host: int25-4-1.kftestlab.com
+        body: '{"Name":"tf-unit-store-type-821892000-v2","ShortName":"TFU892000","StoreType":545,"SupportedOperations":{"Add":true,"Create":false,"Discovery":false,"Enrollment":false,"Remove":true},"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"PrivateKeyAllowed":"Optional","CustomAliasAllowed":"Forbidden"}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStoreTypes
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 694
+        body: '{"Name":"tf-unit-store-type-821892000-v2","ShortName":"TFU892000","Capability":"TFU892000","StoreType":545,"ImportType":0,"LocalStore":false,"SupportedOperations":{"Add":true,"Create":false,"Discovery":false,"Enrollment":false,"Remove":true},"Properties":[],"EntryParameters":[],"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"PrivateKeyAllowed":"Optional","CertificateFormat":0,"JobProperties":[],"ServerRequired":false,"PowerShell":false,"BlueprintAllowed":false,"CustomAliasAllowed":"Forbidden","InventoryEndpoint":"/AnyInventory/Update","InventoryJobType":"23823f33-bb59-4b14-ba19-419cd1f5f8f8","ManagementJobType":"75992af5-e89a-4098-ab81-3f0fc5a26d75"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "694"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Mar 2026 19:13:28 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "125"
+            X-Keyfactor-Correlation-Id:
+                - 9445fb8e-e59d-4a36-9143-daa1b1bd6c2d
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 226.32261ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStoreTypes/545
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 694
+        body: '{"Name":"tf-unit-store-type-821892000-v2","ShortName":"TFU892000","Capability":"TFU892000","StoreType":545,"ImportType":0,"LocalStore":false,"SupportedOperations":{"Add":true,"Create":false,"Discovery":false,"Enrollment":false,"Remove":true},"Properties":[],"EntryParameters":[],"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"PrivateKeyAllowed":"Optional","CertificateFormat":0,"JobProperties":[],"ServerRequired":false,"PowerShell":false,"BlueprintAllowed":false,"CustomAliasAllowed":"Forbidden","InventoryEndpoint":"/AnyInventory/Update","InventoryJobType":"23823f33-bb59-4b14-ba19-419cd1f5f8f8","ManagementJobType":"75992af5-e89a-4098-ab81-3f0fc5a26d75"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "694"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 19 Mar 2026 19:13:29 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "36"
+            X-Keyfactor-Correlation-Id:
+                - abdda231-e50c-49f5-b077-bc24d3943d62
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 129.882716ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStoreTypes/545
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Date:
+                - Thu, 19 Mar 2026 19:13:29 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "54"
+            X-Keyfactor-Correlation-Id:
+                - 837ad041-c12a-456c-97f9-07d3ccc2771d
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 204 No Content
+        code: 204
+        duration: 153.362232ms

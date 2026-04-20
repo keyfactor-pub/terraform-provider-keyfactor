@@ -271,7 +271,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			"certificate_authority": {
 				Type:          types.StringType,
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 				Description:   "Name of the certificate authority to use for enrollment. Optional when using a certificate template or enrollment pattern — Command will automatically select a CA associated with the template or pattern. Required when enrolling against a standalone CA. Example: \"MYCA\\\\My Issuing CA\"",
 			},
 			"certificate_template": {
@@ -1583,7 +1584,7 @@ func (r resourceCommandCertificate) Update(
 			KeyPassword:          plan.KeyPassword,
 			EnrollmentPassword:   state.EnrollmentPassword,
 			CertificateId:        state.CertificateId,
-			CertificateAuthority: plan.CertificateAuthority,
+			CertificateAuthority: knownStringFromPlan(plan.CertificateAuthority),
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
@@ -2928,7 +2929,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		//PrivateKey:           types.String{Value: pKeyPEM}, //This is set below depending out output format
 		KeyPassword:          plan.KeyPassword,
 		EnrollmentPassword:   types.String{Value: lookupPassword, Null: isNullString(lookupPassword)},
-		CertificateAuthority: plan.CertificateAuthority,
+		CertificateAuthority: knownStringFromPlan(plan.CertificateAuthority),
 		CertificateTemplate:  plan.CertificateTemplate,
 		CertificateId:        types.Int64{Value: int64(enrolledId)},
 		RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
@@ -3541,7 +3542,7 @@ func (r resourceCommandCertificate) enrollCSR(
 			Null:  true,
 		}, // Null because CSR enrollment does not provide a private key
 		EnrollmentPassword:   types.String{Null: true}, // Null because CSR enrollment does not provide an enrollment password
-		CertificateAuthority: plan.CertificateAuthority,
+		CertificateAuthority: knownStringFromPlan(plan.CertificateAuthority),
 		CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
 		CertificateTemplate:  plan.CertificateTemplate,
 		Metadata:             knownMetadataFromPlan(plan.Metadata),

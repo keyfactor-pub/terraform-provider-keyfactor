@@ -1406,6 +1406,132 @@ func TestUnitKeyfactorCertificateResource_CSR(t *testing.T) {
 	})
 }
 
+// TestUnitKeyfactorCertificateResource_PFX_NoCA verifies that PFX enrollment
+// succeeds when using an enrollment pattern without specifying certificate_authority.
+// Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+//
+// Requires its own cassette:
+//
+//	RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_PFX_NoCA make testunit-record-one
+func TestUnitKeyfactorCertificateResource_PFX_NoCA(t *testing.T) {
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_resource_pfx_no_ca")
+	var config string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		if enrollmentPattern == "" {
+			t.Skip("no enrollment pattern available — cannot record no-CA cassette")
+		}
+		cn := randomTestCN("tf-unit-pfx-noca")
+		config = testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn)
+		writeCertPFXTestParams(cassettePath, certPFXTestParams{
+			EnrollmentPattern: enrollmentPattern,
+			CN:                cn,
+		})
+	} else {
+		params := readCertPFXTestParams(cassettePath)
+		if params.EnrollmentPattern == "" {
+			t.Skip("no enrollment pattern in params — cassette not recorded for no-CA test")
+		}
+		config = testAccCertPFXConfigEnrollmentPatternNoCA(params.EnrollmentPattern, params.CN)
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_pfx_no_ca")
+	defer cleanup()
+
+	pfxParams := readCertPFXTestParams(cassettePath)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "identifier"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "ca_certificate"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "not_before"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "not_after"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "is_expired", "false"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "is_revoked", "false"),
+					resource.TestCheckResourceAttr("keyfactor_certificate.test", "is_pending_revocation", "false"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test", "certificate_pem", pfxParams.CN),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateResource_CSR_NoCA verifies that CSR enrollment
+// succeeds when using an enrollment pattern without specifying certificate_authority.
+// Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+//
+// Requires its own cassette:
+//
+//	RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_CSR_NoCA make testunit-record-one
+func TestUnitKeyfactorCertificateResource_CSR_NoCA(t *testing.T) {
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_resource_csr_no_ca")
+	var config string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		if enrollmentPattern == "" {
+			t.Skip("no enrollment pattern available — cannot record no-CA cassette")
+		}
+		cn := randomTestCN("tf-unit-csr-noca")
+		csr := generateSimpleCSR(t, cn)
+		config = testAccCertCSRConfigEnrollmentPatternNoCA(enrollmentPattern, csr)
+		writeCertCSRTestParams(cassettePath, certCSRTestParams{
+			EnrollmentPattern: enrollmentPattern,
+			CSRPem:            csr,
+		})
+	} else {
+		params := readCertCSRTestParams(cassettePath)
+		if params.EnrollmentPattern == "" {
+			t.Skip("no enrollment pattern in params — cassette not recorded for no-CA test")
+		}
+		csr := params.CSRPem
+		if csr == "" {
+			csr = generateSimpleCSR(t, "tf-unit-csr-noca-replay.example.com")
+		}
+		config = testAccCertCSRConfigEnrollmentPatternNoCA(params.EnrollmentPattern, csr)
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_csr_no_ca")
+	defer cleanup()
+
+	csrParams := readCertCSRTestParams(cassettePath)
+	enrolledCN := parseCNFromCSRPEM(csrParams.CSRPem)
+
+	checks := []resource.TestCheckFunc{
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+		testCheckCertPEMIsLeaf("keyfactor_certificate.test_csr", "certificate_pem"),
+	}
+	if enrolledCN != "" {
+		checks = append(checks, testCheckCertPEMCommonName("keyfactor_certificate.test_csr", "certificate_pem", enrolledCN))
+	}
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check:  resource.ComposeAggregateTestCheckFunc(checks...),
+			},
+		},
+	})
+}
+
 // TestUnitKeyfactorCertificateResource_PFX_Import is a regression test for
 // PFX certificate import (ab#82568).  It verifies:
 //   - import by integer certificate ID succeeds
@@ -1617,6 +1743,68 @@ func TestIntKeyfactorCertificateResource_CSR(t *testing.T) {
 	// Generate a simple CSR with a unique CN to avoid conflicts on re-runs
 	csr := generateSimpleCSR(t, randomTestCN("tf-int-csr"))
 	config := testAccCertCSRConfig(templateName, ca, csr)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_chain"),
+				),
+			},
+		},
+	})
+}
+
+// TestIntKeyfactorCertificateResource_PFX_NoCA verifies that PFX enrollment
+// succeeds when using an enrollment pattern without specifying certificate_authority.
+// Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+func TestIntKeyfactorCertificateResource_PFX_NoCA(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	if enrollmentPattern == "" {
+		t.Skip("no enrollment pattern available — requires Command v25+")
+	}
+	cn := randomTestCN("tf-int-pfx-noca")
+	config := testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "identifier"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+				),
+			},
+		},
+	})
+}
+
+// TestIntKeyfactorCertificateResource_CSR_NoCA verifies that CSR enrollment
+// succeeds when using an enrollment pattern without specifying certificate_authority.
+// Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+func TestIntKeyfactorCertificateResource_CSR_NoCA(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	if enrollmentPattern == "" {
+		t.Skip("no enrollment pattern available — requires Command v25+")
+	}
+	cn := randomTestCN("tf-int-csr-noca")
+	csr := generateSimpleCSR(t, cn)
+	config := testAccCertCSRConfigEnrollmentPatternNoCA(enrollmentPattern, csr)
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

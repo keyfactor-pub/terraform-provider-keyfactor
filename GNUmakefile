@@ -260,6 +260,10 @@ testunit-record-cert-pfx-metadata:
 testunit-record-cert-csr-metadata:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_CSR_Metadata" -v -count=1 -timeout 30m
 
+testunit-record-cert-no-ca:
+	$(MAKE) testunit-record-one TEST_NAME=TestUnitKeyfactorCertificateResource_PFX_NoCA
+	$(MAKE) testunit-record-one TEST_NAME=TestUnitKeyfactorCertificateResource_CSR_NoCA
+
 # Re-record ALL unit test cassettes (requires lab connection and Command v25+ for enrollment-pattern).
 # This is the primary target to run when the Command API changes break existing cassettes.
 testunit-record-all:
@@ -296,6 +300,7 @@ testunit-record-all:
 	$(MAKE) testunit-record-cert-mixed-sans
 	$(MAKE) testunit-record-cert-pfx-metadata
 	$(MAKE) testunit-record-cert-csr-metadata
+	$(MAKE) testunit-record-cert-no-ca
 
 # Run unit tests and display only failures (quiet mode)
 testunit-check:

@@ -1453,6 +1453,34 @@ resource "keyfactor_certificate" "test" {
 `, cn, ca, enrollmentPattern)
 }
 
+// testAccCertPFXConfigEnrollmentPatternNoCA generates HCL for a PFX certificate
+// resource test using an enrollment pattern without specifying certificate_authority.
+// Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+func testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                      = "%s"
+  certificate_enrollment_pattern   = "%s"
+  key_password                     = "Tftest123456"
+}
+`, cn, enrollmentPattern)
+}
+
+// testAccCertCSRConfigEnrollmentPatternNoCA generates HCL for a CSR-based certificate
+// resource test using an enrollment pattern without specifying certificate_authority.
+// Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+func testAccCertCSRConfigEnrollmentPatternNoCA(enrollmentPattern, csr string) string {
+	decodedCSR := strings.ReplaceAll(csr, `\n`, "\n")
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test_csr" {
+  certificate_enrollment_pattern   = "%s"
+  csr                              = <<-EOT
+%s
+EOT
+}
+`, enrollmentPattern, strings.TrimRight(decodedCSR, "\n"))
+}
+
 // testAccCertPFXConfigEnrollmentPatternWithFormat generates HCL for a PFX certificate
 // resource test using an enrollment pattern with an explicit certificate_format.
 func testAccCertPFXConfigEnrollmentPatternWithFormat(enrollmentPattern, ca, cn, certFormat string) string {

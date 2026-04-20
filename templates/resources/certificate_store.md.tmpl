@@ -1,0 +1,32 @@
+---
+page_title: "{{.Type}} {{.Name}} - {{.ProviderName}}"
+subcategory: ""
+description: |-
+{{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
+---
+
+# {{.Type}} {{.Name}}
+
+{{ .Description | trimspace }}
+
+## Example Usage
+
+### Basic store (no application/container)
+
+{{ tffile "examples/resources/keyfactor_certificate_store/resource.tf" }}
+
+### Store with application name (v25+ style)
+
+{{ tffile "examples/resources/keyfactor_certificate_store/resource_with_application.tf" }}
+
+### Store with container name (pre-v25 backwards-compat style)
+
+{{ tffile "examples/resources/keyfactor_certificate_store/resource_with_container_name.tf" }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+Import is supported using the following syntax:
+
+{{ codefile "shell" "examples/resources/keyfactor_certificate_store/import.sh" }}

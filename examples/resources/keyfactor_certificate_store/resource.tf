@@ -1,16 +1,13 @@
-resource "keyfactor_certificate_store" "k8scluster_w_container" {
-  client_machine   = "my-k8s-host"    # ClientMachine
-  store_path       = "test-cluster01" # Varies based on store type
-  agent_identifier = "my-orch-10-2"   # Orchestrator GUID or Orchestrator ClientMachine name
-  store_type       = "K8SCluster"     # Store type, must exist in KeyFactor Command
+resource "keyfactor_certificate_store" "example" {
+  client_machine   = "my-k8s-host"
+  store_path       = "default/my-tls-secret"
+  agent_identifier = "my-orch-10-2"
+  store_type       = "K8STLSSecr"
   properties = {
-    # This block will vary based on certificate store type
-    IsRootStore = false
+    KubeSecretType = "tls"
   }
-  inventory_schedule = "1d"                    # How often to update the inventory
-  application_name   = "K8S Clusters"          # Must exist in KeyFactor Command (called "container_name" pre-v25)
-  server_username    = "kubeconfig"            # Optional, only required if store type requires it.
-  server_password    = file("kubeconfig.json") # Optional, only required if store type requires it.
-  server_use_ssl     = true                    # Optional, only required if store type requires it.
-  store_password     = "password"              # Optional, only required if store type requires it.
+  inventory_schedule = "Daily at 08:00:00"
+  server_username    = "kubeconfig"
+  server_password    = file("kubeconfig.json")
+  server_use_ssl     = true
 }

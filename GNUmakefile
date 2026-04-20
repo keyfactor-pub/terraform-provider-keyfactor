@@ -18,8 +18,12 @@ build: fmtcheck
 	go install
 
 tfdocs:
+	$(eval SCREENSHOTS_TMP := $(shell mktemp -d))
+	@if [ -d docs/screenshots ]; then cp -r docs/screenshots "$(SCREENSHOTS_TMP)/"; fi
 	tfplugindocs generate
 	terraform fmt -recursive ./examples/
+	@if [ -d "$(SCREENSHOTS_TMP)/screenshots" ]; then cp -r "$(SCREENSHOTS_TMP)/screenshots" docs/; fi
+	@rm -rf "$(SCREENSHOTS_TMP)"
 
 ## gen-store-types: Regenerate terraform/data_store_types/store_types.tf from live state.
 ##   Requires: terraform apply has been run in terraform/data_store_types/ so that

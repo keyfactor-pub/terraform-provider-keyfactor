@@ -17,6 +17,7 @@ import (
 // TestAccKeyfactorApplicationDataSource tests reading a keyfactor_application data source.
 // It first creates an application resource and then reads it back via the data source.
 func TestAccKeyfactorApplicationDataSource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	baseName := os.Getenv("KEYFACTOR_APPLICATION_NAME")
 	if baseName == "" {
 		baseName = "tf-acc-app-ds"
@@ -50,6 +51,7 @@ func TestAccKeyfactorApplicationDataSource(t *testing.T) {
 
 // TestAccKeyfactorApplicationDataSourceByID tests reading an application by integer ID.
 func TestAccKeyfactorApplicationDataSourceByID(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	baseName := os.Getenv("KEYFACTOR_APPLICATION_NAME")
 	if baseName == "" {
 		baseName = "tf-acc-app-ds-id"

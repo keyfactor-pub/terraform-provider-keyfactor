@@ -15,6 +15,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestAccKeyfactorCertificateStoreTypeResource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	shortName := fmt.Sprintf("TF%06d", time.Now().UnixNano()%1000000)
 	baseName := os.Getenv("KEYFACTOR_CERT_STORE_TYPE_NAME")
 	if baseName == "" {
@@ -59,6 +60,7 @@ func TestAccKeyfactorCertificateStoreTypeResource(t *testing.T) {
 }
 
 func TestAccKeyfactorCertificateStoreTypeResourceWithProperties(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	shortName := fmt.Sprintf("TFP%05d", time.Now().UnixNano()%100000)
 	name := fmt.Sprintf("tf-acc-store-type-props-%d", time.Now().UnixNano()%1000000000)
 	resourceName := "keyfactor_certificate_store_type.test"

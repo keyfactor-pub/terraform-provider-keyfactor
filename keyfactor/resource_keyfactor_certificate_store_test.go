@@ -50,6 +50,7 @@ type certificateStoreTestCase struct {
 
 func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := certificateStoreTestCase{
 		clientMachine:   os.Getenv("KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE"),
 		storePath:       os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PATH"),

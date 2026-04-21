@@ -37,6 +37,7 @@ func TestUnitKeyfactorSecurityRoleDataSource(t *testing.T) {
 }
 
 func TestAccKeyfactorSecurityRoleDataSource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_role")
 	var rName = "Administrator"
 

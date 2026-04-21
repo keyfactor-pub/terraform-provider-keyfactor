@@ -1,0 +1,233 @@
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Enrollment/CSR
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1367
+        body: '{"CertificateInformation":{"Certificates":["-----BEGIN CERTIFICATE-----\nMIIDETCCAfmgAwIBAgIBAjANBgkqhkiG9w0BAQsFADAXMRUwEwYDVQQDEwxUZXN0\nIFJvb3QgQ0EwHhcNMjYwNDIwMTk1MjI3WhcNMjcwNDIwMjA1MjI3WjApMScwJQYD\nVQQDEx50Zi11bml0LWNzci1wN2JidWcuZXhhbXBsZS5jb20wggEiMA0GCSqGSIb3\nDQEBAQUAA4IBDwAwggEKAoIBAQCfuuOpS7RqG2Ll1KeijRNRHPZwVQVBc4WZrPmB\ni8z7dMQSls/cpaq6Fr0ehMZ6iqm3lURNuzPDQD5X71d0Lrr84iOGpcoYMHlaxUa2\nSG25tFjgXWmpnz+nG5NFN35BpgA6cyBx9taW+QfUfhAFYP2NvwbGC885b6Ze8zpt\nZfW1VmZCSfGscOqDVjj20YKz+meL80OQxW54EqrIPAyxKcEMzQZvpshTgp07n7h0\nMIloO7vxK67PT5aQuijdk5+FQgJn4ouxZ7J0mBVJTS3YTQq4pHpyDw5UP4r494Bx\nPIrD/AvyuzwgsXE7iiDG/Mu2QHHAGNViWjKNo/J4Li+l6OUtAgMBAAGjVjBUMA4G\nA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAA\nMB8GA1UdIwQYMBaAFIjtAq93MTUuUkfY7jHnXiN21AF3MA0GCSqGSIb3DQEBCwUA\nA4IBAQAmGkii2K8nS+i/1hJ0Txy3PjsYVDPby+PwZygsKUawsUrC962YL0EaGN3T\n2e4lwiFOEByV9F/3kgdyFMuTFUD6+fIroC4LYLeuNkNxoAekg4zP7Dq8ZTokf7HV\nkNrI35LAlqWzFpoMLEPz5D6hD6O1/UKEgAD/UtTx+n9Ld4cPWN//alewDnn6pVcG\nUEMHKIaelwaa89n3yOIZAHIME7EYnllEd3tDSgeNONwuvjywDM1g5AV4Vw/soGrq\nXvUBrbl5dgObl0Q84kik/eVv8OcL/dBhqmFvEsh5JDf8sr3iMsEK1NKaQP7oyeX2\nihN5LICNTnFXfakVxXO/J1IAKKh+\n-----END CERTIFICATE-----\n"],"DispositionMessage":"","IssuerDN":"CN=Test Root CA","KeyfactorID":9999,"RequestDisposition":"ISSUED","SerialNumber":"2","Thumbprint":"300F3448FC1B765A1270CFEDCF26E820AA395AC8"}}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 0s
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Certificates/9999?includeHasPrivateKey=true&includeLocations=true&includeMetadata=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 386
+        body: '{"CertificateKeyId":0,"HasPrivateKey":false,"Id":9999,"IsCACertificate":false,"IssuedCN":"tf-unit-csr-p7bbug.example.com","IssuedDN":"CN=tf-unit-csr-p7bbug.example.com","IssuerDN":"CN=Test Root CA","Locations":[],"Metadata":{},"NotAfter":"2027-04-20T20:52:27Z","NotBefore":"2026-04-20T19:52:27Z","SerialNumber":"2","TemplateId":0,"Thumbprint":"300F3448FC1B765A1270CFEDCF26E820AA395AC8"}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 0s
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Certificates/Recover
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 95
+        body: '{"ErrorCode":"0xA0110002","Message":"No private key could be found for the given certificate."}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 404 Not Found
+        code: 404
+        duration: 0s
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Certificates/Download
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 2138
+        body: '{"Content":"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"}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 0s
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Certificates/9999?includeHasPrivateKey=true&includeLocations=true&includeMetadata=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 386
+        body: '{"CertificateKeyId":0,"HasPrivateKey":false,"Id":9999,"IsCACertificate":false,"IssuedCN":"tf-unit-csr-p7bbug.example.com","IssuedDN":"CN=tf-unit-csr-p7bbug.example.com","IssuerDN":"CN=Test Root CA","Locations":[],"Metadata":{},"NotAfter":"2027-04-20T20:52:27Z","NotBefore":"2026-04-20T19:52:27Z","SerialNumber":"2","TemplateId":0,"Thumbprint":"300F3448FC1B765A1270CFEDCF26E820AA395AC8"}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 0s
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Certificates/Recover
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 95
+        body: '{"ErrorCode":"0xA0110002","Message":"No private key could be found for the given certificate."}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 404 Not Found
+        code: 404
+        duration: 0s
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Certificates/Download
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 2138
+        body: '{"Content":"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"}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 0s
+    - id: 7
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Certificates/9999?includeHasPrivateKey=true&includeLocations=true&includeMetadata=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 386
+        body: '{"CertificateKeyId":0,"HasPrivateKey":false,"Id":9999,"IsCACertificate":false,"IssuedCN":"tf-unit-csr-p7bbug.example.com","IssuedDN":"CN=tf-unit-csr-p7bbug.example.com","IssuerDN":"CN=Test Root CA","Locations":[],"Metadata":{},"NotAfter":"2027-04-20T20:52:27Z","NotBefore":"2026-04-20T19:52:27Z","SerialNumber":"2","TemplateId":0,"Thumbprint":"300F3448FC1B765A1270CFEDCF26E820AA395AC8"}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 0s
+    - id: 8
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Certificates/Recover
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 95
+        body: '{"ErrorCode":"0xA0110002","Message":"No private key could be found for the given certificate."}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 404 Not Found
+        code: 404
+        duration: 0s
+    - id: 9
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Certificates/Download
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 2138
+        body: '{"Content":"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"}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 0s
+    - id: 10
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: keyfactor.test
+        url: https://keyfactor.test/KeyfactorAPI/Certificates/Revoke
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 41
+        body: '{"RevokedIds":[9999],"SuspendedCerts":[]}'
+        headers:
+            Content-Type:
+                - application/json
+        status: 200 OK
+        code: 200
+        duration: 0s

@@ -25,6 +25,7 @@ type oauthClaimTestCase struct {
 
 func TestAccKeyfactorOAuthClaimResource(t *testing.T) {
 
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := oauthClaimTestCase{
 		description:        "Terraform Create Claim",
 		claimValue:         acctest.RandomWithPrefix("tf-acc-claim"),
@@ -67,6 +68,7 @@ func TestAccKeyfactorOAuthClaimResource(t *testing.T) {
 }
 
 func TestAccKeyfactorOAuthClaimResourceSucceedsIfProviderAuthSchemeUnknown(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 
 	r := oauthClaimTestCase{
 		description:        "Terraform Create Unknown Claim",
@@ -107,6 +109,7 @@ func TestAccKeyfactorOAuthClaimResourceSucceedsIfProviderAuthSchemeUnknown(t *te
 }
 
 func TestAccKeyfactorOAuthClaimResourceReplacesIfUneditableFieldsAreModified(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 
 	r := oauthClaimTestCase{
 		description:        "Terraform Create Unknown Claim",
@@ -165,6 +168,7 @@ func TestAccKeyfactorOAuthClaimResourceReplacesIfUneditableFieldsAreModified(t *
 }
 
 func TestAccKeyfactorOAuthClaimImportState(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := oauthClaimTestCase{
 		description:        "Terraform Import Claim",
 		claimValue:         acctest.RandomWithPrefix("tf-acc-claim"),

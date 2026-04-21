@@ -11,6 +11,7 @@ import (
 )
 
 func TestAccKeyfactorCertificateStoreDataSource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate_store")
 	var sID = os.Getenv("TEST_CERTIFICATE_STORE_ID")
 	if sID == "" {

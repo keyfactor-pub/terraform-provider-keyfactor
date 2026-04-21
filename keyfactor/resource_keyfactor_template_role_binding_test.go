@@ -21,6 +21,7 @@ type roleBindingTestCase struct {
 
 func TestAccKeyfactorTemplateRoleBindingResource(t *testing.T) {
 
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := roleBindingTestCase{
 		roleName: os.Getenv("KEYFACTOR_TEMPLATE_ROLE_BINDING_ROLE_NAME"),
 		templates: []string{

@@ -93,6 +93,7 @@ data "keyfactor_certificate_template" "test" {
 }
 
 func TestAccKeyfactorCertificateTemplateDataSource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_certificate_template")
 	var templateName = os.Getenv("KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1")
 	if templateName == "" {

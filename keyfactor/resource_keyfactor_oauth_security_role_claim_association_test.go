@@ -24,6 +24,7 @@ type oauthSecurityRoleClaimAssociationTestCase struct {
 
 func TestAccKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := oauthSecurityRoleClaimAssociationTestCase{
 		role1Name:              acctest.RandomWithPrefix("tf-acc-role"),
 		role2Name:              acctest.RandomWithPrefix("tf-acc-role"),

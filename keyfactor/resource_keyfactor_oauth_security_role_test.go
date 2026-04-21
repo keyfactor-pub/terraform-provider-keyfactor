@@ -24,6 +24,7 @@ type oauthRoleTestCase struct {
 
 func TestAccKeyfactorOAuthRoleResource(t *testing.T) {
 
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := oauthRoleTestCase{
 		name:         acctest.RandomWithPrefix("tf-acc-role"),
 		description:  "Terraform Create Role",
@@ -70,6 +71,7 @@ func TestAccKeyfactorOAuthRoleResource(t *testing.T) {
 }
 
 func TestAccKeyfactorOAuthRoleResourceDuplicateUnsortedPermissions(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 
 	r := oauthRoleTestCase{
 		name:         acctest.RandomWithPrefix("tf-acc-role"),
@@ -112,6 +114,7 @@ func TestAccKeyfactorOAuthRoleResourceDuplicateUnsortedPermissions(t *testing.T)
 }
 
 func TestAccKeyfactorOAuthRoleImportState(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := oauthRoleTestCase{
 		name:         acctest.RandomWithPrefix("tf-acc-role"),
 		description:  "Terraform Import Role",

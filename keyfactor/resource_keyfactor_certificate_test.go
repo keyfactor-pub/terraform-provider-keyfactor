@@ -39,6 +39,7 @@ const CsrContent = `-----BEGIN CERTIFICATE REQUEST-----\nMIICaDCCAVACAQAwIzEhMB8
 
 func TestAccKeyfactorCertificateResource(t *testing.T) {
 
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := certificateTestCase{
 		template:     os.Getenv("KEYFACTOR_CERTIFICATE_TEMPLATE_NAME"),
 		cn:           "terraform_test_certificate",
@@ -318,6 +319,7 @@ func TestAccKeyfactorCertificateResource(t *testing.T) {
 	})
 }
 func TestAccKeyfactorCertificateResource_DV_55177(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	collectionIdStr := os.Getenv("KEYFACTOR_CERTIFICATE_COLLECTION_ID")
 	metadata := make(map[string]string)
 	metadata["Email-Contact"] = os.Getenv("KEYFACTOR_CERTIFICATE_EMAIL_CONTACT")

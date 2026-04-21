@@ -11,6 +11,7 @@ import (
 )
 
 func TestAccKeyfactorSecurityIdentityDataSource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	var resourceName = fmt.Sprintf("data.%s.test", "keyfactor_identity")
 	var iNameEscaped = fmt.Sprintf("%s\\\\%s", strings.ToUpper(os.Getenv("KEYFACTOR_DOMAIN")), os.Getenv("KEYFACTOR_USERNAME"))
 	var iName = fmt.Sprintf("%s\\%s", strings.ToUpper(os.Getenv("KEYFACTOR_DOMAIN")), os.Getenv("KEYFACTOR_USERNAME"))

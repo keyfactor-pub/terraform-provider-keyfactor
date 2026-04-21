@@ -42,6 +42,7 @@ func TestUnitKeyfactorPermissionSetDataSource(t *testing.T) {
 }
 
 func TestAccKeyfactorPermissionSetDataSource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	var resourceType = "keyfactor_permission_set"
 	var resourceName = fmt.Sprintf("data.%s.test", resourceType)
 

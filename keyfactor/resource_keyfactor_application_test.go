@@ -22,6 +22,7 @@ import (
 // Optional: KEYFACTOR_APPLICATION_NAME overrides the application name used (a unique
 // suffix is appended to avoid conflicts).
 func TestAccKeyfactorApplicationResource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	baseName := os.Getenv("KEYFACTOR_APPLICATION_NAME")
 	if baseName == "" {
 		baseName = "tf-acc-app"
@@ -77,6 +78,7 @@ func TestAccKeyfactorApplicationResource(t *testing.T) {
 
 // TestAccKeyfactorApplicationResourceOverwriteSchedules tests the overwrite_schedules flag.
 func TestAccKeyfactorApplicationResourceOverwriteSchedules(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	baseName := os.Getenv("KEYFACTOR_APPLICATION_NAME")
 	if baseName == "" {
 		baseName = "tf-acc-app-ow"
@@ -260,6 +262,7 @@ func TestIntKeyfactorApplicationResourceImmediate(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccKeyfactorApplicationResourceWeeklySchedule(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	appName := fmt.Sprintf("tf-acc-app-weekly-%d", time.Now().UnixNano()%1000000000)
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -288,6 +291,7 @@ func TestAccKeyfactorApplicationResourceWeeklySchedule(t *testing.T) {
 }
 
 func TestAccKeyfactorApplicationResourceMonthlySchedule(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	appName := fmt.Sprintf("tf-acc-app-monthly-%d", time.Now().UnixNano()%1000000000)
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -314,6 +318,7 @@ func TestAccKeyfactorApplicationResourceMonthlySchedule(t *testing.T) {
 }
 
 func TestAccKeyfactorApplicationResourceExactlyOnce(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	appName := fmt.Sprintf("tf-acc-app-once-%d", time.Now().UnixNano()%1000000000)
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },
@@ -332,6 +337,7 @@ func TestAccKeyfactorApplicationResourceExactlyOnce(t *testing.T) {
 }
 
 func TestAccKeyfactorApplicationResourceImmediate(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	appName := fmt.Sprintf("tf-acc-app-imm-%d", time.Now().UnixNano()%1000000000)
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 func() { testAccPreCheck(t) },

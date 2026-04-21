@@ -10,6 +10,7 @@ on:
   push:
     paths-ignore:
       - 'README.md'
+  workflow_dispatch:
 
 # Testing only needs permissions to read the repository contents.
 permissions:
@@ -46,18 +47,16 @@ jobs:
         run: |
           git diff --compact-summary --exit-code || \
             (echo; echo "Unexpected difference in directories after code generation. Run 'go generate ./...' command and commit."; exit 1)
-  # Run acceptance tests in a matrix with Terraform CLI versions
-  test:
-    name: Terraform Provider Acceptance Tests
+
+  # Run unit tests (VCR cassettes, no lab connection needed)
+  unit-test:
+    name: Unit Tests (VCR)
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 200
+    timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
-        # Trimmed to 3 versions: oldest supported, mid-range, latest.
-        # Full suite takes ~180m so running 8 versions was ~24h of CI.
         terraform:
           - '1.5.*'
           - '1.6.*'
@@ -73,43 +72,44 @@ jobs:
           terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
       - run: go mod download
-      - env:
-          TF_ACC: "1"
-          KEYFACTOR_HOSTNAME: ${{secrets.KEYFACTOR_HOSTNAME}}
-          KEYFACTOR_AUTH_CLIENT_ID: ${{secrets.KEYFACTOR_AUTH_CLIENT_ID}}
-          KEYFACTOR_AUTH_CLIENT_SECRET: ${{secrets.KEYFACTOR_AUTH_CLIENT_SECRET}}
-          KEYFACTOR_AUTH_TOKEN_URL: ${{secrets.KEYFACTOR_AUTH_TOKEN_URL}}
-          KEYFACTOR_SKIP_VERIFY: ${{secrets.KEYFACTOR_SKIP_VERIFY}}
+      - name: Run unit tests
+        env:
           KEYFACTOR_API_PATH: "Keyfactor/API"
+        run: go test -v -cover -timeout 30m -run "TestUnit" ./keyfactor/
+        timeout-minutes: 25
 
-          KEYFACTOR_CERTIFICATE_ID: ${{secrets.KEYFACTOR_CERTIFICATE_ID}}
-          KEYFACTOR_CERTIFICATE_PASSWORD: ${{secrets.KEYFACTOR_CERTIFICATE_PASSWORD}}
-          KEYFACTOR_CERTIFICATE_TEMPLATE_NAME: ${{secrets.KEYFACTOR_CERTIFICATE_TEMPLATE_NAME}}
-          KEYFACTOR_CERTIFICATE_CA_DOMAIN: ${{secrets.KEYFACTOR_CERTIFICATE_CA_DOMAIN}}
-          KEYFACTOR_CERTIFICATE_CA_NAME: ${{secrets.KEYFACTOR_CERTIFICATE_CA_NAME}}
-
-          KEYFACTOR_CERTIFICATE_STORE_ID: ${{secrets.KEYFACTOR_CERTIFICATE_STORE_ID}}
-          KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE: ${{secrets.KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE}}
-          KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID: ${{secrets.KEYFACTOR_CERTIFICATE_STORE_ORCHESTRATOR_AGENT_ID}}
-          KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID1: ${{secrets.KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID1}}
-          KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2: ${{secrets.KEYFACTOR_CERTIFICATE_STORE_CONTAINER_ID2}}
-          KEYFACTOR_CERTIFICATE_STORE_PASS: ${{secrets.TEST_CERTSTORE_PASS}}
-
-          KEYFACTOR_DEPLOY_CERT_STOREID1: ${{secrets.KEYFACTOR_DEPLOY_CERT_STOREID1}}
-          KEYFACTOR_DEPLOY_CERT_STOREID2: ${{secrets.KEYFACTOR_DEPLOY_CERT_STOREID2}}
-
-          KEYFACTOR_SECURITY_ROLE_NAME: ${{secrets.KEYFACTOR_SECURITY_ROLE_NAME}}
-
-          KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME: ${{secrets.KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME}}
-          KEYFACTOR_SECURITY_IDENTITY_ROLE1: ${{secrets.KEYFACTOR_SECURITY_IDENTITY_ROLE1}}
-          KEYFACTOR_SECURITY_IDENTITY_ROLE2: ${{secrets.KEYFACTOR_SECURITY_IDENTITY_ROLE2}}
-
-          KEYFACTOR_TEMPLATE_ROLE_BINDING_ROLE_NAME: ${{secrets.KEYFACTOR_TEMPLATE_ROLE_BINDING_ROLE_NAME}}
-          KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1: ${{secrets.KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME1}}
-          KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2: ${{secrets.KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2}}
-          KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3: ${{secrets.KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3}}
-
-        # TestUnit* ~5m (cassettes not committed — skip in CI)
-        # TestInt*  ~117m, TestAcc* ~30-60m — full suite ~180m
-        run: go test -v -cover -timeout 180m ./keyfactor
+  # Run integration tests against ses2541 lab
+  integration-test:
+    name: Integration Tests (ses2541 lab)
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ses2541
+    timeout-minutes: 200
+    strategy:
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: '1.7.*'
+          terraform_wrapper: false
+      - run: go mod download
+      - name: Decode K8S credentials
+        run: |
+          echo "${{ secrets.KEYFACTOR_K8S_SERVER_PASSWORD_B64 }}" | base64 -d > /tmp/k8s-creds.json
+      - name: Run integration tests
+        env:
+          TF_ACC: "1"
+          KEYFACTOR_HOSTNAME: ${{ secrets.KEYFACTOR_HOSTNAME }}
+          KEYFACTOR_AUTH_CLIENT_ID: ${{ secrets.KEYFACTOR_AUTH_CLIENT_ID }}
+          KEYFACTOR_AUTH_CLIENT_SECRET: ${{ secrets.KEYFACTOR_AUTH_CLIENT_SECRET }}
+          KEYFACTOR_AUTH_TOKEN_URL: ${{ secrets.KEYFACTOR_AUTH_TOKEN_URL }}
+          KEYFACTOR_SKIP_VERIFY: ${{ secrets.KEYFACTOR_SKIP_VERIFY }}
+          KEYFACTOR_API_PATH: "Keyfactor/API"
+          KEYFACTOR_K8S_CREDENTIALS_FILE: "/tmp/k8s-creds.json"
+        run: go test -v -cover -timeout 180m -run "TestInt" ./keyfactor/
         timeout-minutes: 190

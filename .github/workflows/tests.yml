@@ -51,18 +51,14 @@ jobs:
     name: Terraform Provider Acceptance Tests
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 200
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
-        # list whatever Terraform versions here you would like to support
+        # Trimmed to 3 versions: oldest supported, mid-range, latest.
+        # Full suite takes ~180m so running 8 versions was ~24h of CI.
         terraform:
-          - '1.0.*'
-          - '1.1.*'
-          - '1.2.*'
-          - '1.3.*'
-          - '1.4.*'
           - '1.5.*'
           - '1.6.*'
           - '1.7.*'
@@ -113,5 +109,7 @@ jobs:
           KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2: ${{secrets.KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME2}}
           KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3: ${{secrets.KEYFACTOR_TEMPLATE_ROLE_BINDING_TEMPLATE_NAME3}}
 
-        run: go test -v -cover ./keyfactor
-        timeout-minutes: 55
+        # TestUnit* ~5m (cassettes not committed — skip in CI)
+        # TestInt*  ~117m, TestAcc* ~30-60m — full suite ~180m
+        run: go test -v -cover -timeout 180m ./keyfactor
+        timeout-minutes: 190

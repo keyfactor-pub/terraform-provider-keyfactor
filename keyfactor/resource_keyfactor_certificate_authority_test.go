@@ -13,6 +13,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
+func boolPtr(v bool) *bool    { return &v }
+func int32Ptr(v int32) *int32 { return &v }
+
 // ---------------------------------------------------------------------------
 // Integration tests
 //
@@ -361,6 +364,16 @@ func TestUnitCertificateAuthorityResponseToState(t *testing.T) {
 		resp.MonitorThresholds = &monitorThresh
 		resp.AllowedEnrollmentTypes = &et
 		resp.NewEndEntityOnRenewAndReissue = &newEE
+		useForEnroll := true
+		resp.UseForEnrollment = &useForEnroll
+		cleanupEnabled := true
+		resp.CertificateCleanupEnabled.Set(&cleanupEnabled)
+		deleteArchived := false
+		resp.DeleteWithArchivedKey.Set(&deleteArchived)
+		timeAfterExp := int32(90)
+		resp.TimeAfterExpiration.Set(&timeAfterExp)
+		cleanupUnits := v1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits(0) // Days
+		resp.TimeAfterExpirationUnits = &cleanupUnits
 
 		state := caResponseToState(resp)
 
@@ -387,6 +400,11 @@ func TestUnitCertificateAuthorityResponseToState(t *testing.T) {
 		assertBool("MonitorThresholds", state.MonitorThresholds, false, false)
 		assertBool("NewEndEntityOnRenewAndReissue", state.NewEndEntityOnRenewAndReissue, false, true)
 		assertInt64("AllowedEnrollmentTypes", state.AllowedEnrollmentTypes, false, 3)
+		assertBool("UseForEnrollment", state.UseForEnrollment, false, true)
+		assertBool("CertificateCleanupEnabled", state.CertificateCleanupEnabled, false, true)
+		assertBool("DeleteWithArchivedKey", state.DeleteWithArchivedKey, false, false)
+		assertInt64("TimeAfterExpiration", state.TimeAfterExpiration, false, 90)
+		assertInt64("TimeAfterExpirationUnits", state.TimeAfterExpirationUnits, false, 0)
 	})
 
 	t.Run("force_save is always Null from server", func(t *testing.T) {

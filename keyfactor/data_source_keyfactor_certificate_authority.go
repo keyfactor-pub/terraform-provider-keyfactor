@@ -316,7 +316,7 @@ type KeyfactorCertificateAuthorityDataSource struct {
 	EnforceUniqueDN               types.Bool   `tfsdk:"enforce_unique_dn"`
 	SubscriberTerms               types.Bool   `tfsdk:"subscriber_terms"`
 	AllowOneClickRenewals         types.Bool   `tfsdk:"allow_one_click_renewals"`
-	NewEndEntityOnRenewAndReissue types.Bool `tfsdk:"new_end_entity_on_renew_and_reissue"`
+	NewEndEntityOnRenewAndReissue types.Bool   `tfsdk:"new_end_entity_on_renew_and_reissue"`
 
 	UseForEnrollment          types.Bool  `tfsdk:"use_for_enrollment"`
 	CertificateCleanupEnabled types.Bool  `tfsdk:"certificate_cleanup_enabled"`

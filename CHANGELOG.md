@@ -11,6 +11,8 @@
 
 ### Fixes
 
+- fix: `keyfactor_oauth_security_role` Update no longer silently wipes all claim associations — the provider now reads existing claims before PUT and preserves them
+- fix: `keyfactor_oauth_security_claim` Update no longer causes perpetual plan drift — the Command API returns the pre-update description due to eventual consistency; provider now stores plan values instead of the stale response
 - fix: `keyfactor_oauth_security_role` Create and ImportState no longer panic when the API response has a nil `Id` field; a diagnostic error is returned instead
 - fix: `keyfactor_oauth_security_claim` Create no longer panics when the API response has a nil `Id` field; a diagnostic error is returned instead
 - fix: nil HTTP response body dereferences in `keyfactor_oauth_security_role` and `keyfactor_oauth_security_claim` error handling paths

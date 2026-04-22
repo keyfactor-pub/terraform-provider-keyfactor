@@ -19,6 +19,7 @@ require github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 
 require (
 	github.com/cloudflare/circl v1.6.3
+	github.com/google/uuid v1.6.0
 	go.mozilla.org/pkcs7 v0.9.0
 	gopkg.in/dnaeon/go-vcr.v4 v4.0.6
 	gopkg.in/yaml.v3 v3.0.1
@@ -39,7 +40,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-checkpoint v0.5.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect

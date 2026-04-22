@@ -3157,10 +3157,15 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByName(
 	return 0, fmt.Errorf("enrollment pattern with name '%s' not found", patternName)
 }
 
-// LookupEnrollmentPatternIDByTemplateName finds the default enrollment pattern
-// for the given template short name. Returns (0, nil) if no enrollment patterns
-// exist (pre-v25 / standalone CA) so the caller can fall through to
-// template-only enrollment. Returns an error only on API failure.
+// LookupEnrollmentPatternIDByTemplateName finds the enrollment pattern for the
+// given template short name. The resolution policy is:
+//
+//   - 0 matches → return (0, nil) — fall through to direct template enrollment
+//     (pre-v25 / standalone CA).
+//   - 1 match → return that pattern's ID — unambiguous.
+//   - 2+ matches, exactly one has TemplateDefault=true → return the default's ID.
+//   - 2+ matches, zero or 2+ have TemplateDefault=true → return an error so the
+//     user must set certificate_enrollment_pattern explicitly.
 func (r resourceCommandCertificate) LookupEnrollmentPatternIDByTemplateName(
 	ctx context.Context,
 	templateName string,
@@ -3172,34 +3177,55 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByTemplateName(
 		tflog.Warn(ctx, fmt.Sprintf("Could not list enrollment patterns (may be pre-v25): %s", err.Error()))
 		return 0, nil
 	}
-	// Prefer the pattern explicitly marked as the template default.
-	for _, pattern := range patterns {
-		if pattern.Template != nil &&
-			pattern.Template.TemplateName == templateName &&
-			pattern.TemplateDefault {
-			tflog.Debug(
-				ctx, fmt.Sprintf(
-					"Found default enrollment pattern '%s' (ID=%d) for template '%s'",
-					pattern.Name, pattern.ID, templateName,
-				),
-			)
-			return pattern.ID, nil
-		}
+
+	// Collect all patterns linked to this template.
+	type match struct {
+		id              int
+		name            string
+		templateDefault bool
 	}
-	// Fall back to any pattern linked to this template.
+	var matches []match
 	for _, pattern := range patterns {
 		if pattern.Template != nil && pattern.Template.TemplateName == templateName {
-			tflog.Debug(
-				ctx, fmt.Sprintf(
-					"Found enrollment pattern '%s' (ID=%d) for template '%s' (not marked default)",
-					pattern.Name, pattern.ID, templateName,
-				),
-			)
-			return pattern.ID, nil
+			matches = append(matches, match{
+				id:              pattern.ID,
+				name:            pattern.Name,
+				templateDefault: pattern.TemplateDefault,
+			})
 		}
 	}
-	tflog.Debug(ctx, fmt.Sprintf("No enrollment pattern found for template '%s', proceeding without one", templateName))
-	return 0, nil
+
+	switch len(matches) {
+	case 0:
+		tflog.Debug(ctx, fmt.Sprintf("No enrollment pattern found for template '%s', proceeding without one", templateName))
+		return 0, nil
+	case 1:
+		tflog.Debug(ctx, fmt.Sprintf(
+			"Found enrollment pattern '%s' (ID=%d) for template '%s'",
+			matches[0].name, matches[0].id, templateName,
+		))
+		return matches[0].id, nil
+	default:
+		// 2+ matches — look for a unique default.
+		var defaults []match
+		for _, m := range matches {
+			if m.templateDefault {
+				defaults = append(defaults, m)
+			}
+		}
+		if len(defaults) == 1 {
+			tflog.Debug(ctx, fmt.Sprintf(
+				"Found default enrollment pattern '%s' (ID=%d) for template '%s' (%d total patterns)",
+				defaults[0].name, defaults[0].id, templateName, len(matches),
+			))
+			return defaults[0].id, nil
+		}
+		return 0, fmt.Errorf(
+			"template %q has %d associated enrollment patterns with no unique default; "+
+				"set certificate_enrollment_pattern explicitly to disambiguate",
+			templateName, len(matches),
+		)
+	}
 }
 
 // normalizeKeyAlgorithm maps OID strings returned by EJBCA and some CA

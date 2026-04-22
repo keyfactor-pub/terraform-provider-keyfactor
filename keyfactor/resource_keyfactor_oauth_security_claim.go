@@ -102,15 +102,18 @@ func (r resourceOAuthSecurityClaim) Read(
 
 	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 
-	if httpReq.StatusCode == 404 {
+	if httpReq != nil && httpReq.StatusCode == 404 {
 		tflog.Info(ctx, fmt.Sprintf("OAuth Security Claim %d not found in remote system. Removing from state", claimId))
 		response.State.RemoveResource(ctx)
 		return
 	}
 
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
+		var body []byte
+		if httpReq != nil {
+			defer httpReq.Body.Close()
+			body, _ = io.ReadAll(httpReq.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error reading security claim",
@@ -170,8 +173,11 @@ func (r resourceOAuthSecurityClaim) Update(
 	// Execute API request
 	remoteState, httpReq, err := req.Execute()
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
+		var body []byte
+		if httpReq != nil {
+			defer httpReq.Body.Close()
+			body, _ = io.ReadAll(httpReq.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error updating security claim",
@@ -214,8 +220,11 @@ func (r resourceOAuthSecurityClaim) Delete(
 	httpReq, err := api.DeleteSecurityClaimsByIdExecute(req)
 
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
+		var body []byte
+		if httpReq != nil {
+			defer httpReq.Body.Close()
+			body, _ = io.ReadAll(httpReq.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error deleting security claim",
@@ -278,12 +287,23 @@ func (r resourceOAuthSecurityClaim) Create(
 
 	createResponse, httpReq, err := req.Execute()
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
+		var body []byte
+		if httpReq != nil {
+			defer httpReq.Body.Close()
+			body, _ = io.ReadAll(httpReq.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error creating security claim",
 			fmt.Sprintf("Could not create OAuth security claim %s with claim type %s , unexpected error: %s. Details %s ", claimValue, claimType, err.Error(), string(body)),
+		)
+		return
+	}
+
+	if createResponse.Id == nil {
+		response.Diagnostics.AddError(
+			"Error creating security claim",
+			fmt.Sprintf("API response for OAuth security claim %s (type %s) returned a nil ID; the claim may have been created on the remote but cannot be tracked in state.", claimValue, claimType),
 		)
 		return
 	}
@@ -325,7 +345,7 @@ func (r resourceOAuthSecurityClaim) ImportState(
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security claim ID %d...", claimId))
 
 	remoteState, httpReq, err := req.Execute()
-	if httpReq.StatusCode == 404 {
+	if httpReq != nil && httpReq.StatusCode == 404 {
 		response.Diagnostics.AddError(
 			"Unknown OAuth security claim error.",
 			fmt.Sprintf("Unable to find OAuth security claim '%s' on Keyfactor. Read failed.", claimIdStr),
@@ -334,8 +354,11 @@ func (r resourceOAuthSecurityClaim) ImportState(
 	}
 
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
+		var body []byte
+		if httpReq != nil {
+			defer httpReq.Body.Close()
+			body, _ = io.ReadAll(httpReq.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error importing security claim",

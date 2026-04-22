@@ -1466,6 +1466,19 @@ resource "keyfactor_certificate" "test" {
 `, cn, enrollmentPattern)
 }
 
+// testAccCertPFXConfigTemplateOnly generates HCL for a PFX certificate resource
+// test using only certificate_template (no enrollment pattern, no CA).
+// On v25+ labs the provider auto-resolves the enrollment pattern from the template.
+func testAccCertPFXConfigTemplateOnly(templateName, cn string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name          = "%s"
+  certificate_template = "%s"
+  key_password         = "Tftest123456"
+}
+`, cn, templateName)
+}
+
 // testAccCertCSRConfigEnrollmentPatternNoCA generates HCL for a CSR-based certificate
 // resource test using an enrollment pattern without specifying certificate_authority.
 // Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
@@ -2543,6 +2556,21 @@ resource "keyfactor_certificate" "test" {
 `, cn, ca, enrollmentPattern, hclMetadataMap(metadata))
 }
 
+// testAccCertPFXConfigEnrollmentPatternWithMetadataNoCA builds HCL for a PEM
+// certificate resource with metadata using enrollment-pattern enrollment,
+// without specifying certificate_authority.
+func testAccCertPFXConfigEnrollmentPatternWithMetadataNoCA(enrollmentPattern, cn string, metadata map[string]string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                    = %q
+  certificate_enrollment_pattern = %q
+  certificate_format             = "PEM"
+  key_password                   = "Tftest123456"
+  metadata                       = %s
+}
+`, cn, enrollmentPattern, hclMetadataMap(metadata))
+}
+
 // testAccCertCSRConfigWithMetadata builds HCL for a CSR-based certificate
 // resource with the given metadata.
 func testAccCertCSRConfigWithMetadata(templateName, ca, csr string, metadata map[string]string) string {
@@ -2560,7 +2588,7 @@ resource "keyfactor_certificate" "test_csr" {
 // metadata tests.
 func certMetadataConfig(enrollmentPattern, templateName, ca, cn string, metadata map[string]string) string {
 	if enrollmentPattern != "" {
-		return testAccCertPFXConfigEnrollmentPatternWithMetadata(enrollmentPattern, ca, cn, metadata)
+		return testAccCertPFXConfigEnrollmentPatternWithMetadataNoCA(enrollmentPattern, cn, metadata)
 	}
 	return testAccCertPFXConfigWithMetadata(templateName, ca, cn, metadata)
 }
@@ -2639,6 +2667,30 @@ resource "keyfactor_certificate" "test" {
   key_password                   = "Tftest123456"%s
 }
 `, cn, ca, enrollmentPattern, extra)
+}
+
+// testAccCertPFXConfigWithKeyTypeAndPatternNoCA generates HCL for a PFX certificate
+// resource test that includes key_type, key_size, and/or curve, using an
+// enrollment_pattern without specifying certificate_authority.
+// Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+func testAccCertPFXConfigWithKeyTypeAndPatternNoCA(enrollmentPattern, cn, keyType string, keySize int, curve string) string {
+	var extra string
+	if keyType != "" {
+		extra += fmt.Sprintf("\n  key_type                      = \"%s\"", keyType)
+	}
+	if keySize > 0 {
+		extra += fmt.Sprintf("\n  key_size                      = %d", keySize)
+	}
+	if curve != "" {
+		extra += fmt.Sprintf("\n  curve                         = \"%s\"", curve)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                    = %q
+  certificate_enrollment_pattern = %q
+  key_password                   = "Tftest123456"%s
+}
+`, cn, enrollmentPattern, extra)
 }
 
 // testAccCertCSRConfigWithKeyType generates HCL for a CSR-based certificate test

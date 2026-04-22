@@ -281,9 +281,11 @@ func mapOAuthSecurityClaim(
 	remote *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse,
 	local *OAuthSecurityClaim,
 ) OAuthSecurityClaim {
-	provider := *remote.Provider
-
-	providerAuthScheme := provider.AuthenticationScheme.Get()
+	// remote.Provider may be nil when the API omits the sub-object (Command 25.5.1 + Authentik OIDC).
+	var providerAuthScheme *string
+	if remote.Provider != nil {
+		providerAuthScheme = remote.Provider.AuthenticationScheme.Get()
+	}
 	claimValue := remote.ClaimValue.Get()
 
 	if local != nil {
@@ -320,16 +322,37 @@ func mapOAuthSecurityClaim(
 		}
 	}
 
+	// Safely dereference optional pointer fields from the provider sub-object.
+	providerIdStr := ""
+	providerAuthSchemeStr := ""
+	providerDisplayNameStr := ""
+	if remote.Provider != nil {
+		if remote.Provider.Id != nil {
+			providerIdStr = *remote.Provider.Id
+		}
+		if ptrVal := remote.Provider.AuthenticationScheme.Get(); ptrVal != nil {
+			providerAuthSchemeStr = *ptrVal
+		}
+		if ptrVal := remote.Provider.DisplayName.Get(); ptrVal != nil {
+			providerDisplayNameStr = *ptrVal
+		}
+	}
+
+	var remoteId int64
+	if remote.Id != nil {
+		remoteId = int64(*remote.Id)
+	}
+
 	var result = OAuthSecurityClaim{
-		ID:                           types.Int64{Value: int64(*remote.Id)},
+		ID:                           types.Int64{Value: remoteId},
 		Description:                  getStringType(remote.Description.Get()),
 		ClaimType:                    getStringType(remote.ClaimType.Get()),
 		ClaimValue:                   getStringType(claimValue),
 		ProviderAuthenticationScheme: getStringType(providerAuthScheme),
 		Provider: mapAuthenticationProviderType(
-			*provider.Id,
-			*provider.AuthenticationScheme.Get(),
-			*provider.DisplayName.Get(),
+			providerIdStr,
+			providerAuthSchemeStr,
+			providerDisplayNameStr,
 		),
 	}
 	return result

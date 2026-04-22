@@ -572,11 +572,13 @@ func TestIntKeyfactorCertificateResource_PFX(t *testing.T) {
 	ca := discoverCA(t, client)
 	cn := randomTestCN("tf-int-pfx")
 
-	// Try enrollment pattern first (Command v25+), fall back to template+CA
+	// Try enrollment pattern first (Command v25+), fall back to template+CA.
+	// On v25+ labs, omit certificate_authority — the enrollment pattern
+	// auto-selects the CA and avoids permission errors.
 	enrollmentPattern := discoverEnrollmentPattern(t, client)
 	var config string
 	if enrollmentPattern != "" {
-		config = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+		config = testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn)
 	} else {
 		templateName := discoverTemplate(t, client)
 		config = testAccCertPFXConfig(templateName, ca, cn)
@@ -597,6 +599,41 @@ func TestIntKeyfactorCertificateResource_PFX(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+				),
+			},
+		},
+	})
+}
+
+// TestIntKeyfactorCertificateResource_PFX_TemplateOnly exercises the auto-lookup
+// code path where the user specifies only certificate_template (no enrollment
+// pattern, no CA). On v25+ labs the provider auto-resolves the enrollment pattern
+// from the template. On pre-v25 labs the test is skipped.
+func TestIntKeyfactorCertificateResource_PFX_TemplateOnly(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	if enrollmentPattern == "" {
+		t.Skip("skipping template-only auto-lookup test: no enrollment patterns available (pre-v25 lab)")
+	}
+
+	// Get the template linked to the default enrollment pattern — this is the
+	// template we'll pass to the provider and expect it to auto-resolve.
+	templateName := discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+	cn := randomTestCN("tf-int-pfx-tplonly")
+
+	config := testAccCertPFXConfigTemplateOnly(templateName, cn)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 				),
 			},
 		},
@@ -1212,7 +1249,7 @@ func TestUnitKeyfactorCertificateResource_PFX(t *testing.T) {
 		enrollmentPattern := discoverEnrollmentPattern(t, client)
 		var templateName string
 		if enrollmentPattern != "" {
-			config = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+			config = testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn)
 		} else {
 			templateName = discoverTemplate(t, client)
 			config = testAccCertPFXConfig(templateName, ca, cn)
@@ -1226,7 +1263,7 @@ func TestUnitKeyfactorCertificateResource_PFX(t *testing.T) {
 	} else {
 		params := readCertPFXTestParams(cassettePath)
 		if params.EnrollmentPattern != "" {
-			config = testAccCertPFXConfigEnrollmentPattern(params.EnrollmentPattern, params.CA, params.CN)
+			config = testAccCertPFXConfigEnrollmentPatternNoCA(params.EnrollmentPattern, params.CN)
 		} else {
 			config = testAccCertPFXConfig(params.TemplateName, params.CA, params.CN)
 		}
@@ -1268,6 +1305,63 @@ func TestUnitKeyfactorCertificateResource_PFX(t *testing.T) {
 	})
 }
 
+// TestUnitKeyfactorCertificateResource_PFX_TemplateOnly tests the auto-lookup
+// code path where the user specifies only certificate_template (no enrollment
+// pattern, no CA). The provider calls LookupEnrollmentPatternIDByTemplateName
+// to auto-resolve the enrollment pattern before enrolling.
+//
+// To record the cassette:
+//
+//	RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_PFX_TemplateOnly make testunit-record-one
+func TestUnitKeyfactorCertificateResource_PFX_TemplateOnly(t *testing.T) {
+	cassetteName := "certificate_resource_pfx_template_only"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+	var config string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		if enrollmentPattern == "" {
+			t.Skip("skipping template-only unit test recording: no enrollment patterns available (pre-v25 lab)")
+		}
+		templateName := discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
+		cn := randomTestCN("tf-unit-pfx-tplonly")
+		config = testAccCertPFXConfigTemplateOnly(templateName, cn)
+		writeCertPFXTestParams(cassettePath, certPFXTestParams{
+			TemplateName: templateName,
+			CN:           cn,
+		})
+	} else {
+		params := readCertPFXTestParams(cassettePath)
+		if params.TemplateName == "" {
+			t.Skip("skipping template-only unit test: no cassette params (record with RECORD_CASSETTES=1)")
+		}
+		config = testAccCertPFXConfigTemplateOnly(params.TemplateName, params.CN)
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	tplOnlyParams := readCertPFXTestParams(cassettePath)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "identifier"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test", "certificate_pem", tplOnlyParams.CN),
+				),
+			},
+		},
+	})
+}
+
 // TestUnitKeyfactorCertificateResource_PFX_PrivateKeyRead is a regression test
 // for the Read path private_key recovery fix (ab#82568).
 //
@@ -1292,7 +1386,7 @@ func TestUnitKeyfactorCertificateResource_PFX_PrivateKeyRead(t *testing.T) {
 		enrollmentPattern := discoverEnrollmentPattern(t, client)
 		var templateName string
 		if enrollmentPattern != "" {
-			config = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+			config = testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn)
 		} else {
 			templateName = discoverTemplate(t, client)
 			config = testAccCertPFXConfig(templateName, ca, cn)
@@ -1306,7 +1400,7 @@ func TestUnitKeyfactorCertificateResource_PFX_PrivateKeyRead(t *testing.T) {
 	} else {
 		params := readCertPFXTestParams(cassettePath)
 		if params.EnrollmentPattern != "" {
-			config = testAccCertPFXConfigEnrollmentPattern(params.EnrollmentPattern, params.CA, params.CN)
+			config = testAccCertPFXConfigEnrollmentPatternNoCA(params.EnrollmentPattern, params.CN)
 		} else {
 			config = testAccCertPFXConfig(params.TemplateName, params.CA, params.CN)
 		}
@@ -1555,7 +1649,7 @@ func TestUnitKeyfactorCertificateResource_PFX_Import(t *testing.T) {
 		enrollmentPattern := discoverEnrollmentPattern(t, client)
 		var templateName string
 		if enrollmentPattern != "" {
-			config = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+			config = testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn)
 		} else {
 			templateName = discoverTemplate(t, client)
 			config = testAccCertPFXConfig(templateName, ca, cn)
@@ -1569,7 +1663,7 @@ func TestUnitKeyfactorCertificateResource_PFX_Import(t *testing.T) {
 	} else {
 		params := readCertPFXTestParams(cassettePath)
 		if params.EnrollmentPattern != "" {
-			config = testAccCertPFXConfigEnrollmentPattern(params.EnrollmentPattern, params.CA, params.CN)
+			config = testAccCertPFXConfigEnrollmentPatternNoCA(params.EnrollmentPattern, params.CN)
 		} else {
 			config = testAccCertPFXConfig(params.TemplateName, params.CA, params.CN)
 		}
@@ -2091,8 +2185,8 @@ func TestUnitKeyfactorCertificateResource_PFX_KeyTypes(t *testing.T) {
 				enrollmentPattern := discoverEnrollmentPattern(t, client)
 				var templateName string
 				if enrollmentPattern != "" {
-					config = testAccCertPFXConfigWithKeyTypeAndPattern(
-						enrollmentPattern, ca, cn, tc.keyType, tc.keySize, tc.curve)
+					config = testAccCertPFXConfigWithKeyTypeAndPatternNoCA(
+						enrollmentPattern, cn, tc.keyType, tc.keySize, tc.curve)
 				} else {
 					templateName = discoverTemplate(t, client)
 					config = testAccCertPFXConfigWithKeyType(
@@ -2110,8 +2204,8 @@ func TestUnitKeyfactorCertificateResource_PFX_KeyTypes(t *testing.T) {
 			} else {
 				params := readCertPFXKeyTypeTestParams(cassettePath, tc.keyType, tc.keySize, tc.curve)
 				if params.EnrollmentPattern != "" {
-					config = testAccCertPFXConfigWithKeyTypeAndPattern(
-						params.EnrollmentPattern, params.CA, params.CN,
+					config = testAccCertPFXConfigWithKeyTypeAndPatternNoCA(
+						params.EnrollmentPattern, params.CN,
 						tc.keyType, tc.keySize, tc.curve)
 				} else {
 					config = testAccCertPFXConfigWithKeyType(

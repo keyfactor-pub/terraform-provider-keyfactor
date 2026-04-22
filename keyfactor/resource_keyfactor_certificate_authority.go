@@ -204,6 +204,45 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 
+			// --- Enrollment Availability ---
+			"use_for_enrollment": {
+				Type:          types.BoolType,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Whether this CA is available for certificate enrollment.",
+			},
+
+			// --- Certificate Cleanup ---
+			"certificate_cleanup_enabled": {
+				Type:          types.BoolType,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Whether certificate cleanup is enabled for this CA.",
+			},
+			"delete_with_archived_key": {
+				Type:          types.BoolType,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Whether to delete the certificate when its archived key is deleted.",
+			},
+			"time_after_expiration": {
+				Type:          types.Int64Type,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Time value after expiration before cleanup occurs. Used with time_after_expiration_units.",
+			},
+			"time_after_expiration_units": {
+				Type:          types.Int64Type,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months.",
+			},
+
 			// --- Requesters (standalone CAs only) ---
 			"use_allowed_requesters": {
 				Type:          types.BoolType,
@@ -417,6 +456,15 @@ type KeyfactorCertificateAuthority struct {
 	AllowOneClickRenewals         types.Bool   `tfsdk:"allow_one_click_renewals"`
 	NewEndEntityOnRenewAndReissue types.Bool   `tfsdk:"new_end_entity_on_renew_and_reissue"`
 
+	// Enrollment Availability
+	UseForEnrollment types.Bool `tfsdk:"use_for_enrollment"`
+
+	// Certificate Cleanup
+	CertificateCleanupEnabled types.Bool  `tfsdk:"certificate_cleanup_enabled"`
+	DeleteWithArchivedKey     types.Bool  `tfsdk:"delete_with_archived_key"`
+	TimeAfterExpiration       types.Int64 `tfsdk:"time_after_expiration"`
+	TimeAfterExpirationUnits  types.Int64 `tfsdk:"time_after_expiration_units"`
+
 	// Requesters
 	UseAllowedRequesters types.Bool `tfsdk:"use_allowed_requesters"`
 	AllowedRequesters    types.List `tfsdk:"allowed_requesters"`
@@ -495,6 +543,12 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 		SubscriberTerms:               boolPtrToTfBool(resp.SubscriberTerms),
 		AllowOneClickRenewals:         boolPtrToTfBool(resp.AllowOneClickRenewals),
 		NewEndEntityOnRenewAndReissue: boolPtrToTfBool(resp.NewEndEntityOnRenewAndReissue),
+
+		UseForEnrollment:          boolPtrToTfBool(resp.UseForEnrollment),
+		CertificateCleanupEnabled: nullableBoolToTfBool(resp.CertificateCleanupEnabled),
+		DeleteWithArchivedKey:     nullableBoolToTfBool(resp.DeleteWithArchivedKey),
+		TimeAfterExpiration:       nullableInt32ToTfInt64(resp.TimeAfterExpiration),
+		TimeAfterExpirationUnits:  cleanupTimeUnitsPtrToTfInt64(resp.TimeAfterExpirationUnits),
 
 		UseAllowedRequesters: boolPtrToTfBool(resp.UseAllowedRequesters),
 
@@ -594,6 +648,24 @@ func keyRetentionPtrToTfInt64(v *v1.CSSCMSCoreEnumsKeyRetentionPolicy) types.Int
 	return types.Int64{Value: int64(*v)}
 }
 
+// nullableBoolToTfBool converts a NullableBool from the SDK response to a types.Bool.
+// When the server omits the field (not set / nil), returns Null.
+func nullableBoolToTfBool(v v1.NullableBool) types.Bool {
+	if v.Get() == nil {
+		return types.Bool{Null: true}
+	}
+	return types.Bool{Value: *v.Get()}
+}
+
+// cleanupTimeUnitsPtrToTfInt64 converts a *CSSCMSDataModelEnumsCertificateCleanupTimeUnits pointer to types.Int64.
+// Nil (server field absent) becomes Null so the value is not sent on PUT.
+func cleanupTimeUnitsPtrToTfInt64(v *v1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
+}
+
 func stringSliceToTfList(vals []string) types.List {
 	return types.List{
 		ElemType: types.StringType,
@@ -642,6 +714,18 @@ func buildCARequest(ctx context.Context, plan KeyfactorCertificateAuthority) v1.
 	setBoolIfKnown(&req, plan.SubscriberTerms, func(v bool) { req.SetSubscriberTerms(v) })
 	setBoolIfKnown(&req, plan.AllowOneClickRenewals, func(v bool) { req.SetAllowOneClickRenewals(v) })
 	setBoolIfKnown(&req, plan.NewEndEntityOnRenewAndReissue, func(v bool) { req.SetNewEndEntityOnRenewAndReissue(v) })
+
+	// Enrollment Availability
+	setBoolIfKnown(&req, plan.UseForEnrollment, func(v bool) { req.SetUseForEnrollment(v) })
+
+	// Certificate Cleanup
+	setNullableBoolIfKnown(&req, plan.CertificateCleanupEnabled, func(v bool) { req.SetCertificateCleanupEnabled(v) })
+	setNullableBoolIfKnown(&req, plan.DeleteWithArchivedKey, func(v bool) { req.SetDeleteWithArchivedKey(v) })
+	setNullableInt32IfKnown(&req, plan.TimeAfterExpiration, func(v int32) { req.SetTimeAfterExpiration(v) })
+	if !plan.TimeAfterExpirationUnits.Null && !plan.TimeAfterExpirationUnits.Unknown {
+		units := v1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits(int32(plan.TimeAfterExpirationUnits.Value))
+		req.TimeAfterExpirationUnits = &units
+	}
 
 	// Requesters
 	setBoolIfKnown(&req, plan.UseAllowedRequesters, func(v bool) { req.SetUseAllowedRequesters(v) })
@@ -712,6 +796,14 @@ func setBoolIfKnown(_ interface{}, v types.Bool, setter func(bool)) {
 
 // setStringIfKnown calls the setter only if the value is not null/unknown.
 func setStringIfKnown(_ interface{}, v types.String, setter func(string)) {
+	if !v.Null && !v.Unknown {
+		setter(v.Value)
+	}
+}
+
+// setNullableBoolIfKnown calls the setter only if the value is not null/unknown.
+// Used for SDK NullableBool fields (e.g., CertificateCleanupEnabled, DeleteWithArchivedKey).
+func setNullableBoolIfKnown(_ interface{}, v types.Bool, setter func(bool)) {
 	if !v.Null && !v.Unknown {
 		setter(v.Value)
 	}

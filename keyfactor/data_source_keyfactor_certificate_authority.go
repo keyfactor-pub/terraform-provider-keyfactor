@@ -154,6 +154,31 @@ func (d dataSourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.
 				Computed:    true,
 				Description: "A Boolean setting whether renewal requests create new end entities.",
 			},
+			"use_for_enrollment": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether this CA is available for certificate enrollment.",
+			},
+			"certificate_cleanup_enabled": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether certificate cleanup is enabled for this CA.",
+			},
+			"delete_with_archived_key": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether to delete the certificate when its archived key is deleted.",
+			},
+			"time_after_expiration": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Time value after expiration before cleanup occurs. Used with time_after_expiration_units.",
+			},
+			"time_after_expiration_units": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months.",
+			},
 			"use_allowed_requesters": {
 				Type:        types.BoolType,
 				Computed:    true,
@@ -291,7 +316,13 @@ type KeyfactorCertificateAuthorityDataSource struct {
 	EnforceUniqueDN               types.Bool   `tfsdk:"enforce_unique_dn"`
 	SubscriberTerms               types.Bool   `tfsdk:"subscriber_terms"`
 	AllowOneClickRenewals         types.Bool   `tfsdk:"allow_one_click_renewals"`
-	NewEndEntityOnRenewAndReissue types.Bool   `tfsdk:"new_end_entity_on_renew_and_reissue"`
+	NewEndEntityOnRenewAndReissue types.Bool `tfsdk:"new_end_entity_on_renew_and_reissue"`
+
+	UseForEnrollment          types.Bool  `tfsdk:"use_for_enrollment"`
+	CertificateCleanupEnabled types.Bool  `tfsdk:"certificate_cleanup_enabled"`
+	DeleteWithArchivedKey     types.Bool  `tfsdk:"delete_with_archived_key"`
+	TimeAfterExpiration       types.Int64 `tfsdk:"time_after_expiration"`
+	TimeAfterExpirationUnits  types.Int64 `tfsdk:"time_after_expiration_units"`
 
 	UseAllowedRequesters types.Bool `tfsdk:"use_allowed_requesters"`
 	AllowedRequesters    types.List `tfsdk:"allowed_requesters"`
@@ -413,6 +444,12 @@ func caResponseToDataSourceState(resp *v1.CertificateAuthoritiesCertificateAutho
 		SubscriberTerms:               rs.SubscriberTerms,
 		AllowOneClickRenewals:         rs.AllowOneClickRenewals,
 		NewEndEntityOnRenewAndReissue: rs.NewEndEntityOnRenewAndReissue,
+
+		UseForEnrollment:          rs.UseForEnrollment,
+		CertificateCleanupEnabled: rs.CertificateCleanupEnabled,
+		DeleteWithArchivedKey:     rs.DeleteWithArchivedKey,
+		TimeAfterExpiration:       rs.TimeAfterExpiration,
+		TimeAfterExpirationUnits:  rs.TimeAfterExpirationUnits,
 
 		UseAllowedRequesters: rs.UseAllowedRequesters,
 		AllowedRequesters:    rs.AllowedRequesters,

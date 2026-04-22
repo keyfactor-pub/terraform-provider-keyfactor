@@ -54,6 +54,8 @@ func TestIntKeyfactorCertificateAuthorityResourceImport(t *testing.T) {
 					resource.TestCheckResourceAttr("keyfactor_certificate_authority.test", "id", caID),
 					resource.TestCheckResourceAttr("keyfactor_certificate_authority.test", "logical_name", caName),
 					resource.TestCheckResourceAttr("keyfactor_certificate_authority.test", "host_name", caHost),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_authority.test", "use_for_enrollment"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_authority.test", "certificate_cleanup_enabled"),
 				),
 			},
 		},
@@ -108,6 +110,7 @@ func TestUnitKeyfactorCertificateAuthorityResource(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "id", caID),
 					resource.TestCheckResourceAttr(resourceName, "logical_name", caName),
 					resource.TestCheckResourceAttrSet(resourceName, "host_name"),
+					resource.TestCheckResourceAttrSet(resourceName, "use_for_enrollment"),
 				),
 			},
 		},
@@ -318,6 +321,26 @@ func TestUnitCertificateAuthorityResponseToState(t *testing.T) {
 		if !state.EnforceUniqueDN.Null {
 			t.Errorf("EnforceUniqueDN: want Null=true (nil ptr), got Value=%v Null=%v",
 				state.EnforceUniqueDN.Value, state.EnforceUniqueDN.Null)
+		}
+		if !state.UseForEnrollment.Null {
+			t.Errorf("UseForEnrollment: want Null=true (nil ptr), got Value=%v Null=%v",
+				state.UseForEnrollment.Value, state.UseForEnrollment.Null)
+		}
+		if !state.CertificateCleanupEnabled.Null {
+			t.Errorf("CertificateCleanupEnabled: want Null=true (nil NullableBool), got Value=%v Null=%v",
+				state.CertificateCleanupEnabled.Value, state.CertificateCleanupEnabled.Null)
+		}
+		if !state.DeleteWithArchivedKey.Null {
+			t.Errorf("DeleteWithArchivedKey: want Null=true (nil NullableBool), got Value=%v Null=%v",
+				state.DeleteWithArchivedKey.Value, state.DeleteWithArchivedKey.Null)
+		}
+		if !state.TimeAfterExpiration.Null {
+			t.Errorf("TimeAfterExpiration: want Null=true (nil NullableInt32), got Value=%v Null=%v",
+				state.TimeAfterExpiration.Value, state.TimeAfterExpiration.Null)
+		}
+		if !state.TimeAfterExpirationUnits.Null {
+			t.Errorf("TimeAfterExpirationUnits: want Null=true (nil ptr), got Value=%v Null=%v",
+				state.TimeAfterExpirationUnits.Value, state.TimeAfterExpirationUnits.Null)
 		}
 	})
 

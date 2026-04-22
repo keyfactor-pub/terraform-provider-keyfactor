@@ -1,0 +1,135 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Mon, 21 Apr 2026 12:00:00 GMT
+            Server:
+                - istio-envoy
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 100ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Mon, 21 Apr 2026 12:00:01 GMT
+            Server:
+                - istio-envoy
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 100ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 213
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"Description":"Unit test nil-id role","EmailAddress":"nil-id-test@example.com","Name":"tf-unit-role-nil-id","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"]}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 170
+        body: '{"Id":null,"Name":"tf-unit-role-nil-id","Description":"Unit test nil-id role","EmailAddress":"nil-id-test@example.com","Immutable":false,"Permissions":[],"Claims":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "170"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Mon, 21 Apr 2026 12:00:02 GMT
+            Server:
+                - istio-envoy
+        status: 200 OK
+        code: 200
+        duration: 100ms

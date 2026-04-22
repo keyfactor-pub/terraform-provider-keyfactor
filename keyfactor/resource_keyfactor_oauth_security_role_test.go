@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -332,6 +333,84 @@ func TestUnitKeyfactorOAuthRoleResource_Import(t *testing.T) {
 				ImportState:       true,
 				ImportStateVerify: true,
 				ImportStateId:     roleName,
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorOAuthRoleResource_NilIdCreate verifies that the provider
+// returns a diagnostic error (instead of panicking) when the API returns a
+// response with a null Id on role creation.
+func TestUnitKeyfactorOAuthRoleResource_NilIdCreate(t *testing.T) {
+	cassetteName := "oauth_security_role_resource_nil_id_create"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	params := readOAuthRoleRecordTestParams(cassettePath)
+	roleName := params.RoleName
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	r := oauthRoleTestCase{
+		name:         roleName,
+		description:  "Unit test nil-id role",
+		permissions:  []string{"/metadata/types/read/"},
+		emailAddress: "nil-id-test@example.com",
+		resourceType: "keyfactor_oauth_security_role",
+		resourceName: "nil_id_test",
+		resourcePath: "keyfactor_oauth_security_role.nil_id_test",
+	}
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config:      testAccKeyfactorOAuthRoleResourceConfig(r),
+				ExpectError: regexp.MustCompile(`(?i)nil|missing Id`),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorOAuthRoleResource_NilIdImport verifies that the provider
+// returns a diagnostic error (instead of panicking) when importing a role
+// whose query response has a null Id.
+func TestUnitKeyfactorOAuthRoleResource_NilIdImport(t *testing.T) {
+	cassetteName := "oauth_security_role_resource_nil_id_import"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	params := readOAuthRoleRecordTestParams(cassettePath)
+	roleName := params.RoleName
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	r := oauthRoleTestCase{
+		name:         roleName,
+		description:  "Unit test nil-id role import",
+		permissions:  []string{"/metadata/types/read/"},
+		emailAddress: "nil-id-import@example.com",
+		resourceType: "keyfactor_oauth_security_role",
+		resourceName: "nil_id_import_test",
+		resourcePath: "keyfactor_oauth_security_role.nil_id_import_test",
+	}
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: Create the role (succeeds normally).
+				Config: testAccKeyfactorOAuthRoleResourceConfig(r),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
+				),
+			},
+			{
+				// Step 2: Import by name — query returns null Id.
+				ResourceName:  r.resourcePath,
+				ImportState:   true,
+				ImportStateId: roleName,
+				ExpectError:   regexp.MustCompile(`(?i)no Id|nil`),
 			},
 		},
 	})

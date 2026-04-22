@@ -19,9 +19,10 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Internal ID of the OAuth security role.",
+				Type:          types.Int64Type,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Internal ID of the OAuth security role.",
 			},
 			"name": {
 				Type:        types.StringType,
@@ -34,15 +35,17 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 				Description: "A string containing the description of the OAuth security role.",
 			},
 			"email_address": {
-				Type:        types.StringType,
-				Optional:    true,
-				Computed:    true,
-				Description: "Email address associated with the OAuth security role.",
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Email address associated with the OAuth security role.",
 			},
 			"immutable": {
-				Type:        types.BoolType,
-				Computed:    true,
-				Description: "Indicates whether the OAuth security role is immutable.",
+				Type:          types.BoolType,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Indicates whether the OAuth security role is immutable.",
 			},
 			"permission_set_id": {
 				Type:        types.StringType,
@@ -166,6 +169,31 @@ func (r resourceOAuthSecurityRole) Update(
 	sort.Strings(permissions)
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
+
+	// Read the current role from the server to preserve claims that are
+	// managed by the keyfactor_oauth_security_role_claim_association resource.
+	// The PUT endpoint replaces the entire role; omitting Claims would wipe
+	// all claim associations.
+	currentRole, httpGet, errGet := api.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
+	if errGet != nil {
+		var body []byte
+		if httpGet != nil {
+			defer httpGet.Body.Close()
+			body, _ = io.ReadAll(httpGet.Body)
+		}
+		response.Diagnostics.AddError(
+			"Error reading security role before update",
+			fmt.Sprintf("Could not read OAuth security role ID %d before update, unexpected error: %s. Details %s", roleId, errGet.Error(), string(body)),
+		)
+		return
+	}
+
+	// Preserve existing claims from the server.
+	existingClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, currentRole, nil)
+	if !ok {
+		return
+	}
+
 	req := api.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
 		Id:              roleId,
 		Name:            roleName,
@@ -173,6 +201,7 @@ func (r resourceOAuthSecurityRole) Update(
 		EmailAddress:    *v2.NewNullableString(&plan.EmailAddress.Value),
 		PermissionSetId: plan.PermissionSetId.Value,
 		Permissions:     permissions,
+		Claims:          *existingClaims,
 	})
 
 	tflog.Debug(ctx, fmt.Sprintf("Updating OAuth security role with ID: %d, name: %s;\n\tDescription: %s;\n\tEmailAddress: %s;\nt\tPermissionSetId: %s", roleId, roleName, plan.Description.Value, plan.EmailAddress.Value, plan.PermissionSetId.Value))

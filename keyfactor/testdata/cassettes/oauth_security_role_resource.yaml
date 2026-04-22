@@ -38,20 +38,20 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:02 GMT
+                - Wed, 22 Apr 2026 17:35:16 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "36"
+                - "35"
             X-Keyfactor-Correlation-Id:
-                - 5b0e6a41-2e32-4229-9276-ab67bda0a2e3
+                - af708632-5171-474e-acfa-8690b2a76400
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 2.749159839s
+        duration: 1.468995686s
     - id: 1
       request:
         proto: HTTP/1.1
@@ -89,20 +89,20 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:05 GMT
+                - Wed, 22 Apr 2026 17:35:18 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "35"
+                - "31"
             X-Keyfactor-Correlation-Id:
-                - e9d9cb23-c4ea-4460-a515-21ea0dc2bcc7
+                - a7b571e9-535e-4483-bbdd-09a2f3b542a7
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 142.628759ms
+        duration: 351.019567ms
     - id: 2
       request:
         proto: HTTP/1.1
@@ -111,7 +111,7 @@ interactions:
         content_length: 213
         host: int25-4-1.kftestlab.com:443
         body: |
-            {"Description":"Unit test OAuth role","EmailAddress":"unit-test@example.com","Name":"tf-unit-oauth-role-885755000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"]}
+            {"Description":"Unit test OAuth role","EmailAddress":"unit-test@example.com","Name":"tf-unit-oauth-role-229562000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"]}
         headers:
             Accept:
                 - application/json
@@ -130,7 +130,7 @@ interactions:
         proto_major: 1
         proto_minor: 1
         content_length: 251
-        body: '{"Id":108,"Name":"tf-unit-oauth-role-885755000","Description":"Unit test OAuth role","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"],"Claims":[]}'
+        body: '{"Id":359,"Name":"tf-unit-oauth-role-229562000","Description":"Unit test OAuth role","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"],"Claims":[]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -139,18 +139,18 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:05 GMT
+                - Wed, 22 Apr 2026 17:35:19 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "124"
+                - "103"
             X-Keyfactor-Correlation-Id:
-                - 65ecc7bd-4465-41c0-91f9-a1c4df222a42
+                - 738ddfcf-3c97-44d1-873d-c0f7800286b5
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
         status: 200 OK
         code: 200
-        duration: 245.844329ms
+        duration: 247.060016ms
     - id: 3
       request:
         proto: HTTP/1.1
@@ -188,20 +188,20 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:06 GMT
+                - Wed, 22 Apr 2026 17:35:19 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "38"
+                - "34"
             X-Keyfactor-Correlation-Id:
-                - 1b3d51da-a94b-40e7-bc86-d7fff77bed89
+                - edfb2ae3-344e-4995-bf3d-87de466be05a
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 139.048771ms
+        duration: 139.635698ms
     - id: 4
       request:
         proto: HTTP/1.1
@@ -239,20 +239,20 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:06 GMT
+                - Wed, 22 Apr 2026 17:35:20 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "37"
+                - "30"
             X-Keyfactor-Correlation-Id:
-                - 2b629a39-112f-423f-b22b-9079227ae66c
+                - 0a87743c-113d-482d-bd4d-2274e0780584
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 141.81415ms
+        duration: 129.918639ms
     - id: 5
       request:
         proto: HTTP/1.1
@@ -269,14 +269,14 @@ interactions:
                 - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/108
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/359
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 251
-        body: '{"Id":108,"Name":"tf-unit-oauth-role-885755000","Description":"Unit test OAuth role","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"],"Claims":[]}'
+        body: '{"Id":359,"Name":"tf-unit-oauth-role-229562000","Description":"Unit test OAuth role","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"],"Claims":[]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -285,18 +285,18 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:07 GMT
+                - Wed, 22 Apr 2026 17:35:20 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "34"
+                - "33"
             X-Keyfactor-Correlation-Id:
-                - 40aec571-0d3d-4aa8-b667-24c0274c0301
+                - 415564a1-fc80-4cd7-8d24-58388f7e080b
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
         status: 200 OK
         code: 200
-        duration: 140.50949ms
+        duration: 133.425897ms
     - id: 6
       request:
         proto: HTTP/1.1
@@ -334,20 +334,20 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:07 GMT
+                - Wed, 22 Apr 2026 17:35:20 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "35"
+                - "32"
             X-Keyfactor-Correlation-Id:
-                - 9c7dc55b-586e-490b-bf69-6a8efc32e2a6
+                - 687443cd-0247-4b35-9209-e6f2a5ef0d02
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 131.655368ms
+        duration: 131.979474ms
     - id: 7
       request:
         proto: HTTP/1.1
@@ -385,20 +385,20 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:07 GMT
+                - Wed, 22 Apr 2026 17:35:21 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "35"
+                - "38"
             X-Keyfactor-Correlation-Id:
-                - c7a55f06-c3b1-4dcc-8d54-8be11094a163
+                - cced6ad6-5de2-4dda-9a36-833cd524c160
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 140.09913ms
+        duration: 165.303819ms
     - id: 8
       request:
         proto: HTTP/1.1
@@ -415,14 +415,14 @@ interactions:
                 - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/108
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/359
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 251
-        body: '{"Id":108,"Name":"tf-unit-oauth-role-885755000","Description":"Unit test OAuth role","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"],"Claims":[]}'
+        body: '{"Id":359,"Name":"tf-unit-oauth-role-229562000","Description":"Unit test OAuth role","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"],"Claims":[]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -431,18 +431,18 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:08 GMT
+                - Wed, 22 Apr 2026 17:35:21 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "36"
+                - "29"
             X-Keyfactor-Correlation-Id:
-                - 75e5208a-276d-4780-b590-415245877562
+                - aacdd5a2-c0c8-4761-bf9f-406408c78d6c
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
         status: 200 OK
         code: 200
-        duration: 141.922056ms
+        duration: 146.060386ms
     - id: 9
       request:
         proto: HTTP/1.1
@@ -480,29 +480,73 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:08 GMT
+                - Wed, 22 Apr 2026 17:35:22 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "34"
+                - "30"
             X-Keyfactor-Correlation-Id:
-                - ed429818-ef7a-48e4-8ccf-e0ef080165c7
+                - 014bed3a-42b2-4990-8515-c2171289eafe
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 135.559879ms
+        duration: 127.896347ms
     - id: 10
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 223
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/359
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 251
+        body: '{"Id":359,"Name":"tf-unit-oauth-role-229562000","Description":"Unit test OAuth role","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"],"Claims":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "251"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 17:35:22 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "31"
+            X-Keyfactor-Correlation-Id:
+                - 3f42a123-591c-4053-be9d-b429a60ea3c3
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 254.940479ms
+    - id: 11
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 235
         host: int25-4-1.kftestlab.com:443
         body: |
-            {"Description":"Unit test OAuth role updated","EmailAddress":"unit-test@example.com","Id":108,"Name":"tf-unit-oauth-role-885755000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/certificates/"]}
+            {"Claims":[],"Description":"Unit test OAuth role updated","EmailAddress":"unit-test@example.com","Id":359,"Name":"tf-unit-oauth-role-229562000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/certificates/"]}
         headers:
             Accept:
                 - application/json
@@ -521,7 +565,7 @@ interactions:
         proto_major: 1
         proto_minor: 1
         content_length: 252
-        body: '{"Id":108,"Name":"tf-unit-oauth-role-885755000","Description":"Unit test OAuth role updated","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/certificates/"],"Claims":[]}'
+        body: '{"Id":359,"Name":"tf-unit-oauth-role-229562000","Description":"Unit test OAuth role updated","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/certificates/"],"Claims":[]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -530,69 +574,18 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:09 GMT
+                - Wed, 22 Apr 2026 17:35:23 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "136"
+                - "115"
             X-Keyfactor-Correlation-Id:
-                - 524db74c-6503-4333-b645-cad58e6f31ef
+                - 10f02a19-a60f-4bff-99aa-f3cfdff5e04d
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
         status: 200 OK
         code: 200
-        duration: 240.549096ms
-    - id: 11
-      request:
-        proto: HTTP/1.1
-        proto_major: 1
-        proto_minor: 1
-        content_length: 0
-        host: int25-4-1.kftestlab.com:443
-        form:
-            PageReturned:
-                - "1"
-            ReturnLimit:
-                - "50"
-        headers:
-            Accept:
-                - application/json
-            User-Agent:
-                - OpenAPI-Generator/1.0.0/go
-            x-keyfactor-api-version:
-                - "1"
-            x-keyfactor-requested-with:
-                - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
-        method: GET
-      response:
-        proto: HTTP/1.1
-        proto_major: 1
-        proto_minor: 1
-        content_length: 83
-        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
-        headers:
-            Api-Supported-Versions:
-                - "1.0"
-            Content-Length:
-                - "83"
-            Content-Type:
-                - application/json; charset=utf-8
-            Date:
-                - Thu, 19 Mar 2026 23:15:09 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "37"
-            X-Keyfactor-Correlation-Id:
-                - 439f2ace-09a8-449c-962d-a00ca2c0a697
-            X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
-            X-Total-Count:
-                - "1"
-        status: 200 OK
-        code: 200
-        duration: 137.879394ms
+        duration: 242.888341ms
     - id: 12
       request:
         proto: HTTP/1.1
@@ -630,65 +623,21 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:10 GMT
+                - Wed, 22 Apr 2026 17:35:24 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "35"
+                - "31"
             X-Keyfactor-Correlation-Id:
-                - 75ee43af-a58f-44d1-afb8-f499ae5e0870
+                - 389b5942-2407-45a0-b422-8f64d5e4d569
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 141.126974ms
+        duration: 134.392428ms
     - id: 13
-      request:
-        proto: HTTP/1.1
-        proto_major: 1
-        proto_minor: 1
-        content_length: 0
-        host: int25-4-1.kftestlab.com:443
-        headers:
-            Accept:
-                - application/json
-            User-Agent:
-                - OpenAPI-Generator/1.0.0/go
-            x-keyfactor-api-version:
-                - "2"
-            x-keyfactor-requested-with:
-                - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/108
-        method: GET
-      response:
-        proto: HTTP/1.1
-        proto_major: 1
-        proto_minor: 1
-        content_length: 252
-        body: '{"Id":108,"Name":"tf-unit-oauth-role-885755000","Description":"Unit test OAuth role updated","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/certificates/"],"Claims":[]}'
-        headers:
-            Api-Supported-Versions:
-                - 1.0, 2
-            Content-Length:
-                - "252"
-            Content-Type:
-                - application/json; charset=utf-8
-            Date:
-                - Thu, 19 Mar 2026 23:15:10 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "35"
-            X-Keyfactor-Correlation-Id:
-                - 84fa05df-ccee-4757-9ff3-da2987f5acc4
-            X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
-        status: 200 OK
-        code: 200
-        duration: 135.938175ms
-    - id: 14
       request:
         proto: HTTP/1.1
         proto_major: 1
@@ -725,21 +674,116 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:10 GMT
+                - Wed, 22 Apr 2026 17:35:24 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "35"
+                - "33"
             X-Keyfactor-Correlation-Id:
-                - fd57ae54-283f-4cda-9766-1586e995c685
+                - 5b483469-acbb-40da-843c-7b716cc922b3
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 145.458271ms
+        duration: 153.11116ms
+    - id: 14
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/359
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 252
+        body: '{"Id":359,"Name":"tf-unit-oauth-role-229562000","Description":"Unit test OAuth role updated","EmailAddress":"unit-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/certificates/"],"Claims":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "252"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 17:35:24 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "36"
+            X-Keyfactor-Correlation-Id:
+                - 0cc98351-ddd8-4702-83cc-a6c07c36bed1
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 136.086991ms
     - id: 15
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 17:35:25 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "28"
+            X-Keyfactor-Correlation-Id:
+                - f3716cac-0e4a-425f-aeb6-bf39b136cf9a
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 123.926461ms
+    - id: 16
       request:
         proto: HTTP/1.1
         proto_major: 1
@@ -753,7 +797,7 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/108
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/359
         method: DELETE
       response:
         proto: HTTP/1.1
@@ -765,15 +809,15 @@ interactions:
             Api-Supported-Versions:
                 - 1.0, 2
             Date:
-                - Thu, 19 Mar 2026 23:15:11 GMT
+                - Wed, 22 Apr 2026 17:35:25 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "82"
+                - "75"
             X-Keyfactor-Correlation-Id:
-                - 355ff87d-8b59-4265-bb0a-d8fcbb7bdfad
+                - 185b3453-7504-4099-a588-09a4dc92f116
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
         status: 204 No Content
         code: 204
-        duration: 179.789469ms
+        duration: 176.811237ms

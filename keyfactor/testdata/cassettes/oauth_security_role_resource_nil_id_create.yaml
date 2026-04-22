@@ -38,14 +38,20 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Mon, 21 Apr 2026 12:00:00 GMT
+                - Wed, 22 Apr 2026 17:34:15 GMT
             Server:
                 - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "30"
+            X-Keyfactor-Correlation-Id:
+                - 18fb2b3a-99d9-463e-844a-1cddcbbfe80d
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 100ms
+        duration: 1.239030956s
     - id: 1
       request:
         proto: HTTP/1.1
@@ -83,20 +89,26 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Mon, 21 Apr 2026 12:00:01 GMT
+                - Wed, 22 Apr 2026 17:34:17 GMT
             Server:
                 - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "29"
+            X-Keyfactor-Correlation-Id:
+                - a3c58dfe-ee3a-4ce1-aca4-a13dfb8009fa
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 100ms
+        duration: 144.100507ms
     - id: 2
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 213
+        content_length: 207
         host: int25-4-1.kftestlab.com:443
         body: |
             {"Description":"Unit test nil-id role","EmailAddress":"nil-id-test@example.com","Name":"tf-unit-role-nil-id","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"]}
@@ -117,19 +129,25 @@ interactions:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 170
-        body: '{"Id":null,"Name":"tf-unit-role-nil-id","Description":"Unit test nil-id role","EmailAddress":"nil-id-test@example.com","Immutable":false,"Permissions":[],"Claims":[]}'
+        content_length: 245
+        body: '{"Id":null,"Name":"tf-unit-role-nil-id","Description":"Unit test nil-id role","EmailAddress":"nil-id-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":["/metadata/types/read/"],"Claims":[]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
             Content-Length:
-                - "170"
+                - "247"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Mon, 21 Apr 2026 12:00:02 GMT
+                - Wed, 22 Apr 2026 17:34:18 GMT
             Server:
                 - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "109"
+            X-Keyfactor-Correlation-Id:
+                - 907d6ee1-a82e-4217-85ac-64c04b97739b
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
         status: 200 OK
         code: 200
-        duration: 100ms
+        duration: 212.590997ms

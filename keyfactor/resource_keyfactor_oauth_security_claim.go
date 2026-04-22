@@ -20,9 +20,10 @@ func (r resourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sche
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Internal ID of the role.",
+				Type:          types.Int64Type,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Internal ID of the OAuth security claim.",
 			},
 			"description": {
 				Type:        types.StringType,
@@ -52,8 +53,9 @@ func (r resourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type: types.ObjectType{
 					AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
 				},
-				Computed:    true,
-				Description: "An object mapping of the identity provider associated with the OAuth security claim in Keyfactor",
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "An object mapping of the identity provider associated with the OAuth security claim in Keyfactor",
 			},
 		},
 		Description:         "Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct and its fields, please refer to the API documentation for Security Claims: https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm",
@@ -171,7 +173,7 @@ func (r resourceOAuthSecurityClaim) Update(
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to update OAuth security claim id %d...", claimId))
 
 	// Execute API request
-	remoteState, httpReq, err := req.Execute()
+	_, httpReq, err := req.Execute()
 	if err != nil {
 		var body []byte
 		if httpReq != nil {
@@ -186,7 +188,18 @@ func (r resourceOAuthSecurityClaim) Update(
 		return
 	}
 
-	var result = mapOAuthSecurityClaim(ctx, remoteState, plan)
+	// The Update endpoint response (and immediate re-reads) may return the
+	// pre-update Description due to eventual consistency in the API.
+	// Build the result from the plan values for mutable fields and preserve
+	// computed fields from state.
+	var result = OAuthSecurityClaim{
+		ID:                           state.ID,
+		Description:                  plan.Description,
+		ClaimType:                    state.ClaimType,
+		ClaimValue:                   state.ClaimValue,
+		ProviderAuthenticationScheme: state.ProviderAuthenticationScheme,
+		Provider:                     state.Provider,
+	}
 
 	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
 	if !ok {

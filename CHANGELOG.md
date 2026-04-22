@@ -1,5 +1,20 @@
 # v2.8.1
 
+## Certificates
+
+### Fixes
+
+- fix: `keyfactor_certificate` `certificate_authority` is now `Optional+Computed` — no longer required when using `certificate_template` or `certificate_enrollment_pattern`; Command auto-selects a CA when omitted
+- fix: `keyfactor_certificate` automatically resolves the associated enrollment pattern when only `certificate_template` is specified on Command v25+, enabling backwards-compatible configs to work without CA enrollment permissions; returns a clear error if the template has multiple patterns with no unique default
+
+## OAuth Security
+
+### Fixes
+
+- fix: `keyfactor_oauth_security_role` Create and ImportState no longer panic when the API response has a nil `Id` field; a diagnostic error is returned instead
+- fix: `keyfactor_oauth_security_claim` Create no longer panics when the API response has a nil `Id` field; a diagnostic error is returned instead
+- fix: nil HTTP response body dereferences in `keyfactor_oauth_security_role` and `keyfactor_oauth_security_claim` error handling paths
+
 ## Certificate Authorities
 
 ### Fixes

@@ -1,0 +1,1979 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:15 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "28"
+            X-Keyfactor-Correlation-Id:
+                - a9559446-f495-4585-b2aa-fb54cfd9a46a
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 1.535719925s
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:17 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "32"
+            X-Keyfactor-Correlation-Id:
+                - d9354dab-1039-4cdf-922e-ce75b9640ff1
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 139.132666ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 149
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"ClaimType":6,"ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Description":"Multi-claim test claim 1","ProviderAuthenticationScheme":"System"}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 243
+        body: '{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "243"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:18 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "51"
+            X-Keyfactor-Correlation-Id:
+                - d8ea498b-bfd0-4fd8-83cf-c6b2cb210630
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 152.307298ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 196
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Name":"tf-unit-multi-assoc-36347000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 234
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "234"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:18 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "112"
+            X-Keyfactor-Correlation-Id:
+                - e17ecdab-fd1c-4aee-977e-0a1c71b0cb55
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 410.08596ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 149
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"ClaimType":6,"ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Description":"Multi-claim test claim 2","ProviderAuthenticationScheme":"System"}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 243
+        body: '{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "243"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:19 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "47"
+            X-Keyfactor-Correlation-Id:
+                - fb6ee727-66b2-47ae-ad66-0577321251a8
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 147.499582ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 234
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "234"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:19 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "30"
+            X-Keyfactor-Correlation-Id:
+                - 6421c542-7165-45ad-8e00-70798da00bf1
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 135.580385ms
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/244
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 243
+        body: '{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "243"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:19 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "29"
+            X-Keyfactor-Correlation-Id:
+                - 6f43ff91-ac61-4238-b843-5129438ba6e8
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 136.971795ms
+    - id: 7
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 365
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"Claims":[{"ClaimType":6,"ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Description":"Multi-claim test claim 1","ProviderAuthenticationScheme":"System"}],"Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Id":370,"Name":"tf-unit-multi-assoc-36347000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 477
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "477"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:20 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "124"
+            X-Keyfactor-Correlation-Id:
+                - 7a1471a0-e88e-4051-be7b-1fb6d62daccb
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 228.577954ms
+    - id: 8
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 477
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "477"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:20 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "32"
+            X-Keyfactor-Correlation-Id:
+                - 50893090-fef8-4c9f-8bdc-2048b50d50c2
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 134.578679ms
+    - id: 9
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/245
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 243
+        body: '{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "243"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:20 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "31"
+            X-Keyfactor-Correlation-Id:
+                - bcadefcc-12b2-4caa-a7ed-0924f1e21da2
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 138.158145ms
+    - id: 10
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 514
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"Claims":[{"ClaimType":6,"ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Description":"Multi-claim test claim 1","ProviderAuthenticationScheme":"System"},{"ClaimType":6,"ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Description":"Multi-claim test claim 2","ProviderAuthenticationScheme":"System"}],"Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Id":370,"Name":"tf-unit-multi-assoc-36347000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:21 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "142"
+            X-Keyfactor-Correlation-Id:
+                - 9936841e-f38e-4ac8-a192-7274cc6a7a89
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 247.101659ms
+    - id: 11
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:22 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "67"
+            X-Keyfactor-Correlation-Id:
+                - e878354f-0771-4c15-af5b-48d00bb3fdc4
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 165.154177ms
+    - id: 12
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:22 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "33"
+            X-Keyfactor-Correlation-Id:
+                - 0f0d3462-aacf-4db7-8023-061465dd5dca
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 136.316448ms
+    - id: 13
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/244
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 243
+        body: '{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "243"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:22 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "60"
+            X-Keyfactor-Correlation-Id:
+                - 06e52911-845b-4066-b581-51626c8c7828
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 165.318876ms
+    - id: 14
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:23 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "32"
+            X-Keyfactor-Correlation-Id:
+                - a8d361ad-8ff2-4e2f-8418-f9fe27c022c0
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 135.904062ms
+    - id: 15
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/245
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 243
+        body: '{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "243"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:23 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "32"
+            X-Keyfactor-Correlation-Id:
+                - 54fa05e1-2401-4610-b458-6a315a406c57
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 144.125297ms
+    - id: 16
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:23 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "36"
+            X-Keyfactor-Correlation-Id:
+                - f940cce1-d3a2-4a6a-afd1-2c05e865a398
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 146.202583ms
+    - id: 17
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:23 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "37"
+            X-Keyfactor-Correlation-Id:
+                - 7e84b833-2965-433c-a20b-3a5adb1db486
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 144.9524ms
+    - id: 18
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:24 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "35"
+            X-Keyfactor-Correlation-Id:
+                - 5b658a7d-fa2b-452a-b170-166dd07677dc
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 138.494934ms
+    - id: 19
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:24 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "41"
+            X-Keyfactor-Correlation-Id:
+                - 587d6303-f8ce-4874-b898-f273b1bde216
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 145.671044ms
+    - id: 20
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/244
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 243
+        body: '{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "243"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:24 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "27"
+            X-Keyfactor-Correlation-Id:
+                - 4ead641f-1e94-4d55-b3ae-98332316f08f
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 148.67581ms
+    - id: 21
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:25 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "30"
+            X-Keyfactor-Correlation-Id:
+                - ecc18800-1be5-4023-ae12-2002208034ee
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 133.709585ms
+    - id: 22
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/245
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 243
+        body: '{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "243"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:25 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "24"
+            X-Keyfactor-Correlation-Id:
+                - 1bc69416-41d1-4146-b4ed-454e5f1c936f
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 123.115638ms
+    - id: 23
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:25 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "36"
+            X-Keyfactor-Correlation-Id:
+                - 82f159cb-21e5-4318-b585-f6a151e2dbe8
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 142.840301ms
+    - id: 24
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:25 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "27"
+            X-Keyfactor-Correlation-Id:
+                - 5a2c02a0-67b7-4853-a3be-6587cf674f20
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 135.509666ms
+    - id: 25
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:26 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "27"
+            X-Keyfactor-Correlation-Id:
+                - 28c58161-9f93-4f2d-9d94-fc7160b9df99
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 128.614923ms
+    - id: 26
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Initial description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:27 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "28"
+            X-Keyfactor-Correlation-Id:
+                - 610032c4-8096-419f-a350-c5b4736e2bc5
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 132.886884ms
+    - id: 27
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 514
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"Claims":[{"ClaimType":6,"ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Description":"Multi-claim test claim 1","ProviderAuthenticationScheme":"System"},{"ClaimType":6,"ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Description":"Multi-claim test claim 2","ProviderAuthenticationScheme":"System"}],"Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Id":370,"Name":"tf-unit-multi-assoc-36347000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:27 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "111"
+            X-Keyfactor-Correlation-Id:
+                - 07924b8c-b950-4d4b-9bb4-738c8c4cc247
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 225.520467ms
+    - id: 28
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:28 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "28"
+            X-Keyfactor-Correlation-Id:
+                - 6c54d868-f481-41b6-886e-435e324ad19e
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 129.513806ms
+    - id: 29
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:28 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "26"
+            X-Keyfactor-Correlation-Id:
+                - 62e6fac8-721d-421e-a347-f4a41d092392
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 126.988178ms
+    - id: 30
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/244
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 243
+        body: '{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "243"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:28 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "25"
+            X-Keyfactor-Correlation-Id:
+                - a30c4e11-afaa-4708-82e5-f1290a2a0e43
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 142.948474ms
+    - id: 31
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/245
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 243
+        body: '{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "243"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:29 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "21"
+            X-Keyfactor-Correlation-Id:
+                - 32eae1d4-f09c-4c5a-afd6-dff3d639457b
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 124.490087ms
+    - id: 32
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:29 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "54"
+            X-Keyfactor-Correlation-Id:
+                - 301f8d09-e7a3-4efc-be4d-c3c258f0ceb5
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 164.550551ms
+    - id: 33
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:29 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "33"
+            X-Keyfactor-Correlation-Id:
+                - 63506b3d-8a00-48d8-abef-53223008ec6e
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 149.097296ms
+    - id: 34
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:29 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "31"
+            X-Keyfactor-Correlation-Id:
+                - 8cb6b204-ca54-4a6d-a760-68f662d5134e
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 135.529562ms
+    - id: 35
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "83"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:30 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "30"
+            X-Keyfactor-Correlation-Id:
+                - 77bf0633-8b9e-49f1-9b36-6ddaf6fbeccc
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 134.232985ms
+    - id: 36
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 721
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}},{"Id":245,"Description":"Multi-claim test claim 2","ClaimType":"OAuthClientId","ClaimValue":"2454820b-a35a-4132-b5ee-94517619b0f0","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "721"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:31 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "36"
+            X-Keyfactor-Correlation-Id:
+                - aa9c7dd4-000d-4e79-81ed-b073900575cc
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 145.994018ms
+    - id: 37
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 365
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"Claims":[{"ClaimType":6,"ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Description":"Multi-claim test claim 1","ProviderAuthenticationScheme":"System"}],"Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Id":370,"Name":"tf-unit-multi-assoc-36347000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 477
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "477"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:31 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "84"
+            X-Keyfactor-Correlation-Id:
+                - b826c18a-1cc0-4385-bdde-05d329688bd1
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 197.944944ms
+    - id: 38
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 477
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":244,"Description":"Multi-claim test claim 1","ClaimType":"OAuthClientId","ClaimValue":"d0dad423-7125-4da2-82ea-c9081e253b0f","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "477"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:31 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "28"
+            X-Keyfactor-Correlation-Id:
+                - a1b5e9b9-3e91-490e-bc2c-c40b146b7aef
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 125.866925ms
+    - id: 39
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/245
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Date:
+                - Wed, 22 Apr 2026 18:12:31 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "34"
+            X-Keyfactor-Correlation-Id:
+                - 45673a22-110f-45cb-b0c4-9fd27a5d40a0
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 204 No Content
+        code: 204
+        duration: 143.393955ms
+    - id: 40
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 217
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"Claims":[],"Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Id":370,"Name":"tf-unit-multi-assoc-36347000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 234
+        body: '{"Id":370,"Name":"tf-unit-multi-assoc-36347000","Description":"Updated description","EmailAddress":"multi-claim-test@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Content-Length:
+                - "234"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 18:12:32 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "113"
+            X-Keyfactor-Correlation-Id:
+                - 8e48755a-cca2-4b1b-a13a-828b8f37179b
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 220.90327ms
+    - id: 41
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/244
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Date:
+                - Wed, 22 Apr 2026 18:12:32 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "31"
+            X-Keyfactor-Correlation-Id:
+                - 93c0ba63-c200-4a0e-a48f-8e9300fbee61
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 204 No Content
+        code: 204
+        duration: 139.152375ms
+    - id: 42
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/370
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Date:
+                - Wed, 22 Apr 2026 18:12:32 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "64"
+            X-Keyfactor-Correlation-Id:
+                - 8d7b2421-f168-488c-a0f5-6ef1ee4836b2
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 204 No Content
+        code: 204
+        duration: 171.035968ms

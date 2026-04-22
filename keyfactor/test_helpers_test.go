@@ -2915,3 +2915,35 @@ func discoverOrCreateTestCollection(t *testing.T, client *api.Client) int {
 	})
 	return id
 }
+
+// ---------------------------------------------------------------------------
+// OAuth multi-claim association test params
+// ---------------------------------------------------------------------------
+
+type oauthMultiAssocTestParams struct {
+	RoleName    string `json:"role_name"`
+	ClaimValue1 string `json:"claim_value_1"`
+	ClaimValue2 string `json:"claim_value_2"`
+}
+
+func writeOAuthMultiAssocTestParams(cassettePath string, params oauthMultiAssocTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readOAuthMultiAssocTestParams(cassettePath string) oauthMultiAssocTestParams {
+	defaults := oauthMultiAssocTestParams{
+		RoleName:    "tf-unit-role-multi-assoc",
+		ClaimValue1: "tf-unit-claim-multi-1",
+		ClaimValue2: "tf-unit-claim-multi-2",
+	}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params oauthMultiAssocTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return defaults
+	}
+	return params
+}

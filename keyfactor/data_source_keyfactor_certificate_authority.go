@@ -125,9 +125,9 @@ func (d dataSourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.
 				Description: "An integer that sets the type(s) of enrollment that are allowed through Keyfactor Command for the certificate authority: 0=none, 1=PFX, 2=CSR, 3=both.",
 			},
 			"key_retention": {
-				Type:        types.Int64Type,
+				Type:        types.StringType,
 				Computed:    true,
-				Description: "An integer that sets the key retention policy for the CA: 0=Disabled, 1=Indefinite, 2=AfterExpiration (requires key_retention_days), 3=FromIssuance (requires key_retention_days).",
+				Description: "Key retention policy for the CA. Stored as the named form: Disabled (0), Indefinite (1), AfterExpiration (2), FromIssuance (3).",
 			},
 			"key_retention_days": {
 				Type:        types.Int64Type,
@@ -311,7 +311,7 @@ type KeyfactorCertificateAuthorityDataSource struct {
 	RFCEnforcement                types.Bool   `tfsdk:"rfc_enforcement"`
 	Properties                    types.String `tfsdk:"properties"`
 	AllowedEnrollmentTypes        types.Int64  `tfsdk:"allowed_enrollment_types"`
-	KeyRetention                  types.Int64  `tfsdk:"key_retention"`
+	KeyRetention                  types.String `tfsdk:"key_retention"`
 	KeyRetentionDays              types.Int64  `tfsdk:"key_retention_days"`
 	EnforceUniqueDN               types.Bool   `tfsdk:"enforce_unique_dn"`
 	SubscriberTerms               types.Bool   `tfsdk:"subscriber_terms"`

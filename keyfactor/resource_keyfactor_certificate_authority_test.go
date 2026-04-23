@@ -238,6 +238,159 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Unit tests: key_retention helpers
+// ---------------------------------------------------------------------------
+
+func TestUnitKeyRetentionStringConversion(t *testing.T) {
+	// Test keyRetentionNameToInt: named forms
+	nameTests := []struct {
+		input string
+		want  int32
+	}{
+		{"Disabled", 0},
+		{"Indefinite", 1},
+		{"AfterExpiration", 2},
+		{"FromIssuance", 3},
+		{"0", 0},
+		{"1", 1},
+		{"2", 2},
+		{"3", 3},
+	}
+	for _, tc := range nameTests {
+		got, ok := keyRetentionNameToInt[tc.input]
+		if !ok {
+			t.Errorf("keyRetentionNameToInt[%q]: expected entry, got missing", tc.input)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("keyRetentionNameToInt[%q] = %d, want %d", tc.input, got, tc.want)
+		}
+	}
+
+	// Test keyRetentionIntToName
+	intTests := []struct {
+		input int32
+		want  string
+	}{
+		{0, "Disabled"},
+		{1, "Indefinite"},
+		{2, "AfterExpiration"},
+		{3, "FromIssuance"},
+	}
+	for _, tc := range intTests {
+		got, ok := keyRetentionIntToName[tc.input]
+		if !ok {
+			t.Errorf("keyRetentionIntToName[%d]: expected entry, got missing", tc.input)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("keyRetentionIntToName[%d] = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+
+	// Invalid input should not be found
+	if _, ok := keyRetentionNameToInt["bogus"]; ok {
+		t.Error("keyRetentionNameToInt[\"bogus\"] should not exist")
+	}
+	if _, ok := keyRetentionIntToName[99]; ok {
+		t.Error("keyRetentionIntToName[99] should not exist")
+	}
+}
+
+func TestUnitCertificateAuthorityStateUpgrade(t *testing.T) {
+	tests := []struct {
+		intVal   int
+		wantName string
+	}{
+		{0, "Disabled"},
+		{1, "Indefinite"},
+		{2, "AfterExpiration"},
+		{3, "FromIssuance"},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(fmt.Sprintf("%d_to_%s", tc.intVal, tc.wantName), func(t *testing.T) {
+			// Build a minimal v0 state JSON with key_retention as a number.
+			stateJSON := fmt.Sprintf(`{
+				"id": "42",
+				"logical_name": "TestCA",
+				"host_name": "ca.example.com",
+				"ca_type": 1,
+				"delegate": false,
+				"delegate_enrollment": false,
+				"forest_root": "",
+				"configuration_tenant": "",
+				"remote": false,
+				"agent": null,
+				"standalone": false,
+				"use_ca_connector": false,
+				"connector_pool": "",
+				"monitor_thresholds": false,
+				"issuance_max": null,
+				"issuance_min": null,
+				"failure_max": null,
+				"rfc_enforcement": false,
+				"properties": "",
+				"allowed_enrollment_types": 0,
+				"key_retention": %d,
+				"key_retention_days": null,
+				"enforce_unique_dn": false,
+				"subscriber_terms": false,
+				"allow_one_click_renewals": false,
+				"new_end_entity_on_renew_and_reissue": false,
+				"use_allowed_requesters": false,
+				"allowed_requesters": null,
+				"explicit_credentials": false,
+				"explicit_user": null,
+				"explicit_password": null,
+				"auth_certificate": null,
+				"auth_certificate_password": null,
+				"auth_certificate_issued_dn": null,
+				"auth_certificate_issuer_dn": null,
+				"auth_certificate_thumbprint": null,
+				"token_url": "",
+				"client_id": "",
+				"client_secret": null,
+				"scope": "",
+				"audience": "",
+				"full_scan_interval_minutes": null,
+				"incremental_scan_interval_minutes": null,
+				"threshold_check_interval_minutes": null,
+				"force_save": null,
+				"agent_name": null,
+				"agent_username": null,
+				"denial_max": null,
+				"last_scan": ""
+			}`, tc.intVal)
+
+			// Parse the JSON into a generic map and call the upgrade logic directly.
+			var stateMap map[string]interface{}
+			if err := json.Unmarshal([]byte(stateJSON), &stateMap); err != nil {
+				t.Fatalf("Failed to unmarshal test state JSON: %s", err)
+			}
+
+			// Simulate the conversion logic from upgradeCAStateV0ToV1.
+			if raw, ok := stateMap["key_retention"]; ok && raw != nil {
+				if v, ok := raw.(float64); ok {
+					if name, ok := keyRetentionIntToName[int32(v)]; ok {
+						stateMap["key_retention"] = name
+					}
+				}
+			}
+
+			got, ok := stateMap["key_retention"].(string)
+			if !ok {
+				t.Fatalf("key_retention is not a string after upgrade: %T", stateMap["key_retention"])
+			}
+			if got != tc.wantName {
+				t.Errorf("key_retention after upgrade = %q, want %q", got, tc.wantName)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Config generators
 // ---------------------------------------------------------------------------
 

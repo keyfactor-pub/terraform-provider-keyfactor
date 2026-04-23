@@ -16,6 +16,7 @@
 - fix: `keyfactor_oauth_security_role` Create and ImportState no longer panic when the API response has a nil `Id` field; a diagnostic error is returned instead
 - fix: `keyfactor_oauth_security_claim` Create no longer panics when the API response has a nil `Id` field; a diagnostic error is returned instead
 - fix: nil HTTP response body dereferences in `keyfactor_oauth_security_role` and `keyfactor_oauth_security_claim` error handling paths
+- fix: OAuth pre-fetched `access_token` authentication mode now correctly forwards the token to the auth client; previously the SDK silently dropped `access_token`, `audience`, and `scopes` fields, causing fallback to environment variables or config file credentials (SDK [v24.1.1](https://github.com/Keyfactor/keyfactor-go-client-sdk/releases/tag/v24.1.1))
 
 ## Certificate Authorities
 

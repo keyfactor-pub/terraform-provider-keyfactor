@@ -127,7 +127,7 @@ func (d dataSourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.
 			"key_retention": {
 				Type:        types.Int64Type,
 				Computed:    true,
-				Description: "An integer that sets the type of key retention to enable for the certificate authority: 0=None, 1=SettingDriven, 2=Always, 3=Never.",
+				Description: "An integer that sets the key retention policy for the CA: 0=Disabled, 1=Indefinite, 2=AfterExpiration (requires key_retention_days), 3=FromIssuance (requires key_retention_days).",
 			},
 			"key_retention_days": {
 				Type:        types.Int64Type,

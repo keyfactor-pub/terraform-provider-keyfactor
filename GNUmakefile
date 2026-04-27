@@ -290,6 +290,28 @@ testunit-record-cert-no-ca:
 	$(MAKE) testunit-record-one TEST_NAME=TestUnitKeyfactorCertificateResource_PFX_NoCA
 	$(MAKE) testunit-record-one TEST_NAME=TestUnitKeyfactorCertificateResource_CSR_NoCA
 
+## testunit-record-cert-friendly-collection: Record the VCR cassette for the
+## "inconsistent result after apply" regression test (collection_id, friendly_name,
+## use_cn_as_friendly_name preserved across Read).
+testunit-record-cert-friendly-collection:
+	$(MAKE) testunit-record-one TEST_NAME=TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved
+
+## testunit-repro-friendly-collection-bug: Reproduce the original v2.8.0 regression
+## by checking out the exact buggy commit (b132d59) for resource_keyfactor_certificate.go,
+## running the regression test (which is expected to FAIL on the buggy code), and then
+## restoring the fix from HEAD. Use this to confirm the test actually catches the
+## regression it documents. b132d59 is the precise commit that introduced the bug
+## (more accurate than the v2.8.0 tag, which contains unrelated changes).
+testunit-repro-friendly-collection-bug:
+	@echo "==> Reproducing v2.8.0 regression: checking out b132d59 keyfactor/resource_keyfactor_certificate.go (buggy)"
+	git checkout b132d59 -- keyfactor/resource_keyfactor_certificate.go
+	@echo "==> Running TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved (expected to FAIL on buggy code)"
+	-go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved" -v -count=1 -timeout 5m
+	@echo "==> Restoring fixed resource_keyfactor_certificate.go from HEAD"
+	git checkout HEAD -- keyfactor/resource_keyfactor_certificate.go
+	@echo "==> Re-running test on fixed code (expected to PASS)"
+	go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved" -v -count=1 -timeout 5m
+
 # Re-record ALL unit test cassettes (requires lab connection and Command v25+ for enrollment-pattern).
 # This is the primary target to run when the Command API changes break existing cassettes.
 testunit-record-all:
@@ -328,6 +350,7 @@ testunit-record-all:
 	$(MAKE) testunit-record-cert-pfx-metadata
 	$(MAKE) testunit-record-cert-csr-metadata
 	$(MAKE) testunit-record-cert-no-ca
+	$(MAKE) testunit-record-cert-friendly-collection
 
 # Run unit tests and display only failures (quiet mode)
 testunit-check:

@@ -898,6 +898,33 @@ func (r resourceCommandCertificate) Create(
 
 }
 
+// preserveWriteOnlyEnrollmentFieldsFromState copies the write-only enrollment
+// parameters from the prior Terraform state into the result struct that the
+// Read path returns. The Keyfactor Command server does not echo these fields
+// back on certificate GET responses, so if Read returned null/zero for them
+// after Create the framework would surface "Provider produced inconsistent
+// result after apply" because Create wrote the plan values into state.
+//
+// Fields preserved:
+//   - collection_id: server has no concept of collection context on a stored
+//     certificate; only meaningful at enrollment / lookup time.
+//   - friendly_name: write-only enrollment parameter (CustomFriendlyName).
+//   - use_cn_as_friendly_name: write-only enrollment parameter; the server
+//     does not store this flag separately from the resolved friendly name.
+//
+// This helper exists primarily as a stable, directly-testable seam so a unit
+// test can validate the fix for the "inconsistent result after apply"
+// regression that existed in v2.8.0, without needing a full VCR cassette
+// round-trip through Read.
+func preserveWriteOnlyEnrollmentFieldsFromState(state CommandCertificate, result *CommandCertificate) {
+	if result == nil {
+		return
+	}
+	result.CollectionId = state.CollectionId
+	result.FriendlyName = state.FriendlyName
+	result.UseCNAsFriendlyName = state.UseCNAsFriendlyName
+}
+
 func (r resourceCommandCertificate) Read(
 	ctx context.Context,
 	request tfsdk.ReadResourceRequest,
@@ -1044,22 +1071,27 @@ func (r resourceCommandCertificate) Read(
 		// specified only the logical name.  This prevents spurious plan drift on
 		// an attribute that carries RequiresReplace semantics.
 		remoteCaName := certGetResp.CertificateAuthorityName
-		if remoteCaName != "" && caName != "" && remoteCaName != caName {
-			// Check if the remote CA name ends with the state value (logical name match)
-			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
-				tflog.Debug(
-					ctx,
-					fmt.Sprintf(
-						"Preserving user-supplied certificate_authority %q (remote returned %q)",
-						caName,
-						remoteCaName,
-					),
-				)
-			} else {
+		if remoteCaName != "" {
+			if caName == "" {
+				// caName empty (e.g., enrollment-pattern enrollment with no
+				// user-supplied certificate_authority): populate from server so
+				// the resource reflects which CA actually issued the cert.
 				caName = remoteCaName
+			} else if remoteCaName != caName {
+				// Check if the remote CA name ends with the state value (logical name match)
+				if !strings.HasSuffix(remoteCaName, "\\"+caName) && !strings.HasSuffix(remoteCaName, "\\\\"+caName) {
+					caName = remoteCaName
+				} else {
+					tflog.Debug(
+						ctx,
+						fmt.Sprintf(
+							"Preserving user-supplied certificate_authority %q (remote returned %q)",
+							caName,
+							remoteCaName,
+						),
+					)
+				}
 			}
-		} else if remoteCaName != "" {
-			caName = remoteCaName
 		}
 		certificateID = certGetResp.Id
 		//templateName = certGetResp.TemplateName
@@ -1211,12 +1243,9 @@ func (r resourceCommandCertificate) Read(
 		},
 		CertificateFormat: state.CertificateFormat,
 		//CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
-		Metadata:            metadata,
-		CertificateId:       types.Int64{Value: int64(certificateID), Null: isNullId(certificateID)},
-		CollectionId:        state.CollectionId,       // server doesn't return collection context; preserve from state
-		FriendlyName:        types.String{Null: true}, // write-only enrollment param
-		UseCNAsFriendlyName: types.Bool{Null: true},   // write-only enrollment param
-		ExpiryWarningDays:   state.ExpiryWarningDays,
+		Metadata:          metadata,
+		CertificateId:     types.Int64{Value: int64(certificateID), Null: isNullId(certificateID)},
+		ExpiryWarningDays: state.ExpiryWarningDays,
 		IsExpired: types.Bool{
 			Value: expired,
 		},
@@ -1247,6 +1276,12 @@ func (r resourceCommandCertificate) Read(
 		KeySize:           state.KeySize,
 		Curve:             state.Curve,
 	}
+
+	// Preserve write-only enrollment fields (collection_id, friendly_name,
+	// use_cn_as_friendly_name) that the server does not return on GET. Without
+	// this, Create -> Read produces "Provider produced inconsistent result
+	// after apply" because the plan value would be replaced by null.
+	preserveWriteOnlyEnrollmentFieldsFromState(state, &result)
 
 	if certGetResp != nil {
 		if certGetResp.RevocationEffDate != "" {
@@ -2101,29 +2136,33 @@ func (r resourceCommandCertificate) ImportState(
 	if certGetResp != nil {
 		// Info that can only be retrieved with `Read Certificates` permissions
 		remoteCaName := certGetResp.CertificateAuthorityName
-		if remoteCaName != "" && caName != "" && remoteCaName != caName {
-			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
-				tflog.Debug(
-					ctx,
-					fmt.Sprintf(
-						"Preserving user-supplied certificate_authority %q (remote returned %q)",
-						caName,
-						remoteCaName,
-					),
-				)
-			} else {
-				caName = remoteCaName
-			}
-		} else if remoteCaName != "" {
-			// caName is empty (import path): extract the logical name from the
-			// server-returned CA path.  Handles Windows "HOST\\LogicalName" and
-			// EJBCA URL format "http://ejbca.../ejbca\\LogicalName" so that the
-			// imported state stores the short logical name and matches the typical
-			// user-supplied certificate_authority value without causing drift.
-			if idx := strings.LastIndex(remoteCaName, "\\"); idx >= 0 {
-				caName = remoteCaName[idx+1:]
-			} else {
-				caName = remoteCaName
+		if remoteCaName != "" {
+			if caName == "" {
+				// caName is empty (import path or enrollment-pattern create with
+				// no user-supplied certificate_authority): extract the logical
+				// name from the server-returned CA path.  Handles Windows
+				// "HOST\\LogicalName" and EJBCA URL format
+				// "http://ejbca.../ejbca\\LogicalName" so that state stores the
+				// short logical name and matches the typical user-supplied
+				// certificate_authority value without causing drift.
+				if idx := strings.LastIndex(remoteCaName, "\\"); idx >= 0 {
+					caName = remoteCaName[idx+1:]
+				} else {
+					caName = remoteCaName
+				}
+			} else if remoteCaName != caName {
+				if !strings.HasSuffix(remoteCaName, "\\"+caName) && !strings.HasSuffix(remoteCaName, "\\\\"+caName) {
+					caName = remoteCaName
+				} else {
+					tflog.Debug(
+						ctx,
+						fmt.Sprintf(
+							"Preserving user-supplied certificate_authority %q (remote returned %q)",
+							caName,
+							remoteCaName,
+						),
+					)
+				}
 			}
 		}
 		certificateIdInt = certGetResp.Id

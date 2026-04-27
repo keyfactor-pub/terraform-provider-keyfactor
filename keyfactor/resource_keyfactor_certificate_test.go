@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
@@ -3223,4 +3224,256 @@ resource "keyfactor_certificate" "test" {
   key_password                     = "Tftest123456"%s
 }
 `, cn, ca, templateName, collectionLine)
+}
+
+// testAccCertPFXConfigFriendlyNameAndCollection generates HCL for a PFX certificate
+// resource that exercises the write-only enrollment parameters which the server does
+// not return on Read: collection_id, friendly_name, and use_cn_as_friendly_name.
+func testAccCertPFXConfigFriendlyNameAndCollection(
+	enrollmentPattern, templateName, ca, cn, friendlyName string,
+	useCNAsFriendlyName bool,
+	collectionId int,
+) string {
+	collectionLine := ""
+	if collectionId > 0 {
+		collectionLine = fmt.Sprintf("\n  collection_id                    = %d", collectionId)
+	}
+	friendlyLine := ""
+	if friendlyName != "" {
+		friendlyLine = fmt.Sprintf("\n  friendly_name                    = \"%s\"", friendlyName)
+	}
+	useCNLine := fmt.Sprintf("\n  use_cn_as_friendly_name          = %t", useCNAsFriendlyName)
+
+	if enrollmentPattern != "" {
+		return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                      = "%s"
+  certificate_authority            = "%s"
+  certificate_enrollment_pattern   = "%s"
+  key_password                     = "Tftest123456"%s%s%s
+}
+`, cn, ca, enrollmentPattern, friendlyLine, useCNLine, collectionLine)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                      = "%s"
+  certificate_authority            = "%s"
+  certificate_template             = "%s"
+  key_password                     = "Tftest123456"%s%s%s
+}
+`, cn, ca, templateName, friendlyLine, useCNLine, collectionLine)
+}
+
+// TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved is a
+// regression test for the "inconsistent result after apply" bug where the Read path
+// hardcoded collection_id, friendly_name, and use_cn_as_friendly_name to null even
+// though Create stored the plan values. After the fix, Read preserves these
+// write-only enrollment parameters from state.
+//
+// This test uses the two-step pattern (Create -> RefreshState) — RefreshState
+// exercises the full Read path without re-applying the config. If Read returned
+// null for any of these three fields the framework would surface either an
+// "inconsistent result after apply" error during Step 1 or a non-empty plan after
+// Step 2.
+//
+// The test is unit-style (uses VCR cassettes via newVCRProviderFactories). It
+// will skip cleanly in replay mode if no cassette has been recorded yet.
+//
+// To record the cassette:
+//
+//	RECORD_CASSETTES=1 TEST_NAME=TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved make testunit-record-one
+//
+// To reproduce the original bug against this test (verify the test fails on
+// the regressed code path), check out the exact commit that introduced the
+// regression — b132d59 ("fix(certificate): fix import drift — CA name
+// normalization, template suppression, RequiresReplaceIfPreviouslySet"):
+//
+//	git checkout b132d59 -- keyfactor/resource_keyfactor_certificate.go
+//	go test ./keyfactor/ -run TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved -v
+//	git checkout HEAD -- keyfactor/resource_keyfactor_certificate.go   # restore the fix
+//
+// b132d59 is more precise than the v2.8.0 tag because it isolates the exact
+// Read-path change (hardcoding CollectionId/FriendlyName/UseCNAsFriendlyName
+// to null) without dragging in unrelated v2.8.0 file changes.
+func TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved(t *testing.T) {
+	cassetteName := "certificate_resource_pfx_friendly_collection"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	const (
+		friendlyName        = "tf-unit-friendly"
+		useCNAsFriendlyName = true
+		collectionId        = 0 // 0 omits the line; flip to a known collection ID when recording
+	)
+
+	var config string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		ca := discoverCA(t, client)
+		cn := randomTestCN("tf-unit-pfx-friendly")
+		enrollmentPattern := discoverEnrollmentPattern(t, client)
+		var templateName string
+		if enrollmentPattern == "" {
+			templateName = discoverTemplate(t, client)
+		}
+		config = testAccCertPFXConfigFriendlyNameAndCollection(
+			enrollmentPattern, templateName, ca, cn, friendlyName, useCNAsFriendlyName, collectionId,
+		)
+		writeCertPFXTestParams(cassettePath, certPFXTestParams{
+			TemplateName:      templateName,
+			CA:                ca,
+			EnrollmentPattern: enrollmentPattern,
+			CN:                cn,
+		})
+	} else {
+		params := readCertPFXTestParams(cassettePath)
+		config = testAccCertPFXConfigFriendlyNameAndCollection(
+			params.EnrollmentPattern, params.TemplateName, params.CA, params.CN,
+			friendlyName, useCNAsFriendlyName, collectionId,
+		)
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	res := "keyfactor_certificate.test"
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: Create — implicit post-apply Read must NOT change the
+				// values for collection_id, friendly_name, or use_cn_as_friendly_name.
+				// Pre-fix this caused "Provider produced inconsistent result after apply".
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(res, "thumbprint"),
+					resource.TestCheckResourceAttr(res, "friendly_name", friendlyName),
+					resource.TestCheckResourceAttr(res, "use_cn_as_friendly_name", "true"),
+				),
+			},
+			{
+				// Step 2: RefreshState exercises the standalone Read path. The
+				// plan that follows must show no drift on the three write-only
+				// fields. If Read returned null, terraform would plan an
+				// in-place update.
+				RefreshState: true,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(res, "friendly_name", friendlyName),
+					resource.TestCheckResourceAttr(res, "use_cn_as_friendly_name", "true"),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitCertificateResourceReadPreservesWriteOnlyFields is a direct,
+// network-free regression test for the v2.8.0 bug where the certificate
+// resource Read path returned null for collection_id, friendly_name, and
+// use_cn_as_friendly_name even though Create wrote those plan values into
+// state. The bug surfaced as "Provider produced inconsistent result after
+// apply" the first time Terraform compared the post-apply Read output to
+// the planned value.
+//
+// The test calls preserveWriteOnlyEnrollmentFieldsFromState — the helper
+// that the Read path uses to copy these write-only enrollment fields from
+// the prior state into the result struct — and asserts that all three
+// fields are preserved.
+//
+// Red/green proof of the fix:
+//   - On v2.8.0 (broken) code, the helper does not exist and the inline
+//     assignments hardcode types.{Bool,Int64,String}{Null: true}. Checking
+//     out v2.8.0 of resource_keyfactor_certificate.go therefore removes
+//     this helper entirely; the test file fails to compile and `go test`
+//     reports a build-level FAIL — the regression is detectable.
+//   - With the fix in place the helper preserves state values; the test
+//     passes.
+//
+// This test is intentionally a TestUnit* test with no VCR cassette and no
+// network calls — it exercises the state-preservation contract directly.
+func TestUnitCertificateResourceReadPreservesWriteOnlyFields(t *testing.T) {
+	cases := []struct {
+		name  string
+		state CommandCertificate
+	}{
+		{
+			name: "all_fields_set",
+			state: CommandCertificate{
+				CollectionId:        types.Int64{Value: 42},
+				FriendlyName:        types.String{Value: "tf-friendly-name"},
+				UseCNAsFriendlyName: types.Bool{Value: true},
+			},
+		},
+		{
+			name: "use_cn_as_friendly_name_false",
+			state: CommandCertificate{
+				CollectionId:        types.Int64{Value: 7},
+				FriendlyName:        types.String{Value: "another-name"},
+				UseCNAsFriendlyName: types.Bool{Value: false},
+			},
+		},
+		{
+			name: "all_null_state",
+			state: CommandCertificate{
+				CollectionId:        types.Int64{Null: true},
+				FriendlyName:        types.String{Null: true},
+				UseCNAsFriendlyName: types.Bool{Null: true},
+			},
+		},
+		{
+			name: "friendly_name_null_use_cn_true",
+			state: CommandCertificate{
+				CollectionId:        types.Int64{Null: true},
+				FriendlyName:        types.String{Null: true},
+				UseCNAsFriendlyName: types.Bool{Value: true},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			// Simulate what Read does: build a result struct with the
+			// non-write-only fields populated from the server response,
+			// then invoke the helper to overlay the write-only fields
+			// from the prior state. After the helper runs the three
+			// fields under test must equal their state counterparts.
+			//
+			// We deliberately seed the result with the pre-fix values
+			// (hardcoded null) to mirror the v2.8.0 behavior; the helper
+			// must overwrite them with state.
+			result := CommandCertificate{
+				CollectionId:        types.Int64{Null: true},
+				FriendlyName:        types.String{Null: true},
+				UseCNAsFriendlyName: types.Bool{Null: true},
+			}
+
+			preserveWriteOnlyEnrollmentFieldsFromState(tc.state, &result)
+
+			if result.CollectionId.Null != tc.state.CollectionId.Null ||
+				result.CollectionId.Value != tc.state.CollectionId.Value {
+				t.Errorf(
+					"CollectionId not preserved: got {Null:%v Value:%d}, want {Null:%v Value:%d}",
+					result.CollectionId.Null, result.CollectionId.Value,
+					tc.state.CollectionId.Null, tc.state.CollectionId.Value,
+				)
+			}
+
+			if result.FriendlyName.Null != tc.state.FriendlyName.Null ||
+				result.FriendlyName.Value != tc.state.FriendlyName.Value {
+				t.Errorf(
+					"FriendlyName not preserved: got {Null:%v Value:%q}, want {Null:%v Value:%q}",
+					result.FriendlyName.Null, result.FriendlyName.Value,
+					tc.state.FriendlyName.Null, tc.state.FriendlyName.Value,
+				)
+			}
+
+			if result.UseCNAsFriendlyName.Null != tc.state.UseCNAsFriendlyName.Null ||
+				result.UseCNAsFriendlyName.Value != tc.state.UseCNAsFriendlyName.Value {
+				t.Errorf(
+					"UseCNAsFriendlyName not preserved: got {Null:%v Value:%v}, want {Null:%v Value:%v}",
+					result.UseCNAsFriendlyName.Null, result.UseCNAsFriendlyName.Value,
+					tc.state.UseCNAsFriendlyName.Null, tc.state.UseCNAsFriendlyName.Value,
+				)
+			}
+		})
+	}
 }

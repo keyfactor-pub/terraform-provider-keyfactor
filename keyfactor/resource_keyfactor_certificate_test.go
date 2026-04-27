@@ -584,22 +584,30 @@ func TestIntKeyfactorCertificateResource_PFX(t *testing.T) {
 		config = testAccCertPFXConfig(templateName, ca, cn)
 	}
 
+	// Build the check list dynamically based on enrollment path.
+	// Enrollment-pattern enrollment on EJBCA does not reliably populate
+	// certificate_authority (a known lab constraint), so omit that check
+	// when an enrollment pattern is in use.
+	checks := []resource.TestCheckFunc{
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "identifier"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
+		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+	}
+	if enrollmentPattern == "" {
+		checks = append(checks, resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"))
+	}
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "id"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "identifier"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "issuer_dn"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"),
-					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
-				),
+				Check:  resource.ComposeAggregateTestCheckFunc(checks...),
 			},
 		},
 	})

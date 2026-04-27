@@ -2215,9 +2215,9 @@ func (r resourceCommandCertificate) ImportState(
 		CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(certificateIdInt), Null: isNullId(certificateIdInt)},
-		CollectionId:        types.Int64{Null: true},
-		FriendlyName:        types.String{Null: true},
-		UseCNAsFriendlyName: types.Bool{Null: true},
+		CollectionId:        state.CollectionId,
+		FriendlyName:        state.FriendlyName,
+		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
 		RequestId:           types.Int64{Value: int64(requestId), Null: isNullId(requestId)},
 		ExpiryWarningDays:   types.Int64{Null: true},  // write-only; isNullId(0)==true means not set
 		IsExpired:           types.Bool{Value: false}, // Set to false as we just enrolled the certificate

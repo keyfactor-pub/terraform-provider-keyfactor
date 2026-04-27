@@ -1,7 +1,11 @@
 package keyfactor
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"testing"
@@ -118,7 +122,10 @@ func TestUnitOAuthAccessTokenNoClientCreds(t *testing.T) {
 //
 // Requirements:
 //   - KEYFACTOR_HOSTNAME must be set
-//   - KEYFACTOR_AUTH_ACCESS_TOKEN must be set to a valid Bearer token
+//   - Either KEYFACTOR_AUTH_ACCESS_TOKEN must be pre-set, OR
+//     KEYFACTOR_AUTH_CLIENT_ID + KEYFACTOR_AUTH_CLIENT_SECRET +
+//     KEYFACTOR_AUTH_TOKEN_URL must all be set (the test will fetch a token
+//     via client credentials grant)
 //   - KEYFACTOR_SKIP_VERIFY (optional)
 //
 // To obtain a token for manual testing:
@@ -133,10 +140,18 @@ func TestIntOAuthAccessTokenAuth(t *testing.T) {
 	}
 	accessToken := os.Getenv("KEYFACTOR_AUTH_ACCESS_TOKEN")
 	if accessToken == "" {
-		t.Skip("KEYFACTOR_AUTH_ACCESS_TOKEN must be set for access_token-only integration test")
+		// Fall back to client credentials grant if available
+		clientID := os.Getenv("KEYFACTOR_AUTH_CLIENT_ID")
+		clientSecret := os.Getenv("KEYFACTOR_AUTH_CLIENT_SECRET")
+		tokenURL := os.Getenv("KEYFACTOR_AUTH_TOKEN_URL")
+		if clientID == "" || clientSecret == "" || tokenURL == "" {
+			t.Skip("KEYFACTOR_AUTH_ACCESS_TOKEN or OAuth client credentials must be set")
+		}
+		accessToken = fetchOAuthToken(t, tokenURL, clientID, clientSecret)
 	}
 
 	// Clear OAuth client credential env vars to force access_token-only mode
+	origAccessToken := os.Getenv("KEYFACTOR_AUTH_ACCESS_TOKEN")
 	origClientID := os.Getenv("KEYFACTOR_AUTH_CLIENT_ID")
 	origClientSecret := os.Getenv("KEYFACTOR_AUTH_CLIENT_SECRET")
 	origTokenURL := os.Getenv("KEYFACTOR_AUTH_TOKEN_URL")
@@ -151,7 +166,12 @@ func TestIntOAuthAccessTokenAuth(t *testing.T) {
 	os.Unsetenv("KEYFACTOR_PASSWORD")
 	os.Unsetenv("KEYFACTOR_DOMAIN")
 
+	// Ensure the access token env var is set so the provider picks it up
+	// (it may have been freshly fetched, or pre-set by the caller).
+	os.Setenv("KEYFACTOR_AUTH_ACCESS_TOKEN", accessToken)
+
 	t.Cleanup(func() {
+		restoreEnv("KEYFACTOR_AUTH_ACCESS_TOKEN", origAccessToken)
 		restoreEnv("KEYFACTOR_AUTH_CLIENT_ID", origClientID)
 		restoreEnv("KEYFACTOR_AUTH_CLIENT_SECRET", origClientSecret)
 		restoreEnv("KEYFACTOR_AUTH_TOKEN_URL", origTokenURL)
@@ -190,4 +210,31 @@ func restoreEnv(key, original string) {
 	} else {
 		os.Setenv(key, original)
 	}
+}
+
+// fetchOAuthToken performs a client credentials grant against the given token
+// URL and returns the access_token from the response. The test is skipped (not
+// failed) if the request fails or the response cannot be parsed — this lets
+// the test be safely run in environments where the token endpoint is
+// unreachable.
+func fetchOAuthToken(t *testing.T, tokenURL, clientID, clientSecret string) string {
+	t.Helper()
+	vals := url.Values{
+		"grant_type":    {"client_credentials"},
+		"client_id":     {clientID},
+		"client_secret": {clientSecret},
+	}
+	resp, err := http.PostForm(tokenURL, vals)
+	if err != nil {
+		t.Skipf("could not fetch access token: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || result.AccessToken == "" {
+		t.Skipf("could not parse access token from response: %s", body)
+	}
+	return result.AccessToken
 }

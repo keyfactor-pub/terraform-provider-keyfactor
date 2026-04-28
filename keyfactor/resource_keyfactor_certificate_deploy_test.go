@@ -230,3 +230,48 @@ func TestIntKeyfactorCertificateDeployResource(t *testing.T) {
 		},
 	})
 }
+
+func TestIntKeyfactorCertificateDeployResource_WithInventory(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+	agentID, clientMachine := discoverAgent(t, client)
+	storeType := discoverStoreTypeForAgent(t, client, agentID)
+
+	var storePath string
+	if strings.HasPrefix(strings.ToLower(storeType), "k8s") {
+		if k8sStoreCredentials() == "" {
+			t.Skip("Skipping K8S deployment test: set KEYFACTOR_K8S_CREDENTIALS_FILE or KEYFACTOR_K8S_SERVER_PASSWORD")
+		}
+		storePath = fmt.Sprintf("default/tf-int-test-deploy-inv-%d", time.Now().UnixNano())
+	} else {
+		storePath = fmt.Sprintf("/tf-int-test-deploy-inv-%d", time.Now().UnixNano())
+	}
+
+	cn := randomTestCN("tf-int-deploy-inv")
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var certConfig string
+	if enrollmentPattern != "" {
+		certConfig = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+	} else {
+		templateName := discoverTemplate(t, client)
+		certConfig = testAccCertPFXConfig(templateName, ca, cn)
+	}
+
+	storeConfig := testAccCertStoreConfigWithInventory(storeType, clientMachine, agentID, storePath)
+	deployConfig := testAccCertDeployConfig("keyfactor_certificate.test", "keyfactor_certificate_store.test")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: certConfig + "\n" + storeConfig + "\n" + deployConfig,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_store_id"),
+				),
+			},
+		},
+	})
+}

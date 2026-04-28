@@ -2212,6 +2212,48 @@ resource "keyfactor_certificate_store" "test" {
 `, clientMachine, storePath, agentID, storeType)
 }
 
+func testAccCertStoreConfigWithInventory(storeType, clientMachine, agentID, storePath string) string {
+	stLower := strings.ToLower(storeType)
+	if strings.HasPrefix(stLower, "k8s") {
+		creds := k8sStoreCredentials()
+		kubeSecretType := "tls"
+		switch stLower {
+		case "k8ssecret":
+			kubeSecretType = "opaque"
+		case "k8sjks":
+			kubeSecretType = "jks"
+		case "k8spkcs12":
+			kubeSecretType = "pkcs12"
+		}
+		return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine     = "%s"
+  store_path         = "%s"
+  agent_identifier   = "%s"
+  store_type         = "%s"
+  server_username    = "kubeconfig"
+  server_password    = <<EOT
+%s
+EOT
+  server_use_ssl     = true
+  inventory_schedule = "Daily at 12:00:00"
+  properties = {
+    KubeSecretType = "%s"
+  }
+}
+`, clientMachine, storePath, agentID, storeType, creds, kubeSecretType)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine     = "%s"
+  store_path         = "%s"
+  agent_identifier   = "%s"
+  store_type         = "%s"
+  inventory_schedule = "Daily at 12:00:00"
+}
+`, clientMachine, storePath, agentID, storeType)
+}
+
 // testAccCertStoreConfigWithAppName generates HCL for a certificate store resource
 // that uses application_name (the v25+ alias) instead of container_name.
 // Pass appName="" to omit the application_name attribute.

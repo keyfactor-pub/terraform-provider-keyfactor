@@ -209,6 +209,7 @@ func TestUnitKeyfactorCertificateStoreResource(t *testing.T) {
 					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "approved", "true"),
 					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "agent_assigned", "true"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "properties.%"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "display_name", fmt.Sprintf("%s - %s", clientMachine, storePath)),
 				),
 			},
 		},

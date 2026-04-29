@@ -184,6 +184,7 @@ func TestIntKeyfactorCertificateDeployResource(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	ca := discoverCA(t, client)
 	agentID, clientMachine := discoverAgent(t, client)
+	requireActiveAgent(t, client)
 	storeType := discoverStoreTypeForAgent(t, client, agentID)
 
 	// For K8S store types, require credentials and use namespace/name path format
@@ -235,6 +236,7 @@ func TestIntKeyfactorCertificateDeployResource_WithInventory(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	ca := discoverCA(t, client)
 	agentID, clientMachine := discoverAgent(t, client)
+	requireActiveAgent(t, client)
 	storeType := discoverStoreTypeForAgent(t, client, agentID)
 
 	var storePath string
@@ -287,6 +289,7 @@ func TestIntKeyfactorCertificateDeployResource_BothPaths(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	ca := discoverCA(t, client)
 	agentID, clientMachine := discoverAgent(t, client)
+	requireActiveAgent(t, client)
 
 	// K8SPKCS12 is required: it does NOT auto-assign an inventory schedule,
 	// so step 1 exercises the no-schedule warning path without needing an orchestrator.

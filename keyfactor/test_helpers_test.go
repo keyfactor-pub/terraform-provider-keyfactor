@@ -533,6 +533,63 @@ func discoverAgent(t *testing.T, client *api.Client) (agentID, clientMachine str
 	return agent.AgentId, agent.ClientMachine
 }
 
+// requireActiveAgent skips the test with a warning if the best available agent
+// has not checked in within the configured threshold (default 24h).
+// Set KEYFACTOR_AGENT_MAX_STALE_HOURS to override.
+func requireActiveAgent(t *testing.T, client *api.Client) {
+	t.Helper()
+
+	maxStaleHours := 24.0
+	if v := os.Getenv("KEYFACTOR_AGENT_MAX_STALE_HOURS"); v != "" {
+		if h, err := strconv.ParseFloat(v, 64); err == nil && h > 0 {
+			maxStaleHours = h
+		}
+	}
+
+	agents, err := client.GetAgentList()
+	if err != nil {
+		t.Skipf("WARN: could not list agents (%v) — skipping deploy test", err)
+		return
+	}
+
+	// Find best agent (same preference as discoverAgent: approved first, then most recent LastSeen)
+	sort.Slice(agents, func(i, j int) bool {
+		if agents[i].Status != agents[j].Status {
+			return agents[i].Status > agents[j].Status
+		}
+		return agents[i].LastSeen > agents[j].LastSeen
+	})
+
+	var best *api.Agent
+	for i := range agents {
+		if agents[i].Status == 2 {
+			best = &agents[i]
+			break
+		}
+	}
+	if best == nil && len(agents) > 0 {
+		best = &agents[0]
+	}
+	if best == nil {
+		t.Skip("WARN: no orchestrator agents registered — skipping deploy test")
+		return
+	}
+
+	lastSeen, err := time.Parse(time.RFC3339Nano, best.LastSeen)
+	if err != nil {
+		t.Logf("WARN: could not parse agent LastSeen %q (%v) — proceeding anyway", best.LastSeen, err)
+		return
+	}
+
+	elapsed := time.Since(lastSeen)
+	threshold := time.Duration(maxStaleHours * float64(time.Hour))
+	if elapsed > threshold {
+		t.Skipf("WARN: agent %s (machine: %s) last seen %.1f hours ago (threshold: %.0fh) — orchestrator appears offline, skipping deploy test",
+			best.AgentId, best.ClientMachine, elapsed.Hours(), maxStaleHours)
+	}
+	t.Logf("Agent %s last seen %.1f minutes ago — proceeding", best.AgentId, elapsed.Minutes())
+}
+
 // ---------------------------------------------------------------------------
 // VCR Auth Wrapper for Unit Tests
 // ---------------------------------------------------------------------------

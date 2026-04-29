@@ -382,6 +382,32 @@ testint-debug-run:
 	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-debug-run TEST_NAME=TestIntFoo"; exit 1; fi
 	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_LOG=DEBUG TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m 2>&1 | tee /tmp/tf-debug.log
 
+# Run the basic certificate deploy integration test (no-schedule path).
+# Completes quickly without an orchestrator — stores created without inventory_schedule
+# skip the validateDeployment polling loop.
+# Requires: KEYFACTOR_K8S_CREDENTIALS_FILE set to a kubeconfig JSON file path.
+testint-deploy:
+	set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
+	KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 \
+	go test ./keyfactor/ -run "^TestIntKeyfactorCertificateDeployResource$$" -v -count=1 -timeout 5m
+
+# Run the certificate deploy integration test that requires an inventory schedule.
+# Fails (not skips) after 10 minutes if the orchestrator never completes inventory.
+# Requires: KEYFACTOR_K8S_CREDENTIALS_FILE set to a kubeconfig JSON file path.
+testint-deploy-inventory:
+	set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
+	KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 \
+	go test ./keyfactor/ -run "TestIntKeyfactorCertificateDeployResource_WithInventory" -v -count=1 -timeout 10m
+
+# Run the both-paths certificate deploy integration test (no-schedule then with-schedule).
+# Step 1 completes quickly (no polling). Step 2 requires orchestrator inventory.
+# Fails (not skips) after 10 minutes if the orchestrator never completes.
+# Requires: KEYFACTOR_K8S_CREDENTIALS_FILE set to a kubeconfig JSON file path.
+testint-deploy-both-paths:
+	set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
+	KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 \
+	go test ./keyfactor/ -run "TestIntKeyfactorCertificateDeployResource_BothPaths" -v -count=1 -timeout 12m
+
 # Run all PAM integration tests
 testint-pam:
 	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestInt.*PAM" -v -count=1 -timeout 120m

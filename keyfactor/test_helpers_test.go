@@ -2184,6 +2184,14 @@ func testAccCertStoreConfig(storeType, clientMachine, agentID, storePath string)
 			kubeSecretType = "pkcs12"
 		}
 
+		// K8SPKCS12 requires store_password and CertificateDataFieldName.
+		storePasswordLine := ""
+		certDataFieldLine := ""
+		if stLower == "k8spkcs12" {
+			storePasswordLine = `  store_password   = "Tftest123456"` + "\n"
+			certDataFieldLine = `    CertificateDataFieldName = "pfx"` + "\n"
+		}
+
 		return fmt.Sprintf(`
 resource "keyfactor_certificate_store" "test" {
   client_machine   = "%s"
@@ -2195,11 +2203,11 @@ resource "keyfactor_certificate_store" "test" {
 %s
 EOT
   server_use_ssl   = true
-  properties = {
+%s  properties = {
     KubeSecretType = "%s"
-  }
+%s  }
 }
-`, clientMachine, storePath, agentID, storeType, creds, kubeSecretType)
+`, clientMachine, storePath, agentID, storeType, creds, storePasswordLine, kubeSecretType, certDataFieldLine)
 	}
 
 	return fmt.Sprintf(`
@@ -2225,6 +2233,12 @@ func testAccCertStoreConfigWithInventory(storeType, clientMachine, agentID, stor
 		case "k8spkcs12":
 			kubeSecretType = "pkcs12"
 		}
+		storePasswordLine := ""
+		certDataFieldLine := ""
+		if stLower == "k8spkcs12" {
+			storePasswordLine = `  store_password     = "Tftest123456"` + "\n"
+			certDataFieldLine = `    CertificateDataFieldName = "pfx"` + "\n"
+		}
 		return fmt.Sprintf(`
 resource "keyfactor_certificate_store" "test" {
   client_machine     = "%s"
@@ -2237,11 +2251,11 @@ resource "keyfactor_certificate_store" "test" {
 EOT
   server_use_ssl     = true
   inventory_schedule = "Daily at 12:00:00"
-  properties = {
+%s  properties = {
     KubeSecretType = "%s"
-  }
+%s  }
 }
-`, clientMachine, storePath, agentID, storeType, creds, kubeSecretType)
+`, clientMachine, storePath, agentID, storeType, creds, storePasswordLine, kubeSecretType, certDataFieldLine)
 	}
 	return fmt.Sprintf(`
 resource "keyfactor_certificate_store" "test" {
@@ -2400,6 +2414,18 @@ resource "keyfactor_certificate_deployment" "test" {
   certificate_store_id = %s.id
 }
 `, certResourceRef, storeResourceRef)
+}
+
+// testAccCertDeployConfigWithAlias generates HCL for deploying a certificate to a store with an explicit alias.
+// Required for store types like K8SPKCS12 where Command mandates an alias.
+func testAccCertDeployConfigWithAlias(certResourceRef, storeResourceRef, alias string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_deployment" "test" {
+  certificate_id       = %s.identifier
+  certificate_store_id = %s.id
+  certificate_alias    = "%s"
+}
+`, certResourceRef, storeResourceRef, alias)
 }
 
 // ---------------------------------------------------------------------------

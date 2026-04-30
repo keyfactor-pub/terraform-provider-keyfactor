@@ -12,6 +12,11 @@ on:
       - 'README.md'
   workflow_dispatch:
 
+# Only one run per branch at a time; cancel any in-progress run when a new one is triggered.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Testing only needs permissions to read the repository contents.
 permissions:
   contents: read

@@ -579,10 +579,13 @@ func (r resourceCertStoreTypeDef) Create(ctx context.Context, request tfsdk.Crea
 	// StorePathType and StorePathValue are write-only: the API accepts them
 	// on POST/PUT but does not return them in GET responses. Preserve the
 	// plan values so the post-apply consistency check passes.
-	if state.StorePathType.Value == "" && !plan.StorePathType.Null {
+	// Guard !Unknown: when the field is not in config for a new resource the
+	// plan is Unknown (Computed); copying Unknown into state causes Terraform
+	// to fail with "provider still indicated an unknown value after apply".
+	if state.StorePathType.Value == "" && !plan.StorePathType.Null && !plan.StorePathType.Unknown {
 		state.StorePathType = plan.StorePathType
 	}
-	if state.StorePathValue.Value == "" && !plan.StorePathValue.Null {
+	if state.StorePathValue.Value == "" && !plan.StorePathValue.Null && !plan.StorePathValue.Unknown {
 		state.StorePathValue = plan.StorePathValue
 	}
 
@@ -683,10 +686,10 @@ func (r resourceCertStoreTypeDef) Update(ctx context.Context, request tfsdk.Upda
 
 	// StorePathType and StorePathValue are write-only: the API does not
 	// return them in responses. Preserve plan values (which reflect config).
-	if newState.StorePathType.Value == "" && !plan.StorePathType.Null {
+	if newState.StorePathType.Value == "" && !plan.StorePathType.Null && !plan.StorePathType.Unknown {
 		newState.StorePathType = plan.StorePathType
 	}
-	if newState.StorePathValue.Value == "" && !plan.StorePathValue.Null {
+	if newState.StorePathValue.Value == "" && !plan.StorePathValue.Null && !plan.StorePathValue.Unknown {
 		newState.StorePathValue = plan.StorePathValue
 	}
 

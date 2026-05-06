@@ -240,6 +240,9 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 				// On EJBCA labs the CA always has associated certificates and cannot
 				// be deleted; ErrorCheck converts that known error to a SKIP so
 				// runtime.Goexit() fires here before the automatic cleanup runs.
+				// Config is required by the test framework even when Destroy=true;
+				// reuse the Step 2 config so the destroy targets the same resource.
+				Config:  testAccCertificateAuthorityUpdateConfig(caName, caHost, newMonitorThresholds),
 				Destroy: true,
 			},
 		},

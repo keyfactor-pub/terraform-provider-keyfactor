@@ -19,9 +19,10 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Internal ID of the OAuth security role.",
+				Type:          types.Int64Type,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Internal ID of the OAuth security role.",
 			},
 			"name": {
 				Type:        types.StringType,
@@ -34,15 +35,17 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 				Description: "A string containing the description of the OAuth security role.",
 			},
 			"email_address": {
-				Type:        types.StringType,
-				Optional:    true,
-				Computed:    true,
-				Description: "Email address associated with the OAuth security role.",
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Email address associated with the OAuth security role.",
 			},
 			"immutable": {
-				Type:        types.BoolType,
-				Computed:    true,
-				Description: "Indicates whether the OAuth security role is immutable.",
+				Type:          types.BoolType,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Indicates whether the OAuth security role is immutable.",
 			},
 			"permission_set_id": {
 				Type:        types.StringType,
@@ -57,7 +60,7 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 			},
 		},
 		Description:         "Used to manage Keyfactor Command Security Roles using the V2 `/Security/Roles` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct, please refer to the API documentation for Security Roles: https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm",
-		MarkdownDescription: "Used to manage Keyfactor Command Security Roles using the V2 `/Security/Roles` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct, please refer to the [API documentation for Security Roles](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm)",
+		MarkdownDescription: "Used to manage Keyfactor Command Security Roles using the V2 `/Security/Roles` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct, please refer to the [API documentation for Security Roles](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm).\n\n~> **Note on claim associations:** Claim bindings managed by `keyfactor_oauth_security_role_claim_association` are preserved automatically during role updates. Do not manage claims directly on this resource if you are using separate association resources — doing so will cause conflicts.",
 	}, nil
 }
 
@@ -106,8 +109,11 @@ func (r resourceOAuthSecurityRole) Read(
 				response.State.RemoveResource(ctx)
 				return
 			}
-			defer httpReq.Body.Close()
-			body, _ := io.ReadAll(httpReq.Body)
+			var body []byte
+			if httpReq != nil {
+				defer httpReq.Body.Close()
+				body, _ = io.ReadAll(httpReq.Body)
+			}
 			response.Diagnostics.AddError(
 				"Error reading security role",
 				fmt.Sprintf("Could not read OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
@@ -163,6 +169,31 @@ func (r resourceOAuthSecurityRole) Update(
 	sort.Strings(permissions)
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
+
+	// Read the current role from the server to preserve claims that are
+	// managed by the keyfactor_oauth_security_role_claim_association resource.
+	// The PUT endpoint replaces the entire role; omitting Claims would wipe
+	// all claim associations.
+	currentRole, httpGet, errGet := api.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
+	if errGet != nil {
+		var body []byte
+		if httpGet != nil {
+			defer httpGet.Body.Close()
+			body, _ = io.ReadAll(httpGet.Body)
+		}
+		response.Diagnostics.AddError(
+			"Error reading security role before update",
+			fmt.Sprintf("Could not read OAuth security role ID %d before update, unexpected error: %s. Details %s", roleId, errGet.Error(), string(body)),
+		)
+		return
+	}
+
+	// Preserve existing claims from the server.
+	existingClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, currentRole, nil)
+	if !ok {
+		return
+	}
+
 	req := api.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
 		Id:              roleId,
 		Name:            roleName,
@@ -170,6 +201,7 @@ func (r resourceOAuthSecurityRole) Update(
 		EmailAddress:    *v2.NewNullableString(&plan.EmailAddress.Value),
 		PermissionSetId: plan.PermissionSetId.Value,
 		Permissions:     permissions,
+		Claims:          *existingClaims,
 	})
 
 	tflog.Debug(ctx, fmt.Sprintf("Updating OAuth security role with ID: %d, name: %s;\n\tDescription: %s;\n\tEmailAddress: %s;\nt\tPermissionSetId: %s", roleId, roleName, plan.Description.Value, plan.EmailAddress.Value, plan.PermissionSetId.Value))
@@ -178,8 +210,11 @@ func (r resourceOAuthSecurityRole) Update(
 
 	updateResponse, http, err := req.Execute()
 	if err != nil {
-		defer http.Body.Close()
-		body, _ := io.ReadAll(http.Body)
+		var body []byte
+		if http != nil {
+			defer http.Body.Close()
+			body, _ = io.ReadAll(http.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error updating security role",
@@ -221,8 +256,11 @@ func (r resourceOAuthSecurityRole) Delete(
 	http, err := req.Execute()
 
 	if err != nil {
-		defer http.Body.Close()
-		body, _ := io.ReadAll(http.Body)
+		var body []byte
+		if http != nil {
+			defer http.Body.Close()
+			body, _ = io.ReadAll(http.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error deleting security role",
@@ -279,9 +317,11 @@ func (r resourceOAuthSecurityRole) Create(
 
 	createResponse, http, err := req.Execute()
 	if err != nil {
-		defer http.Body.Close()
-		body, _ := io.ReadAll(http.Body)
-
+		var body []byte
+		if http != nil {
+			defer http.Body.Close()
+			body, _ = io.ReadAll(http.Body)
+		}
 		response.Diagnostics.AddError(
 			"Error creating security role",
 			fmt.Sprintf("Could not create OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), string(body)),
@@ -289,6 +329,13 @@ func (r resourceOAuthSecurityRole) Create(
 		return
 	}
 
+	if createResponse.Id == nil {
+		response.Diagnostics.AddError(
+			"Error creating security role",
+			"API response missing Id field — role may have been created remotely but cannot be tracked in state.",
+		)
+		return
+	}
 	tflog.Debug(ctx, fmt.Sprintf("Successfully created OAuth security role. Role ID: %d", *createResponse.Id))
 
 	var result = mapOAuthSecurityRole(ctx, createResponse)
@@ -326,6 +373,13 @@ func (r resourceOAuthSecurityRole) ImportState(
 		return
 	}
 
+	if remoteRoleQuery.Id == nil {
+		response.Diagnostics.AddError(
+			"Error importing security role",
+			fmt.Sprintf("Query for role %s returned a response with no Id.", roleName),
+		)
+		return
+	}
 	tflog.Debug(ctx, fmt.Sprintf("Successfully queried security role %s. Role ID: %d", roleName, *remoteRoleQuery.Id))
 
 	roleId := *remoteRoleQuery.Id
@@ -345,8 +399,11 @@ func (r resourceOAuthSecurityRole) ImportState(
 				response.State.RemoveResource(ctx)
 				return
 			}
-			defer httpReq.Body.Close()
-			body, _ := io.ReadAll(httpReq.Body)
+			var body []byte
+			if httpReq != nil {
+				defer httpReq.Body.Close()
+				body, _ = io.ReadAll(httpReq.Body)
+			}
 			response.Diagnostics.AddError(
 				"Error importing security role",
 				fmt.Sprintf("Could not import OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),

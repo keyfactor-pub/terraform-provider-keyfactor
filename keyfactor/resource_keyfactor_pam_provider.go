@@ -104,18 +104,31 @@ type KeyfactorPAMParamValue struct {
 
 // pamProviderResponseToMetadata converts server response fields (excluding param values) into state.
 // param_values must be set separately from plan/state to preserve secret values.
+//
+// Remote and Area are nullable on the server (Remote *bool, Area *int32). When the server omits
+// them, the SDK getters return Go zero values (false / 0) — which would cause "inconsistent result
+// after apply" diagnostics for Optional+Computed schema fields. Convert nil pointers to types.Null
+// instead so plan and state agree.
 func pamProviderResponseToMetadata(resp *v1.PAMProviderResponseLegacy) KeyfactorPAMProvider {
 	state := KeyfactorPAMProvider{
 		ID:          types.String{Value: strconv.Itoa(int(resp.GetId()))},
 		Name:        types.String{Value: resp.GetName()},
-		Remote:      types.Bool{Value: resp.GetRemote()},
-		Area:        types.Int64{Value: int64(resp.GetArea())},
+		Remote:      boolPtrToTfBool(resp.Remote),
+		Area:        int32PtrToTfInt64(resp.Area),
 		ParamValues: []KeyfactorPAMParamValue{},
 	}
 	if resp.ProviderType != nil {
 		state.ProviderTypeID = types.String{Value: resp.ProviderType.GetId()}
 	}
 	return state
+}
+
+// int32PtrToTfInt64 converts a *int32 from the SDK to a types.Int64, mapping nil to Null.
+func int32PtrToTfInt64(i *int32) types.Int64 {
+	if i == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*i)}
 }
 
 func buildPAMParamValues(params []KeyfactorPAMParamValue) []v1.PAMProviderCreateRequestTypeParamValue {

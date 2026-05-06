@@ -1,0 +1,329 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 146
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"ClaimType":5,"ClaimValue":"tf-unit-claim-ds-779343000","Description":"Unit test claim for data source","ProviderAuthenticationScheme":"System"}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 239
+        body: '{"Id":230,"Description":"Unit test claim for data source","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-ds-779343000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "239"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 17:36:41 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "59"
+            X-Keyfactor-Correlation-Id:
+                - 378effa8-3a17-4581-9948-3f45f075c94b
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 1.241658722s
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            QueryString:
+                - ((ClaimValue -eq "tf-unit-claim-ds-779343000" and ClaimType -eq 5))
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims?QueryString=%28%28ClaimValue+-eq+%22tf-unit-claim-ds-779343000%22+and+ClaimType+-eq+5%29%29
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 241
+        body: '[{"Id":230,"Description":"Unit test claim for data source","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-ds-779343000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "241"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 17:36:43 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "41"
+            X-Keyfactor-Correlation-Id:
+                - 4ca5030d-0c4c-4615-bd15-7064f1e07208
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 143.15925ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            QueryString:
+                - ((ClaimValue -eq "tf-unit-claim-ds-779343000" and ClaimType -eq 5))
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims?QueryString=%28%28ClaimValue+-eq+%22tf-unit-claim-ds-779343000%22+and+ClaimType+-eq+5%29%29
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 241
+        body: '[{"Id":230,"Description":"Unit test claim for data source","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-ds-779343000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "241"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 17:36:43 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "37"
+            X-Keyfactor-Correlation-Id:
+                - e5b84f36-2538-4d84-b471-6bbb5cac4d93
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 139.374274ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/230
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 239
+        body: '{"Id":230,"Description":"Unit test claim for data source","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-ds-779343000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "239"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 17:36:44 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "30"
+            X-Keyfactor-Correlation-Id:
+                - 33f4dedb-97ff-4cb8-94d4-3ff7b4b6d1fd
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 126.006903ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            QueryString:
+                - ((ClaimValue -eq "tf-unit-claim-ds-779343000" and ClaimType -eq 5))
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims?QueryString=%28%28ClaimValue+-eq+%22tf-unit-claim-ds-779343000%22+and+ClaimType+-eq+5%29%29
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 241
+        body: '[{"Id":230,"Description":"Unit test claim for data source","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-ds-779343000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "241"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 17:36:44 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "37"
+            X-Keyfactor-Correlation-Id:
+                - 7ac9be5a-b26d-4036-8f1b-a7eeb122bf79
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 126.484281ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        form:
+            QueryString:
+                - ((ClaimValue -eq "tf-unit-claim-ds-779343000" and ClaimType -eq 5))
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims?QueryString=%28%28ClaimValue+-eq+%22tf-unit-claim-ds-779343000%22+and+ClaimType+-eq+5%29%29
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 241
+        body: '[{"Id":230,"Description":"Unit test claim for data source","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-ds-779343000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "241"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 17:36:45 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "48"
+            X-Keyfactor-Correlation-Id:
+                - 8e31ee7c-961d-49a7-9938-4e7ff6431da5
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 152.453608ms
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: int25-4-1.kftestlab.com:443
+        headers:
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/230
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Date:
+                - Wed, 22 Apr 2026 17:36:45 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "45"
+            X-Keyfactor-Correlation-Id:
+                - 9e65431a-5878-4439-aad2-a05ce4fc69fe
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 204 No Content
+        code: 204
+        duration: 145.825042ms

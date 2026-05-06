@@ -10,6 +10,7 @@ import (
 )
 
 func TestAccKeyfactorCertificateDataSource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	var resourceType = "keyfactor_certificate"
 	var resourceName = fmt.Sprintf("data.%s.test", resourceType)
 	var cID = os.Getenv("KEYFACTOR_CERTIFICATE_ID")

@@ -109,16 +109,22 @@ func pamProviderTypeResponseToState(resp *v1.PAMProviderTypeResponse) KeyfactorP
 		state.Parameters = []KeyfactorPAMProviderTypeParam{}
 	}
 	for _, p := range resp.Parameters {
+		// DisplayName is NullableString; InstanceLevel is *bool. When the server omits these
+		// fields, GetDisplayName/GetInstanceLevel return Go zero values ("" / false) — which
+		// would cause "inconsistent result after apply" diagnostics for Optional+Computed
+		// schema fields. Map unset/null SDK values to types.Null instead.
 		state.Parameters = append(state.Parameters, KeyfactorPAMProviderTypeParam{
 			ID:            types.Int64{Value: int64(p.GetId())},
 			Name:          types.String{Value: p.GetName()},
-			DisplayName:   types.String{Value: p.GetDisplayName()},
+			DisplayName:   nullableStringToTfString(p.DisplayName),
 			DataType:      types.Int64{Value: int64(p.GetDataType())},
-			InstanceLevel: types.Bool{Value: p.GetInstanceLevel()},
+			InstanceLevel: boolPtrToTfBool(p.InstanceLevel),
 		})
 	}
 	return state
 }
+
+// nullableStringToTfString is defined in resource_keyfactor_certificate_authority.go and reused here.
 
 func readHTTPResponseBody(resp *http.Response) string {
 	if resp == nil {

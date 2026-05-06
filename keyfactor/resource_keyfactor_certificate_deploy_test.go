@@ -184,6 +184,7 @@ func TestIntKeyfactorCertificateDeployResource(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	ca := discoverCA(t, client)
 	agentID, clientMachine := discoverAgent(t, client)
+	requireActiveAgent(t, client)
 	storeType := discoverStoreTypeForAgent(t, client, agentID)
 
 	// For K8S store types, require credentials and use namespace/name path format
@@ -222,6 +223,148 @@ func TestIntKeyfactorCertificateDeployResource(t *testing.T) {
 					// Store checks
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
 					// Deploy checks
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_store_id"),
+				),
+			},
+		},
+	})
+}
+
+func TestIntKeyfactorCertificateDeployResource_WithInventory(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+	agentID, clientMachine := discoverAgent(t, client)
+	requireActiveAgent(t, client)
+	storeType := discoverStoreTypeForAgent(t, client, agentID)
+
+	var storePath string
+	if strings.HasPrefix(strings.ToLower(storeType), "k8s") {
+		if k8sStoreCredentials() == "" {
+			t.Skip("Skipping K8S deployment test: set KEYFACTOR_K8S_CREDENTIALS_FILE or KEYFACTOR_K8S_SERVER_PASSWORD")
+		}
+		storePath = fmt.Sprintf("default/tf-int-test-deploy-inv-%d", time.Now().UnixNano())
+	} else {
+		storePath = fmt.Sprintf("/tf-int-test-deploy-inv-%d", time.Now().UnixNano())
+	}
+
+	// Test-side hard deadline: fail (not skip) after 10 minutes so this test
+	// doesn't silently block a full integration run when the orchestrator is slow.
+	timer := time.AfterFunc(10*time.Minute, func() {
+		t.Errorf("TestIntKeyfactorCertificateDeployResource_WithInventory: timed out after 10 minutes waiting for orchestrator inventory")
+	})
+	defer timer.Stop()
+
+	cn := randomTestCN("tf-int-deploy-inv")
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var certConfig string
+	if enrollmentPattern != "" {
+		certConfig = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+	} else {
+		templateName := discoverTemplate(t, client)
+		certConfig = testAccCertPFXConfig(templateName, ca, cn)
+	}
+
+	storeConfig := testAccCertStoreConfigWithInventory(storeType, clientMachine, agentID, storePath)
+	deployConfig := testAccCertDeployConfig("keyfactor_certificate.test", "keyfactor_certificate_store.test")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: certConfig + "\n" + storeConfig + "\n" + deployConfig,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_store_id"),
+				),
+			},
+		},
+	})
+}
+
+func TestIntKeyfactorCertificateDeployResource_BothPaths(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	ca := discoverCA(t, client)
+	agentID, clientMachine := discoverAgent(t, client)
+	requireActiveAgent(t, client)
+
+	// K8SPKCS12 is required: it does NOT auto-assign an inventory schedule,
+	// so step 1 exercises the no-schedule warning path without needing an orchestrator.
+	// K8STLSSecr always gets a server-side daily schedule, so it can't test this path.
+	storeType := "K8SPKCS12"
+	if k8sStoreCredentials() == "" {
+		t.Skip("Skipping K8SPKCS12 BothPaths deploy test: set KEYFACTOR_K8S_CREDENTIALS_FILE or KEYFACTOR_K8S_SERVER_PASSWORD")
+	}
+
+	// Verify the agent supports K8SPKCS12 by checking its capabilities.
+	agents, agentErr := client.GetAgentList()
+	if agentErr != nil {
+		t.Fatalf("Failed to list agents for capability check: %s", agentErr)
+	}
+	agentHasK8SPKCS12 := false
+	for _, agent := range agents {
+		if agent.AgentId == agentID {
+			for _, cap := range agent.Capabilities {
+				if strings.EqualFold(cap, "K8SPKCS12") {
+					agentHasK8SPKCS12 = true
+					break
+				}
+			}
+			break
+		}
+	}
+	if !agentHasK8SPKCS12 {
+		t.Skip("Skipping K8SPKCS12 BothPaths deploy test: agent does not support K8SPKCS12")
+	}
+
+	storePath := fmt.Sprintf("default/tf-int-test-deploy-both-%d", time.Now().UnixNano())
+
+	cn := randomTestCN("tf-int-deploy-both")
+	enrollmentPattern := discoverEnrollmentPattern(t, client)
+	var certConfig string
+	if enrollmentPattern != "" {
+		certConfig = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+	} else {
+		templateName := discoverTemplate(t, client)
+		certConfig = testAccCertPFXConfig(templateName, ca, cn)
+	}
+
+	// 10-min timeout: step 1 should be fast (no-schedule path), step 2 needs orchestrator.
+	timer := time.AfterFunc(10*time.Minute, func() {
+		t.Errorf("TestIntKeyfactorCertificateDeployResource_BothPaths: timed out after 10 minutes (step 2 requires a live orchestrator)")
+	})
+	defer timer.Stop()
+
+	storeConfigNoSchedule := testAccCertStoreConfig(storeType, clientMachine, agentID, storePath)
+	storeConfigWithSchedule := testAccCertStoreConfigWithInventory(storeType, clientMachine, agentID, storePath)
+	// K8SPKCS12 requires an alias in the format "<CertificateDataFieldName>/<keystore_alias>".
+	// CertificateDataFieldName is "pfx" (set in testAccCertStoreConfig for K8SPKCS12).
+	deployConfig := testAccCertDeployConfigWithAlias("keyfactor_certificate.test", "keyfactor_certificate_store.test", "pfx/tf-int-deploy-both")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: K8SPKCS12 store without inventory_schedule.
+				// Command does NOT auto-assign a schedule → provider emits a warning
+				// and returns success immediately without polling.
+				Config: certConfig + "\n" + storeConfigNoSchedule + "\n" + deployConfig,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_store_id"),
+				),
+			},
+			{
+				// Step 2: Add inventory_schedule — provider now polls validateDeployment.
+				// Requires orchestrator online; times out at 10 minutes via AfterFunc above.
+				Config: certConfig + "\n" + storeConfigWithSchedule + "\n" + deployConfig,
+				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_store_id"),

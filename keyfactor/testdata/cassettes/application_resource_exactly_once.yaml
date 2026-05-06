@@ -1,0 +1,134 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 123
+        host: int25-4-1.kftestlab.com
+        body: '{"Name":"tf-unit-app-once-936295000","OverwriteSchedules":false,"Schedule":{"ExactlyOnce":{"Time":"2025-06-01T06:00:00Z"}}}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Applications
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 148
+        body: '{"Id":1148,"Name":"tf-unit-app-once-936295000","Schedule":{"ExactlyOnce":{"Time":"2025-06-01T06:00:00Z"}},"CertStoreType":-1,"CertificateStores":[]}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "148"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Tue, 28 Apr 2026 21:25:51 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "39"
+            X-Keyfactor-Correlation-Id:
+                - ace59b71-2e27-4245-9e98-949a0dae089d
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 1.226833088s
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Applications/1148
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 148
+        body: '{"Id":1148,"Name":"tf-unit-app-once-936295000","Schedule":{"ExactlyOnce":{"Time":"2025-06-01T06:00:00Z"}},"CertStoreType":-1,"CertificateStores":[]}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "148"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Tue, 28 Apr 2026 21:25:52 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "26"
+            X-Keyfactor-Correlation-Id:
+                - 86d754b3-fb81-4545-96f8-f093385b88d0
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 120.510512ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: int25-4-1.kftestlab.com
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Applications/1148
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Date:
+                - Tue, 28 Apr 2026 21:25:53 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "48"
+            X-Keyfactor-Correlation-Id:
+                - 6f61e46f-29fc-4565-b359-0c73a68d4d4e
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 204 No Content
+        code: 204
+        duration: 145.661351ms

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
@@ -24,6 +25,7 @@ type oauthSecurityRoleClaimAssociationTestCase struct {
 
 func TestAccKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := oauthSecurityRoleClaimAssociationTestCase{
 		role1Name:              acctest.RandomWithPrefix("tf-acc-role"),
 		role2Name:              acctest.RandomWithPrefix("tf-acc-role"),
@@ -316,6 +318,170 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testing
 				ResourceName:      r.resourcePath,
 				ImportState:       true,
 				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Multi-claim association tests — regression path for role Update preserving claims
+// ---------------------------------------------------------------------------
+
+// testAccOAuthRoleClaimAssocMultiConfig creates 1 role + 2 claims + 2 associations.
+// Used for both create and update steps; description changes between steps.
+func testAccOAuthRoleClaimAssocMultiConfig(roleName, roleDesc, claimValue1, claimValue2 string) string {
+	return fmt.Sprintf(`
+data "keyfactor_permission_set" "global_permission_set" {
+	name = "Global"
+}
+
+resource "keyfactor_oauth_security_role" "multi_test_role" {
+	name              = "%s"
+	description       = "%s"
+	permission_set_id = data.keyfactor_permission_set.global_permission_set.id
+	email_address     = "multi-claim-test@example.com"
+	permissions       = []
+}
+
+resource "keyfactor_oauth_security_claim" "multi_test_claim_1" {
+	claim_type                     = "OAuthClientId"
+	claim_value                    = "%s"
+	provider_authentication_scheme = "System"
+	description                    = "Multi-claim test claim 1"
+}
+
+resource "keyfactor_oauth_security_claim" "multi_test_claim_2" {
+	claim_type                     = "OAuthClientId"
+	claim_value                    = "%s"
+	provider_authentication_scheme = "System"
+	description                    = "Multi-claim test claim 2"
+
+	depends_on = [keyfactor_oauth_security_claim.multi_test_claim_1]
+}
+
+resource "keyfactor_oauth_security_role_claim_association" "multi_assoc_1" {
+	role_id  = resource.keyfactor_oauth_security_role.multi_test_role.id
+	claim_id = resource.keyfactor_oauth_security_claim.multi_test_claim_1.id
+}
+
+resource "keyfactor_oauth_security_role_claim_association" "multi_assoc_2" {
+	role_id  = resource.keyfactor_oauth_security_role.multi_test_role.id
+	claim_id = resource.keyfactor_oauth_security_claim.multi_test_claim_2.id
+
+	depends_on = [keyfactor_oauth_security_role_claim_association.multi_assoc_1]
+}
+`, roleName, roleDesc, claimValue1, claimValue2)
+}
+
+// TestUnitKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim verifies that
+// updating a role's description does not silently wipe claim associations.
+// This is the critical regression test for the fix where role Update now reads
+// existing claims from the server before issuing the PUT.
+//
+// To record cassettes:
+//
+//	RECORD_CASSETTES=1 make testunit-record-one TEST_NAME=TestUnitKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim
+func TestUnitKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T) {
+	cassetteName := "oauth_security_role_claim_assoc_multi"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	var roleName, claimValue1, claimValue2 string
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		ts := time.Now().UnixNano() % 1000000000
+		roleName = fmt.Sprintf("tf-unit-multi-assoc-%d", ts)
+		claimValue1 = uuid.New().String()
+		claimValue2 = uuid.New().String()
+		writeOAuthMultiAssocTestParams(cassettePath, oauthMultiAssocTestParams{
+			RoleName:    roleName,
+			ClaimValue1: claimValue1,
+			ClaimValue2: claimValue2,
+		})
+	} else {
+		params := readOAuthMultiAssocTestParams(cassettePath)
+		roleName = params.RoleName
+		claimValue1 = params.ClaimValue1
+		claimValue2 = params.ClaimValue2
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	assoc1Path := "keyfactor_oauth_security_role_claim_association.multi_assoc_1"
+	assoc2Path := "keyfactor_oauth_security_role_claim_association.multi_assoc_2"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: Create role + 2 claims + 2 associations
+				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Initial description", claimValue1, claimValue2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(assoc1Path, "id"),
+					resource.TestCheckResourceAttrSet(assoc1Path, "role_id"),
+					resource.TestCheckResourceAttrSet(assoc1Path, "claim_id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "role_id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "claim_id"),
+				),
+			},
+			{
+				// Step 2: Update role description — both associations must survive
+				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Updated description", claimValue1, claimValue2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(assoc1Path, "id"),
+					resource.TestCheckResourceAttrSet(assoc1Path, "role_id"),
+					resource.TestCheckResourceAttrSet(assoc1Path, "claim_id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "role_id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "claim_id"),
+				),
+			},
+		},
+	})
+}
+
+// TestIntKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim is the integration
+// variant of the multi-claim regression test. It verifies against a live lab that
+// updating a role's description preserves all claim associations.
+func TestIntKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T) {
+	_ = testAccIntegrationPreCheck(t)
+
+	authScheme := discoverOAuthAuthScheme(t)
+	_ = authScheme // HCL config hardcodes "System"; kept for documentation
+
+	roleName := acctest.RandomWithPrefix("tf-int-multi-assoc")
+	claimValue1 := uuid.New().String()
+	claimValue2 := uuid.New().String()
+
+	assoc1Path := "keyfactor_oauth_security_role_claim_association.multi_assoc_1"
+	assoc2Path := "keyfactor_oauth_security_role_claim_association.multi_assoc_2"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: Create role + 2 claims + 2 associations
+				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Initial description", claimValue1, claimValue2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(assoc1Path, "id"),
+					resource.TestCheckResourceAttrSet(assoc1Path, "role_id"),
+					resource.TestCheckResourceAttrSet(assoc1Path, "claim_id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "role_id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "claim_id"),
+				),
+			},
+			{
+				// Step 2: Update role description — both associations must survive
+				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Updated description", claimValue1, claimValue2),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(assoc1Path, "id"),
+					resource.TestCheckResourceAttrSet(assoc1Path, "role_id"),
+					resource.TestCheckResourceAttrSet(assoc1Path, "claim_id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "role_id"),
+					resource.TestCheckResourceAttrSet(assoc2Path, "claim_id"),
+				),
 			},
 		},
 	})

@@ -20,9 +20,10 @@ func (r resourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sche
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
-				Type:        types.Int64Type,
-				Computed:    true,
-				Description: "Internal ID of the role.",
+				Type:          types.Int64Type,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Internal ID of the OAuth security claim.",
 			},
 			"description": {
 				Type:        types.StringType,
@@ -52,12 +53,13 @@ func (r resourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sche
 				Type: types.ObjectType{
 					AttrTypes: OAuthSecurityClaimAuthenticationProviderType,
 				},
-				Computed:    true,
-				Description: "An object mapping of the identity provider associated with the OAuth security claim in Keyfactor",
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "An object mapping of the identity provider associated with the OAuth security claim in Keyfactor",
 			},
 		},
 		Description:         "Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct and its fields, please refer to the API documentation for Security Claims: https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm",
-		MarkdownDescription: "Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct and its fields, please refer to [the API documentation for Security Claims](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm).",
+		MarkdownDescription: "Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct and its fields, please refer to [the API documentation for Security Claims](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm).\n\n~> **Note on eventual consistency:** The Keyfactor Command Security Claims API exhibits eventual consistency on updates — the server may return the pre-update `description` immediately after a PUT. Terraform state is built from the requested values to avoid spurious plan drift; the server will reflect the correct value on the next read cycle.",
 	}, nil
 }
 
@@ -102,15 +104,18 @@ func (r resourceOAuthSecurityClaim) Read(
 
 	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 
-	if httpReq.StatusCode == 404 {
+	if httpReq != nil && httpReq.StatusCode == 404 {
 		tflog.Info(ctx, fmt.Sprintf("OAuth Security Claim %d not found in remote system. Removing from state", claimId))
 		response.State.RemoveResource(ctx)
 		return
 	}
 
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
+		var body []byte
+		if httpReq != nil {
+			defer httpReq.Body.Close()
+			body, _ = io.ReadAll(httpReq.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error reading security claim",
@@ -168,10 +173,13 @@ func (r resourceOAuthSecurityClaim) Update(
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to update OAuth security claim id %d...", claimId))
 
 	// Execute API request
-	remoteState, httpReq, err := req.Execute()
+	_, httpReq, err := req.Execute()
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
+		var body []byte
+		if httpReq != nil {
+			defer httpReq.Body.Close()
+			body, _ = io.ReadAll(httpReq.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error updating security claim",
@@ -180,7 +188,18 @@ func (r resourceOAuthSecurityClaim) Update(
 		return
 	}
 
-	var result = mapOAuthSecurityClaim(ctx, remoteState, plan)
+	// The Update endpoint response (and immediate re-reads) may return the
+	// pre-update Description due to eventual consistency in the API.
+	// Build the result from the plan values for mutable fields and preserve
+	// computed fields from state.
+	var result = OAuthSecurityClaim{
+		ID:                           state.ID,
+		Description:                  plan.Description,
+		ClaimType:                    state.ClaimType,
+		ClaimValue:                   state.ClaimValue,
+		ProviderAuthenticationScheme: state.ProviderAuthenticationScheme,
+		Provider:                     state.Provider,
+	}
 
 	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
 	if !ok {
@@ -214,8 +233,11 @@ func (r resourceOAuthSecurityClaim) Delete(
 	httpReq, err := api.DeleteSecurityClaimsByIdExecute(req)
 
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
+		var body []byte
+		if httpReq != nil {
+			defer httpReq.Body.Close()
+			body, _ = io.ReadAll(httpReq.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error deleting security claim",
@@ -278,12 +300,23 @@ func (r resourceOAuthSecurityClaim) Create(
 
 	createResponse, httpReq, err := req.Execute()
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
+		var body []byte
+		if httpReq != nil {
+			defer httpReq.Body.Close()
+			body, _ = io.ReadAll(httpReq.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error creating security claim",
 			fmt.Sprintf("Could not create OAuth security claim %s with claim type %s , unexpected error: %s. Details %s ", claimValue, claimType, err.Error(), string(body)),
+		)
+		return
+	}
+
+	if createResponse.Id == nil {
+		response.Diagnostics.AddError(
+			"Error creating security claim",
+			fmt.Sprintf("API response for OAuth security claim %s (type %s) returned a nil ID; the claim may have been created on the remote but cannot be tracked in state.", claimValue, claimType),
 		)
 		return
 	}
@@ -325,7 +358,7 @@ func (r resourceOAuthSecurityClaim) ImportState(
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security claim ID %d...", claimId))
 
 	remoteState, httpReq, err := req.Execute()
-	if httpReq.StatusCode == 404 {
+	if httpReq != nil && httpReq.StatusCode == 404 {
 		response.Diagnostics.AddError(
 			"Unknown OAuth security claim error.",
 			fmt.Sprintf("Unable to find OAuth security claim '%s' on Keyfactor. Read failed.", claimIdStr),
@@ -334,8 +367,11 @@ func (r resourceOAuthSecurityClaim) ImportState(
 	}
 
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
+		var body []byte
+		if httpReq != nil {
+			defer httpReq.Body.Close()
+			body, _ = io.ReadAll(httpReq.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error importing security claim",

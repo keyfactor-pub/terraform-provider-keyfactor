@@ -18,6 +18,7 @@ type resourceCertificateAuthorityType struct{}
 
 func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
+		Version:     1,
 		Description: "Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicit_password, auth_certificate, auth_certificate_password, client_secret) are write-only — the server never returns plaintext values, so provider reads preserve configured values from state. The force_save flag bypasses the server-side connectivity test on create/update and is also write-only.",
 		Attributes: map[string]tfsdk.Attribute{
 			// --- Identity ---
@@ -162,11 +163,14 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"key_retention": {
-				Type:          types.Int64Type,
+				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "An integer that sets the type of key retention to enable for the certificate authority: 0=None, 1=SettingDriven, 2=Always, 3=Never.",
+				Description:   "Key retention policy for the CA. Accepts the named form (Disabled, Indefinite, AfterExpiration, FromIssuance) or the equivalent integer string (\"0\"–\"3\"). Always stored in state as the named form.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Validators: []tfsdk.AttributeValidator{
+					keyRetentionValidator{},
+				},
 			},
 			"key_retention_days": {
 				Type:          types.Int64Type,
@@ -202,6 +206,45 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Computed:      true,
 				Description:   "A Boolean setting whether renewal requests create new end entities. Required to be true for HTTPS CAs (ca_type=1). Mutually exclusive with enforce_unique_dn=true.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+			},
+
+			// --- Enrollment Availability ---
+			"use_for_enrollment": {
+				Type:          types.BoolType,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Whether this CA is available for certificate enrollment.",
+			},
+
+			// --- Certificate Cleanup ---
+			"certificate_cleanup_enabled": {
+				Type:          types.BoolType,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Whether certificate cleanup is enabled for this CA.",
+			},
+			"delete_with_archived_key": {
+				Type:          types.BoolType,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Whether to delete the certificate when its archived key is deleted.",
+			},
+			"time_after_expiration": {
+				Type:          types.Int64Type,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Time value after expiration before cleanup occurs. Used with time_after_expiration_units.",
+			},
+			"time_after_expiration_units": {
+				Type:          types.Int64Type,
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months.",
 			},
 
 			// --- Requesters (standalone CAs only) ---
@@ -410,12 +453,21 @@ type KeyfactorCertificateAuthority struct {
 	RFCEnforcement                types.Bool   `tfsdk:"rfc_enforcement"`
 	Properties                    types.String `tfsdk:"properties"`
 	AllowedEnrollmentTypes        types.Int64  `tfsdk:"allowed_enrollment_types"`
-	KeyRetention                  types.Int64  `tfsdk:"key_retention"`
+	KeyRetention                  types.String `tfsdk:"key_retention"`
 	KeyRetentionDays              types.Int64  `tfsdk:"key_retention_days"`
 	EnforceUniqueDN               types.Bool   `tfsdk:"enforce_unique_dn"`
 	SubscriberTerms               types.Bool   `tfsdk:"subscriber_terms"`
 	AllowOneClickRenewals         types.Bool   `tfsdk:"allow_one_click_renewals"`
 	NewEndEntityOnRenewAndReissue types.Bool   `tfsdk:"new_end_entity_on_renew_and_reissue"`
+
+	// Enrollment Availability
+	UseForEnrollment types.Bool `tfsdk:"use_for_enrollment"`
+
+	// Certificate Cleanup
+	CertificateCleanupEnabled types.Bool  `tfsdk:"certificate_cleanup_enabled"`
+	DeleteWithArchivedKey     types.Bool  `tfsdk:"delete_with_archived_key"`
+	TimeAfterExpiration       types.Int64 `tfsdk:"time_after_expiration"`
+	TimeAfterExpirationUnits  types.Int64 `tfsdk:"time_after_expiration_units"`
 
 	// Requesters
 	UseAllowedRequesters types.Bool `tfsdk:"use_allowed_requesters"`
@@ -467,44 +519,55 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 		HostName:    types.String{Value: resp.GetHostName()},
 		CAType:      types.Int64{Value: int64(resp.GetCAType())},
 
-		Delegate:            types.Bool{Value: resp.GetDelegate()},
-		DelegateEnrollment:  types.Bool{Value: resp.GetDelegateEnrollment()},
-		ForestRoot:          types.String{Value: resp.GetForestRoot()},
-		ConfigurationTenant: types.String{Value: resp.GetConfigurationTenant()},
-		Remote:              types.Bool{Value: resp.GetRemote()},
-		Standalone:          types.Bool{Value: resp.GetStandalone()},
-		UseCAConnector:      types.Bool{Value: resp.GetUseCAConnector()},
-		ConnectorPool:       types.String{Value: resp.GetConnectorPool()},
+		// Use nil-safe helpers for all pointer fields. GetXxx() returns the Go zero
+		// value (false/0/"") when the server omits a field; that zero value would then
+		// be sent on subsequent PUTs, silently overwriting server settings. Using
+		// boolPtrToTfBool / enrollmentTypePtrToTfInt64 / nullableStringToTfString
+		// returns Null instead, so setBoolIfKnown/setStringIfKnown skips those fields.
+		Delegate:            boolPtrToTfBool(resp.Delegate),
+		DelegateEnrollment:  boolPtrToTfBool(resp.DelegateEnrollment),
+		ForestRoot:          nullableStringToTfString(resp.ForestRoot),
+		ConfigurationTenant: nullableStringToTfString(resp.ConfigurationTenant),
+		Remote:              boolPtrToTfBool(resp.Remote),
+		Standalone:          boolPtrToTfBool(resp.Standalone),
+		UseCAConnector:      boolPtrToTfBool(resp.UseCAConnector),
+		ConnectorPool:       nullableStringToTfString(resp.ConnectorPool),
 
-		MonitorThresholds: types.Bool{Value: resp.GetMonitorThresholds()},
+		MonitorThresholds: boolPtrToTfBool(resp.MonitorThresholds),
 		IssuanceMax:       nullableInt32ToTfInt64(resp.IssuanceMax),
 		IssuanceMin:       nullableInt32ToTfInt64(resp.IssuanceMin),
 		FailureMax:        nullableInt32ToTfInt64(resp.FailureMax),
 
-		RFCEnforcement:                types.Bool{Value: resp.GetRFCEnforcement()},
-		Properties:                    types.String{Value: resp.GetProperties()},
-		AllowedEnrollmentTypes:        types.Int64{Value: int64(resp.GetAllowedEnrollmentTypes())},
-		KeyRetention:                  types.Int64{Value: int64(resp.GetKeyRetention())},
+		RFCEnforcement:                boolPtrToTfBool(resp.RFCEnforcement),
+		Properties:                    nullableStringToTfString(resp.Properties),
+		AllowedEnrollmentTypes:        enrollmentTypePtrToTfInt64(resp.AllowedEnrollmentTypes),
+		KeyRetention:                  keyRetentionIntToTfString(resp.KeyRetention),
 		KeyRetentionDays:              nullableInt32ToTfInt64(resp.KeyRetentionDays),
-		EnforceUniqueDN:               types.Bool{Value: resp.GetEnforceUniqueDN()},
-		SubscriberTerms:               types.Bool{Value: resp.GetSubscriberTerms()},
-		AllowOneClickRenewals:         types.Bool{Value: resp.GetAllowOneClickRenewals()},
-		NewEndEntityOnRenewAndReissue: types.Bool{Value: resp.GetNewEndEntityOnRenewAndReissue()},
+		EnforceUniqueDN:               boolPtrToTfBool(resp.EnforceUniqueDN),
+		SubscriberTerms:               boolPtrToTfBool(resp.SubscriberTerms),
+		AllowOneClickRenewals:         boolPtrToTfBool(resp.AllowOneClickRenewals),
+		NewEndEntityOnRenewAndReissue: boolPtrToTfBool(resp.NewEndEntityOnRenewAndReissue),
 
-		UseAllowedRequesters: types.Bool{Value: resp.GetUseAllowedRequesters()},
+		UseForEnrollment:          boolPtrToTfBool(resp.UseForEnrollment),
+		CertificateCleanupEnabled: nullableBoolToTfBool(resp.CertificateCleanupEnabled),
+		DeleteWithArchivedKey:     nullableBoolToTfBool(resp.DeleteWithArchivedKey),
+		TimeAfterExpiration:       nullableInt32ToTfInt64(resp.TimeAfterExpiration),
+		TimeAfterExpirationUnits:  cleanupTimeUnitsPtrToTfInt64(resp.TimeAfterExpirationUnits),
 
-		ExplicitCredentials: types.Bool{Value: resp.GetExplicitCredentials()},
+		UseAllowedRequesters: boolPtrToTfBool(resp.UseAllowedRequesters),
+
+		ExplicitCredentials: boolPtrToTfBool(resp.ExplicitCredentials),
 		ExplicitUser:        nullableStringToTfString(resp.ExplicitUser),
 
-		TokenURL: types.String{Value: resp.GetTokenURL()},
-		ClientID: types.String{Value: resp.GetClientId()},
-		Scope:    types.String{Value: resp.GetScope()},
-		Audience: types.String{Value: resp.GetAudience()},
+		TokenURL: nullableStringToTfString(resp.TokenURL),
+		ClientID: nullableStringToTfString(resp.ClientId),
+		Scope:    nullableStringToTfString(resp.Scope),
+		Audience: nullableStringToTfString(resp.Audience),
 
 		AgentName:     nullableStringToTfString(resp.AgentName),
 		AgentUsername: nullableStringToTfString(resp.AgentUsername),
 		DenialMax:     nullableInt32ToTfInt64(resp.DenialMax),
-		LastScan:      types.String{Value: resp.GetLastScan()},
+		LastScan:      nullableStringToTfString(resp.LastScan),
 	}
 
 	// Agent GUID
@@ -561,6 +624,52 @@ func nullableStringToTfString(v v1.NullableString) types.String {
 	return types.String{Value: *v.Get()}
 }
 
+// boolPtrToTfBool converts a *bool pointer from the SDK response to a types.Bool.
+// When the server omits a field (nil pointer), returns Null so that subsequent PUTs
+// do not send a zero-value false and inadvertently overwrite server settings.
+func boolPtrToTfBool(v *bool) types.Bool {
+	if v == nil {
+		return types.Bool{Null: true}
+	}
+	return types.Bool{Value: *v}
+}
+
+// enrollmentTypePtrToTfInt64 converts a *CSSCMSCoreEnumsEnrollmentType pointer to types.Int64.
+// Nil (server field absent) becomes Null so the value is not sent on PUT.
+func enrollmentTypePtrToTfInt64(v *v1.CSSCMSCoreEnumsEnrollmentType) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
+}
+
+// keyRetentionPtrToTfInt64 converts a *CSSCMSCoreEnumsKeyRetentionPolicy pointer to types.Int64.
+// Nil (server field absent) becomes Null so the value is not sent on PUT.
+func keyRetentionPtrToTfInt64(v *v1.CSSCMSCoreEnumsKeyRetentionPolicy) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
+}
+
+// nullableBoolToTfBool converts a NullableBool from the SDK response to a types.Bool.
+// When the server omits the field (not set / nil), returns Null.
+func nullableBoolToTfBool(v v1.NullableBool) types.Bool {
+	if v.Get() == nil {
+		return types.Bool{Null: true}
+	}
+	return types.Bool{Value: *v.Get()}
+}
+
+// cleanupTimeUnitsPtrToTfInt64 converts a *CSSCMSDataModelEnumsCertificateCleanupTimeUnits pointer to types.Int64.
+// Nil (server field absent) becomes Null so the value is not sent on PUT.
+func cleanupTimeUnitsPtrToTfInt64(v *v1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
+}
+
 func stringSliceToTfList(vals []string) types.List {
 	return types.List{
 		ElemType: types.StringType,
@@ -601,14 +710,28 @@ func buildCARequest(ctx context.Context, plan KeyfactorCertificateAuthority) v1.
 		req.AllowedEnrollmentTypes = &et
 	}
 	if !plan.KeyRetention.Null && !plan.KeyRetention.Unknown {
-		kr := v1.CSSCMSCoreEnumsKeyRetentionPolicy(int32(plan.KeyRetention.Value))
-		req.KeyRetention = &kr
+		if intVal, ok := keyRetentionNameToInt[plan.KeyRetention.Value]; ok {
+			kr := v1.CSSCMSCoreEnumsKeyRetentionPolicy(intVal)
+			req.KeyRetention = &kr
+		}
 	}
 	setNullableInt32IfKnown(&req, plan.KeyRetentionDays, func(v int32) { req.SetKeyRetentionDays(v) })
 	setBoolIfKnown(&req, plan.EnforceUniqueDN, func(v bool) { req.SetEnforceUniqueDN(v) })
 	setBoolIfKnown(&req, plan.SubscriberTerms, func(v bool) { req.SetSubscriberTerms(v) })
 	setBoolIfKnown(&req, plan.AllowOneClickRenewals, func(v bool) { req.SetAllowOneClickRenewals(v) })
 	setBoolIfKnown(&req, plan.NewEndEntityOnRenewAndReissue, func(v bool) { req.SetNewEndEntityOnRenewAndReissue(v) })
+
+	// Enrollment Availability
+	setBoolIfKnown(&req, plan.UseForEnrollment, func(v bool) { req.SetUseForEnrollment(v) })
+
+	// Certificate Cleanup
+	setNullableBoolIfKnown(&req, plan.CertificateCleanupEnabled, func(v bool) { req.SetCertificateCleanupEnabled(v) })
+	setNullableBoolIfKnown(&req, plan.DeleteWithArchivedKey, func(v bool) { req.SetDeleteWithArchivedKey(v) })
+	setNullableInt32IfKnown(&req, plan.TimeAfterExpiration, func(v int32) { req.SetTimeAfterExpiration(v) })
+	if !plan.TimeAfterExpirationUnits.Null && !plan.TimeAfterExpirationUnits.Unknown {
+		units := v1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits(int32(plan.TimeAfterExpirationUnits.Value))
+		req.TimeAfterExpirationUnits = &units
+	}
 
 	// Requesters
 	setBoolIfKnown(&req, plan.UseAllowedRequesters, func(v bool) { req.SetUseAllowedRequesters(v) })
@@ -679,6 +802,14 @@ func setBoolIfKnown(_ interface{}, v types.Bool, setter func(bool)) {
 
 // setStringIfKnown calls the setter only if the value is not null/unknown.
 func setStringIfKnown(_ interface{}, v types.String, setter func(string)) {
+	if !v.Null && !v.Unknown {
+		setter(v.Value)
+	}
+}
+
+// setNullableBoolIfKnown calls the setter only if the value is not null/unknown.
+// Used for SDK NullableBool fields (e.g., CertificateCleanupEnabled, DeleteWithArchivedKey).
+func setNullableBoolIfKnown(_ interface{}, v types.Bool, setter func(bool)) {
 	if !v.Null && !v.Unknown {
 		setter(v.Value)
 	}
@@ -870,9 +1001,16 @@ func (r resourceCertificateAuthority) Delete(ctx context.Context, request tfsdk.
 	httpResp, err := deleteReq.Execute()
 	if err != nil {
 		body := readHTTPResponseBody(httpResp)
-		// If the CA has periodic sync tasks associated with it, clear the scan
-		// schedules via a ForceSave PUT and then retry the delete.
-		if strings.Contains(body, "0xA0110029") || strings.Contains(body, "periodic task") {
+		// If the CA has Windows Task Scheduler entries associated with it (DCOM
+		// CAs only), clear the scan schedules via a ForceSave PUT and then retry
+		// the delete.  We check for "periodic task" / "task scheduler" in the
+		// body rather than the raw error code 0xA0110029, because that same code
+		// is also returned on EJBCA (HTTPS) labs when the CA has associated
+		// certificates — a completely different condition that must NOT trigger
+		// the clear-schedule path (which would corrupt the CA record).
+		isTaskSchedulerError := strings.Contains(strings.ToLower(body), "periodic task") ||
+			strings.Contains(strings.ToLower(body), "task scheduler")
+		if isTaskSchedulerError {
 			tflog.Info(ctx, fmt.Sprintf("CA %d has periodic tasks; clearing scan schedules before delete", id))
 			clearState := state
 			clearState.FullScanIntervalMinutes = types.Int64{Null: true}
@@ -897,6 +1035,17 @@ func (r resourceCertificateAuthority) Delete(ctx context.Context, request tfsdk.
 			httpResp3, err3 := caAPI.NewDeleteCertificateAuthorityByIdRequest(ctx, int32(id)).Execute()
 			if err3 != nil {
 				body3 := readHTTPResponseBody(httpResp3)
+				// Delete still failed. Restore the original scan schedules so the CA
+				// is not left in a corrupted state (no schedules) after a failed delete.
+				tflog.Warn(ctx, fmt.Sprintf("CA %d delete retry failed; restoring original scan schedules", id))
+				restoreReq := buildCARequest(ctx, state)
+				restoreReq.Id = &idInt32
+				restoreAPIReq := caAPI.NewUpdateCertificateAuthorityRequest(ctx).
+					CertificateAuthoritiesCertificateAuthorityRequest(restoreReq).
+					ForceSave(true)
+				if _, _, restoreErr := restoreAPIReq.Execute(); restoreErr != nil {
+					tflog.Error(ctx, fmt.Sprintf("CA %d schedule restore also failed: %s", id, restoreErr.Error()))
+				}
 				response.Diagnostics.AddError(
 					"Error deleting certificate authority.",
 					fmt.Sprintf("Could not delete certificate authority %d: %s. Details: %s", id, err3.Error(), body3),
@@ -946,6 +1095,166 @@ func (r resourceCertificateAuthority) ImportState(
 	state := caResponseToState(resp)
 	diags := response.State.Set(ctx, &state)
 	response.Diagnostics.Append(diags...)
+}
+
+// ---------------------------------------------------------------------------
+// key_retention helpers: int ↔ string name conversion
+// ---------------------------------------------------------------------------
+
+var keyRetentionNameToInt = map[string]int32{
+	"Disabled":        0,
+	"Indefinite":      1,
+	"AfterExpiration": 2,
+	"FromIssuance":    3,
+	"0":               0,
+	"1":               1,
+	"2":               2,
+	"3":               3,
+}
+
+var keyRetentionIntToName = map[int32]string{
+	0: "Disabled",
+	1: "Indefinite",
+	2: "AfterExpiration",
+	3: "FromIssuance",
+}
+
+// keyRetentionIntToTfString converts a *CSSCMSCoreEnumsKeyRetentionPolicy pointer
+// to its named string form. Returns null if the pointer is nil.
+func keyRetentionIntToTfString(v *v1.CSSCMSCoreEnumsKeyRetentionPolicy) types.String {
+	if v == nil {
+		return types.String{Null: true}
+	}
+	if name, ok := keyRetentionIntToName[int32(*v)]; ok {
+		return types.String{Value: name}
+	}
+	// Fallback: stringify the raw integer
+	return types.String{Value: strconv.Itoa(int(*v))}
+}
+
+// ---------------------------------------------------------------------------
+// key_retention validator
+// ---------------------------------------------------------------------------
+
+type keyRetentionValidator struct{}
+
+func (v keyRetentionValidator) Description(_ context.Context) string {
+	return "key_retention must be one of: Disabled (0), Indefinite (1), AfterExpiration (2), FromIssuance (3)"
+}
+
+func (v keyRetentionValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v keyRetentionValidator) Validate(
+	_ context.Context,
+	req tfsdk.ValidateAttributeRequest,
+	resp *tfsdk.ValidateAttributeResponse,
+) {
+	if req.AttributeConfig.IsNull() || req.AttributeConfig.IsUnknown() {
+		return
+	}
+	var val string
+	if s, ok := req.AttributeConfig.(types.String); ok {
+		val = s.Value
+	} else {
+		return
+	}
+	if _, ok := keyRetentionNameToInt[val]; !ok {
+		resp.Diagnostics.AddAttributeError(
+			req.AttributePath,
+			"Invalid key_retention value",
+			fmt.Sprintf(
+				"key_retention must be one of: Disabled (0), Indefinite (1), AfterExpiration (2), FromIssuance (3). Got: %q",
+				val,
+			),
+		)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// State upgrader: schema version 0 → 1  (key_retention int64 → string)
+// ---------------------------------------------------------------------------
+
+// keyRetentionV0State is a minimal struct for reading key_retention from v0 state.
+type keyRetentionV0State struct {
+	KeyRetention *float64 `json:"key_retention"`
+}
+
+func (r resourceCertificateAuthority) UpgradeState(_ context.Context) map[int64]tfsdk.ResourceStateUpgrader {
+	return map[int64]tfsdk.ResourceStateUpgrader{
+		0: {
+			StateUpgrader: upgradeCAStateV0ToV1,
+		},
+	}
+}
+
+func upgradeCAStateV0ToV1(ctx context.Context, req tfsdk.UpgradeResourceStateRequest, resp *tfsdk.UpgradeResourceStateResponse) {
+	if req.RawState == nil {
+		resp.Diagnostics.AddError(
+			"Unable to upgrade certificate authority state",
+			"RawState is nil; cannot proceed with state upgrade from version 0 to 1.",
+		)
+		return
+	}
+
+	rawJSON := req.RawState.JSON
+	if len(rawJSON) == 0 {
+		resp.Diagnostics.AddError(
+			"Unable to upgrade certificate authority state",
+			"RawState JSON is empty; cannot proceed with state upgrade from version 0 to 1.",
+		)
+		return
+	}
+
+	// Parse the full state into a generic map so we can mutate key_retention.
+	var stateMap map[string]interface{}
+	if err := json.Unmarshal(rawJSON, &stateMap); err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to upgrade certificate authority state",
+			fmt.Sprintf("Failed to unmarshal v0 state JSON: %s", err.Error()),
+		)
+		return
+	}
+
+	// Convert key_retention from number to named string.
+	if raw, ok := stateMap["key_retention"]; ok && raw != nil {
+		switch v := raw.(type) {
+		case float64:
+			if name, ok := keyRetentionIntToName[int32(v)]; ok {
+				stateMap["key_retention"] = name
+			} else {
+				stateMap["key_retention"] = strconv.Itoa(int(v))
+			}
+		case string:
+			// Already a string (shouldn't happen in v0, but be defensive)
+			if intVal, ok := keyRetentionNameToInt[v]; ok {
+				stateMap["key_retention"] = keyRetentionIntToName[intVal]
+			}
+		}
+	}
+
+	upgradedJSON, err := json.Marshal(stateMap)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to upgrade certificate authority state",
+			fmt.Sprintf("Failed to marshal upgraded state JSON: %s", err.Error()),
+		)
+		return
+	}
+
+	// Read the upgraded JSON back into the current schema's state model.
+	var newState KeyfactorCertificateAuthority
+	if err := json.Unmarshal(upgradedJSON, &newState); err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to upgrade certificate authority state",
+			fmt.Sprintf("Failed to unmarshal upgraded state into model: %s", err.Error()),
+		)
+		return
+	}
+
+	diags := resp.State.Set(ctx, &newState)
+	resp.Diagnostics.Append(diags...)
 }
 
 // normalizePropertiesJSON normalizes a JSON properties string for comparison.

@@ -150,4 +150,6 @@ tfexes/
 *.pem
 *.pfx
 *.jks
-*.keyCLAUDE.md
+*.key
+CLAUDE.md
+sandbox/

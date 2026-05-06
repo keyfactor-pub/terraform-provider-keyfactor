@@ -19,6 +19,7 @@ type identityTestCase struct {
 }
 
 func TestAccKeyfactorIdentityResource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	// Single role test
 	i := identityTestCase{
 		accountName: os.Getenv("KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME"),

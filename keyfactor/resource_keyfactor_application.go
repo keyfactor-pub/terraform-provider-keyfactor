@@ -263,6 +263,7 @@ func (r resourceApplication) Create(ctx context.Context, request tfsdk.CreateRes
 	} else {
 		state.OverwriteSchedules = plan.OverwriteSchedules
 	}
+	preserveApplicationScheduleFields(plan, &state)
 
 	diags = response.State.Set(ctx, &state)
 	response.Diagnostics.Append(diags...)
@@ -303,26 +304,7 @@ func (r resourceApplication) Read(ctx context.Context, request tfsdk.ReadResourc
 	newState := applicationResponseToState(app)
 	// OverwriteSchedules is not returned by the API; preserve the existing state value.
 	newState.OverwriteSchedules = state.OverwriteSchedules
-	// The server normalizes time-based schedule fields by updating the date to the next
-	// occurrence. Preserve the state's datetime string when only the date portion changed
-	// (same time-of-day) to avoid infinite plan drift.
-	preserveIfSameTime := func(stateVal, newVal types.String) types.String {
-		if !stateVal.Null && !stateVal.Unknown && !newVal.Null && !newVal.Unknown {
-			if dailyTimePortion(stateVal.Value) == dailyTimePortion(newVal.Value) {
-				return stateVal
-			}
-		}
-		return newVal
-	}
-	newState.ScheduleDailyTime = preserveIfSameTime(state.ScheduleDailyTime, newState.ScheduleDailyTime)
-	newState.ScheduleWeeklyTime = preserveIfSameTime(state.ScheduleWeeklyTime, newState.ScheduleWeeklyTime)
-	newState.ScheduleMonthlyTime = preserveIfSameTime(state.ScheduleMonthlyTime, newState.ScheduleMonthlyTime)
-	newState.ScheduleExactlyOnce = preserveIfSameTime(state.ScheduleExactlyOnce, newState.ScheduleExactlyOnce)
-	// Immediate jobs are converted to ExactlyOnce by the server after queuing.
-	// Preserve the Immediate=true state if the user configured it.
-	if !state.ScheduleImmediate.Null && !state.ScheduleImmediate.Unknown && state.ScheduleImmediate.Value {
-		newState.ScheduleImmediate = state.ScheduleImmediate
-	}
+	preserveApplicationScheduleFields(state, &newState)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -375,6 +357,7 @@ func (r resourceApplication) Update(ctx context.Context, request tfsdk.UpdateRes
 	newState := applicationResponseToState(app)
 	// OverwriteSchedules is not returned by the API; preserve the plan value.
 	newState.OverwriteSchedules = plan.OverwriteSchedules
+	preserveApplicationScheduleFields(plan, &newState)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -459,6 +442,33 @@ func dailyTimePortion(datetime string) string {
 		return datetime[idx:]
 	}
 	return datetime
+}
+
+// preserveApplicationScheduleFields reconciles server-returned schedule fields with the
+// caller-supplied (plan or state) values to avoid "inconsistent result after apply"
+// drift across Create→Read, Update→Read, and Read→Read cycles. It mutates newState
+// in place. Two server behaviours are handled:
+//   - Datetime fields (Daily/Weekly/Monthly/ExactlyOnce times) are normalised by the
+//     server to the next scheduled occurrence; preserve the caller's datetime when
+//     only the date portion changed (same time-of-day).
+//   - schedule_immediate is a write-only trigger; the server converts it to
+//     ExactlyOnce after queueing, so preserve a true value supplied by the caller.
+func preserveApplicationScheduleFields(src KeyfactorApplication, newState *KeyfactorApplication) {
+	preserveIfSameTime := func(srcVal, newVal types.String) types.String {
+		if !srcVal.Null && !srcVal.Unknown && !newVal.Null && !newVal.Unknown {
+			if dailyTimePortion(srcVal.Value) == dailyTimePortion(newVal.Value) {
+				return srcVal
+			}
+		}
+		return newVal
+	}
+	newState.ScheduleDailyTime = preserveIfSameTime(src.ScheduleDailyTime, newState.ScheduleDailyTime)
+	newState.ScheduleWeeklyTime = preserveIfSameTime(src.ScheduleWeeklyTime, newState.ScheduleWeeklyTime)
+	newState.ScheduleMonthlyTime = preserveIfSameTime(src.ScheduleMonthlyTime, newState.ScheduleMonthlyTime)
+	newState.ScheduleExactlyOnce = preserveIfSameTime(src.ScheduleExactlyOnce, newState.ScheduleExactlyOnce)
+	if !src.ScheduleImmediate.Null && !src.ScheduleImmediate.Unknown && src.ScheduleImmediate.Value {
+		newState.ScheduleImmediate = src.ScheduleImmediate
+	}
 }
 
 // applicationResponseToState converts an API response to a Terraform state model.

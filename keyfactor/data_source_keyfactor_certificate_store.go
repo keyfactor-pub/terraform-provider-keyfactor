@@ -86,7 +86,14 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 			"container_name": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "Name of certificate store's associated container, if applicable.",
+				Computed:    true,
+				Description: "Name of the certificate store's associated container/application. Kept for backwards compatibility; prefer `application_name` for Command v25.x+.",
+			},
+			"application_name": {
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "Name of the certificate store's associated application (formerly 'container'). Preferred field as of Keyfactor Command v25.x. Functionally equivalent to `container_name`.",
 			},
 			"inventory_schedule": {
 				Type:        types.StringType,
@@ -230,7 +237,6 @@ func (r dataSourceCertificateStore) Read(
 	var result = CertificateStore{
 		ID:                    types.String{Value: sResp.Id},
 		ContainerID:           types.Int64{Value: int64(sResp.ContainerId)},
-		ContainerName:         types.String{Value: sResp.ContainerName},
 		AgentId:               types.String{Value: sResp.AgentId},
 		AgentIdentifier:       types.String{Value: sResp.AgentId},
 		AgentAssigned:         types.Bool{Value: sResp.AgentAssigned},
@@ -247,6 +253,20 @@ func (r dataSourceCertificateStore) Read(
 		ServerUseSsl:          serverUseSsl,
 		StorePassword:         storePassword,
 		DisplayName:           types.String{Value: sResp.DisplayName},
+	}
+	// Resolve container name from ContainerId (server never returns ContainerName).
+	if sResp.ContainerId != 0 {
+		containers, cErr := r.p.client.GetStoreContainers()
+		if cErr != nil {
+			response.Diagnostics.AddError(
+				"Error resolving container name.",
+				fmt.Sprintf("Could not list store containers to resolve ContainerId %d: %s", sResp.ContainerId, cErr.Error()),
+			)
+			return
+		}
+		result.syncApplicationAndContainerName(resolveContainerName(*containers, sResp.ContainerId))
+	} else {
+		result.syncApplicationAndContainerName("")
 	}
 
 	// Set state

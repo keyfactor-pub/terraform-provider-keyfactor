@@ -21,6 +21,7 @@ type roleTestCase struct {
 
 func TestAccKeyfactorRoleResource(t *testing.T) {
 
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := roleTestCase{
 		name:        os.Getenv("KEYFACTOR_SECURITY_ROLE_NAME"),
 		description: "Role used for a Terraform.",

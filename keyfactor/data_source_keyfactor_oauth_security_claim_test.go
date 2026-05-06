@@ -12,6 +12,7 @@ import (
 )
 
 func TestAccKeyfactorOAuthSecurityClaimDataSource(t *testing.T) {
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	var resourceType = "keyfactor_oauth_security_claim"
 	var resourceName = fmt.Sprintf("data.%s.test", resourceType)
 

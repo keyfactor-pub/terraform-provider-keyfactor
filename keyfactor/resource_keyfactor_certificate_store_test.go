@@ -1,3 +1,15 @@
+// ---------------------------------------------------------------------------
+// Certificate Store Resource Tests
+// ---------------------------------------------------------------------------
+//
+// TESTING REQUIREMENT:
+// All changes to the certificate store resource or data source MUST include:
+//   - A TestUnit* VCR test covering the new code path
+//   - A TestInt* integration test for the happy path
+//
+// See CLAUDE.md "Test Tiers" for details on each test level.
+// ---------------------------------------------------------------------------
+
 package keyfactor
 
 import (
@@ -38,6 +50,7 @@ type certificateStoreTestCase struct {
 
 func TestAccKeyfactorCertificateStoreResource(t *testing.T) {
 
+	t.Skip("TestAcc* tests disabled - legacy SDKv2 harness")
 	r := certificateStoreTestCase{
 		clientMachine:   os.Getenv("KEYFACTOR_CERTIFICATE_STORE_CLIENT_MACHINE"),
 		storePath:       os.Getenv("KEYFACTOR_CERTIFICATE_STORE_PATH"),
@@ -196,6 +209,7 @@ func TestUnitKeyfactorCertificateStoreResource(t *testing.T) {
 					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "approved", "true"),
 					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "agent_assigned", "true"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "properties.%"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_store.test", "display_name", fmt.Sprintf("%s - %s", clientMachine, storePath)),
 				),
 			},
 		},
@@ -266,6 +280,127 @@ func TestUnitKeyfactorCertificateStoreResource_Import(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "agent_id"),
 					resource.TestCheckResourceAttr(resourceName, "approved", "true"),
 					resource.TestCheckResourceAttr(resourceName, "agent_assigned", "true"),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateStoreResource_ApplicationName tests that a store
+// created using application_name (the v25+ alias for container_name) works
+// correctly. When no container/application is specified, both fields must be
+// null in state. When a container IS specified via application_name, both
+// application_name and container_name must be synced in state.
+//
+// This test uses the existing "certificate_store_resource" cassette which was
+// recorded WITHOUT a container — it validates the null/null sync case. A
+// separate cassette "certificate_store_resource_application_name" is needed for
+// the non-null case; in replay mode the test skips if that cassette is missing.
+//
+// To record:
+//
+//	RECORD_CASSETTES=1 make testunit-record-one TEST_NAME=TestUnitKeyfactorCertificateStoreResource_ApplicationName
+func TestUnitKeyfactorCertificateStoreResource_ApplicationName(t *testing.T) {
+	cassetteName := "certificate_store_resource_application_name"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+	var storeType, clientMachine, agentID, storePath, containerName string
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		// Recording mode: auto-discover lab resources.
+		client := newTestClient(t)
+		agentID, clientMachine = discoverAgent(t, client)
+		storeType = discoverStoreTypeForAgent(t, client, agentID)
+		storePath = "default/tf-unit-appname-1000000"
+		containerName = discoverApplication(t, client)
+		if containerName == "" {
+			t.Skip("No application/container available in the lab for recording")
+		}
+		writeStoreTestParams(cassettePath, storeTestParams{
+			StoreType:     storeType,
+			ClientMachine: clientMachine,
+			AgentID:       agentID,
+			StorePath:     storePath,
+			ContainerName: containerName,
+		})
+	} else {
+		params := readStoreTestParams(cassettePath)
+		storeType = params.StoreType
+		clientMachine = params.ClientMachine
+		agentID = params.AgentID
+		storePath = params.StorePath
+		containerName = params.ContainerName
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_certificate_store.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Create using application_name (not container_name).
+				Config: testAccCertStoreConfigWithAppName(storeType, clientMachine, agentID, storePath, containerName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "store_path", storePath),
+					resource.TestCheckResourceAttr(resourceName, "store_type", storeType),
+					resource.TestCheckResourceAttr(resourceName, "client_machine", clientMachine),
+					resource.TestCheckResourceAttr(resourceName, "agent_identifier", agentID),
+					// Both fields must be synced to the same container name.
+					resource.TestCheckResourceAttr(resourceName, "application_name", containerName),
+					resource.TestCheckResourceAttr(resourceName, "container_name", containerName),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateStoreResource_NoContainer verifies that when
+// neither application_name nor container_name is specified, both are absent
+// from state. Uses the existing "certificate_store_resource" cassette which
+// was recorded without a container.
+func TestUnitKeyfactorCertificateStoreResource_NoContainer(t *testing.T) {
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_store_resource")
+	var storeType, clientMachine, agentID, storePath string
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		agentID, clientMachine = discoverAgent(t, client)
+		storeType = discoverStoreTypeForAgent(t, client, agentID)
+		storePath = "default/tf-unit-test-1000000"
+		writeStoreTestParams(cassettePath, storeTestParams{
+			StoreType:     storeType,
+			ClientMachine: clientMachine,
+			AgentID:       agentID,
+			StorePath:     storePath,
+		})
+	} else {
+		params := readStoreTestParams(cassettePath)
+		storeType = params.StoreType
+		clientMachine = params.ClientMachine
+		agentID = params.AgentID
+		storePath = params.StorePath
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_store_resource")
+	defer cleanup()
+
+	resourceName := "keyfactor_certificate_store.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Create without application_name or container_name.
+				Config: testAccCertStoreConfig(storeType, clientMachine, agentID, storePath),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "store_path", storePath),
+					// Neither field should be set when no container is provided.
+					resource.TestCheckNoResourceAttr(resourceName, "application_name"),
+					resource.TestCheckNoResourceAttr(resourceName, "container_name"),
 				),
 			},
 		},
@@ -347,6 +482,88 @@ func TestIntKeyfactorCertificateStoreResource_Import(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "agent_id"),
 					resource.TestCheckResourceAttr(resourceName, "approved", "true"),
 					resource.TestCheckResourceAttr(resourceName, "agent_assigned", "true"),
+				),
+			},
+		},
+	})
+}
+
+// TestIntKeyfactorCertificateStoreResource_ApplicationName creates a store with
+// application_name (the v25+ alias), verifies both application_name and
+// container_name are synced in state, then updates to use container_name
+// (backwards-compat alias) and verifies both remain in sync.
+func TestIntKeyfactorCertificateStoreResource_ApplicationName(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	agentID, clientMachine := discoverAgent(t, client)
+	storeType := discoverStoreTypeForAgent(t, client, agentID)
+
+	containerName := discoverApplication(t, client)
+	if containerName == "" {
+		t.Skip("No application/container available in the lab — cannot test application_name")
+	}
+
+	storePath := fmt.Sprintf("default/tf-int-appname-%d", time.Now().UnixNano())
+	resourceName := "keyfactor_certificate_store.test"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: Create using application_name.
+				Config: testAccCertStoreConfigWithAppName(storeType, clientMachine, agentID, storePath, containerName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "store_path", storePath),
+					resource.TestCheckResourceAttr(resourceName, "store_type", storeType),
+					// Both fields must reflect the same value.
+					resource.TestCheckResourceAttr(resourceName, "application_name", containerName),
+					resource.TestCheckResourceAttr(resourceName, "container_name", containerName),
+				),
+			},
+			{
+				// Step 2: Update to use container_name (the legacy alias) instead.
+				// The same container name, but expressed via the other attribute.
+				// Both fields must still be synced.
+				Config: testAccCertStoreConfigWithContainerName(storeType, clientMachine, agentID, storePath, containerName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "application_name", containerName),
+					resource.TestCheckResourceAttr(resourceName, "container_name", containerName),
+				),
+			},
+		},
+	})
+}
+
+// TestIntKeyfactorCertificateStoreResource_ContainerNameBackwardsCompat creates
+// a store using the legacy container_name attribute and verifies that
+// application_name is also populated in state (sync guarantee).
+func TestIntKeyfactorCertificateStoreResource_ContainerNameBackwardsCompat(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	agentID, clientMachine := discoverAgent(t, client)
+	storeType := discoverStoreTypeForAgent(t, client, agentID)
+
+	containerName := discoverApplication(t, client)
+	if containerName == "" {
+		t.Skip("No application/container available in the lab — cannot test container_name backwards compat")
+	}
+
+	storePath := fmt.Sprintf("default/tf-int-container-%d", time.Now().UnixNano())
+	resourceName := "keyfactor_certificate_store.test"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// Create using legacy container_name attribute.
+				Config: testAccCertStoreConfigWithContainerName(storeType, clientMachine, agentID, storePath, containerName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "store_path", storePath),
+					resource.TestCheckResourceAttr(resourceName, "store_type", storeType),
+					// application_name must also be populated via sync.
+					resource.TestCheckResourceAttr(resourceName, "application_name", containerName),
+					resource.TestCheckResourceAttr(resourceName, "container_name", containerName),
 				),
 			},
 		},

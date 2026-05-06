@@ -315,6 +315,56 @@ func TestUnitKeyfactorCertificateStoreTypeDataSource(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Regression: store_path_type / store_path_value write-only preservation
+// Issue #168 — API never returns StorePathType/StorePathValue in GET;
+// without UseStateForUnknown + preservation logic, apply fails with
+// "provider produced inconsistent result after apply".
+// ---------------------------------------------------------------------------
+
+func TestIntKeyfactorCertificateStoreTypeResource_StorePathType(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	if client == nil {
+		t.Skip("Skipping: testAccIntegrationPreCheck returned nil client")
+	}
+
+	shortName := fmt.Sprintf("TSTPTH%d", time.Now().UnixNano()%100000)
+	name := randomTestCN("tf-int-store-path-type")
+	resourceName := "keyfactor_certificate_store_type.test"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Step 1: Create with store_path_type = "Freeform".
+			// Regression: if the inconsistency bug is present, apply fails here.
+			{
+				Config: testAccCertStoreTypeConfigWithPathType(name, shortName, "Freeform", ""),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "name", name),
+					resource.TestCheckResourceAttr(resourceName, "short_name", shortName),
+					resource.TestCheckResourceAttr(resourceName, "store_path_type", "Freeform"),
+				),
+			},
+			// Step 2: Re-apply same config — no drift expected.
+			// Validates UseStateForUnknown preserves the value across plans.
+			{
+				Config:             testAccCertStoreTypeConfigWithPathType(name, shortName, "Freeform", ""),
+				ExpectNonEmptyPlan: false,
+			},
+			// Step 3: Update to store_path_type = "Fixed" with a store_path_value.
+			// Covers the Update preservation path.
+			{
+				Config: testAccCertStoreTypeConfigWithPathType(name, shortName, "Fixed", "/test/path"),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "store_path_type", "Fixed"),
+					resource.TestCheckResourceAttr(resourceName, "store_path_value", "/test/path"),
+				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
 // Config generators
 // ---------------------------------------------------------------------------
 
@@ -373,4 +423,26 @@ data "keyfactor_certificate_store_type" "test" {
   identifier = %s.id
 }
 `, resourceRef)
+}
+
+func testAccCertStoreTypeConfigWithPathType(name, shortName, pathType, pathValue string) string {
+	pathValueLine := ""
+	if pathValue != "" {
+		pathValueLine = fmt.Sprintf("  store_path_value = %q\n", pathValue)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_store_type" "test" {
+  name       = %q
+  short_name = %q
+
+  store_path_type = %q
+%s
+  supports_add    = true
+  supports_remove = true
+
+  private_key_allowed  = "Optional"
+  custom_alias_allowed = "Forbidden"
+  server_required      = false
+}
+`, name, shortName, pathType, pathValueLine)
 }

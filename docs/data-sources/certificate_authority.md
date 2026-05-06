@@ -48,11 +48,13 @@ output "ca_hostname" {
 - `auth_certificate_issuer_dn` (String) Issuer DN of the authentication certificate.
 - `auth_certificate_thumbprint` (String) Thumbprint of the authentication certificate.
 - `ca_type` (Number) An integer indicating the type of CA: 0 = DCOM (Microsoft ADCS) or 1 = HTTPS (e.g. EJBCA).
+- `certificate_cleanup_enabled` (Boolean) Whether certificate cleanup is enabled for this CA.
 - `client_id` (String) For HTTPS CAs, a string specifying the client ID used to authenticate when OAuth authentication is selected.
 - `configuration_tenant` (String) A string indicating the forest root name or DNS domain name for the certificate authority.
 - `connector_pool` (String) A string indicating the name of the connector pool to use with the CA Connector Client.
 - `delegate` (Boolean) A Boolean that sets whether management interactions should be done in the context of the requesting user.
 - `delegate_enrollment` (Boolean) A Boolean that sets whether enrollment should be done in the context of the requesting user.
+- `delete_with_archived_key` (Boolean) Whether to delete the certificate when its archived key is deleted.
 - `denial_max` (Number) Maximum denial count.
 - `enforce_unique_dn` (Boolean) A Boolean that sets whether the unique DN requirement is enforced on the CA.
 - `explicit_credentials` (Boolean) A Boolean that sets whether explicit credentials are enabled for this certificate authority.
@@ -65,7 +67,7 @@ output "ca_hostname" {
 - `incremental_scan_interval_minutes` (Number) Interval in minutes for the incremental synchronization schedule of this certificate authority. One of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720.
 - `issuance_max` (Number) An integer that sets the maximum number of certificates that can be issued before an alert is triggered.
 - `issuance_min` (Number) An integer that sets the minimum number of certificates that should be issued before an alert is triggered.
-- `key_retention` (Number) An integer that sets the type of key retention to enable for the certificate authority: 0=None, 1=SettingDriven, 2=Always, 3=Never.
+- `key_retention` (String) Key retention policy for the CA. Stored as the named form: Disabled (0), Indefinite (1), AfterExpiration (2), FromIssuance (3).
 - `key_retention_days` (Number) An integer indicating the number of days for which to retain private keys before deletion.
 - `last_scan` (String) A string indicating the date in UTC on which a synchronization was last performed.
 - `logical_name` (String) A string indicating the logical name of the certificate authority.
@@ -78,8 +80,11 @@ output "ca_hostname" {
 - `standalone` (Boolean) A Boolean that sets whether the certificate authority is a standalone CA.
 - `subscriber_terms` (Boolean) A Boolean that sets whether to add a checkbox forcing users to agree to terms.
 - `threshold_check_interval_minutes` (Number) Interval in minutes for the threshold monitoring check schedule on this CA. One of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720.
+- `time_after_expiration` (Number) Time value after expiration before cleanup occurs. Used with time_after_expiration_units.
+- `time_after_expiration_units` (Number) Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months.
 - `token_url` (String) For HTTPS CAs, a string indicating the bearer token URL of the identity provider.
 - `use_allowed_requesters` (Boolean) A Boolean that sets whether the allowed requesters option is enabled. Applies to standalone CAs only.
 - `use_ca_connector` (Boolean) A Boolean that sets whether communications are done via a CA Connector Client.
+- `use_for_enrollment` (Boolean) Whether this CA is available for certificate enrollment.
 
 

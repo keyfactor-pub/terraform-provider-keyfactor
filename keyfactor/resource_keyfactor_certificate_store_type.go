@@ -178,16 +178,18 @@ func (r resourceCertStoreTypeDefType) GetSchema(_ context.Context) (tfsdk.Schema
 				Description: "Whether the store is a local store (no orchestrator required).",
 			},
 			"store_path_type": {
-				Type:        types.StringType,
-				Optional:    true,
-				Computed:    true,
-				Description: "Store path type hint (e.g. Freeform, Fixed).",
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Store path type hint (e.g. Freeform, Fixed).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"store_path_value": {
-				Type:        types.StringType,
-				Optional:    true,
-				Computed:    true,
-				Description: "Store path value or template.",
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Store path value or template.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"private_key_allowed": {
 				Type:        types.StringType,
@@ -573,6 +575,20 @@ func (r resourceCertStoreTypeDef) Create(ctx context.Context, request tfsdk.Crea
 	}
 
 	state := certStoreTypeDefToState(resp)
+
+	// StorePathType and StorePathValue are write-only: the API accepts them
+	// on POST/PUT but does not return them in GET responses. Preserve the
+	// plan values so the post-apply consistency check passes.
+	// Guard !Unknown: when the field is not in config for a new resource the
+	// plan is Unknown (Computed); copying Unknown into state causes Terraform
+	// to fail with "provider still indicated an unknown value after apply".
+	if state.StorePathType.Value == "" && !plan.StorePathType.Null && !plan.StorePathType.Unknown {
+		state.StorePathType = plan.StorePathType
+	}
+	if state.StorePathValue.Value == "" && !plan.StorePathValue.Null && !plan.StorePathValue.Unknown {
+		state.StorePathValue = plan.StorePathValue
+	}
+
 	diags = response.State.Set(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	LogFunctionExit(ctx, "resourceCertStoreTypeDef.Create")
@@ -614,6 +630,16 @@ func (r resourceCertStoreTypeDef) Read(ctx context.Context, request tfsdk.ReadRe
 	}
 
 	newState := certStoreTypeDefToState(resp)
+
+	// StorePathType and StorePathValue are write-only: the API does not
+	// return them in GET responses. Preserve prior state values.
+	if newState.StorePathType.Value == "" && !state.StorePathType.Null {
+		newState.StorePathType = state.StorePathType
+	}
+	if newState.StorePathValue.Value == "" && !state.StorePathValue.Null {
+		newState.StorePathValue = state.StorePathValue
+	}
+
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
 	LogFunctionExit(ctx, "resourceCertStoreTypeDef.Read")
@@ -657,6 +683,16 @@ func (r resourceCertStoreTypeDef) Update(ctx context.Context, request tfsdk.Upda
 	}
 
 	newState := certStoreTypeDefToState(resp)
+
+	// StorePathType and StorePathValue are write-only: the API does not
+	// return them in responses. Preserve plan values (which reflect config).
+	if newState.StorePathType.Value == "" && !plan.StorePathType.Null && !plan.StorePathType.Unknown {
+		newState.StorePathType = plan.StorePathType
+	}
+	if newState.StorePathValue.Value == "" && !plan.StorePathValue.Null && !plan.StorePathValue.Unknown {
+		newState.StorePathValue = plan.StorePathValue
+	}
+
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
 	LogFunctionExit(ctx, "resourceCertStoreTypeDef.Update")

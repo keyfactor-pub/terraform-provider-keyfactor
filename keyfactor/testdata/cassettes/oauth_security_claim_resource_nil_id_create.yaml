@@ -1,0 +1,51 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 131
+        host: int25-4-1.kftestlab.com:443
+        body: |
+            {"ClaimType":5,"ClaimValue":"tf-unit-claim-nil-id","Description":"Unit test nil-id claim","ProviderAuthenticationScheme":"System"}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 224
+        body: '{"Id":null,"Description":"Unit test nil-id claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-nil-id","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Content-Length:
+                - "226"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 22 Apr 2026 17:36:15 GMT
+            Server:
+                - istio-envoy
+            X-Envoy-Upstream-Service-Time:
+                - "51"
+            X-Keyfactor-Correlation-Id:
+                - a8e799ed-59e5-4f81-96c2-5bb8f8e58e19
+            X-Keyfactor-Product-Version:
+                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+        status: 200 OK
+        code: 200
+        duration: 1.248664408s

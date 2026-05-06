@@ -9,3 +9,6 @@ data "keyfactor_certificate_store" "k8s_cluster_store_lookup" {
   client_machine = "192.168.0.4"
   store_path     = "/home/azureuser/certs"
 }
+
+# The application_name (or container_name for pre-v25 compatibility) is available on the result:
+# data.keyfactor_certificate_store.k8s_cluster_store_lookup.application_name

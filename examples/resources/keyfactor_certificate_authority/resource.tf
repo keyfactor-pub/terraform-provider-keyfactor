@@ -7,7 +7,7 @@ resource "keyfactor_certificate_authority" "ejbca" {
   configuration_tenant = "ejbca"
 
   allowed_enrollment_types = 3
-  key_retention            = 1
+  key_retention            = "Indefinite"
 
   use_allowed_requesters = true
   allowed_requesters     = ["InstanceOwner"]

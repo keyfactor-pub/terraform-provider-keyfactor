@@ -22,7 +22,7 @@ resource "keyfactor_certificate_authority" "ejbca" {
   configuration_tenant = "ejbca"
 
   allowed_enrollment_types = 3
-  key_retention            = 1
+  key_retention            = "Indefinite"
 
   use_allowed_requesters = true
   allowed_requesters     = ["InstanceOwner"]
@@ -60,12 +60,14 @@ resource "keyfactor_certificate_authority" "ejbca" {
 - `audience` (String) For HTTPS CAs, a string specifying the audience to include in token requests to the identity provider.
 - `auth_certificate` (String, Sensitive) An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only.
 - `auth_certificate_password` (String, Sensitive) An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only.
+- `certificate_cleanup_enabled` (Boolean) Whether certificate cleanup is enabled for this CA.
 - `client_id` (String) For HTTPS CAs, a string specifying the client ID used to authenticate when OAuth authentication is selected.
 - `client_secret` (String, Sensitive) For HTTPS CAs, an object indicating the secret for the client used to authenticate. Write-only; cannot be read back from the server.
 - `configuration_tenant` (String) A string indicating the forest root name or DNS domain name for the certificate authority.
 - `connector_pool` (String) A string indicating the name of the connector pool to use with the CA Connector Client.
 - `delegate` (Boolean) A Boolean that sets whether management interactions should be done in the context of the requesting user.
 - `delegate_enrollment` (Boolean) A Boolean that sets whether enrollment should be done in the context of the requesting user.
+- `delete_with_archived_key` (Boolean) Whether to delete the certificate when its archived key is deleted.
 - `enforce_unique_dn` (Boolean) A Boolean that sets whether the unique DN requirement is enforced on the CA. Mutually exclusive with new_end_entity_on_renew_and_reissue=true.
 - `explicit_credentials` (Boolean) A Boolean that sets whether explicit credentials are enabled for this certificate authority.
 - `explicit_password` (String, Sensitive) An object indicating the password information to use for authentication with explicit_user. Write-only; cannot be read back from the server.
@@ -77,7 +79,7 @@ resource "keyfactor_certificate_authority" "ejbca" {
 - `incremental_scan_interval_minutes` (Number) Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.
 - `issuance_max` (Number) An integer that sets the maximum number of certificates that can be issued before an alert is triggered.
 - `issuance_min` (Number) An integer that sets the minimum number of certificates that should be issued before an alert is triggered.
-- `key_retention` (Number) An integer that sets the type of key retention to enable for the certificate authority: 0=None, 1=SettingDriven, 2=Always, 3=Never.
+- `key_retention` (String) Key retention policy for the CA. Accepts the named form (Disabled, Indefinite, AfterExpiration, FromIssuance) or the equivalent integer string ("0"–"3"). Always stored in state as the named form.
 - `key_retention_days` (Number) An integer indicating the number of days for which to retain private keys before deletion.
 - `monitor_thresholds` (Boolean) A Boolean that sets whether threshold monitoring is enabled with email alerts.
 - `new_end_entity_on_renew_and_reissue` (Boolean) A Boolean setting whether renewal requests create new end entities. Required to be true for HTTPS CAs (ca_type=1). Mutually exclusive with enforce_unique_dn=true.
@@ -88,9 +90,12 @@ resource "keyfactor_certificate_authority" "ejbca" {
 - `standalone` (Boolean) A Boolean that sets whether the certificate authority is a standalone CA.
 - `subscriber_terms` (Boolean) A Boolean that sets whether to add a checkbox forcing users to agree to terms.
 - `threshold_check_interval_minutes` (Number) Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720.
+- `time_after_expiration` (Number) Time value after expiration before cleanup occurs. Used with time_after_expiration_units.
+- `time_after_expiration_units` (Number) Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months.
 - `token_url` (String) For HTTPS CAs, a string indicating the bearer token URL of the identity provider.
 - `use_allowed_requesters` (Boolean) A Boolean that sets whether the allowed requesters option is enabled. Applies to standalone CAs only.
 - `use_ca_connector` (Boolean) A Boolean that sets whether communications are done via a CA Connector Client.
+- `use_for_enrollment` (Boolean) Whether this CA is available for certificate enrollment.
 
 ### Read-Only
 

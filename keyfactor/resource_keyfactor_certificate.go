@@ -270,9 +270,10 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			},
 			"certificate_authority": {
 				Type:          types.StringType,
-				Required:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "Name of certificate authority to deploy certificate with Ex: Example Company CA 1",
+				Optional:      true,
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
+				Description:   "Name of the certificate authority to use for enrollment. Optional when using a certificate template or enrollment pattern — Command will automatically select a CA associated with the template or pattern. Required when enrolling against a standalone CA. Example: \"MYCA\\\\My Issuing CA\"",
 			},
 			"certificate_template": {
 				Type:          types.StringType,
@@ -401,6 +402,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					"granted at the collection level. NOTE: This will *not* assign the cert to the specified collection ID; " +
 					"assignment is based the collection's associated query. For more information on collection permissions see " +
 					"the Keyfactor Command docs: https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/CertificatePermissions.htm?Highlight=collection%20permissions",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"owner_role_name": {
 				Type:     types.StringType,
@@ -896,6 +898,33 @@ func (r resourceCommandCertificate) Create(
 
 }
 
+// preserveWriteOnlyEnrollmentFieldsFromState copies the write-only enrollment
+// parameters from the prior Terraform state into the result struct that the
+// Read path returns. The Keyfactor Command server does not echo these fields
+// back on certificate GET responses, so if Read returned null/zero for them
+// after Create the framework would surface "Provider produced inconsistent
+// result after apply" because Create wrote the plan values into state.
+//
+// Fields preserved:
+//   - collection_id: server has no concept of collection context on a stored
+//     certificate; only meaningful at enrollment / lookup time.
+//   - friendly_name: write-only enrollment parameter (CustomFriendlyName).
+//   - use_cn_as_friendly_name: write-only enrollment parameter; the server
+//     does not store this flag separately from the resolved friendly name.
+//
+// This helper exists primarily as a stable, directly-testable seam so a unit
+// test can validate the fix for the "inconsistent result after apply"
+// regression that existed in v2.8.0, without needing a full VCR cassette
+// round-trip through Read.
+func preserveWriteOnlyEnrollmentFieldsFromState(state CommandCertificate, result *CommandCertificate) {
+	if result == nil {
+		return
+	}
+	result.CollectionId = state.CollectionId
+	result.FriendlyName = state.FriendlyName
+	result.UseCNAsFriendlyName = state.UseCNAsFriendlyName
+}
+
 func (r resourceCommandCertificate) Read(
 	ctx context.Context,
 	request tfsdk.ReadResourceRequest,
@@ -1042,22 +1071,27 @@ func (r resourceCommandCertificate) Read(
 		// specified only the logical name.  This prevents spurious plan drift on
 		// an attribute that carries RequiresReplace semantics.
 		remoteCaName := certGetResp.CertificateAuthorityName
-		if remoteCaName != "" && caName != "" && remoteCaName != caName {
-			// Check if the remote CA name ends with the state value (logical name match)
-			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
-				tflog.Debug(
-					ctx,
-					fmt.Sprintf(
-						"Preserving user-supplied certificate_authority %q (remote returned %q)",
-						caName,
-						remoteCaName,
-					),
-				)
-			} else {
+		if remoteCaName != "" {
+			if caName == "" {
+				// caName empty (e.g., enrollment-pattern enrollment with no
+				// user-supplied certificate_authority): populate from server so
+				// the resource reflects which CA actually issued the cert.
 				caName = remoteCaName
+			} else if remoteCaName != caName {
+				// Check if the remote CA name ends with the state value (logical name match)
+				if !strings.HasSuffix(remoteCaName, "\\"+caName) && !strings.HasSuffix(remoteCaName, "\\\\"+caName) {
+					caName = remoteCaName
+				} else {
+					tflog.Debug(
+						ctx,
+						fmt.Sprintf(
+							"Preserving user-supplied certificate_authority %q (remote returned %q)",
+							caName,
+							remoteCaName,
+						),
+					)
+				}
 			}
-		} else if remoteCaName != "" {
-			caName = remoteCaName
 		}
 		certificateID = certGetResp.Id
 		//templateName = certGetResp.TemplateName
@@ -1209,12 +1243,9 @@ func (r resourceCommandCertificate) Read(
 		},
 		CertificateFormat: state.CertificateFormat,
 		//CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
-		Metadata:            metadata,
-		CertificateId:       types.Int64{Value: int64(certificateID), Null: isNullId(certificateID)},
-		CollectionId:        types.Int64{Null: true},  // not recoverable; use isNullId sentinel
-		FriendlyName:        types.String{Null: true}, // write-only enrollment param
-		UseCNAsFriendlyName: types.Bool{Null: true},   // write-only enrollment param
-		ExpiryWarningDays:   state.ExpiryWarningDays,
+		Metadata:          metadata,
+		CertificateId:     types.Int64{Value: int64(certificateID), Null: isNullId(certificateID)},
+		ExpiryWarningDays: state.ExpiryWarningDays,
 		IsExpired: types.Bool{
 			Value: expired,
 		},
@@ -1245,6 +1276,12 @@ func (r resourceCommandCertificate) Read(
 		KeySize:           state.KeySize,
 		Curve:             state.Curve,
 	}
+
+	// Preserve write-only enrollment fields (collection_id, friendly_name,
+	// use_cn_as_friendly_name) that the server does not return on GET. Without
+	// this, Create -> Read produces "Provider produced inconsistent result
+	// after apply" because the plan value would be replaced by null.
+	preserveWriteOnlyEnrollmentFieldsFromState(state, &result)
 
 	if certGetResp != nil {
 		if certGetResp.RevocationEffDate != "" {
@@ -1334,11 +1371,17 @@ func (r resourceCommandCertificate) Read(
 		result.PEMChain = types.String{Value: fullChain, Null: isNullString(fullChain)}
 		result.PrivateKey = types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)}
 	case "JKS":
-		result.JKS = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		if rawData != nil {
+			result.JKS = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		}
 	case "PFX":
-		result.PFX = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		if rawData != nil {
+			result.PFX = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		}
 	case "ZIP":
-		result.Zip = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		if rawData != nil {
+			result.Zip = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		}
 	default:
 		// should never happen due to validation
 		tflog.Warn(ctx, fmt.Sprintf("Unknown certificate format '%s'", certificateFormat))
@@ -1407,7 +1450,10 @@ func (r resourceCommandCertificate) Update(
 		return
 	}
 
-	collectionIdInt := int(state.CollectionId.Value)
+	// Use plan.CollectionId so that when the user changes collection_id in config,
+	// the API call uses the new value (collection context is a permission hint, not
+	// a resource-identity field).
+	collectionIdInt := int(plan.CollectionId.Value)
 
 	thumbprint, commonName := determineCertificateIdType(state.ID.Value)
 	certificateID := int(state.CertificateId.Value)
@@ -1579,12 +1625,12 @@ func (r resourceCommandCertificate) Update(
 			KeyPassword:          plan.KeyPassword,
 			EnrollmentPassword:   state.EnrollmentPassword,
 			CertificateId:        state.CertificateId,
-			CertificateAuthority: plan.CertificateAuthority,
+			CertificateAuthority: knownStringFromPlan(plan.CertificateAuthority),
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
-			CollectionId:         state.CollectionId,
+			CollectionId:         plan.CollectionId,
 			ExpiryWarningDays:    plan.ExpiryWarningDays,
 			IsExpired: types.Bool{
 				Value: expired,
@@ -1703,7 +1749,7 @@ func (r resourceCommandCertificate) Update(
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
 			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
 			FriendlyName:         state.FriendlyName,
-			CollectionId:         state.CollectionId,
+			CollectionId:         plan.CollectionId,
 			ExpiryWarningDays:    plan.ExpiryWarningDays,
 			IsExpired: types.Bool{
 				Value: expired,
@@ -1757,7 +1803,7 @@ func (r resourceCommandCertificate) Update(
 			dlLeafPEM, dlChainPEM, dlPKeyPEM, dlRawData, dlDiags := recoverOrDownloadCertificate(
 				ctx,
 				int(state.CertificateId.Value),
-				int(state.CollectionId.Value),
+				int(plan.CollectionId.Value),
 				plan.KeyPassword.Value,
 				r.p.client,
 				effectivePlanFmt,
@@ -1826,7 +1872,7 @@ func (r resourceCommandCertificate) Update(
 				pKeyPEM, _, _, _, rDiags := recoverPrivateKeyFromKeyfactorCommand(
 					ctx,
 					int(state.CertificateId.Value),
-					int(state.CollectionId.Value),
+					int(plan.CollectionId.Value),
 					recoverPassword,
 					r.p.client,
 					"PFX",
@@ -2096,29 +2142,33 @@ func (r resourceCommandCertificate) ImportState(
 	if certGetResp != nil {
 		// Info that can only be retrieved with `Read Certificates` permissions
 		remoteCaName := certGetResp.CertificateAuthorityName
-		if remoteCaName != "" && caName != "" && remoteCaName != caName {
-			if strings.HasSuffix(remoteCaName, "\\"+caName) || strings.HasSuffix(remoteCaName, "\\\\"+caName) {
-				tflog.Debug(
-					ctx,
-					fmt.Sprintf(
-						"Preserving user-supplied certificate_authority %q (remote returned %q)",
-						caName,
-						remoteCaName,
-					),
-				)
-			} else {
-				caName = remoteCaName
-			}
-		} else if remoteCaName != "" {
-			// caName is empty (import path): extract the logical name from the
-			// server-returned CA path.  Handles Windows "HOST\\LogicalName" and
-			// EJBCA URL format "http://ejbca.../ejbca\\LogicalName" so that the
-			// imported state stores the short logical name and matches the typical
-			// user-supplied certificate_authority value without causing drift.
-			if idx := strings.LastIndex(remoteCaName, "\\"); idx >= 0 {
-				caName = remoteCaName[idx+1:]
-			} else {
-				caName = remoteCaName
+		if remoteCaName != "" {
+			if caName == "" {
+				// caName is empty (import path or enrollment-pattern create with
+				// no user-supplied certificate_authority): extract the logical
+				// name from the server-returned CA path.  Handles Windows
+				// "HOST\\LogicalName" and EJBCA URL format
+				// "http://ejbca.../ejbca\\LogicalName" so that state stores the
+				// short logical name and matches the typical user-supplied
+				// certificate_authority value without causing drift.
+				if idx := strings.LastIndex(remoteCaName, "\\"); idx >= 0 {
+					caName = remoteCaName[idx+1:]
+				} else {
+					caName = remoteCaName
+				}
+			} else if remoteCaName != caName {
+				if !strings.HasSuffix(remoteCaName, "\\"+caName) && !strings.HasSuffix(remoteCaName, "\\\\"+caName) {
+					caName = remoteCaName
+				} else {
+					tflog.Debug(
+						ctx,
+						fmt.Sprintf(
+							"Preserving user-supplied certificate_authority %q (remote returned %q)",
+							caName,
+							remoteCaName,
+						),
+					)
+				}
 			}
 		}
 		certificateIdInt = certGetResp.Id
@@ -2171,9 +2221,9 @@ func (r resourceCommandCertificate) ImportState(
 		CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(certificateIdInt), Null: isNullId(certificateIdInt)},
-		CollectionId:        types.Int64{Null: true},
-		FriendlyName:        types.String{Null: true},
-		UseCNAsFriendlyName: types.Bool{Null: true},
+		CollectionId:        state.CollectionId,
+		FriendlyName:        state.FriendlyName,
+		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
 		RequestId:           types.Int64{Value: int64(requestId), Null: isNullId(requestId)},
 		ExpiryWarningDays:   types.Int64{Null: true},  // write-only; isNullId(0)==true means not set
 		IsExpired:           types.Bool{Value: false}, // Set to false as we just enrolled the certificate
@@ -2924,7 +2974,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		//PrivateKey:           types.String{Value: pKeyPEM}, //This is set below depending out output format
 		KeyPassword:          plan.KeyPassword,
 		EnrollmentPassword:   types.String{Value: lookupPassword, Null: isNullString(lookupPassword)},
-		CertificateAuthority: plan.CertificateAuthority,
+		CertificateAuthority: knownStringFromPlan(plan.CertificateAuthority),
 		CertificateTemplate:  plan.CertificateTemplate,
 		CertificateId:        types.Int64{Value: int64(enrolledId)},
 		RequestId:            types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorRequestID)},
@@ -3152,10 +3202,15 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByName(
 	return 0, fmt.Errorf("enrollment pattern with name '%s' not found", patternName)
 }
 
-// LookupEnrollmentPatternIDByTemplateName finds the default enrollment pattern
-// for the given template short name. Returns (0, nil) if no enrollment patterns
-// exist (pre-v25 / standalone CA) so the caller can fall through to
-// template-only enrollment. Returns an error only on API failure.
+// LookupEnrollmentPatternIDByTemplateName finds the enrollment pattern for the
+// given template short name. The resolution policy is:
+//
+//   - 0 matches → return (0, nil) — fall through to direct template enrollment
+//     (pre-v25 / standalone CA).
+//   - 1 match → return that pattern's ID — unambiguous.
+//   - 2+ matches, exactly one has TemplateDefault=true → return the default's ID.
+//   - 2+ matches, zero or 2+ have TemplateDefault=true → return an error so the
+//     user must set certificate_enrollment_pattern explicitly.
 func (r resourceCommandCertificate) LookupEnrollmentPatternIDByTemplateName(
 	ctx context.Context,
 	templateName string,
@@ -3167,34 +3222,55 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByTemplateName(
 		tflog.Warn(ctx, fmt.Sprintf("Could not list enrollment patterns (may be pre-v25): %s", err.Error()))
 		return 0, nil
 	}
-	// Prefer the pattern explicitly marked as the template default.
-	for _, pattern := range patterns {
-		if pattern.Template != nil &&
-			pattern.Template.TemplateName == templateName &&
-			pattern.TemplateDefault {
-			tflog.Debug(
-				ctx, fmt.Sprintf(
-					"Found default enrollment pattern '%s' (ID=%d) for template '%s'",
-					pattern.Name, pattern.ID, templateName,
-				),
-			)
-			return pattern.ID, nil
-		}
+
+	// Collect all patterns linked to this template.
+	type match struct {
+		id              int
+		name            string
+		templateDefault bool
 	}
-	// Fall back to any pattern linked to this template.
+	var matches []match
 	for _, pattern := range patterns {
 		if pattern.Template != nil && pattern.Template.TemplateName == templateName {
-			tflog.Debug(
-				ctx, fmt.Sprintf(
-					"Found enrollment pattern '%s' (ID=%d) for template '%s' (not marked default)",
-					pattern.Name, pattern.ID, templateName,
-				),
-			)
-			return pattern.ID, nil
+			matches = append(matches, match{
+				id:              pattern.ID,
+				name:            pattern.Name,
+				templateDefault: pattern.TemplateDefault,
+			})
 		}
 	}
-	tflog.Debug(ctx, fmt.Sprintf("No enrollment pattern found for template '%s', proceeding without one", templateName))
-	return 0, nil
+
+	switch len(matches) {
+	case 0:
+		tflog.Debug(ctx, fmt.Sprintf("No enrollment pattern found for template '%s', proceeding without one", templateName))
+		return 0, nil
+	case 1:
+		tflog.Debug(ctx, fmt.Sprintf(
+			"Found enrollment pattern '%s' (ID=%d) for template '%s'",
+			matches[0].name, matches[0].id, templateName,
+		))
+		return matches[0].id, nil
+	default:
+		// 2+ matches — look for a unique default.
+		var defaults []match
+		for _, m := range matches {
+			if m.templateDefault {
+				defaults = append(defaults, m)
+			}
+		}
+		if len(defaults) == 1 {
+			tflog.Debug(ctx, fmt.Sprintf(
+				"Found default enrollment pattern '%s' (ID=%d) for template '%s' (%d total patterns)",
+				defaults[0].name, defaults[0].id, templateName, len(matches),
+			))
+			return defaults[0].id, nil
+		}
+		return 0, fmt.Errorf(
+			"template %q has %d associated enrollment patterns with no unique default; "+
+				"set certificate_enrollment_pattern explicitly to disambiguate",
+			templateName, len(matches),
+		)
+	}
 }
 
 // normalizeKeyAlgorithm maps OID strings returned by EJBCA and some CA
@@ -3537,7 +3613,7 @@ func (r resourceCommandCertificate) enrollCSR(
 			Null:  true,
 		}, // Null because CSR enrollment does not provide a private key
 		EnrollmentPassword:   types.String{Null: true}, // Null because CSR enrollment does not provide an enrollment password
-		CertificateAuthority: plan.CertificateAuthority,
+		CertificateAuthority: knownStringFromPlan(plan.CertificateAuthority),
 		CertificateId:        types.Int64{Value: int64(enrollResponse.CertificateInformation.KeyfactorID)},
 		CertificateTemplate:  plan.CertificateTemplate,
 		Metadata:             knownMetadataFromPlan(plan.Metadata),

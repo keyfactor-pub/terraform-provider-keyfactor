@@ -95,22 +95,25 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"container_name": {
-				Type:     types.StringType,
-				Optional: true,
-				//Computed:    true,
-				Description: "Name of the container you want to associate the certificate store with. NOTE: The container must already exist and be of the same certificate store type.",
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Name of the container/application to associate with the certificate store. Kept for backwards compatibility; prefer `application_name` for Command v25.x+. NOTE: The container/application must already exist and be of the same certificate store type.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
+			},
+			"application_name": {
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Name of the application (formerly 'container') to associate with the certificate store. Preferred field as of Keyfactor Command v25.x. Functionally equivalent to `container_name`. NOTE: The application must already exist and be of the same certificate store type.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"inventory_schedule": {
-				Type:     types.StringType,
-				Optional: true,
-				Description: `String indicating the schedule for inventory updates. Valid formats are:
-					"immediate" - schedules and immediate job
-					"1d" - schedules a daily job
-					"12h" - schedules a job every 12 hours
-					"30m" - schedules a job every 30 minutes
-				`,
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				Description:   `String indicating the schedule for inventory updates. Valid formats are: "immediate", "Daily at HH:MM:SS", "Exactly once at HH:MM:SS", or interval notation like "30m", "12h".`,
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"set_new_password_allowed": {
 				Type:          types.BoolType,
@@ -202,14 +205,16 @@ func (r resourceCertificateStore) Create(
 	}
 
 	containerId := 0
-	if !plan.ContainerName.IsNull() {
-		storeContainer, containerErr := r.p.client.GetStoreContainer(plan.ContainerName.Value)
+	effectiveName, nameIsNull := plan.effectiveContainerName()
+	if !nameIsNull {
+		storeContainer, containerErr := r.p.client.GetStoreContainer(effectiveName)
 		if containerErr != nil || storeContainer == nil {
 			response.Diagnostics.AddError(
-				"Invalid container name.",
+				"Invalid application/container name.",
 				fmt.Sprintf(
-					"Could not retrieve container '%s' from Keyfactor"+containerErr.Error(),
-					plan.ContainerName.Value,
+					"Could not retrieve application/container '%s' from Keyfactor: %s",
+					effectiveName,
+					containerErr.Error(),
 				),
 			)
 			return
@@ -334,7 +339,7 @@ func (r resourceCertificateStore) Create(
 		Properties:            propsInterface,
 		AgentId:               agentId,
 		AgentAssigned:         &plan.AgentAssigned.Value,
-		ContainerName:         &plan.ContainerName.Value,
+		ContainerName:         &effectiveName,
 		InventorySchedule:     schedule,
 		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
 		Password:              storePassFormatted,
@@ -356,6 +361,7 @@ func (r resourceCertificateStore) Create(
 			Null:  plan.ContainerID.Null,
 			Value: int64(createStoreResponse.ContainerId),
 		},
+		DisplayName:           types.String{Value: fmt.Sprintf("%s - %s", createStoreResponse.ClientMachine, createStoreResponse.Storepath)},
 		ClientMachine:         types.String{Value: createStoreResponse.ClientMachine},
 		StorePath:             types.String{Value: createStoreResponse.Storepath},
 		StoreType:             plan.StoreType,
@@ -365,14 +371,28 @@ func (r resourceCertificateStore) Create(
 		AgentId:               types.String{Value: createStoreResponse.AgentId},
 		AgentIdentifier:       plan.AgentIdentifier,
 		AgentAssigned:         types.Bool{Value: createStoreResponse.AgentAssigned},
-		ContainerName:         plan.ContainerName,
-		InventorySchedule:     plan.InventorySchedule,
+		InventorySchedule:     resolveInventoryScheduleState(plan.InventorySchedule, &createStoreResponse.InventorySchedule),
 		SetNewPasswordAllowed: types.Bool{Value: createStoreResponse.SetNewPasswordAllowed},
 		StorePassword:         plan.StorePassword,
 		ServerUsername:        plan.ServerUsername,
 		ServerPassword:        plan.ServerPassword,
 		ServerUseSsl:          plan.ServerUseSsl,
 		//Certificates:          types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
+	}
+	// The server never echoes ContainerName in Create/GET responses (always null).
+	// Resolve the name from the ContainerId by looking up the full container list.
+	if createStoreResponse.ContainerId != 0 {
+		containers, cErr := kfClient.GetStoreContainers()
+		if cErr != nil {
+			response.Diagnostics.AddError(
+				"Error resolving container name.",
+				fmt.Sprintf("Could not list store containers to resolve ContainerId %d: %s", createStoreResponse.ContainerId, cErr.Error()),
+			)
+			return
+		}
+		result.syncApplicationAndContainerName(resolveContainerName(*containers, createStoreResponse.ContainerId))
+	} else {
+		result.syncApplicationAndContainerName("")
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -415,6 +435,7 @@ func (r resourceCertificateStore) Read(
 			Null:  state.ContainerID.Null,
 			Value: int64(sResp.ContainerId),
 		},
+		DisplayName:     types.String{Value: fmt.Sprintf("%s - %s", sResp.ClientMachine, sResp.StorePath)},
 		ClientMachine:   types.String{Value: sResp.ClientMachine},
 		StorePath:       types.String{Value: sResp.StorePath},
 		StoreType:       state.StoreType,
@@ -424,7 +445,6 @@ func (r resourceCertificateStore) Read(
 		AgentId:         types.String{Value: sResp.AgentId},
 		AgentIdentifier: state.AgentIdentifier,
 		AgentAssigned:   types.Bool{Value: sResp.AgentAssigned},
-		ContainerName:   types.String{Value: sResp.ContainerName, Null: isNullString(sResp.ContainerName)},
 		InventorySchedule: func() types.String {
 			s := parseInventorySchedule(&sResp.InventorySchedule)
 			if s == "" {
@@ -438,6 +458,20 @@ func (r resourceCertificateStore) Read(
 		ServerPassword:        state.ServerPassword, //TODO: Parse this from sResp.Properties
 		ServerUseSsl:          state.ServerUseSsl,   //TODO: Parse this from sResp.Properties
 		//Certificates:          types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
+	}
+	// Resolve container name from ContainerId (server never returns ContainerName).
+	if sResp.ContainerId != 0 {
+		containers, cErr := r.p.client.GetStoreContainers()
+		if cErr != nil {
+			response.Diagnostics.AddError(
+				"Error resolving container name.",
+				fmt.Sprintf("Could not list store containers to resolve ContainerId %d: %s", sResp.ContainerId, cErr.Error()),
+			)
+			return
+		}
+		result.syncApplicationAndContainerName(resolveContainerName(*containers, sResp.ContainerId))
+	} else {
+		result.syncApplicationAndContainerName("")
 	}
 
 	// Set state
@@ -491,14 +525,16 @@ func (r resourceCertificateStore) Update(
 	}
 
 	containerId := 0
-	if !plan.ContainerName.IsNull() {
-		storeContainer, containerErr := r.p.client.GetStoreContainer(plan.ContainerName.Value)
+	updateEffectiveName, updateNameIsNull := plan.effectiveContainerName()
+	if !updateNameIsNull {
+		storeContainer, containerErr := r.p.client.GetStoreContainer(updateEffectiveName)
 		if containerErr != nil || storeContainer == nil {
 			response.Diagnostics.AddError(
-				"Invalid container name.",
+				"Invalid application/container name.",
 				fmt.Sprintf(
-					"Could not retrieve container '%s' from Keyfactor"+containerErr.Error(),
-					plan.ContainerName.Value,
+					"Could not retrieve application/container '%s' from Keyfactor: %s",
+					updateEffectiveName,
+					containerErr.Error(),
 				),
 			)
 			return
@@ -636,7 +672,7 @@ func (r resourceCertificateStore) Update(
 		PropertiesString:      propertiesStr,
 		AgentId:               agentId,
 		AgentAssigned:         &agentAssignedVal,
-		ContainerName:         &plan.ContainerName.Value,
+		ContainerName:         &updateEffectiveName,
 		InventorySchedule:     schedule,
 		SetNewPasswordAllowed: &setNewPasswordAllowedVal,
 		Password:              storePassFormatted,
@@ -673,6 +709,7 @@ func (r resourceCertificateStore) Update(
 			Null:  plan.ContainerID.Null,
 			Value: int64(updateResponse.ContainerId),
 		},
+		DisplayName:           types.String{Value: fmt.Sprintf("%s - %s", updateResponse.ClientMachine, updateResponse.Storepath)},
 		ClientMachine:         types.String{Value: updateResponse.ClientMachine},
 		StorePath:             types.String{Value: updateResponse.Storepath},
 		StoreType:             plan.StoreType,
@@ -682,13 +719,26 @@ func (r resourceCertificateStore) Update(
 		AgentId:               types.String{Value: updateResponse.AgentId},
 		AgentIdentifier:       plan.AgentIdentifier,
 		AgentAssigned:         types.Bool{Value: updateResponse.AgentAssigned},
-		ContainerName:         plan.ContainerName,
-		InventorySchedule:     plan.InventorySchedule,
+		InventorySchedule:     resolveInventoryScheduleState(plan.InventorySchedule, &updateResponse.InventorySchedule),
 		SetNewPasswordAllowed: types.Bool{Value: updateResponse.SetNewPasswordAllowed},
 		StorePassword:         plan.StorePassword,
 		ServerUsername:        plan.ServerUsername,
 		ServerPassword:        plan.ServerPassword,
 		ServerUseSsl:          plan.ServerUseSsl,
+	}
+	// Resolve container name from ContainerId (server never returns ContainerName).
+	if updateResponse.ContainerId != 0 {
+		containers, cErr := r.p.client.GetStoreContainers()
+		if cErr != nil {
+			response.Diagnostics.AddError(
+				"Error resolving container name.",
+				fmt.Sprintf("Could not list store containers to resolve ContainerId %d: %s", updateResponse.ContainerId, cErr.Error()),
+			)
+			return
+		}
+		result.syncApplicationAndContainerName(resolveContainerName(*containers, updateResponse.ContainerId))
+	} else {
+		result.syncApplicationAndContainerName("")
 	}
 
 	// Set state
@@ -801,8 +851,7 @@ func (r resourceCertificateStore) ImportState(
 		AgentId:               types.String{Value: readResponse.AgentId},
 		AgentIdentifier:       types.String{Value: readResponse.AgentId},
 		AgentAssigned:         types.Bool{Value: readResponse.AgentAssigned},
-		DisplayName:           types.String{Null: true},
-		ContainerName:         types.String{Value: readResponse.ContainerName, Null: isNullString(readResponse.ContainerName)},
+		DisplayName:           types.String{Value: fmt.Sprintf("%s - %s", readResponse.ClientMachine, readResponse.StorePath)},
 		InventorySchedule:     importedScheduleVal,
 		SetNewPasswordAllowed: types.Bool{Value: readResponse.SetNewPasswordAllowed},
 		// StorePassword, ServerUsername, ServerPassword are write-only in the Command API
@@ -813,11 +862,44 @@ func (r resourceCertificateStore) ImportState(
 		ServerPassword: types.String{Null: true},
 		ServerUseSsl:   types.Bool{Null: true},
 	}
+	// Resolve container name from ContainerId (server never returns ContainerName).
+	if readResponse.ContainerId != 0 {
+		containers, cErr := r.p.client.GetStoreContainers()
+		if cErr != nil {
+			response.Diagnostics.AddError(
+				"Error resolving container name.",
+				fmt.Sprintf("Could not list store containers to resolve ContainerId %d: %s", readResponse.ContainerId, cErr.Error()),
+			)
+			return
+		}
+		result.syncApplicationAndContainerName(resolveContainerName(*containers, readResponse.ContainerId))
+	} else {
+		result.syncApplicationAndContainerName("")
+	}
 	diags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
+}
+
+// resolveInventoryScheduleState returns a known types.String for inventory_schedule.
+// It prefers the plan value when known (user explicitly configured a schedule), then
+// falls back to the server response, and finally to null when neither is present.
+// This ensures the Create/Update result never contains an Unknown value for the field.
+func resolveInventoryScheduleState(planVal types.String, serverSched *api.InventorySchedule) types.String {
+	// If the plan has a known (non-Unknown) value, honour it.
+	if !planVal.Unknown {
+		return planVal
+	}
+	// Plan is Unknown (field not in config). Use the server-returned schedule if any.
+	if serverSched != nil {
+		if s := parseInventorySchedule(serverSched); s != "" {
+			return types.String{Value: s}
+		}
+	}
+	// No schedule on the server either — return known null.
+	return types.String{Null: true}
 }
 
 func createPasswordConfig(p string) *api.UpdateStorePasswordConfig {

@@ -1,6 +1,7 @@
 package keyfactor
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -17,12 +18,14 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -417,6 +420,39 @@ func discoverOAuthAuthScheme(t *testing.T) string {
 	return "System"
 }
 
+// discoverApplication returns the name of an existing certificate store
+// container/application in the lab. Checks KEYFACTOR_CERTIFICATE_STORE_CONTAINER_NAME1
+// env var first, then discovers via the API. Returns "" if none are available
+// (caller should skip or test without a container).
+func discoverApplication(t *testing.T, client *api.Client) string {
+	t.Helper()
+
+	if name := os.Getenv("KEYFACTOR_CERTIFICATE_STORE_CONTAINER_NAME1"); name != "" {
+		t.Logf("Using application/container name from env: %s", name)
+		return name
+	}
+
+	containers, err := client.GetStoreContainers()
+	if err != nil {
+		t.Logf("Failed to list store containers for discovery: %s — tests will run without a container", err)
+		return ""
+	}
+
+	if containers == nil || len(*containers) == 0 {
+		t.Logf("No certificate store containers/applications available in the lab")
+		return ""
+	}
+
+	for _, c := range *containers {
+		t.Logf("Available application/container: %s (ID: %d, StoreType: %d)", c.Name, *c.Id, c.CertStoreType)
+	}
+
+	// Return the first one
+	name := (*containers)[0].Name
+	t.Logf("Discovered application/container: %s", name)
+	return name
+}
+
 // discoverStoreType returns a certificate store type short name.
 // Checks KEYFACTOR_CERTIFICATE_STORE_TYPE env var first, then discovers from the lab.
 func discoverStoreType(t *testing.T, client *api.Client) string {
@@ -495,6 +531,63 @@ func discoverAgent(t *testing.T, client *api.Client) (agentID, clientMachine str
 	agent := agents[0]
 	t.Logf("Discovered agent (fallback, status=%d): %s (machine: %s, capabilities: %v)", agent.Status, agent.AgentId, agent.ClientMachine, agent.Capabilities)
 	return agent.AgentId, agent.ClientMachine
+}
+
+// requireActiveAgent skips the test with a warning if the best available agent
+// has not checked in within the configured threshold (default 24h).
+// Set KEYFACTOR_AGENT_MAX_STALE_HOURS to override.
+func requireActiveAgent(t *testing.T, client *api.Client) {
+	t.Helper()
+
+	maxStaleHours := 24.0
+	if v := os.Getenv("KEYFACTOR_AGENT_MAX_STALE_HOURS"); v != "" {
+		if h, err := strconv.ParseFloat(v, 64); err == nil && h > 0 {
+			maxStaleHours = h
+		}
+	}
+
+	agents, err := client.GetAgentList()
+	if err != nil {
+		t.Skipf("WARN: could not list agents (%v) — skipping deploy test", err)
+		return
+	}
+
+	// Find best agent (same preference as discoverAgent: approved first, then most recent LastSeen)
+	sort.Slice(agents, func(i, j int) bool {
+		if agents[i].Status != agents[j].Status {
+			return agents[i].Status > agents[j].Status
+		}
+		return agents[i].LastSeen > agents[j].LastSeen
+	})
+
+	var best *api.Agent
+	for i := range agents {
+		if agents[i].Status == 2 {
+			best = &agents[i]
+			break
+		}
+	}
+	if best == nil && len(agents) > 0 {
+		best = &agents[0]
+	}
+	if best == nil {
+		t.Skip("WARN: no orchestrator agents registered — skipping deploy test")
+		return
+	}
+
+	lastSeen, err := time.Parse(time.RFC3339Nano, best.LastSeen)
+	if err != nil {
+		t.Logf("WARN: could not parse agent LastSeen %q (%v) — proceeding anyway", best.LastSeen, err)
+		return
+	}
+
+	elapsed := time.Since(lastSeen)
+	threshold := time.Duration(maxStaleHours * float64(time.Hour))
+	if elapsed > threshold {
+		t.Skipf("WARN: agent %s (machine: %s) last seen %.1f hours ago (threshold: %.0fh) — orchestrator appears offline, skipping deploy test",
+			best.AgentId, best.ClientMachine, elapsed.Hours(), maxStaleHours)
+	}
+	t.Logf("Agent %s last seen %.1f minutes ago — proceeding", best.AgentId, elapsed.Minutes())
 }
 
 // ---------------------------------------------------------------------------
@@ -634,6 +727,7 @@ type storeTestParams struct {
 	ClientMachine string `json:"client_machine"`
 	AgentID       string `json:"agent_id"`
 	StorePath     string `json:"store_path"`
+	ContainerName string `json:"container_name,omitempty"`
 }
 
 // writeStoreTestParams saves recording parameters alongside the cassette file.
@@ -676,6 +770,7 @@ type certPFXTestParams struct {
 	CA                string `json:"ca"`
 	EnrollmentPattern string `json:"enrollment_pattern"`
 	CN                string `json:"cn"`
+	CollectionId      int64  `json:"collection_id,omitempty"`
 }
 
 func writeCertPFXTestParams(cassettePath string, params certPFXTestParams) {
@@ -1415,6 +1510,47 @@ resource "keyfactor_certificate" "test" {
 `, cn, ca, enrollmentPattern)
 }
 
+// testAccCertPFXConfigEnrollmentPatternNoCA generates HCL for a PFX certificate
+// resource test using an enrollment pattern without specifying certificate_authority.
+// Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+func testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                      = "%s"
+  certificate_enrollment_pattern   = "%s"
+  key_password                     = "Tftest123456"
+}
+`, cn, enrollmentPattern)
+}
+
+// testAccCertPFXConfigTemplateOnly generates HCL for a PFX certificate resource
+// test using only certificate_template (no enrollment pattern, no CA).
+// On v25+ labs the provider auto-resolves the enrollment pattern from the template.
+func testAccCertPFXConfigTemplateOnly(templateName, cn string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name          = "%s"
+  certificate_template = "%s"
+  key_password         = "Tftest123456"
+}
+`, cn, templateName)
+}
+
+// testAccCertCSRConfigEnrollmentPatternNoCA generates HCL for a CSR-based certificate
+// resource test using an enrollment pattern without specifying certificate_authority.
+// Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+func testAccCertCSRConfigEnrollmentPatternNoCA(enrollmentPattern, csr string) string {
+	decodedCSR := strings.ReplaceAll(csr, `\n`, "\n")
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test_csr" {
+  certificate_enrollment_pattern   = "%s"
+  csr                              = <<-EOT
+%s
+EOT
+}
+`, enrollmentPattern, strings.TrimRight(decodedCSR, "\n"))
+}
+
 // testAccCertPFXConfigEnrollmentPatternWithFormat generates HCL for a PFX certificate
 // resource test using an enrollment pattern with an explicit certificate_format.
 func testAccCertPFXConfigEnrollmentPatternWithFormat(enrollmentPattern, ca, cn, certFormat string) string {
@@ -1447,6 +1583,33 @@ resource "keyfactor_certificate" "test" {
 `, cn, ca, templateName, enrollmentPattern)
 }
 
+// certCollectionIdConfig generates HCL for a PFX certificate resource with an
+// optional collection_id. Pass collectionId=0 to omit the field entirely.
+func certCollectionIdConfig(enrollmentPattern, templateName, ca, cn string, collectionId int64) string {
+	colLine := ""
+	if collectionId != 0 {
+		colLine = fmt.Sprintf("\n  collection_id          = %d", collectionId)
+	}
+	if enrollmentPattern != "" {
+		return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                      = "%s"
+  certificate_authority            = "%s"
+  certificate_enrollment_pattern   = "%s"
+  key_password                     = "Tftest123456"%s
+}
+`, cn, ca, enrollmentPattern, colLine)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name            = "%s"
+  certificate_authority  = "%s"
+  certificate_template   = "%s"
+  key_password           = "Tftest123456"%s
+}
+`, cn, ca, templateName, colLine)
+}
+
 // parseCNFromCSRPEM extracts the CommonName from a PEM-encoded CSR.
 // Returns "" if parsing fails, allowing callers to fall back gracefully.
 func parseCNFromCSRPEM(csrPEM string) string {
@@ -1472,6 +1635,26 @@ func parseCNFromCSRPEM(csrPEM string) string {
 func labKeyTypePolicyErrorCheck(t *testing.T, caseName string, skip *bool) func(error) error {
 	t.Helper()
 	return func(err error) error {
+		return err
+	}
+}
+
+// skipOnKnownLabConstraint returns an ErrorCheck function that skips the test
+// (with a warning) when the error matches a known lab infrastructure limitation.
+// Any other error is returned unchanged so the test still fails normally.
+func skipOnKnownLabConstraint(t *testing.T, patterns ...string) func(error) error {
+	t.Helper()
+	return func(err error) error {
+		if err == nil {
+			return nil
+		}
+		msg := err.Error()
+		for _, p := range patterns {
+			if strings.Contains(msg, p) {
+				t.Skipf("[KNOWN LAB CONSTRAINT] skipping due to expected infrastructure limitation: %v", err)
+				return nil
+			}
+		}
 		return err
 	}
 }
@@ -2078,6 +2261,14 @@ func testAccCertStoreConfig(storeType, clientMachine, agentID, storePath string)
 			kubeSecretType = "pkcs12"
 		}
 
+		// K8SPKCS12 requires store_password and CertificateDataFieldName.
+		storePasswordLine := ""
+		certDataFieldLine := ""
+		if stLower == "k8spkcs12" {
+			storePasswordLine = `  store_password   = "Tftest123456"` + "\n"
+			certDataFieldLine = `    CertificateDataFieldName = "pfx"` + "\n"
+		}
+
 		return fmt.Sprintf(`
 resource "keyfactor_certificate_store" "test" {
   client_machine   = "%s"
@@ -2089,11 +2280,11 @@ resource "keyfactor_certificate_store" "test" {
 %s
 EOT
   server_use_ssl   = true
-  properties = {
+%s  properties = {
     KubeSecretType = "%s"
-  }
+%s  }
 }
-`, clientMachine, storePath, agentID, storeType, creds, kubeSecretType)
+`, clientMachine, storePath, agentID, storeType, creds, storePasswordLine, kubeSecretType, certDataFieldLine)
 	}
 
 	return fmt.Sprintf(`
@@ -2104,6 +2295,152 @@ resource "keyfactor_certificate_store" "test" {
   store_type       = "%s"
 }
 `, clientMachine, storePath, agentID, storeType)
+}
+
+func testAccCertStoreConfigWithInventory(storeType, clientMachine, agentID, storePath string) string {
+	stLower := strings.ToLower(storeType)
+	if strings.HasPrefix(stLower, "k8s") {
+		creds := k8sStoreCredentials()
+		kubeSecretType := "tls"
+		switch stLower {
+		case "k8ssecret":
+			kubeSecretType = "opaque"
+		case "k8sjks":
+			kubeSecretType = "jks"
+		case "k8spkcs12":
+			kubeSecretType = "pkcs12"
+		}
+		storePasswordLine := ""
+		certDataFieldLine := ""
+		if stLower == "k8spkcs12" {
+			storePasswordLine = `  store_password     = "Tftest123456"` + "\n"
+			certDataFieldLine = `    CertificateDataFieldName = "pfx"` + "\n"
+		}
+		return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine     = "%s"
+  store_path         = "%s"
+  agent_identifier   = "%s"
+  store_type         = "%s"
+  server_username    = "kubeconfig"
+  server_password    = <<EOT
+%s
+EOT
+  server_use_ssl     = true
+  inventory_schedule = "Daily at 12:00:00"
+%s  properties = {
+    KubeSecretType = "%s"
+%s  }
+}
+`, clientMachine, storePath, agentID, storeType, creds, storePasswordLine, kubeSecretType, certDataFieldLine)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine     = "%s"
+  store_path         = "%s"
+  agent_identifier   = "%s"
+  store_type         = "%s"
+  inventory_schedule = "Daily at 12:00:00"
+}
+`, clientMachine, storePath, agentID, storeType)
+}
+
+// testAccCertStoreConfigWithAppName generates HCL for a certificate store resource
+// that uses application_name (the v25+ alias) instead of container_name.
+// Pass appName="" to omit the application_name attribute.
+func testAccCertStoreConfigWithAppName(storeType, clientMachine, agentID, storePath, appName string) string {
+	stLower := strings.ToLower(storeType)
+	appLine := ""
+	if appName != "" {
+		appLine = fmt.Sprintf("  application_name = %q\n", appName)
+	}
+
+	if strings.HasPrefix(stLower, "k8s") {
+		creds := k8sStoreCredentials()
+		kubeSecretType := "tls"
+		switch stLower {
+		case "k8ssecret":
+			kubeSecretType = "opaque"
+		case "k8sjks":
+			kubeSecretType = "jks"
+		case "k8spkcs12":
+			kubeSecretType = "pkcs12"
+		}
+		return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+%s  server_username  = "kubeconfig"
+  server_password  = <<EOT
+%s
+EOT
+  server_use_ssl   = true
+  properties = {
+    KubeSecretType = "%s"
+  }
+}
+`, clientMachine, storePath, agentID, storeType, appLine, creds, kubeSecretType)
+	}
+
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+%s}
+`, clientMachine, storePath, agentID, storeType, appLine)
+}
+
+// testAccCertStoreConfigWithContainerName generates HCL for a certificate store resource
+// that uses the legacy container_name attribute explicitly.
+// Pass containerName="" to omit the container_name attribute.
+func testAccCertStoreConfigWithContainerName(storeType, clientMachine, agentID, storePath, containerName string) string {
+	stLower := strings.ToLower(storeType)
+	containerLine := ""
+	if containerName != "" {
+		containerLine = fmt.Sprintf("  container_name = %q\n", containerName)
+	}
+
+	if strings.HasPrefix(stLower, "k8s") {
+		creds := k8sStoreCredentials()
+		kubeSecretType := "tls"
+		switch stLower {
+		case "k8ssecret":
+			kubeSecretType = "opaque"
+		case "k8sjks":
+			kubeSecretType = "jks"
+		case "k8spkcs12":
+			kubeSecretType = "pkcs12"
+		}
+		return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+%s  server_username  = "kubeconfig"
+  server_password  = <<EOT
+%s
+EOT
+  server_use_ssl   = true
+  properties = {
+    KubeSecretType = "%s"
+  }
+}
+`, clientMachine, storePath, agentID, storeType, containerLine, creds, kubeSecretType)
+	}
+
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+%s}
+`, clientMachine, storePath, agentID, storeType, containerLine)
 }
 
 // testAccCertStoreDataSourceByID generates HCL for reading a cert store by
@@ -2154,6 +2491,18 @@ resource "keyfactor_certificate_deployment" "test" {
   certificate_store_id = %s.id
 }
 `, certResourceRef, storeResourceRef)
+}
+
+// testAccCertDeployConfigWithAlias generates HCL for deploying a certificate to a store with an explicit alias.
+// Required for store types like K8SPKCS12 where Command mandates an alias.
+func testAccCertDeployConfigWithAlias(certResourceRef, storeResourceRef, alias string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_deployment" "test" {
+  certificate_id       = %s.identifier
+  certificate_store_id = %s.id
+  certificate_alias    = "%s"
+}
+`, certResourceRef, storeResourceRef, alias)
 }
 
 // ---------------------------------------------------------------------------
@@ -2352,6 +2701,21 @@ resource "keyfactor_certificate" "test" {
 `, cn, ca, enrollmentPattern, hclMetadataMap(metadata))
 }
 
+// testAccCertPFXConfigEnrollmentPatternWithMetadataNoCA builds HCL for a PEM
+// certificate resource with metadata using enrollment-pattern enrollment,
+// without specifying certificate_authority.
+func testAccCertPFXConfigEnrollmentPatternWithMetadataNoCA(enrollmentPattern, cn string, metadata map[string]string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                    = %q
+  certificate_enrollment_pattern = %q
+  certificate_format             = "PEM"
+  key_password                   = "Tftest123456"
+  metadata                       = %s
+}
+`, cn, enrollmentPattern, hclMetadataMap(metadata))
+}
+
 // testAccCertCSRConfigWithMetadata builds HCL for a CSR-based certificate
 // resource with the given metadata.
 func testAccCertCSRConfigWithMetadata(templateName, ca, csr string, metadata map[string]string) string {
@@ -2369,7 +2733,7 @@ resource "keyfactor_certificate" "test_csr" {
 // metadata tests.
 func certMetadataConfig(enrollmentPattern, templateName, ca, cn string, metadata map[string]string) string {
 	if enrollmentPattern != "" {
-		return testAccCertPFXConfigEnrollmentPatternWithMetadata(enrollmentPattern, ca, cn, metadata)
+		return testAccCertPFXConfigEnrollmentPatternWithMetadataNoCA(enrollmentPattern, cn, metadata)
 	}
 	return testAccCertPFXConfigWithMetadata(templateName, ca, cn, metadata)
 }
@@ -2450,6 +2814,30 @@ resource "keyfactor_certificate" "test" {
 `, cn, ca, enrollmentPattern, extra)
 }
 
+// testAccCertPFXConfigWithKeyTypeAndPatternNoCA generates HCL for a PFX certificate
+// resource test that includes key_type, key_size, and/or curve, using an
+// enrollment_pattern without specifying certificate_authority.
+// Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+func testAccCertPFXConfigWithKeyTypeAndPatternNoCA(enrollmentPattern, cn, keyType string, keySize int, curve string) string {
+	var extra string
+	if keyType != "" {
+		extra += fmt.Sprintf("\n  key_type                      = \"%s\"", keyType)
+	}
+	if keySize > 0 {
+		extra += fmt.Sprintf("\n  key_size                      = %d", keySize)
+	}
+	if curve != "" {
+		extra += fmt.Sprintf("\n  curve                         = \"%s\"", curve)
+	}
+	return fmt.Sprintf(`
+resource "keyfactor_certificate" "test" {
+  common_name                    = %q
+  certificate_enrollment_pattern = %q
+  key_password                   = "Tftest123456"%s
+}
+`, cn, enrollmentPattern, extra)
+}
+
 // testAccCertCSRConfigWithKeyType generates HCL for a CSR-based certificate test
 // using a pre-generated CSR PEM. The key type is embedded in the CSR itself;
 // this helper just formats the config.
@@ -2476,4 +2864,231 @@ resource "keyfactor_certificate" "test_csr" {
 EOT
 }
 `, ca, templateName, trimmedCSR)
+}
+
+// ---------------------------------------------------------------------------
+// Certificate Collection helpers (direct REST calls — no client library support)
+// ---------------------------------------------------------------------------
+
+// buildCommandURL constructs a full URL for a Command API endpoint using the
+// client's server config (host + API path).
+func buildCommandURL(client *api.Client, endpoint string) (string, error) {
+	serverConfig := client.AuthClient.GetServerConfig()
+	if serverConfig == nil {
+		return "", fmt.Errorf("nil server config on client")
+	}
+	u, err := url.Parse(serverConfig.Host)
+	if err != nil {
+		return "", fmt.Errorf("parse host %q: %w", serverConfig.Host, err)
+	}
+	if u.Scheme != "https" {
+		u.Scheme = "https"
+	}
+	apiPath := serverConfig.APIPath
+	if apiPath == "" {
+		apiPath = "KeyfactorAPI"
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/" + strings.Trim(apiPath, "/") + "/" + strings.TrimLeft(endpoint, "/")
+	return u.String(), nil
+}
+
+// commandHTTPDo executes an HTTP request against the Command API, returning the
+// response body bytes and the status code. It handles auth via the client's
+// AuthClient.GetHttpClient().
+func commandHTTPDo(client *api.Client, method, endpoint string, payload interface{}) ([]byte, int, error) {
+	reqURL, err := buildCommandURL(client, endpoint)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var bodyReader io.Reader
+	if payload != nil {
+		jsonBytes, jErr := json.Marshal(payload)
+		if jErr != nil {
+			return nil, 0, fmt.Errorf("marshal payload: %w", jErr)
+		}
+		bodyReader = bytes.NewReader(jsonBytes)
+	}
+
+	req, err := http.NewRequest(method, reqURL, bodyReader)
+	if err != nil {
+		return nil, 0, fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-keyfactor-api-version", "1")
+	req.Header.Set("x-keyfactor-requested-with", "APIClient")
+
+	httpClient, cErr := client.AuthClient.GetHttpClient()
+	if cErr != nil {
+		return nil, 0, fmt.Errorf("get http client: %w", cErr)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("http do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	return body, resp.StatusCode, nil
+}
+
+// commandHTTPDoRaw executes an HTTP request against the Command API using a
+// pre-marshalled body ([]byte).  queryParams is appended to the URL as a raw
+// query string (e.g. "forceSave=true").  This differs from commandHTTPDo in two
+// ways:
+//  1. The body is sent verbatim — no re-marshalling through Go structs that
+//     might drop unknown JSON fields (e.g. UseForEnrollment).
+//  2. Query parameters are set via url.URL.RawQuery so they are never
+//     percent-encoded into the path segment.
+func commandHTTPDoRaw(client *api.Client, method, endpoint string, queryParams string, rawBody []byte) ([]byte, int, error) {
+	reqURL, err := buildCommandURL(client, endpoint)
+	if err != nil {
+		return nil, 0, err
+	}
+	if queryParams != "" {
+		// Parse and re-attach query params without touching the path.
+		parsed, parseErr := url.Parse(reqURL)
+		if parseErr != nil {
+			return nil, 0, fmt.Errorf("parse URL: %w", parseErr)
+		}
+		parsed.RawQuery = queryParams
+		reqURL = parsed.String()
+	}
+
+	var bodyReader io.Reader
+	if rawBody != nil {
+		bodyReader = bytes.NewReader(rawBody)
+	}
+
+	req, err := http.NewRequest(method, reqURL, bodyReader)
+	if err != nil {
+		return nil, 0, fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-keyfactor-api-version", "1")
+	req.Header.Set("x-keyfactor-requested-with", "APIClient")
+
+	httpClient, cErr := client.AuthClient.GetHttpClient()
+	if cErr != nil {
+		return nil, 0, fmt.Errorf("get http client: %w", cErr)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("http do: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	return body, resp.StatusCode, nil
+}
+
+// createTestCollection creates a certificate collection via the Command REST API
+// and returns its integer ID. The collection uses a simple query that won't match
+// most certificates (keeps it harmless).
+func createTestCollection(t *testing.T, client *api.Client, name string) int {
+	t.Helper()
+
+	payload := map[string]interface{}{
+		"Name":        name,
+		"Description": "Auto-created by terraform-provider integration test",
+		"Query":       fmt.Sprintf("CN -contains %q", name),
+	}
+
+	body, status, err := commandHTTPDo(client, "POST", "CertificateCollections", payload)
+	if err != nil {
+		t.Fatalf("createTestCollection: request failed: %s", err)
+	}
+	if status < 200 || status >= 300 {
+		t.Fatalf("createTestCollection: unexpected status %d: %s", status, string(body))
+	}
+
+	var result struct {
+		Id int `json:"Id"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatalf("createTestCollection: decode response: %s (body: %s)", err, string(body))
+	}
+	if result.Id <= 0 {
+		t.Fatalf("createTestCollection: got invalid collection ID %d (body: %s)", result.Id, string(body))
+	}
+
+	t.Logf("Created test certificate collection %q with ID %d", name, result.Id)
+	return result.Id
+}
+
+// deleteTestCollection deletes a certificate collection by ID via the Command
+// REST API. Errors are logged but do not fail the test (cleanup best-effort).
+func deleteTestCollection(t *testing.T, client *api.Client, id int) {
+	t.Helper()
+
+	endpoint := fmt.Sprintf("CertificateCollections/%d", id)
+	body, status, err := commandHTTPDo(client, "DELETE", endpoint, nil)
+	if err != nil {
+		t.Logf("deleteTestCollection: request failed (ID %d): %s", id, err)
+		return
+	}
+	if status < 200 || status >= 300 {
+		t.Logf("deleteTestCollection: unexpected status %d (ID %d): %s", status, id, string(body))
+		return
+	}
+	t.Logf("Deleted test certificate collection ID %d", id)
+}
+
+// discoverOrCreateTestCollection returns a certificate collection ID for use in
+// tests. If KEYFACTOR_CERTIFICATE_COLLECTION_ID is set, it uses that value.
+// Otherwise it creates a new collection and registers a t.Cleanup to delete it.
+func discoverOrCreateTestCollection(t *testing.T, client *api.Client) int {
+	t.Helper()
+
+	if idStr := os.Getenv("KEYFACTOR_CERTIFICATE_COLLECTION_ID"); idStr != "" {
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			t.Fatalf("KEYFACTOR_CERTIFICATE_COLLECTION_ID must be an integer, got %q", idStr)
+		}
+		t.Logf("Using collection ID from env: %d", id)
+		return id
+	}
+
+	name := fmt.Sprintf("tf-int-test-%d", time.Now().UnixNano())
+	id := createTestCollection(t, client, name)
+	t.Cleanup(func() {
+		deleteTestCollection(t, client, id)
+	})
+	return id
+}
+
+// ---------------------------------------------------------------------------
+// OAuth multi-claim association test params
+// ---------------------------------------------------------------------------
+
+type oauthMultiAssocTestParams struct {
+	RoleName    string `json:"role_name"`
+	ClaimValue1 string `json:"claim_value_1"`
+	ClaimValue2 string `json:"claim_value_2"`
+}
+
+func writeOAuthMultiAssocTestParams(cassettePath string, params oauthMultiAssocTestParams) {
+	data, _ := json.Marshal(params)
+	_ = os.WriteFile(cassettePath+".params.json", data, 0600)
+}
+
+func readOAuthMultiAssocTestParams(cassettePath string) oauthMultiAssocTestParams {
+	defaults := oauthMultiAssocTestParams{
+		RoleName:    "tf-unit-role-multi-assoc",
+		ClaimValue1: "tf-unit-claim-multi-1",
+		ClaimValue2: "tf-unit-claim-multi-2",
+	}
+	data, err := os.ReadFile(cassettePath + ".params.json")
+	if err != nil {
+		return defaults
+	}
+	var params oauthMultiAssocTestParams
+	if json.Unmarshal(data, &params) != nil {
+		return defaults
+	}
+	return params
 }

@@ -125,9 +125,9 @@ func (d dataSourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.
 				Description: "An integer that sets the type(s) of enrollment that are allowed through Keyfactor Command for the certificate authority: 0=none, 1=PFX, 2=CSR, 3=both.",
 			},
 			"key_retention": {
-				Type:        types.Int64Type,
+				Type:        types.StringType,
 				Computed:    true,
-				Description: "An integer that sets the type of key retention to enable for the certificate authority: 0=None, 1=SettingDriven, 2=Always, 3=Never.",
+				Description: "Key retention policy for the CA. Stored as the named form: Disabled (0), Indefinite (1), AfterExpiration (2), FromIssuance (3).",
 			},
 			"key_retention_days": {
 				Type:        types.Int64Type,
@@ -153,6 +153,31 @@ func (d dataSourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.
 				Type:        types.BoolType,
 				Computed:    true,
 				Description: "A Boolean setting whether renewal requests create new end entities.",
+			},
+			"use_for_enrollment": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether this CA is available for certificate enrollment.",
+			},
+			"certificate_cleanup_enabled": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether certificate cleanup is enabled for this CA.",
+			},
+			"delete_with_archived_key": {
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether to delete the certificate when its archived key is deleted.",
+			},
+			"time_after_expiration": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Time value after expiration before cleanup occurs. Used with time_after_expiration_units.",
+			},
+			"time_after_expiration_units": {
+				Type:        types.Int64Type,
+				Computed:    true,
+				Description: "Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months.",
 			},
 			"use_allowed_requesters": {
 				Type:        types.BoolType,
@@ -286,12 +311,18 @@ type KeyfactorCertificateAuthorityDataSource struct {
 	RFCEnforcement                types.Bool   `tfsdk:"rfc_enforcement"`
 	Properties                    types.String `tfsdk:"properties"`
 	AllowedEnrollmentTypes        types.Int64  `tfsdk:"allowed_enrollment_types"`
-	KeyRetention                  types.Int64  `tfsdk:"key_retention"`
+	KeyRetention                  types.String `tfsdk:"key_retention"`
 	KeyRetentionDays              types.Int64  `tfsdk:"key_retention_days"`
 	EnforceUniqueDN               types.Bool   `tfsdk:"enforce_unique_dn"`
 	SubscriberTerms               types.Bool   `tfsdk:"subscriber_terms"`
 	AllowOneClickRenewals         types.Bool   `tfsdk:"allow_one_click_renewals"`
 	NewEndEntityOnRenewAndReissue types.Bool   `tfsdk:"new_end_entity_on_renew_and_reissue"`
+
+	UseForEnrollment          types.Bool  `tfsdk:"use_for_enrollment"`
+	CertificateCleanupEnabled types.Bool  `tfsdk:"certificate_cleanup_enabled"`
+	DeleteWithArchivedKey     types.Bool  `tfsdk:"delete_with_archived_key"`
+	TimeAfterExpiration       types.Int64 `tfsdk:"time_after_expiration"`
+	TimeAfterExpirationUnits  types.Int64 `tfsdk:"time_after_expiration_units"`
 
 	UseAllowedRequesters types.Bool `tfsdk:"use_allowed_requesters"`
 	AllowedRequesters    types.List `tfsdk:"allowed_requesters"`
@@ -413,6 +444,12 @@ func caResponseToDataSourceState(resp *v1.CertificateAuthoritiesCertificateAutho
 		SubscriberTerms:               rs.SubscriberTerms,
 		AllowOneClickRenewals:         rs.AllowOneClickRenewals,
 		NewEndEntityOnRenewAndReissue: rs.NewEndEntityOnRenewAndReissue,
+
+		UseForEnrollment:          rs.UseForEnrollment,
+		CertificateCleanupEnabled: rs.CertificateCleanupEnabled,
+		DeleteWithArchivedKey:     rs.DeleteWithArchivedKey,
+		TimeAfterExpiration:       rs.TimeAfterExpiration,
+		TimeAfterExpirationUnits:  rs.TimeAfterExpirationUnits,
 
 		UseAllowedRequesters: rs.UseAllowedRequesters,
 		AllowedRequesters:    rs.AllowedRequesters,

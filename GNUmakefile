@@ -18,8 +18,12 @@ build: fmtcheck
 	go install
 
 tfdocs:
+	$(eval SCREENSHOTS_TMP := $(shell mktemp -d))
+	@if [ -d docs/screenshots ]; then cp -r docs/screenshots "$(SCREENSHOTS_TMP)/"; fi
 	tfplugindocs generate
 	terraform fmt -recursive ./examples/
+	@if [ -d "$(SCREENSHOTS_TMP)/screenshots" ]; then cp -r "$(SCREENSHOTS_TMP)/screenshots" docs/; fi
+	@rm -rf "$(SCREENSHOTS_TMP)"
 
 ## gen-store-types: Regenerate terraform/data_store_types/store_types.tf from live state.
 ##   Requires: terraform apply has been run in terraform/data_store_types/ so that
@@ -44,6 +48,22 @@ store-type-demo:
 ##   Usage: make application-demo [SUFFIX=_TF]
 application-demo:
 	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/application_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
+
+
+## oauth-security-demo: Run full lifecycle demo in terraform/oauth_security_demo/
+##   (build, init, validate, plan, apply, import, reconcile, drift-check, destroy)
+##   Usage: make oauth-security-demo [SUFFIX=_TF]
+oauth-security-demo:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/oauth_security_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
+
+## oauth-security-demo-apply: Build and apply OAuth security demo (leave running for portal review)
+oauth-security-demo-apply:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/oauth_security_demo && $(MAKE) build init validate plan apply SUFFIX="$(SUFFIX)"
+
+## oauth-security-demo-destroy: Destroy OAuth security demo resources
+oauth-security-demo-destroy:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/oauth_security_demo && $(MAKE) destroy SUFFIX="$(SUFFIX)"
+
 
 ## k8s-orchestrator-demo: Run full lifecycle demo in terraform/k8s_orchestrator_demo/
 ##   (build, init, validate, plan, apply, import, drift-check, destroy)
@@ -189,10 +209,10 @@ testunit-record-permission-set:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorPermissionSetDataSource" -v -count=1 -timeout 30m
 
 testunit-record-oauth-claim:
-	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuth(Claim|SecurityClaim)" -v -count=1 -timeout 30m
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuth(ClaimResource$$|SecurityClaimDataSource)" -v -count=1 -timeout 30m
 
 testunit-record-oauth-role:
-	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthRole" -v -count=1 -timeout 30m
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthRoleResource$$" -v -count=1 -timeout 30m
 
 testunit-record-oauth-role-ds:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthSecurityRoleDataSource" -v -count=1 -timeout 30m
@@ -228,8 +248,19 @@ testunit-record-cert-store-import:
 testunit-record-oauth-role-import:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthRoleResource_Import" -v -count=1 -timeout 30m
 
+# Nil-Id error path cassettes are hand-crafted (not recorded), but targets kept for consistency
+testunit-record-oauth-role-nil:
+	@echo "Cassette oauth_security_role_resource_nil_id_create is hand-crafted — no recording needed"
+	@echo "Cassette oauth_security_role_resource_nil_id_import is hand-crafted — no recording needed"
+
+testunit-record-oauth-claim-nil:
+	@echo "Cassette oauth_security_claim_resource_nil_id_create is hand-crafted — no recording needed"
+
 testunit-record-oauth-role-claim-assoc-import:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource_Import" -v -count=1 -timeout 30m
+
+testunit-record-oauth-role-claim-assoc-multi:
+	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim" -v -count=1 -timeout 30m
 
 testunit-record-cert-store-ds-guid:
 	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateStoreDataSourceByGUID" -v -count=1 -timeout 30m
@@ -254,6 +285,32 @@ testunit-record-cert-pfx-metadata:
 
 testunit-record-cert-csr-metadata:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_CSR_Metadata" -v -count=1 -timeout 30m
+
+testunit-record-cert-no-ca:
+	$(MAKE) testunit-record-one TEST_NAME=TestUnitKeyfactorCertificateResource_PFX_NoCA
+	$(MAKE) testunit-record-one TEST_NAME=TestUnitKeyfactorCertificateResource_CSR_NoCA
+
+## testunit-record-cert-friendly-collection: Record the VCR cassette for the
+## "inconsistent result after apply" regression test (collection_id, friendly_name,
+## use_cn_as_friendly_name preserved across Read).
+testunit-record-cert-friendly-collection:
+	$(MAKE) testunit-record-one TEST_NAME=TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved
+
+## testunit-repro-friendly-collection-bug: Reproduce the original v2.8.0 regression
+## by checking out the exact buggy commit (b132d59) for resource_keyfactor_certificate.go,
+## running the regression test (which is expected to FAIL on the buggy code), and then
+## restoring the fix from HEAD. Use this to confirm the test actually catches the
+## regression it documents. b132d59 is the precise commit that introduced the bug
+## (more accurate than the v2.8.0 tag, which contains unrelated changes).
+testunit-repro-friendly-collection-bug:
+	@echo "==> Reproducing v2.8.0 regression: checking out b132d59 keyfactor/resource_keyfactor_certificate.go (buggy)"
+	git checkout b132d59 -- keyfactor/resource_keyfactor_certificate.go
+	@echo "==> Running TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved (expected to FAIL on buggy code)"
+	-go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved" -v -count=1 -timeout 5m
+	@echo "==> Restoring fixed resource_keyfactor_certificate.go from HEAD"
+	git checkout HEAD -- keyfactor/resource_keyfactor_certificate.go
+	@echo "==> Re-running test on fixed code (expected to PASS)"
+	go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved" -v -count=1 -timeout 5m
 
 # Re-record ALL unit test cassettes (requires lab connection and Command v25+ for enrollment-pattern).
 # This is the primary target to run when the Command API changes break existing cassettes.
@@ -284,6 +341,7 @@ testunit-record-all:
 	$(MAKE) testunit-record-cert-store-import
 	$(MAKE) testunit-record-oauth-role-import
 	$(MAKE) testunit-record-oauth-role-claim-assoc-import
+	$(MAKE) testunit-record-oauth-role-claim-assoc-multi
 	$(MAKE) testunit-record-cert-full-subject
 	$(MAKE) testunit-record-cert-dns-sans
 	$(MAKE) testunit-record-cert-ip-sans
@@ -291,10 +349,16 @@ testunit-record-all:
 	$(MAKE) testunit-record-cert-mixed-sans
 	$(MAKE) testunit-record-cert-pfx-metadata
 	$(MAKE) testunit-record-cert-csr-metadata
+	$(MAKE) testunit-record-cert-no-ca
+	$(MAKE) testunit-record-cert-friendly-collection
 
 # Run unit tests and display only failures (quiet mode)
 testunit-check:
 	go test ./keyfactor/ -run "TestUnit" -count=1 $(TESTARGS) -timeout 30m
+
+# Run all CA-related unit tests: VCR import test + nil-safe regression test
+testunit-ca:
+	go test ./keyfactor/ -run "TestUnitKeyfactorCertificateAuthority|TestUnitCertificateAuthorityResponseToState" -v -count=1 -timeout 30m
 
 KEYFACTOR_ENV_FILE ?= ~/.env_ses2541
 KEYFACTOR_K8S_CREDENTIALS_FILE ?= $(HOME)/GolandProjects/terraform-keyfactor-provider-testing/examples/certs/deployment/k8s-creds.json
@@ -318,6 +382,32 @@ testint-debug-run:
 	@if [ -z "$(TEST_NAME)" ]; then echo "Usage: make testint-debug-run TEST_NAME=TestIntFoo"; exit 1; fi
 	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_LOG=DEBUG TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m 2>&1 | tee /tmp/tf-debug.log
 
+# Run the basic certificate deploy integration test (no-schedule path).
+# Completes quickly without an orchestrator — stores created without inventory_schedule
+# skip the validateDeployment polling loop.
+# Requires: KEYFACTOR_K8S_CREDENTIALS_FILE set to a kubeconfig JSON file path.
+testint-deploy:
+	set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
+	KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 \
+	go test ./keyfactor/ -run "^TestIntKeyfactorCertificateDeployResource$$" -v -count=1 -timeout 5m
+
+# Run the certificate deploy integration test that requires an inventory schedule.
+# Fails (not skips) after 10 minutes if the orchestrator never completes inventory.
+# Requires: KEYFACTOR_K8S_CREDENTIALS_FILE set to a kubeconfig JSON file path.
+testint-deploy-inventory:
+	set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
+	KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 \
+	go test ./keyfactor/ -run "TestIntKeyfactorCertificateDeployResource_WithInventory" -v -count=1 -timeout 10m
+
+# Run the both-paths certificate deploy integration test (no-schedule then with-schedule).
+# Step 1 completes quickly (no polling). Step 2 requires orchestrator inventory.
+# Fails (not skips) after 10 minutes if the orchestrator never completes.
+# Requires: KEYFACTOR_K8S_CREDENTIALS_FILE set to a kubeconfig JSON file path.
+testint-deploy-both-paths:
+	set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
+	KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 \
+	go test ./keyfactor/ -run "TestIntKeyfactorCertificateDeployResource_BothPaths" -v -count=1 -timeout 12m
+
 # Run all PAM integration tests
 testint-pam:
 	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestInt.*PAM" -v -count=1 -timeout 120m
@@ -337,6 +427,14 @@ testint-keytypes-pfx:
 # Run CSR key type integration tests (RSA, ECC P-256/P-384/P-521, Ed25519)
 testint-keytypes-csr:
 	. $(KEYFACTOR_ENV_FILE) && TF_ACC=1 go test ./keyfactor/ -run "TestIntKeyfactorCertificateResource_CSR_KeyTypes" -v -count=1 -timeout 120m
+
+# Run only the OAuth access_token-only auth integration test. The test will
+# auto-fetch a token from KEYFACTOR_AUTH_CLIENT_ID/SECRET/TOKEN_URL when
+# KEYFACTOR_AUTH_ACCESS_TOKEN is not pre-set.
+testint-oauth-access-token:
+	set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
+	TF_ACC=1 KEYFACTOR_API_PATH=Keyfactor/API \
+	go test -mod=mod -v -timeout 5m -run "TestIntOAuthAccessTokenAuth" ./keyfactor/
 
 # Run all tests (unit + int + acc). Requires lab connection.
 testall:
@@ -486,6 +584,39 @@ api-options-application:
 		-H "Authorization: Bearer $$TOKEN" 2>&1 | grep -i "^allow:"
 
 # ---------------------------------------------------------------------------
+# Certificate Store raw API debugging targets
+# Used to inspect raw server responses for fields like ContainerName/ApplicationName.
+# Usage examples:
+#   make api-create-store-raw AGENT_ID=<guid> STORE_TYPE_ID=104 CONTAINER_NAME=tf-int-app-test
+#   make api-delete-store-raw STORE_ID=<guid>
+# ---------------------------------------------------------------------------
+AGENT_ID     ?= 275bcd31-9e7b-4c4a-bce9-1719e0c2168d
+CONTAINER_NAME ?= tf-int-app-test
+
+api-create-store-raw:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X POST \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{\"ClientMachine\":\"container_uo-25-4\",\"Storepath\":\"default/curl-raw-test\",\"CertStoreType\":$(STORE_TYPE_ID),\"ContainerName\":\"$(CONTAINER_NAME)\",\"AgentId\":\"$(AGENT_ID)\",\"Properties\":\"{\\\"KubeSecretType\\\":\\\"tls\\\",\\\"ServerUseSsl\\\":\\\"true\\\"}\",\"ServerUsername\":\"kubeconfig\"}" | jq .
+
+api-delete-store-raw:
+	@if [ -z "$(STORE_ID)" ]; then echo "Usage: make api-delete-store-raw STORE_ID=<guid>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X DELETE \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores/$(STORE_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN"
+
+# ---------------------------------------------------------------------------
 # Certificate Store Type API debugging targets
 # Usage examples:
 #   make api-list-store-types
@@ -515,6 +646,15 @@ api-get-store-type:
 # ---------------------------------------------------------------------------
 # Certificate Authority API debugging targets (uses KEYFACTOR_ENV_FILE credentials)
 # Usage examples:
+api-list-agents:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Agents" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq '[.[] | {AgentId, ClientMachine, Status, LastSeen, Capabilities}]'
+
 #   make api-list-cas
 #   make api-get-ca CA_ID=1
 # ---------------------------------------------------------------------------
@@ -547,6 +687,80 @@ api-list-cas-short:
 		-H "x-keyfactor-requested-with: APIClient" \
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq '[.[] | {Id, LogicalName, HostName, CAType, Standalone, Remote}]'
+
+## api-ca-gap-fields: Show the fields missing from the provider for the first CA (UseForEnrollment,
+##   CertificateCleanupEnabled, DeleteWithArchivedKey, TimeAfterExpiration, TimeAfterExpirationUnits).
+api-ca-gap-fields:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateAuthority/$${CA_ID:-1}" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq '{UseForEnrollment, CertificateCleanupEnabled, DeleteWithArchivedKey, TimeAfterExpiration, TimeAfterExpirationUnits}'
+
+# api-update-ca: PUT /CertificateAuthority?forceSave=true using the CA JSON snapshot
+# piped via stdin.  Useful for verifying the correct PUT URL (no ID in path).
+# Usage: make api-get-ca CA_ID=1 | make api-update-ca
+api-update-ca:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	BODY=$$(cat) && \
+	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X PUT \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority?forceSave=true" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "$$BODY" | jq .
+
+## testint-ca-snapshot: Capture current CA state to /tmp/ca_snapshot_<CA_ID>.json.
+##   Usage: make testint-ca-snapshot [CA_ID=1]
+testint-ca-snapshot:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority/$(CA_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq . | tee /tmp/ca_snapshot_$(CA_ID).json
+	@echo "Snapshot saved to /tmp/ca_snapshot_$(CA_ID).json"
+
+## testint-ca-diff: Run the CA update test and diff CA state before/after.
+##   Usage: make testint-ca-diff [CA_ID=1]
+##   Saves before snapshot to /tmp/ca_before_<CA_ID>.json, after to /tmp/ca_after_<CA_ID>.json.
+testint-ca-diff:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority/$(CA_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq . > /tmp/ca_before_$(CA_ID).json
+	@echo "Before snapshot saved to /tmp/ca_before_$(CA_ID).json"
+	$(MAKE) testint-run TEST_NAME=TestIntKeyfactorCertificateAuthorityResourceUpdate 2>&1 | tee /tmp/ca_test_output.txt; \
+	. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority/$(CA_ID)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Authorization: Bearer $$TOKEN" | jq . > /tmp/ca_after_$(CA_ID).json
+	@echo "After snapshot saved to /tmp/ca_after_$(CA_ID).json"
+	@echo "=== CA diff (before vs after) ==="
+	@diff /tmp/ca_before_$(CA_ID).json /tmp/ca_after_$(CA_ID).json || true
+
+## api-ca-schema-diff: Compare GET response fields vs PUT request fields from live Swagger.
+##   Prints: fields only in GET (read-only), fields only in PUT (write-only), fields in both.
+##   Useful for identifying provider gaps.
+api-ca-schema-diff:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	JQ_FILTER=$$'(.components.schemas["Keyfactor.Web.KeyfactorApi.Models.CertificateAuthorities.CertificateAuthorityResponse"].properties | keys) as $$get | (.components.schemas["Keyfactor.Web.KeyfactorApi.Models.CertificateAuthorities.CertificateAuthorityRequest"].properties | keys) as $$put | {"GET_only_readonly": [$$get[] | select(. as $$k | $$put | index($$k) | not)], "PUT_only_writeonly": [$$put[] | select(. as $$k | $$get | index($$k) | not)], "in_both": [$$get[] | select(. as $$k | $$put | index($$k))]}' && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/swagger/v1/swagger.json" \
+		-H "Authorization: Bearer $$TOKEN" | jq "$$JQ_FILTER"
 
 # ---------------------------------------------------------------------------
 # PAM Providers API debugging targets (uses KEYFACTOR_ENV_FILE credentials)
@@ -1030,4 +1244,4 @@ api-get-cert-store:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
-.PHONY: store-type-demo application-demo k8s-orchestrator-demo k8s-orchestrator-demo-apply k8s-orchestrator-demo-destroy ecc-pfx-debug-build ecc-pfx-debug-plan ecc-pfx-debug-apply ecc-pfx-debug-destroy build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-cert-import testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-template-role-binding-import testunit-record-cert-store-import testunit-record-oauth-role-import testunit-record-oauth-role-claim-assoc-import testunit-record-all testunit-check testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key
+.PHONY: store-type-demo application-demo oauth-security-demo oauth-security-demo-apply oauth-security-demo-destroy k8s-orchestrator-demo k8s-orchestrator-demo-apply k8s-orchestrator-demo-destroy ecc-pfx-debug-build ecc-pfx-debug-plan ecc-pfx-debug-apply ecc-pfx-debug-destroy build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-cert-import testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-template-role-binding-import testunit-record-cert-store-import testunit-record-oauth-role-import testunit-record-oauth-role-claim-assoc-import testunit-record-oauth-role-claim-assoc-multi testunit-record-oauth-role-nil testunit-record-oauth-claim-nil testunit-record-all testunit-check testunit-ca testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testint-oauth-access-token testint-ca-snapshot testint-ca-diff testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-update-ca api-ca-schema-diff api-ca-gap-fields api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key api-list-agents

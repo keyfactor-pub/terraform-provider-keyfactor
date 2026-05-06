@@ -755,15 +755,23 @@ func templateResponseToState(resp *v1.TemplatesTemplateRetrievalResponse) Keyfac
 		pol := &TemplatePolicyState{}
 		if p.AllowKeyReuse.Get() != nil {
 			pol.AllowKeyReuse = types.Bool{Value: *p.AllowKeyReuse.Get()}
+		} else {
+			pol.AllowKeyReuse = types.Bool{Null: true}
 		}
 		if p.AllowWildcards.Get() != nil {
 			pol.AllowWildcards = types.Bool{Value: *p.AllowWildcards.Get()}
+		} else {
+			pol.AllowWildcards = types.Bool{Null: true}
 		}
 		if p.RFCEnforcement.Get() != nil {
 			pol.RFCEnforcement = types.Bool{Value: *p.RFCEnforcement.Get()}
+		} else {
+			pol.RFCEnforcement = types.Bool{Null: true}
 		}
 		if p.CertificateOwnerRole != nil {
 			pol.CertificateOwnerRole = types.Int64{Value: int64(*p.CertificateOwnerRole)}
+		} else {
+			pol.CertificateOwnerRole = types.Int64{Null: true}
 		}
 		pol.DefaultCertificateOwnerRoleID = nullableInt32ToTfInt64(p.DefaultCertificateOwnerRoleId)
 		pol.DefaultCertificateOwnerRoleName = nullableStringToTfString(p.DefaultCertificateOwnerRoleName)

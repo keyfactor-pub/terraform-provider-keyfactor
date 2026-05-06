@@ -1371,11 +1371,17 @@ func (r resourceCommandCertificate) Read(
 		result.PEMChain = types.String{Value: fullChain, Null: isNullString(fullChain)}
 		result.PrivateKey = types.String{Value: pKeyPEM, Null: isNullString(pKeyPEM)}
 	case "JKS":
-		result.JKS = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		if rawData != nil {
+			result.JKS = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		}
 	case "PFX":
-		result.PFX = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		if rawData != nil {
+			result.PFX = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		}
 	case "ZIP":
-		result.Zip = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		if rawData != nil {
+			result.Zip = types.String{Value: *rawData, Null: isNullString(*rawData)}
+		}
 	default:
 		// should never happen due to validation
 		tflog.Warn(ctx, fmt.Sprintf("Unknown certificate format '%s'", certificateFormat))

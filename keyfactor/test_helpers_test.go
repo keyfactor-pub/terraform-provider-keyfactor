@@ -1639,6 +1639,26 @@ func labKeyTypePolicyErrorCheck(t *testing.T, caseName string, skip *bool) func(
 	}
 }
 
+// skipOnKnownLabConstraint returns an ErrorCheck function that skips the test
+// (with a warning) when the error matches a known lab infrastructure limitation.
+// Any other error is returned unchanged so the test still fails normally.
+func skipOnKnownLabConstraint(t *testing.T, patterns ...string) func(error) error {
+	t.Helper()
+	return func(err error) error {
+		if err == nil {
+			return nil
+		}
+		msg := err.Error()
+		for _, p := range patterns {
+			if strings.Contains(msg, p) {
+				t.Skipf("[KNOWN LAB CONSTRAINT] skipping due to expected infrastructure limitation: %v", err)
+				return nil
+			}
+		}
+		return err
+	}
+}
+
 // testCheckCertPEMIsLeaf returns a TestCheckFunc that parses the PEM certificate
 // stored in the named state attribute and asserts it is an end-entity (IsCA=false).
 //

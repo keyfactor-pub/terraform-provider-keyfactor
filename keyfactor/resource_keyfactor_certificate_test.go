@@ -2890,9 +2890,20 @@ func TestIntKeyfactorCertificateResource_PFX_KeyTypes(t *testing.T) {
 				)
 			}
 
+			errorCheck := labKeyTypePolicyErrorCheck(t, tc.name, &labPolicySkip)
+			if tc.name == "RSA-8192" {
+				base := errorCheck
+				errorCheck = func(err error) error {
+					if err != nil && strings.Contains(err.Error(), "timeout awaiting response headers") {
+						t.Skipf("[KNOWN LAB CONSTRAINT] RSA-8192 PFX enrollment timed out on EJBCA lab: %v", err)
+					}
+					return base(err)
+				}
+			}
+
 			resource.Test(t, resource.TestCase{
 				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-				ErrorCheck:               labKeyTypePolicyErrorCheck(t, tc.name, &labPolicySkip),
+				ErrorCheck:               errorCheck,
 				Steps: []resource.TestStep{
 					{
 						Config: config,

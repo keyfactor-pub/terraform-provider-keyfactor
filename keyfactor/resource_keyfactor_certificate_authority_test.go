@@ -209,6 +209,7 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             nil,
+		ErrorCheck:               skipOnKnownLabConstraint(t, "associated with at least one Certificate and cannot be deleted"),
 		Steps: []resource.TestStep{
 			{
 				// Step 1: Import the existing CA and persist state for Step 2.

@@ -234,6 +234,14 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "monitor_thresholds", strconv.FormatBool(newMonitorThresholds)),
 				),
 			},
+			{
+				// Step 3: Explicit destroy step so the deletion error goes through
+				// ErrorCheck (the automatic post-test cleanup destroy bypasses it).
+				// On EJBCA labs the CA always has associated certificates and cannot
+				// be deleted; ErrorCheck converts that known error to a SKIP so
+				// runtime.Goexit() fires here before the automatic cleanup runs.
+				Destroy: true,
+			},
 		},
 	})
 }

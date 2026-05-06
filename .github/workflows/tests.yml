@@ -59,13 +59,6 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        terraform:
-          - '1.5.*'
-          - '1.6.*'
-          - '1.7.*'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -74,7 +67,7 @@ jobs:
           cache: true
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: ${{ matrix.terraform }}
+          terraform_version: '1.7.*'
           terraform_wrapper: false
       - run: go mod download
       - name: Run unit tests

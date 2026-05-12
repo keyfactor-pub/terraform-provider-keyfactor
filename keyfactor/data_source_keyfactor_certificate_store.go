@@ -254,20 +254,8 @@ func (r dataSourceCertificateStore) Read(
 		StorePassword:         storePassword,
 		DisplayName:           types.String{Value: sResp.DisplayName},
 	}
-	// Resolve container name from ContainerId (server never returns ContainerName).
-	if sResp.ContainerId != 0 {
-		containers, cErr := r.p.client.GetStoreContainers()
-		if cErr != nil {
-			response.Diagnostics.AddError(
-				"Error resolving container name.",
-				fmt.Sprintf("Could not list store containers to resolve ContainerId %d: %s", sResp.ContainerId, cErr.Error()),
-			)
-			return
-		}
-		result.syncApplicationAndContainerName(resolveContainerName(*containers, sResp.ContainerId))
-	} else {
-		result.syncApplicationAndContainerName("")
-	}
+	// Resolve container name via the by-ID endpoint (list endpoint is paginated).
+	result.syncApplicationAndContainerName(lookupContainerNameByID(ctx, r.p.client, sResp.ContainerId, ""))
 
 	// Set state
 	diags = response.State.Set(ctx, &result)

@@ -245,6 +245,11 @@ testunit-record-template-role-binding-import:
 testunit-record-cert-store-import:
 	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateStoreResource_Import" -v -count=1 -timeout 30m
 
+# Record only the containers/<id>/stores/<guid> import cassette. Requires a
+# container/application to exist in the lab so a store can be created inside it.
+testunit-record-cert-store-import-container:
+	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorCertificateStoreResource_Import_ContainersPath" -v -count=1 -timeout 30m
+
 testunit-record-oauth-role-import:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthRoleResource_Import" -v -count=1 -timeout 30m
 

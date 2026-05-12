@@ -728,6 +728,7 @@ type storeTestParams struct {
 	AgentID       string `json:"agent_id"`
 	StorePath     string `json:"store_path"`
 	ContainerName string `json:"container_name,omitempty"`
+	ContainerID   int    `json:"container_id,omitempty"`
 }
 
 // writeStoreTestParams saves recording parameters alongside the cassette file.
@@ -2441,6 +2442,60 @@ resource "keyfactor_certificate_store" "test" {
   store_type       = "%s"
 %s}
 `, clientMachine, storePath, agentID, storeType, containerLine)
+}
+
+// testAccCertStoreWithOwnContainerConfig generates HCL that creates a
+// keyfactor_application (certificate store container) alongside a
+// keyfactor_certificate_store that references the container by name through
+// application_name. Used by integration tests that need a guaranteed-fresh
+// container instead of discovering an arbitrary one from the lab.
+func testAccCertStoreWithOwnContainerConfig(containerName, storeType, clientMachine, agentID, storePath string) string {
+	stLower := strings.ToLower(storeType)
+	appBlock := fmt.Sprintf(`
+resource "keyfactor_application" "test" {
+  name = %q
+}
+`, containerName)
+
+	if strings.HasPrefix(stLower, "k8s") {
+		creds := k8sStoreCredentials()
+		kubeSecretType := "tls"
+		switch stLower {
+		case "k8ssecret":
+			kubeSecretType = "opaque"
+		case "k8sjks":
+			kubeSecretType = "jks"
+		case "k8spkcs12":
+			kubeSecretType = "pkcs12"
+		}
+		return appBlock + fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+  application_name = keyfactor_application.test.name
+  server_username  = "kubeconfig"
+  server_password  = <<EOT
+%s
+EOT
+  server_use_ssl   = true
+  properties = {
+    KubeSecretType = "%s"
+  }
+}
+`, clientMachine, storePath, agentID, storeType, creds, kubeSecretType)
+	}
+
+	return appBlock + fmt.Sprintf(`
+resource "keyfactor_certificate_store" "test" {
+  client_machine   = "%s"
+  store_path       = "%s"
+  agent_identifier = "%s"
+  store_type       = "%s"
+  application_name = keyfactor_application.test.name
+}
+`, clientMachine, storePath, agentID, storeType)
 }
 
 // testAccCertStoreDataSourceByID generates HCL for reading a cert store by

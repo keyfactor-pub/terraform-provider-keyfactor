@@ -1,7 +1,6 @@
 package keyfactor
 
 import (
-	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -357,21 +356,6 @@ func (s *CertificateStore) syncApplicationAndContainerName(serverValue string) {
 	isNull := isNullString(serverValue)
 	s.ContainerName = types.String{Value: serverValue, Null: isNull}
 	s.ApplicationName = types.String{Value: serverValue, Null: isNull}
-}
-
-// resolveContainerName looks up a container/application name by its numeric ID
-// from a list of CertStoreContainers. Returns "" if the ID is 0, not found,
-// or the list is empty.
-func resolveContainerName(containers []api.CertStoreContainer, containerId int) string {
-	if containerId == 0 {
-		return ""
-	}
-	for _, c := range containers {
-		if c.Id != nil && *c.Id == containerId {
-			return c.Name
-		}
-	}
-	return ""
 }
 
 type CertificateStoreCredential struct {

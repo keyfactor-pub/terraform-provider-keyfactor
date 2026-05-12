@@ -1936,3 +1936,25 @@ func normalizeSerialNumber(sn string) string {
 func normalizeThumbprint(tp string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(tp, ":", ""), " ", ""))
 }
+
+// lookupContainerNameByID resolves a certificate store container/application
+// name from its numeric ID. Uses the by-ID endpoint (single record fetch) so
+// it works for newly-created containers that haven't appeared on the first
+// page of the paginated list endpoint yet. If the by-ID lookup fails, falls
+// back to the supplied hint (e.g. the name from the plan/state). Returns ""
+// when containerId is 0.
+func lookupContainerNameByID(ctx context.Context, client *api.Client, containerId int, hint string) string {
+	if containerId == 0 {
+		return ""
+	}
+	if client != nil {
+		container, err := client.GetStoreContainer(containerId)
+		if err == nil && container != nil && container.Name != "" {
+			return container.Name
+		}
+		if err != nil {
+			tflog.Warn(ctx, fmt.Sprintf("Failed to resolve container name for ID %d: %s — falling back to hint %q", containerId, err.Error(), hint))
+		}
+	}
+	return hint
+}

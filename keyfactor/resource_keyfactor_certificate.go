@@ -3083,6 +3083,8 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			}
 		}
 
+		leafPEM = normalizePEMLineEndings(leafPEM)
+		chainPEM = normalizePEMLineEndings(chainPEM)
 		result.PEM = types.String{Value: leafPEM, Null: isNullString(leafPEM)}
 		result.PEMCACert = types.String{Value: chainPEM, Null: isNullString(chainPEM)}
 		result.PEMChain = types.String{Value: leafPEM + chainPEM, Null: isNullString(leafPEM + chainPEM)}
@@ -3526,6 +3528,7 @@ func (r resourceCommandCertificate) enrollCSR(
 	)
 
 	for i, cert := range enrollResponse.CertificateInformation.Certificates {
+		cert = normalizePEMLineEndings(cert)
 		// split by \r\n and remove first line if '#' is present
 		tflog.Trace(ctx, fmt.Sprintf("Processing certificate %d: %s", i, cert))
 		if strings.Contains(cert, "#") {

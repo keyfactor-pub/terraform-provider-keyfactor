@@ -688,6 +688,11 @@ func parsePrivateKey(ctx context.Context, pkey interface{}) (string, diag.Diagno
 	return pkeyPEM, diags
 }
 
+// normalizePEMLineEndings strips \r characters so PEM strings always use \n-only line endings.
+func normalizePEMLineEndings(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
+
 // recoverPrivateKeyFromKeyfactorCommand retrieves the private key, leaf certificate, and certificate chain
 // for a specific certificate from Keyfactor Command.
 //
@@ -765,7 +770,7 @@ func recoverPrivateKeyFromKeyfactorCommand(
 			diags.AddError("Error unpacking PFX data", errMsg)
 			return "", "", "", rawBytes, diags
 		}
-		return pfxPrivateKey, pfxLeaf, strings.Join(pfxChain, ""), rawBytes, diags
+		return pfxPrivateKey, normalizePEMLineEndings(pfxLeaf), normalizePEMLineEndings(strings.Join(pfxChain, "")), rawBytes, diags
 	}
 
 	if (certificateFormat == "PEM" || certificateFormat == "pem") && pkey == nil {
@@ -777,7 +782,7 @@ func recoverPrivateKeyFromKeyfactorCommand(
 			diags.AddError("Error unpacking PEM data", errMsg)
 			return "", "", "", rawBytes, diags
 		}
-		return pemPrivateKey, pemLeaf, strings.Join(pemChain, ""), rawBytes, diags
+		return pemPrivateKey, normalizePEMLineEndings(pemLeaf), normalizePEMLineEndings(strings.Join(pemChain, "")), rawBytes, diags
 	}
 
 	if pkey == nil {
@@ -802,7 +807,7 @@ func recoverPrivateKeyFromKeyfactorCommand(
 
 	chainPEM := encodeCertificateChain(ctx, certChain, certId)
 
-	return pkeyPEM, certPEM, chainPEM, rawBytes, diags
+	return pkeyPEM, normalizePEMLineEndings(certPEM), normalizePEMLineEndings(chainPEM), rawBytes, diags
 }
 
 // encodeCertificate encodes a provided certificate into a PEM-formatted string and returns it.

@@ -1511,6 +1511,66 @@ func TestUnitKeyfactorCertificateResource_CSR(t *testing.T) {
 	})
 }
 
+// TestUnitKeyfactorCertificateResource_CSR_CRLFNormalization is a regression test
+// for normalizePEMLineEndings in the CSR enrollment path. It uses a fabricated
+// cassette (certificate_resource_csr_crlf) in which the server's Certificates
+// response bodies contain \r\n line endings inside PEM blocks — as can occur with
+// Windows-hosted Command instances. The test asserts that the provider strips \r
+// before storing certificate_pem, ca_certificate, and certificate_chain in state.
+//
+// To run:
+//
+//	go test ./keyfactor -run TestUnitKeyfactorCertificateResource_CSR_CRLFNormalization -timeout 5m -v
+func TestUnitKeyfactorCertificateResource_CSR_CRLFNormalization(t *testing.T) {
+	cassettePath := filepath.Join("testdata", "cassettes", "certificate_resource_csr_crlf")
+	// Always replay — cassette is fabricated from certificate_resource_csr.yaml with
+	// \r\n injected into PEM blocks; never recorded against a live server.
+	params := readCertCSRTestParams(cassettePath)
+	csr := params.CSRPem
+	if csr == "" {
+		csr = generateSimpleCSR(t, "tf-unit-csr-replay.example.com")
+	}
+	config := testAccCertCSRConfig(params.TemplateName, params.CA, csr)
+
+	factories, cleanup := newVCRProviderFactories(t, "certificate_resource_csr_crlf")
+	defer cleanup()
+
+	// checkNoCR fails the test if the attribute value contains a carriage return (\r).
+	checkNoCR := func(attr string) resource.TestCheckFunc {
+		return resource.TestCheckResourceAttrWith(
+			"keyfactor_certificate.test_csr", attr,
+			func(val string) error {
+				if strings.Contains(val, "\r") {
+					return fmt.Errorf(
+						"attribute %q contains \\r (CRLF not normalized): first 200 bytes: %q",
+						attr, val[:min(200, len(val))],
+					)
+				}
+				return nil
+			},
+		)
+	}
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
+					// Regression: normalizePEMLineEndings must strip \r from all PEM fields.
+					checkNoCR("certificate_pem"),
+					checkNoCR("ca_certificate"),
+					checkNoCR("certificate_chain"),
+					// Sanity: the leaf cert is still parseable (not corrupted by normalization).
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test_csr", "certificate_pem"),
+				),
+			},
+		},
+	})
+}
+
 // TestUnitKeyfactorCertificateResource_PFX_NoCA verifies that PFX enrollment
 // succeeds when using an enrollment pattern without specifying certificate_authority.
 // Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.

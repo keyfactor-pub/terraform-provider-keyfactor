@@ -304,12 +304,18 @@ func TestUnitParseStoreImportID(t *testing.T) {
 		{name: "stores prefix", input: "stores/" + guid, want: storeImportRef{StoreID: guid}},
 		{name: "containers numeric id", input: "containers/42/stores/" + guid, want: storeImportRef{ContainerID: "42", StoreID: guid}},
 		{name: "containers name", input: "containers/MyTeam/stores/" + guid, want: storeImportRef{ContainerID: "MyTeam", StoreID: guid}},
+		// "applications/..." is the preferred alias for the same path; results must be identical.
+		{name: "applications numeric id", input: "applications/42/stores/" + guid, want: storeImportRef{ContainerID: "42", StoreID: guid}},
+		{name: "applications name", input: "applications/MyTeam/stores/" + guid, want: storeImportRef{ContainerID: "MyTeam", StoreID: guid}},
 
 		{name: "empty", input: "", wantErr: true},
 		{name: "stores empty", input: "stores/", wantErr: true},
 		{name: "containers single segment", input: "containers/x", wantErr: true},
 		{name: "containers empty id", input: "containers//stores/y", wantErr: true},
 		{name: "containers empty store", input: "containers/x/stores/", wantErr: true},
+		{name: "applications single segment", input: "applications/x", wantErr: true},
+		{name: "applications empty id", input: "applications//stores/y", wantErr: true},
+		{name: "applications empty store", input: "applications/x/stores/", wantErr: true},
 		{name: "unknown prefix", input: "garbage/foo", wantErr: true},
 		{name: "stores extra segment", input: "stores/foo/bar", wantErr: true},
 		{name: "trailing slash", input: guid + "/", wantErr: true},

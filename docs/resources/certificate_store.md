@@ -113,7 +113,7 @@ resource "keyfactor_certificate_store" "legacy_container" {
 Import is supported using the following syntax:
 
 ```shell
-# keyfactor_certificate_store accepts three import-ID formats. Choose whichever
+# keyfactor_certificate_store accepts four import-ID formats. Choose whichever
 # matches your permission scope.
 
 # 1. Bare GUID (legacy). Requires read permission on every certificate store in
@@ -124,11 +124,18 @@ terraform import keyfactor_certificate_store.mystore "9f8855f1-80ff-4475-89ec-d8
 #    but parses unambiguously.
 terraform import keyfactor_certificate_store.mystore "stores/9f8855f1-80ff-4475-89ec-d82accb32cea"
 
-# 3. Container-scoped form. Use this when your role only has read on certain
-#    containers (formerly "applications") — the provider lists stores inside
-#    that container and picks the matching GUID, avoiding the unscoped GET
-#    that requires global read. The container segment accepts either a numeric
-#    container ID or a container name.
+# 3. Application-scoped form (preferred on modern Keyfactor Command, where
+#    "containers" have been renamed to "applications"). Use this when your role
+#    only has read on certain applications — the provider lists stores inside
+#    that application and picks the matching GUID, avoiding the unscoped GET
+#    that requires global read. The application segment accepts either a numeric
+#    ID or an application name.
+terraform import keyfactor_certificate_store.mystore "applications/42/stores/9f8855f1-80ff-4475-89ec-d82accb32cea"
+terraform import keyfactor_certificate_store.mystore "applications/MyTeam/stores/9f8855f1-80ff-4475-89ec-d82accb32cea"
+
+# 4. Container-scoped form. Legacy alias for the application-scoped form above —
+#    accepted for compatibility with older Keyfactor Command versions and
+#    existing automation. Behavior is identical to "applications/...".
 terraform import keyfactor_certificate_store.mystore "containers/42/stores/9f8855f1-80ff-4475-89ec-d82accb32cea"
 terraform import keyfactor_certificate_store.mystore "containers/MyTeam/stores/9f8855f1-80ff-4475-89ec-d82accb32cea"
 ```

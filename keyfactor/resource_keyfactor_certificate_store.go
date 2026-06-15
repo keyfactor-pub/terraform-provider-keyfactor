@@ -766,18 +766,22 @@ type storeImportRef struct {
 	ContainerID string // empty when not provided; either numeric ID or container name
 }
 
-// parseStoreImportID parses one of the three accepted import ID forms for the
+// parseStoreImportID parses one of the four accepted import ID forms for the
 // keyfactor_certificate_store resource:
 //
-//   - "<guid>"                                      (legacy, bare GUID)
-//   - "stores/<guid>"                               (explicit, equivalent to bare GUID)
-//   - "containers/<idOrName>/stores/<guid>"         (scope lookup to a container the caller can read)
+//   - "<guid>"                                          (legacy, bare GUID)
+//   - "stores/<guid>"                                   (explicit, equivalent to bare GUID)
+//   - "containers/<idOrName>/stores/<guid>"             (scope lookup by container; legacy alias)
+//   - "applications/<idOrName>/stores/<guid>"           (scope lookup by application; preferred alias)
 //
-// Anything else returns an error listing the three accepted formats.
+// "containers" and "applications" are interchangeable — both map to the same
+// ContainerID field on the returned storeImportRef.
+//
+// Anything else returns an error listing the accepted formats.
 func parseStoreImportID(raw string) (storeImportRef, error) {
 	if raw == "" {
 		return storeImportRef{}, fmt.Errorf(
-			"import ID is empty; expected one of: \"<guid>\", \"stores/<guid>\", or \"containers/<containerIdOrName>/stores/<guid>\"",
+			"import ID is empty; expected one of: \"<guid>\", \"stores/<guid>\", \"containers/<idOrName>/stores/<guid>\", or \"applications/<idOrName>/stores/<guid>\"",
 		)
 	}
 
@@ -798,23 +802,24 @@ func parseStoreImportID(raw string) (storeImportRef, error) {
 		return storeImportRef{StoreID: parts[1]}, nil
 	}
 
-	// "containers/<idOrName>/stores/<guid>" → exactly 4 parts.
-	if len(parts) == 4 && parts[0] == "containers" && parts[2] == "stores" {
+	// "containers/<idOrName>/stores/<guid>" or "applications/<idOrName>/stores/<guid>"
+	// → exactly 4 parts, parts[0] is "containers" or "applications", parts[2]=="stores".
+	if len(parts) == 4 && (parts[0] == "containers" || parts[0] == "applications") && parts[2] == "stores" {
 		if parts[1] == "" {
 			return storeImportRef{}, fmt.Errorf(
-				"invalid import ID %q: container ID/name is empty; expected \"containers/<containerIdOrName>/stores/<guid>\"", raw,
+				"invalid import ID %q: application/container ID or name is empty; expected \"%s/<idOrName>/stores/<guid>\"", raw, parts[0],
 			)
 		}
 		if parts[3] == "" {
 			return storeImportRef{}, fmt.Errorf(
-				"invalid import ID %q: store GUID is empty; expected \"containers/<containerIdOrName>/stores/<guid>\"", raw,
+				"invalid import ID %q: store GUID is empty; expected \"%s/<idOrName>/stores/<guid>\"", raw, parts[0],
 			)
 		}
 		return storeImportRef{ContainerID: parts[1], StoreID: parts[3]}, nil
 	}
 
 	return storeImportRef{}, fmt.Errorf(
-		"invalid import ID %q: expected one of: \"<guid>\", \"stores/<guid>\", or \"containers/<containerIdOrName>/stores/<guid>\"",
+		"invalid import ID %q: expected one of: \"<guid>\", \"stores/<guid>\", \"containers/<idOrName>/stores/<guid>\", or \"applications/<idOrName>/stores/<guid>\"",
 		raw,
 	)
 }

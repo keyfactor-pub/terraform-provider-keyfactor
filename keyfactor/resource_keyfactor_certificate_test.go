@@ -1917,7 +1917,8 @@ func TestIntKeyfactorCertificateResource_CSR(t *testing.T) {
 		templateName = discoverTemplate(t, client)
 	}
 	// Generate a simple CSR with a unique CN to avoid conflicts on re-runs
-	csr := generateSimpleCSR(t, randomTestCN("tf-int-csr"))
+	cn := randomTestCN("tf-int-csr")
+	csr := generateSimpleCSR(t, cn)
 	config := testAccCertCSRConfig(templateName, ca, csr)
 
 	resource.Test(t, resource.TestCase{
@@ -1931,6 +1932,8 @@ func TestIntKeyfactorCertificateResource_CSR(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_chain"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test_csr", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test_csr", "certificate_pem", cn),
 				),
 			},
 		},
@@ -1995,6 +1998,8 @@ func TestIntKeyfactorCertificateResource_CSR_NoCA(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "thumbprint"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_chain"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test_csr", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test_csr", "certificate_pem", cn),
 				),
 			},
 		},

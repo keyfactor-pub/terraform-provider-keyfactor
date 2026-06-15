@@ -598,6 +598,8 @@ func TestIntKeyfactorCertificateResource_PFX(t *testing.T) {
 		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
 		resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+		testCheckCertPEMIsLeaf("keyfactor_certificate.test", "certificate_pem"),
+		testCheckCertPEMCommonName("keyfactor_certificate.test", "certificate_pem", cn),
 	}
 	if enrollmentPattern == "" {
 		checks = append(checks, resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_authority"))
@@ -643,6 +645,8 @@ func TestIntKeyfactorCertificateResource_PFX_TemplateOnly(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test", "certificate_pem", cn),
 				),
 			},
 		},
@@ -1418,6 +1422,8 @@ func TestUnitKeyfactorCertificateResource_PFX_PrivateKeyRead(t *testing.T) {
 	factories, cleanup := newVCRProviderFactories(t, cassetteName)
 	defer cleanup()
 
+	pkReadParams := readCertPFXTestParams(cassettePath)
+
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
@@ -1427,6 +1433,8 @@ func TestUnitKeyfactorCertificateResource_PFX_PrivateKeyRead(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test", "certificate_pem", pkReadParams.CN),
 				),
 			},
 			{
@@ -1439,6 +1447,8 @@ func TestUnitKeyfactorCertificateResource_PFX_PrivateKeyRead(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_id"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test", "certificate_pem", pkReadParams.CN),
 				),
 			},
 		},
@@ -1760,6 +1770,7 @@ func TestUnitKeyfactorCertificateResource_PFX_Import(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test", "certificate_pem"),
 				),
 			},
 		},
@@ -1952,6 +1963,8 @@ func TestIntKeyfactorCertificateResource_PFX_NoCA(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_pem"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "certificate_chain"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "private_key"),
+					testCheckCertPEMIsLeaf("keyfactor_certificate.test", "certificate_pem"),
+					testCheckCertPEMCommonName("keyfactor_certificate.test", "certificate_pem", cn),
 				),
 			},
 		},
@@ -2755,9 +2768,12 @@ func TestIntKeyfactorCertificateResource_PFX_Metadata(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					metaIDStabilityCheck(res, &originalID),
 					resource.TestCheckResourceAttrSet(res, "serial_number"),
+					resource.TestCheckResourceAttrSet(res, "certificate_pem"),
 					resource.TestCheckResourceAttr(res, "metadata.%", "2"),
 					resource.TestCheckResourceAttr(res, "metadata.Owner", "tf-meta-owner"),
 					resource.TestCheckResourceAttr(res, "metadata.Email-Contact", "test@example.com"),
+					testCheckCertPEMIsLeaf(res, "certificate_pem"),
+					testCheckCertPEMCommonName(res, "certificate_pem", cn),
 				),
 			},
 			{
@@ -3419,6 +3435,7 @@ func TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved
 					resource.TestCheckResourceAttrSet(res, "thumbprint"),
 					resource.TestCheckResourceAttr(res, "friendly_name", friendlyName),
 					resource.TestCheckResourceAttr(res, "use_cn_as_friendly_name", "true"),
+					testCheckCertPEMIsLeaf(res, "certificate_pem"),
 				),
 			},
 			{

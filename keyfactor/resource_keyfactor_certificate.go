@@ -1014,6 +1014,11 @@ func (r resourceCommandCertificate) Read(
 		return
 	}
 
+	// Guard against upstream paths returning a CA/root as the leaf when Command
+	// sends a non-leaf-first chain (e.g. UnpackPEM's certificates[0] or
+	// DecodeChain's last-cert fallback). Re-select the true leaf from leaf+chain.
+	leafPEM, chainPEM = reselectLeafFromChain(ctx, leafPEM, chainPEM)
+
 	leaf, lDiags := parseLeafCert(
 		ctx,
 		leafPEM,
@@ -2114,6 +2119,9 @@ func (r resourceCommandCertificate) ImportState(
 		)
 		return
 	}
+
+	// Guard against upstream paths returning a CA/root as the leaf (see Read).
+	leafPEM, chainPEM = reselectLeafFromChain(ctx, leafPEM, chainPEM)
 
 	leaf, lDiags := parseLeafCert(ctx, leafPEM)
 	response.Diagnostics.Append(lDiags...)

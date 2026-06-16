@@ -1565,6 +1565,87 @@ func decodeToPEM(b64 string) (string, error) {
 	return buf.String(), nil
 }
 
+// parseAllCerts parses every CERTIFICATE block found in pemData, de-duplicating
+// by raw DER. Non-certificate blocks and unparseable certs are skipped.
+func parseAllCerts(pemData string) []*x509.Certificate {
+	var certs []*x509.Certificate
+	seen := make(map[string]bool)
+	rest := []byte(pemData)
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		c, err := x509.ParseCertificate(block.Bytes)
+		if err != nil || c == nil {
+			continue
+		}
+		key := string(c.Raw)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		certs = append(certs, c)
+	}
+	return certs
+}
+
+// reselectLeafFromChain re-derives the true end-entity leaf from the combined
+// set of certificates (leafPEM + chainPEM). It guards against upstream leaf
+// selection that can mis-label a CA/root as the leaf when Keyfactor Command
+// returns a chain that is not ordered leaf-first — e.g. the positional
+// certificates[0] in api.UnpackPEM, or pkcs12.DecodeChain's last-cert fallback.
+//
+// The leaf is the certificate whose Subject is not the Issuer of any other cert
+// in the set (i.e. nothing in the set is signed by it). This is order-
+// independent and matches the go-client's findLeafCert logic for the P7B path.
+//
+// If a unique leaf cannot be determined (fewer than two certs, all self-signed,
+// or the selected leaf already matches the input) the inputs are returned
+// unchanged to avoid needless reordering churn.
+func reselectLeafFromChain(ctx context.Context, leafPEM, chainPEM string) (string, string) {
+	certs := parseAllCerts(leafPEM + chainPEM)
+	if len(certs) < 2 {
+		return leafPEM, chainPEM
+	}
+
+	issuers := make(map[string]bool, len(certs))
+	for _, c := range certs {
+		issuers[string(c.RawIssuer)] = true
+	}
+
+	var leaf *x509.Certificate
+	var chain []*x509.Certificate
+	for _, c := range certs {
+		if leaf == nil && !issuers[string(c.RawSubject)] {
+			leaf = c
+			continue
+		}
+		chain = append(chain, c)
+	}
+	if leaf == nil {
+		// Cannot distinguish a leaf (e.g. all certs are self-signed) — leave as-is.
+		return leafPEM, chainPEM
+	}
+
+	newLeafPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw}))
+	if normalizePEMLineEndings(newLeafPEM) == normalizePEMLineEndings(leafPEM) {
+		// Upstream already selected the correct leaf; keep original chain.
+		return leafPEM, chainPEM
+	}
+
+	tflog.Warn(ctx, fmt.Sprintf(
+		"Re-selected leaf certificate from chain: upstream returned a non-leaf (CN now %q, IsCA=%v). "+
+			"This guards against non-leaf-first chains from Keyfactor Command.",
+		leaf.Subject.CommonName, leaf.IsCA,
+	))
+	return normalizePEMLineEndings(newLeafPEM), normalizePEMLineEndings(encodeCertificateChain(ctx, chain, 0))
+}
+
 func parseLeafCert(ctx context.Context, leafPEM string) (*x509.Certificate, diag.Diagnostics) {
 	diags := diag.Diagnostics{}
 

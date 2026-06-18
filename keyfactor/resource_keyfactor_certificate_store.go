@@ -380,20 +380,10 @@ func (r resourceCertificateStore) Create(
 		//Certificates:          types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
 	}
 	// The server never echoes ContainerName in Create/GET responses (always null).
-	// Resolve the name from the ContainerId by looking up the full container list.
-	if createStoreResponse.ContainerId != 0 {
-		containers, cErr := kfClient.GetStoreContainers()
-		if cErr != nil {
-			response.Diagnostics.AddError(
-				"Error resolving container name.",
-				fmt.Sprintf("Could not list store containers to resolve ContainerId %d: %s", createStoreResponse.ContainerId, cErr.Error()),
-			)
-			return
-		}
-		result.syncApplicationAndContainerName(resolveContainerName(*containers, createStoreResponse.ContainerId))
-	} else {
-		result.syncApplicationAndContainerName("")
-	}
+	// Resolve the name from the ContainerId by looking up the container directly
+	// by ID. The list endpoint is paginated (default 50/page), so a just-created
+	// container may not appear on the first page — see lookupContainerNameByID.
+	result.syncApplicationAndContainerName(lookupContainerNameByID(ctx, kfClient, createStoreResponse.ContainerId, effectiveName))
 
 	diags = response.State.Set(ctx, result)
 	response.Diagnostics.Append(diags...)
@@ -459,20 +449,11 @@ func (r resourceCertificateStore) Read(
 		ServerUseSsl:          state.ServerUseSsl,   //TODO: Parse this from sResp.Properties
 		//Certificates:          types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
 	}
-	// Resolve container name from ContainerId (server never returns ContainerName).
-	if sResp.ContainerId != 0 {
-		containers, cErr := r.p.client.GetStoreContainers()
-		if cErr != nil {
-			response.Diagnostics.AddError(
-				"Error resolving container name.",
-				fmt.Sprintf("Could not list store containers to resolve ContainerId %d: %s", sResp.ContainerId, cErr.Error()),
-			)
-			return
-		}
-		result.syncApplicationAndContainerName(resolveContainerName(*containers, sResp.ContainerId))
-	} else {
-		result.syncApplicationAndContainerName("")
-	}
+	// Resolve container name from ContainerId via the by-ID endpoint (the list
+	// endpoint is paginated and may not include a recently-created container).
+	// Fall back to the prior state value if the API lookup fails.
+	stateName, _ := state.effectiveContainerName()
+	result.syncApplicationAndContainerName(lookupContainerNameByID(ctx, r.p.client, sResp.ContainerId, stateName))
 
 	// Set state
 	diags = response.State.Set(ctx, &result)
@@ -727,19 +708,9 @@ func (r resourceCertificateStore) Update(
 		ServerUseSsl:          plan.ServerUseSsl,
 	}
 	// Resolve container name from ContainerId (server never returns ContainerName).
-	if updateResponse.ContainerId != 0 {
-		containers, cErr := r.p.client.GetStoreContainers()
-		if cErr != nil {
-			response.Diagnostics.AddError(
-				"Error resolving container name.",
-				fmt.Sprintf("Could not list store containers to resolve ContainerId %d: %s", updateResponse.ContainerId, cErr.Error()),
-			)
-			return
-		}
-		result.syncApplicationAndContainerName(resolveContainerName(*containers, updateResponse.ContainerId))
-	} else {
-		result.syncApplicationAndContainerName("")
-	}
+	// Resolve container name via the by-ID endpoint (list endpoint is paginated).
+	// Fall back to the plan-supplied name when the API lookup is unavailable.
+	result.syncApplicationAndContainerName(lookupContainerNameByID(ctx, r.p.client, updateResponse.ContainerId, updateEffectiveName))
 
 	// Set state
 	diags = response.State.Set(ctx, &result)
@@ -788,23 +759,148 @@ func (r resourceCertificateStore) Delete(
 
 }
 
+// storeImportRef captures the parsed components of a structured import ID for
+// the keyfactor_certificate_store resource.
+type storeImportRef struct {
+	StoreID     string
+	ContainerID string // empty when not provided; either numeric ID or container name
+}
+
+// parseStoreImportID parses one of the four accepted import ID forms for the
+// keyfactor_certificate_store resource:
+//
+//   - "<guid>"                                          (legacy, bare GUID)
+//   - "stores/<guid>"                                   (explicit, equivalent to bare GUID)
+//   - "containers/<idOrName>/stores/<guid>"             (scope lookup by container; legacy alias)
+//   - "applications/<idOrName>/stores/<guid>"           (scope lookup by application; preferred alias)
+//
+// "containers" and "applications" are interchangeable — both map to the same
+// ContainerID field on the returned storeImportRef.
+//
+// Anything else returns an error listing the accepted formats.
+func parseStoreImportID(raw string) (storeImportRef, error) {
+	if raw == "" {
+		return storeImportRef{}, fmt.Errorf(
+			"import ID is empty; expected one of: \"<guid>\", \"stores/<guid>\", \"containers/<idOrName>/stores/<guid>\", or \"applications/<idOrName>/stores/<guid>\"",
+		)
+	}
+
+	// Bare GUID — no slashes.
+	if !strings.Contains(raw, "/") {
+		return storeImportRef{StoreID: raw}, nil
+	}
+
+	parts := strings.Split(raw, "/")
+
+	// "stores/<guid>"  → exactly 2 parts, parts[0]=="stores".
+	if len(parts) == 2 && parts[0] == "stores" {
+		if parts[1] == "" {
+			return storeImportRef{}, fmt.Errorf(
+				"invalid import ID %q: store GUID is empty; expected \"stores/<guid>\"", raw,
+			)
+		}
+		return storeImportRef{StoreID: parts[1]}, nil
+	}
+
+	// "containers/<idOrName>/stores/<guid>" or "applications/<idOrName>/stores/<guid>"
+	// → exactly 4 parts, parts[0] is "containers" or "applications", parts[2]=="stores".
+	if len(parts) == 4 && (parts[0] == "containers" || parts[0] == "applications") && parts[2] == "stores" {
+		if parts[1] == "" {
+			return storeImportRef{}, fmt.Errorf(
+				"invalid import ID %q: application/container ID or name is empty; expected \"%s/<idOrName>/stores/<guid>\"", raw, parts[0],
+			)
+		}
+		if parts[3] == "" {
+			return storeImportRef{}, fmt.Errorf(
+				"invalid import ID %q: store GUID is empty; expected \"%s/<idOrName>/stores/<guid>\"", raw, parts[0],
+			)
+		}
+		return storeImportRef{ContainerID: parts[1], StoreID: parts[3]}, nil
+	}
+
+	return storeImportRef{}, fmt.Errorf(
+		"invalid import ID %q: expected one of: \"<guid>\", \"stores/<guid>\", \"containers/<idOrName>/stores/<guid>\", or \"applications/<idOrName>/stores/<guid>\"",
+		raw,
+	)
+}
+
+// containerArg converts a parsed container ID/name string into the argument
+// type accepted by the keyfactor-go-client's GetCertificateStoreByContainerID:
+// numeric strings → int, anything else → string (container name).
+func containerArg(idOrName string) interface{} {
+	if n, err := strconv.Atoi(idOrName); err == nil && n > 0 {
+		return n
+	}
+	return idOrName
+}
+
 func (r resourceCertificateStore) ImportState(
 	ctx context.Context,
 	request tfsdk.ImportResourceStateRequest,
 	response *tfsdk.ImportResourceStateResponse,
 ) {
-	certificateStoreId := request.ID
+	rawImportID := request.ID
 
 	tflog.Info(ctx, "ImportState called on certificate store resource")
-	tflog.SetField(ctx, "id", certificateStoreId)
+	tflog.SetField(ctx, "id", rawImportID)
 
-	readResponse, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
-	if err != nil {
+	ref, parseErr := parseStoreImportID(rawImportID)
+	if parseErr != nil {
 		response.Diagnostics.AddError(
-			ERR_SUMMARY_CERT_STORE_READ,
-			fmt.Sprintf("Error reading certificate store '%s': "+err.Error(), certificateStoreId),
+			"Invalid certificate store import ID",
+			parseErr.Error(),
 		)
 		return
+	}
+
+	certificateStoreId := ref.StoreID
+
+	var readResponse *api.GetCertificateStoreResponse
+	if ref.ContainerID == "" {
+		// Direct lookup — requires read-on-all-stores permission on the caller.
+		resp, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
+		if err != nil {
+			response.Diagnostics.AddError(
+				ERR_SUMMARY_CERT_STORE_READ,
+				fmt.Sprintf("Error reading certificate store '%s': "+err.Error(), certificateStoreId),
+			)
+			return
+		}
+		readResponse = resp
+	} else {
+		// Scope the lookup to the supplied container so the caller only needs
+		// read permission on that container.
+		cArg := containerArg(ref.ContainerID)
+		stores, err := r.p.client.GetCertificateStoreByContainerID(cArg)
+		if err != nil {
+			response.Diagnostics.AddError(
+				ERR_SUMMARY_CERT_STORE_READ,
+				fmt.Sprintf(
+					"Error listing certificate stores in container '%s': %s",
+					ref.ContainerID, err.Error(),
+				),
+			)
+			return
+		}
+		if stores != nil {
+			for i := range *stores {
+				entry := (*stores)[i]
+				if entry.Id == certificateStoreId {
+					readResponse = &entry
+					break
+				}
+			}
+		}
+		if readResponse == nil {
+			response.Diagnostics.AddError(
+				ERR_SUMMARY_CERT_STORE_READ,
+				fmt.Sprintf(
+					"certificate store %s not found in container %v — verify your container access and store ID",
+					certificateStoreId, cArg,
+				),
+			)
+			return
+		}
 	}
 
 	csType, csTypeErr := r.p.client.GetCertificateStoreType(readResponse.CertStoreType)
@@ -862,20 +958,8 @@ func (r resourceCertificateStore) ImportState(
 		ServerPassword: types.String{Null: true},
 		ServerUseSsl:   types.Bool{Null: true},
 	}
-	// Resolve container name from ContainerId (server never returns ContainerName).
-	if readResponse.ContainerId != 0 {
-		containers, cErr := r.p.client.GetStoreContainers()
-		if cErr != nil {
-			response.Diagnostics.AddError(
-				"Error resolving container name.",
-				fmt.Sprintf("Could not list store containers to resolve ContainerId %d: %s", readResponse.ContainerId, cErr.Error()),
-			)
-			return
-		}
-		result.syncApplicationAndContainerName(resolveContainerName(*containers, readResponse.ContainerId))
-	} else {
-		result.syncApplicationAndContainerName("")
-	}
+	// Resolve container name via the by-ID endpoint (list endpoint is paginated).
+	result.syncApplicationAndContainerName(lookupContainerNameByID(ctx, r.p.client, readResponse.ContainerId, ""))
 	diags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {

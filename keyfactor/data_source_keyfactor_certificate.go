@@ -502,6 +502,9 @@ func (r dataSourceCertificate) Read(
 		return
 	}
 
+	// Guard against upstream paths returning a CA/root as the leaf (see resource Read).
+	leafPEM, chainPEM = reselectLeafFromChain(ctx, leafPEM, chainPEM)
+
 	leaf, lDiags := parseLeafCert(
 		ctx,
 		leafPEM,

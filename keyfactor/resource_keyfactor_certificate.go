@@ -1014,6 +1014,11 @@ func (r resourceCommandCertificate) Read(
 		return
 	}
 
+	// Guard against upstream paths returning a CA/root as the leaf when Command
+	// sends a non-leaf-first chain (e.g. UnpackPEM's certificates[0] or
+	// DecodeChain's last-cert fallback). Re-select the true leaf from leaf+chain.
+	leafPEM, chainPEM = reselectLeafFromChain(ctx, leafPEM, chainPEM)
+
 	leaf, lDiags := parseLeafCert(
 		ctx,
 		leafPEM,
@@ -2115,6 +2120,9 @@ func (r resourceCommandCertificate) ImportState(
 		return
 	}
 
+	// Guard against upstream paths returning a CA/root as the leaf (see Read).
+	leafPEM, chainPEM = reselectLeafFromChain(ctx, leafPEM, chainPEM)
+
 	leaf, lDiags := parseLeafCert(ctx, leafPEM)
 	response.Diagnostics.Append(lDiags...)
 	if response.Diagnostics.HasError() || leaf == nil {
@@ -3083,6 +3091,8 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			}
 		}
 
+		leafPEM = normalizePEMLineEndings(leafPEM)
+		chainPEM = normalizePEMLineEndings(chainPEM)
 		result.PEM = types.String{Value: leafPEM, Null: isNullString(leafPEM)}
 		result.PEMCACert = types.String{Value: chainPEM, Null: isNullString(chainPEM)}
 		result.PEMChain = types.String{Value: leafPEM + chainPEM, Null: isNullString(leafPEM + chainPEM)}
@@ -3526,6 +3536,7 @@ func (r resourceCommandCertificate) enrollCSR(
 	)
 
 	for i, cert := range enrollResponse.CertificateInformation.Certificates {
+		cert = normalizePEMLineEndings(cert)
 		// split by \r\n and remove first line if '#' is present
 		tflog.Trace(ctx, fmt.Sprintf("Processing certificate %d: %s", i, cert))
 		if strings.Contains(cert, "#") {

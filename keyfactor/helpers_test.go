@@ -293,3 +293,44 @@ func TestNormalizeThumbprint(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizePEMLineEndings(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "CRLF converted to LF",
+			input:    "-----BEGIN CERTIFICATE-----\r\nMIIBIjANBgkqhkiG\r\n-----END CERTIFICATE-----\r\n",
+			expected: "-----BEGIN CERTIFICATE-----\nMIIBIjANBgkqhkiG\n-----END CERTIFICATE-----\n",
+		},
+		{
+			name:     "LF-only input unchanged",
+			input:    "-----BEGIN CERTIFICATE-----\nMIIBIjANBgkqhkiG\n-----END CERTIFICATE-----\n",
+			expected: "-----BEGIN CERTIFICATE-----\nMIIBIjANBgkqhkiG\n-----END CERTIFICATE-----\n",
+		},
+		{
+			name:     "lone CR converted to LF",
+			input:    "-----BEGIN CERTIFICATE-----\rMIIBIjANBgkqhkiG\r-----END CERTIFICATE-----\r",
+			expected: "-----BEGIN CERTIFICATE-----\nMIIBIjANBgkqhkiG\n-----END CERTIFICATE-----\n",
+		},
+		{
+			name:     "empty string unchanged",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "chained PEM with CRLF normalized",
+			input:    "-----BEGIN CERTIFICATE-----\r\nAAAA\r\n-----END CERTIFICATE-----\r\n-----BEGIN CERTIFICATE-----\r\nBBBB\r\n-----END CERTIFICATE-----\r\n",
+			expected: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nBBBB\n-----END CERTIFICATE-----\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizePEMLineEndings(tt.input)
+			assert.Equal(t, tt.expected, result)
+			assert.NotContains(t, result, "\r", "result must contain no carriage return characters")
+		})
+	}
+}

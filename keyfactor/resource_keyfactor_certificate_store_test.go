@@ -16,10 +16,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 type certificateStoreTestCase_v9 struct {
@@ -281,6 +283,237 @@ func TestUnitKeyfactorCertificateStoreResource_Import(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "approved", "true"),
 					resource.TestCheckResourceAttr(resourceName, "agent_assigned", "true"),
 				),
+			},
+		},
+	})
+}
+
+// TestUnitParseStoreImportID is a pure-Go table test for the structured
+// import-ID parser used by the keyfactor_certificate_store resource. It
+// covers each accepted form plus the explicit error cases.
+func TestUnitParseStoreImportID(t *testing.T) {
+	const guid = "b53baab1-9b5d-462b-9273-8fe78eabe609"
+
+	cases := []struct {
+		name    string
+		input   string
+		want    storeImportRef
+		wantErr bool
+	}{
+		{name: "bare guid", input: guid, want: storeImportRef{StoreID: guid}},
+		{name: "stores prefix", input: "stores/" + guid, want: storeImportRef{StoreID: guid}},
+		{name: "containers numeric id", input: "containers/42/stores/" + guid, want: storeImportRef{ContainerID: "42", StoreID: guid}},
+		{name: "containers name", input: "containers/MyTeam/stores/" + guid, want: storeImportRef{ContainerID: "MyTeam", StoreID: guid}},
+		// "applications/..." is the preferred alias for the same path; results must be identical.
+		{name: "applications numeric id", input: "applications/42/stores/" + guid, want: storeImportRef{ContainerID: "42", StoreID: guid}},
+		{name: "applications name", input: "applications/MyTeam/stores/" + guid, want: storeImportRef{ContainerID: "MyTeam", StoreID: guid}},
+
+		{name: "empty", input: "", wantErr: true},
+		{name: "stores empty", input: "stores/", wantErr: true},
+		{name: "containers single segment", input: "containers/x", wantErr: true},
+		{name: "containers empty id", input: "containers//stores/y", wantErr: true},
+		{name: "containers empty store", input: "containers/x/stores/", wantErr: true},
+		{name: "applications single segment", input: "applications/x", wantErr: true},
+		{name: "applications empty id", input: "applications//stores/y", wantErr: true},
+		{name: "applications empty store", input: "applications/x/stores/", wantErr: true},
+		{name: "unknown prefix", input: "garbage/foo", wantErr: true},
+		{name: "stores extra segment", input: "stores/foo/bar", wantErr: true},
+		{name: "trailing slash", input: guid + "/", wantErr: true},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseStoreImportID(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for input %q, got ref=%+v", tc.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error for input %q: %v", tc.input, err)
+			}
+			if got != tc.want {
+				t.Fatalf("input %q: got %+v, want %+v", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestUnitKeyfactorCertificateStoreResource_Import_StoresPrefix is the same
+// shape as TestUnitKeyfactorCertificateStoreResource_Import but uses the
+// "stores/<guid>" import ID form. It reuses the existing cassette because
+// the underlying API calls are identical.
+func TestUnitKeyfactorCertificateStoreResource_Import_StoresPrefix(t *testing.T) {
+	cassetteName := "certificate_store_resource_import"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+	var storeType, clientMachine, agentID, storePath string
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("This test reuses the existing certificate_store_resource_import cassette — record via TestUnitKeyfactorCertificateStoreResource_Import")
+	}
+	params := readStoreTestParams(cassettePath)
+	storeType = params.StoreType
+	clientMachine = params.ClientMachine
+	agentID = params.AgentID
+	storePath = params.StorePath
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_certificate_store.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertStoreConfig(storeType, clientMachine, agentID, storePath),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: false,
+				// Prepend "stores/" to the GUID — should resolve identically to a bare GUID.
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					rs, ok := s.RootModule().Resources[resourceName]
+					if !ok {
+						return "", fmt.Errorf("not found: %s", resourceName)
+					}
+					return "stores/" + rs.Primary.ID, nil
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "store_path", storePath),
+					resource.TestCheckResourceAttr(resourceName, "store_type", storeType),
+					resource.TestCheckResourceAttr(resourceName, "client_machine", clientMachine),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateStoreResource_Import_ContainersPath verifies
+// the structured "containers/<id>/stores/<guid>" import path. It uses a
+// dedicated cassette because the API call sequence (CertificateStores
+// list-by-container + GetStoreContainers for name resolution) differs from
+// the legacy GetCertificateStoreByID path.
+//
+// Record with:
+//
+//	make testunit-record-cert-store-import-container
+func TestUnitKeyfactorCertificateStoreResource_Import_ContainersPath(t *testing.T) {
+	cassetteName := "certificate_store_resource_import_via_container"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+	var storeType, clientMachine, agentID, storePath, containerName string
+	var containerID int
+
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		client := newTestClient(t)
+		agentID, clientMachine = discoverAgent(t, client)
+		storeType = discoverStoreTypeForAgent(t, client, agentID)
+		storePath = fmt.Sprintf("default/tf-unit-import-cnt-%d", time.Now().UnixNano())
+		containerName = discoverApplication(t, client)
+		if containerName == "" {
+			t.Skip("No application/container available in the lab for recording")
+		}
+		// Resolve the numeric container ID so the import path can use it directly.
+		ct, err := client.GetStoreContainer(containerName)
+		if err != nil || ct == nil || ct.Id == nil {
+			t.Fatalf("failed to resolve container ID for %q: %v", containerName, err)
+		}
+		containerID = *ct.Id
+		writeStoreTestParams(cassettePath, storeTestParams{
+			StoreType:     storeType,
+			ClientMachine: clientMachine,
+			AgentID:       agentID,
+			StorePath:     storePath,
+			ContainerName: containerName,
+			ContainerID:   containerID,
+		})
+	} else {
+		params := readStoreTestParams(cassettePath)
+		storeType = params.StoreType
+		clientMachine = params.ClientMachine
+		agentID = params.AgentID
+		storePath = params.StorePath
+		containerName = params.ContainerName
+		containerID = params.ContainerID
+		if containerName == "" || containerID == 0 {
+			t.Skip("cassette params missing container info — record cassette first")
+		}
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_certificate_store.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: create a store inside the chosen container.
+				Config: testAccCertStoreConfigWithAppName(storeType, clientMachine, agentID, storePath, containerName),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "container_name", containerName),
+				),
+			},
+			{
+				// Step 2: import via containers/<id>/stores/<guid>.
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: false,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					rs, ok := s.RootModule().Resources[resourceName]
+					if !ok {
+						return "", fmt.Errorf("not found: %s", resourceName)
+					}
+					return fmt.Sprintf("containers/%d/stores/%s", containerID, rs.Primary.ID), nil
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(resourceName, "id"),
+					resource.TestCheckResourceAttr(resourceName, "store_path", storePath),
+					resource.TestCheckResourceAttr(resourceName, "container_name", containerName),
+					resource.TestCheckResourceAttr(resourceName, "client_machine", clientMachine),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateStoreResource_Import_BadFormat verifies that a
+// malformed import ID surfaces as a Terraform import diagnostic. No cassette
+// is needed because parsing fails before any HTTP request is issued.
+func TestUnitKeyfactorCertificateStoreResource_Import_BadFormat(t *testing.T) {
+	cassetteName := "certificate_store_resource_import"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("Bad-format test does not record HTTP traffic")
+	}
+	params := readStoreTestParams(cassettePath)
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	resourceName := "keyfactor_certificate_store.test"
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCertStoreConfig(params.StoreType, params.ClientMachine, params.AgentID, params.StorePath),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateId:     "garbage/foo",
+				ImportStateVerify: false,
+				ExpectError:       regexp.MustCompile(`Invalid certificate store import ID`),
 			},
 		},
 	})
@@ -564,6 +797,77 @@ func TestIntKeyfactorCertificateStoreResource_ContainerNameBackwardsCompat(t *te
 					// application_name must also be populated via sync.
 					resource.TestCheckResourceAttr(resourceName, "application_name", containerName),
 					resource.TestCheckResourceAttr(resourceName, "container_name", containerName),
+				),
+			},
+		},
+	})
+}
+
+// TestIntKeyfactorCertificateStoreResource_Import_ViaContainer verifies the
+// "containers/<id>/stores/<guid>" import path works against a live lab. The
+// caller may not have read-on-all-stores permission, so the scoped lookup
+// path uses GetCertificateStoreByContainerID instead of GetCertificateStoreByID.
+//
+// This test creates its own keyfactor_application (container) so it does not
+// depend on the lab having a pre-existing container — and so it does not
+// accidentally bind to a leftover artifact from a previous test run.
+func TestIntKeyfactorCertificateStoreResource_Import_ViaContainer(t *testing.T) {
+	client := testAccIntegrationPreCheck(t)
+	agentID, clientMachine := discoverAgent(t, client)
+	storeType := discoverStoreTypeForAgent(t, client, agentID)
+
+	unix := time.Now().UnixNano()
+	containerName := fmt.Sprintf("tf-int-cnt-%d", unix)
+	storePath := fmt.Sprintf("default/tf-int-import-cnt-%d", unix)
+
+	appResourceName := "keyfactor_application.test"
+	storeResourceName := "keyfactor_certificate_store.test"
+
+	cfg := testAccCertStoreWithOwnContainerConfig(containerName, storeType, clientMachine, agentID, storePath)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// Step 1: create the container AND a store scoped to it in one apply.
+				Config: cfg,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(appResourceName, "id"),
+					resource.TestCheckResourceAttr(appResourceName, "name", containerName),
+					resource.TestCheckResourceAttrSet(storeResourceName, "id"),
+					resource.TestCheckResourceAttr(storeResourceName, "store_path", storePath),
+					resource.TestCheckResourceAttr(storeResourceName, "container_name", containerName),
+					resource.TestCheckResourceAttrSet(storeResourceName, "container_id"),
+				),
+			},
+			{
+				// Step 2: re-import via containers/<id>/stores/<guid>, pulling the
+				// container ID from the application resource's state (not a Go
+				// closure) so we exercise the scoped import path end-to-end.
+				ResourceName:      storeResourceName,
+				ImportState:       true,
+				ImportStateVerify: false,
+				ImportStateIdFunc: func(s *terraform.State) (string, error) {
+					app, ok := s.RootModule().Resources[appResourceName]
+					if !ok {
+						return "", fmt.Errorf("not found: %s", appResourceName)
+					}
+					appID := app.Primary.Attributes["id"]
+					if appID == "" {
+						return "", fmt.Errorf("%s has empty id attribute", appResourceName)
+					}
+					store, ok := s.RootModule().Resources[storeResourceName]
+					if !ok {
+						return "", fmt.Errorf("not found: %s", storeResourceName)
+					}
+					return fmt.Sprintf("containers/%s/stores/%s", appID, store.Primary.ID), nil
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet(storeResourceName, "id"),
+					resource.TestCheckResourceAttr(storeResourceName, "store_path", storePath),
+					resource.TestCheckResourceAttr(storeResourceName, "client_machine", clientMachine),
+					resource.TestCheckResourceAttr(storeResourceName, "container_name", containerName),
+					resource.TestCheckResourceAttrSet(storeResourceName, "container_id"),
 				),
 			},
 		},

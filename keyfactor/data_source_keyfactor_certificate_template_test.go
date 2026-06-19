@@ -101,7 +101,7 @@ func TestUnitKeyfactorCertificateTemplateDataSource(t *testing.T) {
 		tmplID = params.TemplateID
 	}
 
-	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	factories, cleanup := newVCRProviderFactoriesReplayable(t, cassetteName)
 	defer cleanup()
 
 	dsName := "data.keyfactor_certificate_template.test"

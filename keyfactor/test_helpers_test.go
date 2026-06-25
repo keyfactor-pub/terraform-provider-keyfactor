@@ -1667,9 +1667,13 @@ func skipOnKnownLabConstraint(t *testing.T, patterns ...string) func(error) erro
 		if err == nil {
 			return nil
 		}
-		msg := err.Error()
+		// Terraform wraps long error messages across multiple lines with
+		// indentation (e.g. "...Subject\n            Alternative Name"), so
+		// collapse all whitespace runs to single spaces before substring
+		// matching — otherwise a multi-word pattern never matches.
+		msg := strings.Join(strings.Fields(err.Error()), " ")
 		for _, p := range patterns {
-			if strings.Contains(msg, p) {
+			if strings.Contains(msg, strings.Join(strings.Fields(p), " ")) {
 				t.Skipf("[KNOWN LAB CONSTRAINT] skipping due to expected infrastructure limitation: %v", err)
 				return nil
 			}

@@ -1,3 +1,15 @@
+# v2.9.1
+
+## Template Role Bindings
+
+### Fixes
+
+- fix: `keyfactor_template_role_binding` no longer fails with `Error template name not found` when a template in `template_short_names` sorts beyond the first 50 templates. The template lookup now pages through the full template list instead of reading only Command's default first page of 50, so instances with more than 50 certificate templates can bind any template by short name.
+
+## Dependencies
+
+- chore(deps): bump `keyfactor-go-client/v3` to v3.5.6 — `GetTemplates` now paginates automatically, with a max-page safety bound, per-iteration response-body close, and audit logging.
+
 # v2.9.0
 
 ## Certificates

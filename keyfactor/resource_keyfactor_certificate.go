@@ -1484,7 +1484,26 @@ func (r resourceCommandCertificate) Update(
 	// Fetch certificate context
 	certGetResp, apiErr := r.p.client.GetCertificateContext(apiArgs)
 	if hasAPIErrors(ctx, apiErr, state.ID.Value, &response.Diagnostics) {
-		tflog.Warn(ctx, fmt.Sprintf("Failed to retrieve certificate from GET /Certificates/%d", certificateID))
+		// GetCertificateContext returns (nil, err) on failure; hasAPIErrors has
+		// already appended an error diagnostic. We MUST return here, otherwise
+		// the certGetResp.ContentBytes dereference below panics with a nil
+		// pointer (SIGSEGV). The Read path was hardened with certGetResp != nil
+		// guards in v2.9.0; this aligns Update with that behavior.
+		tflog.Error(ctx, fmt.Sprintf("Failed to retrieve certificate from GET /Certificates/%d", certificateID))
+		return
+	}
+	if certGetResp == nil {
+		// Defensive: GET returned no error but a nil response. Returning here
+		// prevents a nil-pointer dereference on certGetResp.ContentBytes below.
+		tflog.Error(ctx, fmt.Sprintf("GET /Certificates/%d returned a nil response", certificateID))
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			fmt.Sprintf(
+				"Could not retrieve certificate '%s' from Keyfactor Command during update: "+
+					"the API returned an empty response.", state.ID.Value,
+			),
+		)
+		return
 	}
 
 	leaf, lDiags := parseLeafCert(

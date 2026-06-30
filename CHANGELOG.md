@@ -14,7 +14,7 @@ _None — this release is fixes plus internal/dependency work._
 - chore(deps): bump `keyfactor-go-client/v3` to `v3.5.6-rc.1` — `GetTemplates` now paginates automatically, with a max-page safety bound, per-iteration response-body close, and audit logging.
 - test(template): re-recorded the five `GET /Templates` VCR cassettes for the paginated request (`?PageReturned&ReturnLimit`); added an opt-in `newVCRProviderFactoriesReplayable` variant used only by the read-only certificate-template data-source unit test.
 - test(integration): two lab-constraint-only failures (`TestIntKeyfactorCertificateResource_SANs`, `TestIntKeyfactorCertificateAuthorityResourceUpdate`) are now handled in-test (skip with warning) so unexpected failures still fail.
-- chore(release): add `# v2.9.1` CHANGELOG section; version set to `2.9.1-rc.0`.
+- chore(release): add `# v2.9.1` CHANGELOG section; version set to `2.9.1-rc.1`.
 
 ## Pending (before GA v2.9.1)
 

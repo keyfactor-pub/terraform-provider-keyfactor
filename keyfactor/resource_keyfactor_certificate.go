@@ -1497,7 +1497,7 @@ func (r resourceCommandCertificate) Update(
 		// prevents a nil-pointer dereference on certGetResp.ContentBytes below.
 		tflog.Error(ctx, fmt.Sprintf("GET /Certificates/%d returned a nil response", certificateID))
 		response.Diagnostics.AddError(
-			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
+			ERR_SUMMARY_CERTIFICATE_RESOURCE_UPDATE,
 			fmt.Sprintf(
 				"Could not retrieve certificate '%s' from Keyfactor Command during update: "+
 					"the API returned an empty response.", state.ID.Value,

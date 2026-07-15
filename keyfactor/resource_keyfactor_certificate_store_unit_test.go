@@ -10,6 +10,7 @@ import (
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -334,6 +335,39 @@ func TestUnitContainerNameArgPointer_NeverPairsNonzeroIdWithEmptyName(t *testing
 				t.Fatalf("expected ContainerName %q, got %q", tt.wantValue, *got)
 			}
 		})
+	}
+}
+
+// TestUnitResolveApprovedAgentID_EmptyAgentsNilErrorDoesNotPanic is the
+// red/green regression test for the nil-pointer dereference in
+// resolveApprovedAgentID (extracted from the Create()/Update() agent-lookup
+// blocks): when GetAgent returns an empty agents slice paired with a nil
+// error, the len(agents) == 0 branch called agentErr.Error() unconditionally.
+// Since the preceding `agentErr != nil` branch already returns, agentErr is
+// guaranteed nil in this branch, so that call panics with a nil pointer
+// dereference. This exact combination is constructed directly here (bypassing
+// the real GetAgent HTTP call, whose current implementation happens to always
+// pair an empty result with a non-nil error) because the framework requires
+// resolveApprovedAgentID to be defensive regardless of what the SDK layer
+// guarantees today.
+func TestUnitResolveApprovedAgentID_EmptyAgentsNilErrorDoesNotPanic(t *testing.T) {
+	var agentId string
+	var diags diag.Diagnostics
+
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("resolveApprovedAgentID panicked (nil-deref regression): %v", rec)
+			}
+		}()
+		agentId, diags = resolveApprovedAgentID("some-agent-identifier", []api.Agent{}, nil)
+	}()
+
+	if agentId != "" {
+		t.Fatalf("expected empty agentId when no agents are found, got %q", agentId)
+	}
+	if !diags.HasError() {
+		t.Fatalf("expected a diagnostic error when no agents are found, got none")
 	}
 }
 

@@ -163,6 +163,68 @@ type resourceCertificateStore struct {
 	p provider
 }
 
+// resolveApprovedAgentID interprets the result of a GetAgent lookup (identifier,
+// the returned agents, and any lookup error) and returns the ID of the first
+// approved (Status == 2) agent, or diagnostics explaining why none could be
+// resolved. Shared by Create and Update so the two code paths can never diverge.
+func resolveApprovedAgentID(identifier string, agents []api.Agent, agentErr error) (string, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	agentId := ""
+	if agentErr != nil {
+		diags.AddError(
+			"Invalid agent identifier.",
+			fmt.Sprintf(
+				"Agent could not be found on Keyfactor Command using identifier '%s'. %s",
+				identifier,
+				agentErr.Error(),
+			),
+		)
+		return "", diags
+	} else if len(agents) == 0 {
+		diags.AddError(
+			"Agent Not Found.",
+			fmt.Sprintf(
+				"no agent found for identifier %q",
+				identifier,
+			),
+		)
+		return "", diags
+	} else {
+		if len(agents) > 1 {
+			diags.AddWarning(
+				"Agent Not Found.",
+				fmt.Sprintf(
+					"Multiple agents found with identifier '%s' returned from Keyfactor Command. Using first approved agent",
+					identifier,
+				),
+			)
+		}
+
+		//iterate over agents and find the first approved agent
+		for _, agent := range agents {
+			if agent.Status != 2 {
+				continue
+			}
+			agentId = agent.AgentId
+			break
+		}
+
+		if agentId == "" {
+			diags.AddError(
+				"Approved Agent Not Found.",
+				fmt.Sprintf(
+					"No approved agents with identifier '%s' were found on Keyfactor Command. Please review your agents on the Keyfactor Command Portal by going to Orchestrators > Management, and ensure the one you're looking for is approved.",
+					identifier,
+				),
+			)
+			return "", diags
+		}
+	}
+
+	return agentId, diags
+}
+
 func (r resourceCertificateStore) Create(
 	ctx context.Context,
 	request tfsdk.CreateResourceRequest,
@@ -264,61 +326,12 @@ func (r resourceCertificateStore) Create(
 
 	//Lookup agent by AgentIdentifier
 	agents, agentErr := kfClient.GetAgent(plan.AgentIdentifier.Value)
-	agentId := ""
-	//TODO: Make this a function
-	if agentErr != nil {
-		response.Diagnostics.AddError(
-			"Invalid agent identifier.",
-			fmt.Sprintf(
-				"Agent could not be found on Keyfactor Command using identifier '%s'. %s",
-				plan.AgentIdentifier.Value,
-				agentErr.Error(),
-			),
-		)
+	agentId, agentDiags := resolveApprovedAgentID(plan.AgentIdentifier.Value, agents, agentErr)
+	response.Diagnostics.Append(agentDiags...)
+	if response.Diagnostics.HasError() {
 		return
-	} else if len(agents) == 0 {
-		response.Diagnostics.AddError(
-			"Agent Not Found.",
-			fmt.Sprintf(
-				"Agent could not be found on Keyfactor Command using identifier '%s'. %s",
-				plan.AgentIdentifier.Value,
-				agentErr.Error(),
-			),
-		)
-		return
-	} else {
-		if len(agents) > 1 {
-			response.Diagnostics.AddWarning(
-				"Agent Not Found.",
-				fmt.Sprintf(
-					"Multiple agents found with identifier '%s' returned from Keyfactor Command. Using first approved agent",
-					plan.AgentIdentifier.Value,
-				),
-			)
-		}
-
-		//iterate over agents and find the first approved agent
-		for _, agent := range agents {
-			if agent.Status != 2 {
-				continue
-			}
-			agentId = agent.AgentId
-			break
-		}
-
-		if agentId == "" {
-			response.Diagnostics.AddError(
-				"Approved Agent Not Found.",
-				fmt.Sprintf(
-					"No approved agents with identifier '%s' were found on Keyfactor Command. Please review your agents on the Keyfactor Command Portal by going to Orchestrators > Management, and ensure the one you're looking for is approved.",
-					plan.AgentIdentifier.Value,
-				),
-			)
-			return
-		}
-
-		tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
 	}
+	tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
 
 	//if plan.CreateIfMissing.IsNull() {
 	//	plan.CreateIfMissing = types.Bool{Value: false}
@@ -657,61 +670,12 @@ func (r resourceCertificateStore) Update(
 	}
 
 	agents, agentErr := r.p.client.GetAgent(plan.AgentIdentifier.Value)
-	agentId := ""
-	//TODO: Make this a function
-	if agentErr != nil {
-		response.Diagnostics.AddError(
-			"Invalid agent identifier.",
-			fmt.Sprintf(
-				"Agent could not be found on Keyfactor Command using identifier '%s'. %s",
-				plan.AgentIdentifier.Value,
-				agentErr.Error(),
-			),
-		)
+	agentId, agentDiags := resolveApprovedAgentID(plan.AgentIdentifier.Value, agents, agentErr)
+	response.Diagnostics.Append(agentDiags...)
+	if response.Diagnostics.HasError() {
 		return
-	} else if len(agents) == 0 {
-		response.Diagnostics.AddError(
-			"Agent Not Found.",
-			fmt.Sprintf(
-				"Agent could not be found on Keyfactor Command using identifier '%s'. %s",
-				plan.AgentIdentifier.Value,
-				agentErr.Error(),
-			),
-		)
-		return
-	} else {
-		if len(agents) > 1 {
-			response.Diagnostics.AddWarning(
-				"Agent Not Found.",
-				fmt.Sprintf(
-					"Multiple agents found with identifier '%s' returned from Keyfactor Command. Using first approved agent",
-					plan.AgentIdentifier.Value,
-				),
-			)
-		}
-
-		//iterate over agents and find the first approved agent
-		for _, agent := range agents {
-			if agent.Status != 2 {
-				continue
-			}
-			agentId = agent.AgentId
-			break
-		}
-
-		if agentId == "" {
-			response.Diagnostics.AddError(
-				"Approved Agent Not Found.",
-				fmt.Sprintf(
-					"No approved agents with identifier '%s' were found on Keyfactor Command. Please review your agents on the Keyfactor Command Portal by going to Orchestrators > Management, and ensure the one you're looking for is approved.",
-					plan.AgentIdentifier.Value,
-				),
-			)
-			return
-		}
-
-		tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
 	}
+	tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
 
 	properties := make(map[string]interface{})
 	var existingProperties map[string]string

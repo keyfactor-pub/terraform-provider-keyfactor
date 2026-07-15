@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 )
@@ -136,5 +137,52 @@ func TestUnitTemplateResponseToState_NilPolicy(t *testing.T) {
 	state := templateResponseToState(resp)
 	if state.TemplatePolicy != nil {
 		t.Errorf("expected TemplatePolicy to be nil when API returns nil, got %+v", state.TemplatePolicy)
+	}
+}
+
+// TestUnitTemplateSchema_V25CleanupFieldsUseStateForUnknown is a regression test
+// for the four Command v25+ Optional+Computed cleanup attributes
+// (certificate_cleanup_enabled, time_after_expiration, time_after_expiration_units,
+// delete_with_archived_key) that were missing the UseStateForUnknown plan modifier
+// carried by every other Optional+Computed scalar in this schema (e.g.
+// friendly_name, key_retention, requires_approval). Without it, Terraform Core
+// marks these attributes "unknown" on any plan where the config doesn't declare
+// them, and the subsequent apply's actual (state-derived) value differs from the
+// planned "unknown" placeholder — producing "Provider produced inconsistent
+// result after apply."
+func TestUnitTemplateSchema_V25CleanupFieldsUseStateForUnknown(t *testing.T) {
+	ctx := context.Background()
+
+	schema, diags := resourceCertificateTemplateType{}.GetSchema(ctx)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics building schema: %v", diags)
+	}
+
+	fields := []string{
+		"certificate_cleanup_enabled",
+		"time_after_expiration",
+		"time_after_expiration_units",
+		"delete_with_archived_key",
+	}
+
+	for _, name := range fields {
+		attr, ok := schema.Attributes[name]
+		if !ok {
+			t.Fatalf("expected schema attribute %q to exist", name)
+		}
+		if !attr.Optional || !attr.Computed {
+			t.Fatalf("attribute %q: expected Optional+Computed, got Optional=%v Computed=%v", name, attr.Optional, attr.Computed)
+		}
+
+		found := false
+		for _, m := range attr.PlanModifiers {
+			if _, ok := m.(tfsdk.UseStateForUnknownModifier); ok {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("attribute %q: expected UseStateForUnknown plan modifier so it carries forward from state when unset in plan, but none was found (modifiers: %+v)", name, attr.PlanModifiers)
+		}
 	}
 }

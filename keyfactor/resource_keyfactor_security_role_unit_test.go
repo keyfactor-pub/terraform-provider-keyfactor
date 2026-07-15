@@ -2,9 +2,13 @@ package keyfactor
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 )
@@ -54,4 +58,95 @@ func TestUnitSecurityRoleUpdateArgPermissions(t *testing.T) {
 			assert.ElementsMatch(t, []string{"certificates:read", "auditing:read"}, *arg.Permissions)
 		}
 	})
+}
+
+// TestUnitSecurityRoleResource_UpdatePreservesPlanPermissionsOrder is a
+// regression test for permissions being written to state as an
+// alphabetically-sorted copy of the server's Permissions response.
+// permissions is Optional (not Computed): the post-apply state value must
+// equal what the plan declared, in the order the config listed it, or
+// Terraform reports "Provider produced inconsistent result after apply" for
+// any config that lists permissions in a non-alphabetical order.
+//
+// This exercises the real Update() path end-to-end against a mock Command
+// server that deliberately returns permissions in a DIFFERENT (alphabetical)
+// order than the plan declared, guarding against a future regression that
+// writes remoteState.Permissions (server order) into result state instead of
+// plan.Permissions (config order).
+func TestUnitSecurityRoleResource_UpdatePreservesPlanPermissionsOrder(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Server returns permissions alphabetically sorted -- a different
+		// order than the plan below, which is deliberately non-alphabetical.
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role",
+			"Description": "Unit test role",
+			"Permissions": []string{"Certificates:EditMetadata", "Certificates:Read"},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	// Plan declares permissions in non-alphabetical order.
+	planPermissions := types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "Certificates:Read"},
+		types.String{Value: "Certificates:EditMetadata"},
+	}}
+
+	plan := SecurityRole{
+		ID:          types.Int64{Value: 5},
+		Name:        types.String{Value: "tf-unit-role"},
+		Description: types.String{Value: "Unit test role"},
+		Permissions: planPermissions,
+	}
+	state := plan
+
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityRole{p: provider{configured: true, client: client}}
+
+	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result SecurityRole
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	var permissions []string
+	for _, e := range result.Permissions.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected permissions element to be types.String, got %T", e)
+		}
+		permissions = append(permissions, s.Value)
+	}
+
+	assert.Equal(
+		t, []string{"Certificates:Read", "Certificates:EditMetadata"}, permissions,
+		"Update() must write permissions to state in the plan's declared order, not a re-sorted server copy, or Terraform sees drift on any non-alphabetical config",
+	)
 }

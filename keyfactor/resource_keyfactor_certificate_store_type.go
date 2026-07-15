@@ -418,13 +418,13 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 		Name:               types.String{Value: resp.Name},
 		ShortName:          types.String{Value: resp.ShortName},
 		Capability:         types.String{Value: resp.Capability},
-		LocalStore:         types.Bool{Value: resp.LocalStore},
+		LocalStore:         types.Bool{Value: derefBool(resp.LocalStore)},
 		StorePathType:      types.String{Value: resp.StorePathType},
 		StorePathValue:     types.String{Value: resp.StorePathValue},
 		PrivateKeyAllowed:  types.String{Value: resp.PrivateKeyAllowed},
-		ServerRequired:     types.Bool{Value: resp.ServerRequired},
-		PowerShell:         types.Bool{Value: resp.PowerShell},
-		BlueprintAllowed:   types.Bool{Value: resp.BlueprintAllowed},
+		ServerRequired:     types.Bool{Value: derefBool(resp.ServerRequired)},
+		PowerShell:         types.Bool{Value: derefBool(resp.PowerShell)},
+		BlueprintAllowed:   types.Bool{Value: derefBool(resp.BlueprintAllowed)},
 		CustomAliasAllowed: types.String{Value: resp.CustomAliasAllowed},
 		ImportType:         types.Int64{Value: int64(resp.ImportType)},
 		ServerRegistration: types.Int64{Value: int64(resp.ServerRegistration)},
@@ -484,18 +484,19 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 	return state
 }
 
+// derefBool returns the pointed-to bool, or false when the pointer is nil.
+func derefBool(p *bool) bool {
+	return p != nil && *p
+}
+
 func certStoreTypeDefToAPIRequest(plan KeyfactorCertStoreTypeDef) api.CertificateStoreType {
 	req := api.CertificateStoreType{
 		Name:               plan.Name.Value,
 		ShortName:          plan.ShortName.Value,
 		Capability:         plan.Capability.Value,
-		LocalStore:         plan.LocalStore.Value,
 		StorePathType:      plan.StorePathType.Value,
 		StorePathValue:     plan.StorePathValue.Value,
 		PrivateKeyAllowed:  plan.PrivateKeyAllowed.Value,
-		ServerRequired:     plan.ServerRequired.Value,
-		PowerShell:         plan.PowerShell.Value,
-		BlueprintAllowed:   plan.BlueprintAllowed.Value,
 		CustomAliasAllowed: plan.CustomAliasAllowed.Value,
 		SupportedOperations: &api.StoreTypeSupportedOperations{
 			Add:        plan.SupportsAdd.Value,
@@ -511,7 +512,24 @@ func certStoreTypeDefToAPIRequest(plan KeyfactorCertStoreTypeDef) api.Certificat
 		},
 	}
 
-	if len(plan.Properties) > 0 {
+	// Boolean flags are *bool on the request struct so an explicit false is
+	// distinguishable from "not configured". Only send the value when the plan
+	// knows it (not Null/Unknown); otherwise leave it nil so Command applies its
+	// default on create rather than us clobbering it with a spurious Go zero.
+	// Previously these were plain-bool `,omitempty` fields, so an explicit
+	// false set by the user was dropped from the outgoing request entirely and
+	// silently reverted to the server default.
+	req.LocalStore = tfBoolToPtr(plan.LocalStore)
+	req.ServerRequired = tfBoolToPtr(plan.ServerRequired)
+	req.PowerShell = tfBoolToPtr(plan.PowerShell)
+	req.BlueprintAllowed = tfBoolToPtr(plan.BlueprintAllowed)
+
+	// Properties / EntryParameters: distinguish an explicit empty list (the user
+	// removed all blocks — clear them server-side) from the attribute never
+	// being configured (nil — omit the field). The prior `len(x) > 0` guard
+	// collapsed both into "omit", so an explicit `properties = []` silently
+	// no-op'd instead of clearing existing definitions on Update.
+	if plan.Properties != nil {
 		props := make([]api.StoreTypePropertyDefinition, len(plan.Properties))
 		for i, p := range plan.Properties {
 			props[i] = api.StoreTypePropertyDefinition{
@@ -526,7 +544,7 @@ func certStoreTypeDefToAPIRequest(plan KeyfactorCertStoreTypeDef) api.Certificat
 		req.Properties = &props
 	}
 
-	if len(plan.EntryParameters) > 0 {
+	if plan.EntryParameters != nil {
 		eps := make([]api.EntryParameter, len(plan.EntryParameters))
 		for i, ep := range plan.EntryParameters {
 			eps[i] = api.EntryParameter{
@@ -546,6 +564,17 @@ func certStoreTypeDefToAPIRequest(plan KeyfactorCertStoreTypeDef) api.Certificat
 	}
 
 	return req
+}
+
+// tfBoolToPtr converts a tfsdk Bool to a *bool, returning nil when the value is
+// Null or Unknown so the field is omitted from the request (server default) and
+// a known false is sent explicitly.
+func tfBoolToPtr(v types.Bool) *bool {
+	if v.Null || v.Unknown {
+		return nil
+	}
+	b := v.Value
+	return &b
 }
 
 // ---------------------------------------------------------------------------

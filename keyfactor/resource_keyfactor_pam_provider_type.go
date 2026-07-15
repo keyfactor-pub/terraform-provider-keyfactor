@@ -135,6 +135,31 @@ func readHTTPResponseBody(resp *http.Response) string {
 	return string(body)
 }
 
+// buildPAMProviderTypeCreateRequest builds the create request body from the
+// plan. Extracted from Create so the parameter mapping is unit-testable.
+func buildPAMProviderTypeCreateRequest(plan KeyfactorPAMProviderType) v1.PAMProviderTypeCreateRequest {
+	createReq := v1.PAMProviderTypeCreateRequest{Name: plan.Name.Value}
+	for _, p := range plan.Parameters {
+		param := v1.PAMProviderTypeParameterCreateRequest{Name: p.Name.Value}
+		// Send the display name whenever the plan declares it (not Null/Unknown),
+		// including an explicit empty string. The prior `!= ""` guard collapsed an
+		// explicit display_name = "" with "unset", so the user's explicit empty
+		// value was dropped and the server substituted its own default.
+		if !p.DisplayName.Null && !p.DisplayName.Unknown {
+			param.SetDisplayName(p.DisplayName.Value)
+		}
+		if !p.DataType.Null && !p.DataType.Unknown {
+			dt := v1.CSSCMSDataModelEnumsPamParameterDataType(int32(p.DataType.Value))
+			param.SetDataType(dt)
+		}
+		if !p.InstanceLevel.Null && !p.InstanceLevel.Unknown {
+			param.SetInstanceLevel(p.InstanceLevel.Value)
+		}
+		createReq.Parameters = append(createReq.Parameters, param)
+	}
+	return createReq
+}
+
 func (r resourcePAMProviderType) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
 	LogFunctionEntry(ctx, "resourcePAMProviderType.Create")
 
@@ -147,21 +172,7 @@ func (r resourcePAMProviderType) Create(ctx context.Context, request tfsdk.Creat
 
 	tflog.Info(ctx, fmt.Sprintf("Creating PAM provider type %q", plan.Name.Value))
 
-	createReq := v1.PAMProviderTypeCreateRequest{Name: plan.Name.Value}
-	for _, p := range plan.Parameters {
-		param := v1.PAMProviderTypeParameterCreateRequest{Name: p.Name.Value}
-		if !p.DisplayName.Null && !p.DisplayName.Unknown && p.DisplayName.Value != "" {
-			param.SetDisplayName(p.DisplayName.Value)
-		}
-		if !p.DataType.Null && !p.DataType.Unknown {
-			dt := v1.CSSCMSDataModelEnumsPamParameterDataType(int32(p.DataType.Value))
-			param.SetDataType(dt)
-		}
-		if !p.InstanceLevel.Null && !p.InstanceLevel.Unknown {
-			param.SetInstanceLevel(p.InstanceLevel.Value)
-		}
-		createReq.Parameters = append(createReq.Parameters, param)
-	}
+	createReq := buildPAMProviderTypeCreateRequest(plan)
 
 	pamAPI := r.p.sdkClient.V1.PAMProviderApi
 	req := pamAPI.NewCreatePamProvidersTypesRequest(ctx).PAMProviderTypeCreateRequest(createReq)

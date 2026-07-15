@@ -4,7 +4,45 @@ import (
 	"testing"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/stretchr/testify/assert"
 )
+
+// TestUnitPAMProviderTypeCreateRequestExplicitEmptyDisplayName is a regression
+// test for the bug where an explicit display_name = "" was collapsed with
+// "unset" by a `!= ""` guard, so the user's explicit empty value was dropped
+// from the create request and the server substituted its own default. An
+// explicit empty string must now be sent; a genuinely undeclared (Null)
+// display_name must still be omitted.
+func TestUnitPAMProviderTypeCreateRequestExplicitEmptyDisplayName(t *testing.T) {
+	plan := KeyfactorPAMProviderType{
+		Name: types.String{Value: "tf-unit-pamtype"},
+		Parameters: []KeyfactorPAMProviderTypeParam{
+			{
+				Name:        types.String{Value: "ExplicitEmpty"},
+				DisplayName: types.String{Value: ""}, // explicit empty string
+			},
+			{
+				Name:        types.String{Value: "Unset"},
+				DisplayName: types.String{Null: true}, // never declared
+			},
+		},
+	}
+
+	req := buildPAMProviderTypeCreateRequest(plan)
+
+	if assert.Len(t, req.Parameters, 2) {
+		explicit := req.Parameters[0]
+		assert.True(t, explicit.HasDisplayName(),
+			"explicit display_name = \"\" must be sent, not dropped as if unset")
+		assert.Equal(t, "", explicit.GetDisplayName(),
+			"the sent display name must be the user's explicit empty string")
+
+		unset := req.Parameters[1]
+		assert.False(t, unset.HasDisplayName(),
+			"an undeclared display_name must remain omitted")
+	}
+}
 
 // TestUnitPAMProviderTypeResponseToState_NilParameterFields verifies that when the server omits
 // DisplayName and InstanceLevel on a parameter, the resulting Terraform state values are Null

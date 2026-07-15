@@ -640,7 +640,7 @@ func (r resourceCertificateStore) Update(
 		)
 		return
 	}
-	schedule, err := createInventorySchedule(plan.InventorySchedule.Value) // TODO: Implement inventory schedule
+	schedule, err := inventoryScheduleForRequest(plan.InventorySchedule)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Invalid inventory schedule.",
@@ -1095,6 +1095,23 @@ func createPasswordConfig(p string) *api.UpdateStorePasswordConfig {
 	}
 
 	return res
+}
+
+// inventoryScheduleForRequest builds the InventorySchedule for an
+// Update/Create request, returning nil when the plan does not declare a
+// schedule so the `omitempty` pointer field is omitted from the request body.
+//
+// createInventorySchedule always returns a non-nil &api.InventorySchedule{}
+// even for an empty/unresolved interval, and UpdateStoreFctArgs.InventorySchedule
+// is `omitempty` on the pointer — which never fires for a non-nil-but-zero-value
+// struct. So an undeclared inventory_schedule was being sent as an explicit
+// empty InventorySchedule{} object instead of being omitted. Gate on the plan
+// value: Null/Unknown/empty means "no schedule declared" and must omit the field.
+func inventoryScheduleForRequest(planVal types.String) (*api.InventorySchedule, error) {
+	if planVal.Null || planVal.Unknown || planVal.Value == "" {
+		return nil, nil
+	}
+	return createInventorySchedule(planVal.Value)
 }
 
 func createInventorySchedule(interval string) (*api.InventorySchedule, error) {

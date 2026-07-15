@@ -9,6 +9,11 @@ _None — this release is fixes plus internal/dependency work._
 - fix: `keyfactor_template_role_binding` no longer fails with `Error template name not found` when a template in `template_short_names` sorts beyond the first 50 templates. The template lookup now pages through the full template list instead of reading only Command's default first page of 50, so instances with more than 50 certificate templates can bind any template by short name.
 - fix: `keyfactor_certificate` no longer crashes the provider with a nil-pointer dereference (SIGSEGV) during an in-place update when the certificate-context `GET /Certificates/{id}` fails or returns an empty response. `Update` now fails closed with a clear diagnostic instead of panicking; previously this surfaced as a `Plugin did not respond` / plugin crash mid-`apply` (observed when flipping `certificate_format` to PFX).
 
+### Certificate Stores
+
+- fix: `keyfactor_certificate_store` `Update` no longer silently clears an existing container/application assignment when `application_name`/`container_name` is not declared in config — a resolved container ID of `0` was previously omitted from the update request entirely, which Command interprets as "unassign," destroying a real out-of-band assignment before Terraform's own consistency check could even flag it. The existing `container_id` is now preserved whenever prior state shows a real assignment and the plan gives no explicit name. Fixes [#175](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/175)
+- fix: `keyfactor_certificate_store` container/application name resolution (`lookupContainerNameByID`) now retries via the list endpoint before falling back to a hint, reducing spurious `container_name`/`application_name` nulling on a single transient/permission-scoped lookup failure
+
 ## Chore / Internal
 
 - chore(deps): bump `keyfactor-go-client/v3` to `v3.5.6-rc.1` — `GetTemplates` now paginates automatically, with a max-page safety bound, per-iteration response-body close, and audit logging.

@@ -1,9 +1,16 @@
 package keyfactor
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -93,4 +100,117 @@ func TestUnitTemplateRoleBindingUpdateArgPreservesUnrelatedFields(t *testing.T) 
 		}
 		assertPreserved(t, arg)
 	})
+}
+
+// TestUnitTemplateNamesStillAttached is a direct regression test for the
+// helper extracted from Read(): it must drop any template name whose template
+// no longer lists roleName as an allowed requester (out-of-band detach),
+// while keeping names that are still genuinely attached.
+func TestUnitTemplateNamesStillAttached(t *testing.T) {
+	kfTemplates := []api.GetTemplateResponse{
+		{
+			CommonName:           "WebServer",
+			UseAllowedRequesters: true,
+			AllowedRequesters:    []string{"tf-unit-role"},
+		},
+		{
+			// Role was detached out-of-band: UseAllowedRequesters is still true,
+			// but tf-unit-role is no longer in the list.
+			CommonName:           "Database",
+			UseAllowedRequesters: true,
+			AllowedRequesters:    []string{"Some-Other-Role"},
+		},
+		{
+			// UseAllowedRequesters itself was turned off out-of-band.
+			CommonName:           "Workstation",
+			UseAllowedRequesters: false,
+			AllowedRequesters:    []string{"tf-unit-role"},
+		},
+	}
+
+	attached := templateNamesStillAttached(kfTemplates, "tf-unit-role", []string{"WebServer", "Database", "Workstation"})
+	assert.Equal(t, []string{"WebServer"}, attached, "only templates that still list the role as an allowed requester must be reported as attached")
+}
+
+// TestUnitTemplateRoleBindingRead_DetectsOutOfBandDetach is a regression test
+// for Read() never re-verifying that the role is still actually attached to
+// the stored templates on Command. Read() previously only checked that the
+// template names still EXISTED (verifyTemplateNames) and then wrote back the
+// unchanged prior state, so a role detached from a template out-of-band
+// reported stale "still attached" success instead of drift.
+//
+// This drives Read() end-to-end against a mock Command server where one of
+// the two previously-bound templates no longer lists the role as an allowed
+// requester, and asserts the resulting state drops that template.
+func TestUnitTemplateRoleBindingRead_DetectsOutOfBandDetach(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Templates/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
+			{
+				"Id":                   1,
+				"CommonName":           "WebServer",
+				"UseAllowedRequesters": true,
+				"AllowedRequesters":    []string{"tf-unit-role"},
+			},
+			{
+				// Detached out-of-band: role no longer in AllowedRequesters.
+				"Id":                   2,
+				"CommonName":           "Database",
+				"UseAllowedRequesters": true,
+				"AllowedRequesters":    []string{"Some-Other-Role"},
+			},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceCertificateTemplateRoleBindingType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	priorState := CertificateTemplateRoleBinding{
+		ID:       types.String{Value: "deadbeef"},
+		RoleName: types.String{Value: "tf-unit-role"},
+		TemplateNames: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "WebServer"},
+			types.String{Value: "Database"},
+		}},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &priorState); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceCertificateTemplateRoleBinding{p: provider{configured: true, client: client}}
+
+	req := tfsdk.ReadResourceRequest{State: stateObj}
+	resp := &tfsdk.ReadResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Read(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Read returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result CertificateTemplateRoleBinding
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	var names []string
+	for _, e := range result.TemplateNames.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected template_short_names element to be types.String, got %T", e)
+		}
+		names = append(names, s.Value)
+	}
+
+	assert.Equal(t, []string{"WebServer"}, names, "Read() must drop templates the role was detached from out-of-band, not echo back stale prior state")
 }

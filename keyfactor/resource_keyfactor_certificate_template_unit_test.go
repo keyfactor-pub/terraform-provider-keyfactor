@@ -1,10 +1,60 @@
 package keyfactor
 
 import (
+	"context"
 	"testing"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/stretchr/testify/assert"
 )
+
+// TestUnitTemplateUpdateRequestExplicitEmptyLists is a regression test for the
+// four `len(x) > 0` gating bugs in buildTemplateUpdateRequest. An explicit
+// empty list (the user removed every block) was indistinguishable from the
+// attribute never being configured, so the field was dropped from the outgoing
+// update request entirely instead of clearing the entries server-side. The fix
+// gates on != nil and builds a non-nil (possibly empty) slice; the SDK's ToMap
+// serializes a non-nil empty slice as [] (clear) but omits a nil slice.
+func TestUnitTemplateUpdateRequestExplicitEmptyLists(t *testing.T) {
+	ctx := context.Background()
+
+	// Explicit empty: every list cleared. Each must reach the request as a
+	// non-nil empty slice (serialized as [] — a clear signal).
+	planCleared := KeyfactorCertificateTemplateState{
+		ID:               types.Int64{Value: 7},
+		TemplateRegexes:  []TemplateRegexEntry{},
+		TemplateDefaults: []TemplateDefaultEntry{},
+		EnrollmentFields: []TemplateEnrollmentFieldEntry{},
+		MetadataFields:   []TemplateMetadataFieldEntry{},
+	}
+	reqCleared := buildTemplateUpdateRequest(ctx, planCleared)
+
+	assert.NotNil(t, reqCleared.TemplateRegexes, "explicit template_regexes=[] must reach the request as a clear signal")
+	assert.Len(t, reqCleared.TemplateRegexes, 0)
+	assert.NotNil(t, reqCleared.TemplateDefaults, "explicit template_defaults=[] must reach the request as a clear signal")
+	assert.Len(t, reqCleared.TemplateDefaults, 0)
+	assert.NotNil(t, reqCleared.EnrollmentFields, "explicit enrollment_fields=[] must reach the request as a clear signal")
+	assert.Len(t, reqCleared.EnrollmentFields, 0)
+	assert.NotNil(t, reqCleared.MetadataFields, "explicit metadata_fields=[] must reach the request as a clear signal")
+	assert.Len(t, reqCleared.MetadataFields, 0)
+
+	// Never configured: nil slices must be omitted (nil) so existing entries are
+	// left untouched.
+	planUndeclared := KeyfactorCertificateTemplateState{
+		ID:               types.Int64{Value: 7},
+		TemplateRegexes:  nil,
+		TemplateDefaults: nil,
+		EnrollmentFields: nil,
+		MetadataFields:   nil,
+	}
+	reqUndeclared := buildTemplateUpdateRequest(ctx, planUndeclared)
+
+	assert.Nil(t, reqUndeclared.TemplateRegexes, "undeclared template_regexes must be omitted, not cleared")
+	assert.Nil(t, reqUndeclared.TemplateDefaults, "undeclared template_defaults must be omitted, not cleared")
+	assert.Nil(t, reqUndeclared.EnrollmentFields, "undeclared enrollment_fields must be omitted, not cleared")
+	assert.Nil(t, reqUndeclared.MetadataFields, "undeclared metadata_fields must be omitted, not cleared")
+}
 
 func TestUnitTemplateResponseToState_NilPolicyFields(t *testing.T) {
 	resp := &v1.TemplatesTemplateRetrievalResponse{}

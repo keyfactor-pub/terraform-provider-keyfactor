@@ -91,6 +91,42 @@ func TestUnitPAMProviderTypeResponseToState_NilParameterFields(t *testing.T) {
 	}
 }
 
+// TestUnitPAMProviderTypeResponseToState_NilDataType is a regression test for
+// DataType being mapped straight through GetDataType(), which collapses a nil
+// pointer (server omitted the field) to the enum zero value (0) -- a
+// misleading concrete value, since 0 is itself a meaningful
+// CSSCMSDataModelEnumsPamParameterDataType. DisplayName and InstanceLevel on
+// the same struct already null-check their pointer/nullable SDK types;
+// DataType must do the same.
+func TestUnitPAMProviderTypeResponseToState_NilDataType(t *testing.T) {
+	typeID := "abcd-5678"
+	paramID := int32(33)
+
+	param := v1.PAMProviderTypeParameterResponse{
+		Id:       &paramID,
+		DataType: nil, // server omitted DataType
+	}
+	param.Name.Set(strPtr("Host"))
+
+	resp := &v1.PAMProviderTypeResponse{
+		Id:         &typeID,
+		Parameters: []v1.PAMProviderTypeParameterResponse{param},
+	}
+	resp.Name.Set(strPtr("tf-unit-pamtype-nil-datatype"))
+
+	state := pamProviderTypeResponseToState(resp)
+
+	if len(state.Parameters) != 1 {
+		t.Fatalf("expected 1 parameter, got %d", len(state.Parameters))
+	}
+	p := state.Parameters[0]
+
+	if !p.DataType.Null {
+		t.Errorf("DataType: expected Null=true when server omits DataType, got Null=%v Value=%v",
+			p.DataType.Null, p.DataType.Value)
+	}
+}
+
 // TestUnitPAMProviderTypeResponseToState_SetParameterFields verifies that when the server returns
 // explicit values for DisplayName and InstanceLevel, those values flow through to state correctly.
 func TestUnitPAMProviderTypeResponseToState_SetParameterFields(t *testing.T) {

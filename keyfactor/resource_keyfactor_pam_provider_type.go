@@ -117,7 +117,7 @@ func pamProviderTypeResponseToState(resp *v1.PAMProviderTypeResponse) KeyfactorP
 			ID:            types.Int64{Value: int64(p.GetId())},
 			Name:          types.String{Value: p.GetName()},
 			DisplayName:   nullableStringToTfString(p.DisplayName),
-			DataType:      types.Int64{Value: int64(p.GetDataType())},
+			DataType:      pamParameterDataTypePtrToTfInt64(p.DataType),
 			InstanceLevel: boolPtrToTfBool(p.InstanceLevel),
 		})
 	}
@@ -125,6 +125,19 @@ func pamProviderTypeResponseToState(resp *v1.PAMProviderTypeResponse) KeyfactorP
 }
 
 // nullableStringToTfString is defined in resource_keyfactor_certificate_authority.go and reused here.
+
+// pamParameterDataTypePtrToTfInt64 converts a *CSSCMSDataModelEnumsPamParameterDataType
+// pointer from the SDK response to a types.Int64. DataType is a pointer, same as the
+// sibling DisplayName (NullableString) and InstanceLevel (*bool) fields on this struct:
+// when the server omits the field, the raw GetDataType() getter returns the enum zero
+// value (0), which is itself a valid, meaningful data type value and must not be
+// conflated with "not set." Nil maps to Null instead of a spurious concrete 0.
+func pamParameterDataTypePtrToTfInt64(v *v1.CSSCMSDataModelEnumsPamParameterDataType) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
+}
 
 func readHTTPResponseBody(resp *http.Response) string {
 	if resp == nil {

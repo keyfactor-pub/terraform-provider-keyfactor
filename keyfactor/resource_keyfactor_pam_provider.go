@@ -132,7 +132,16 @@ func int32PtrToTfInt64(i *int32) types.Int64 {
 }
 
 func buildPAMParamValues(params []KeyfactorPAMParamValue) []v1.PAMProviderCreateRequestTypeParamValue {
-	var result []v1.PAMProviderCreateRequestTypeParamValue
+	// Preserve the nil-vs-empty distinction of the input. The SDK's ToMap omits a
+	// nil ProviderTypeParamValues slice but serializes a non-nil empty slice as []
+	// (a clear signal). A nil input (attribute never declared) must therefore stay
+	// nil/omitted, while an explicit empty input (the user cleared param_values,
+	// going from a real list to []) must produce a non-nil empty slice so the
+	// clear actually reaches the request instead of silently no-op'ing.
+	if params == nil {
+		return nil
+	}
+	result := make([]v1.PAMProviderCreateRequestTypeParamValue, 0, len(params))
 	for _, p := range params {
 		paramID := int32(p.ParamID.Value)
 		pv := v1.PAMProviderCreateRequestTypeParamValue{}

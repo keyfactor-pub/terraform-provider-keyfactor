@@ -106,32 +106,15 @@ func (r resourceSecurityIdentity) Read(
 		if accountName == identity.AccountName {
 			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %s", accountName))
 
+			// Build the roles list from the freshly-fetched identity.Roles, not
+			// from state.Roles.Elems. Re-validating the identity's PRIOR state
+			// just echoed back whatever was already in state, so real
+			// server-side role drift (roles changed out-of-band) was never
+			// detected — Read() always reported stale "unchanged" success.
 			var validRoles []attr.Value
-			var validRolesInterface []interface{}
-			for _, role := range state.Roles.Elems {
-				//validRoles = append(validRoles.Elems, role.Name.Value)
-				tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
-				tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
-
-				//TODO: Verify role exists in Keyfactor or throw warning
-				re, _ := regexp.Compile(`[^\w]`)
-				roleStr := re.ReplaceAllString(role.String(), "")
-				kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
-				if roleLookupErr != nil || kfRole == nil {
-					tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
-					response.Diagnostics.AddWarning(
-						"Error looking up role on Keyfactor.",
-						fmt.Sprintf(
-							"Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.",
-							roleStr,
-							state.AccountName.Value,
-							roleStr,
-						),
-					)
-					continue
-				}
-				validRoles = append(validRoles, types.String{Value: fmt.Sprintf("%s", roleStr)})
-				validRolesInterface = append(validRolesInterface, kfRole.Id)
+			for _, role := range identity.Roles {
+				tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role.Name))
+				validRoles = append(validRoles, types.String{Value: role.Name})
 			}
 
 			state = SecurityIdentity{

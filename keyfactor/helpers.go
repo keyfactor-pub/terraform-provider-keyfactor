@@ -2026,21 +2026,58 @@ func normalizeThumbprint(tp string) string {
 // lookupContainerNameByID resolves a certificate store container/application
 // name from its numeric ID. Uses the by-ID endpoint (single record fetch) so
 // it works for newly-created containers that haven't appeared on the first
-// page of the paginated list endpoint yet. If the by-ID lookup fails, falls
-// back to the supplied hint (e.g. the name from the plan/state). Returns ""
-// when containerId is 0.
+// page of the paginated list endpoint yet. Returns "" when containerId is 0.
+//
+// The Keyfactor Command API and the SDK wrapping it do not expose a
+// structured "not found" sentinel distinct from other errors (a 404 is
+// collapsed into a plain error string alongside network/permission/5xx
+// failures — see keyfactor-go-client's client.go response handling), so this
+// function cannot definitively tell "the container was deleted" apart from
+// "the lookup failed for an unrelated, possibly transient reason." Given that
+// ambiguity, an erroring by-ID lookup is NOT treated as proof the container is
+// gone: it is retried once against the paginated list endpoint (a second,
+// independent code path) before giving up. Only if both lookups fail does the
+// function fall back to hint (e.g. the previously-resolved name from state).
+//
+// This matters because callers write the returned value into
+// container_name/application_name state via syncApplicationAndContainerName.
+// A single transient failure with an empty hint (the case on the very first
+// Read() after an out-of-band container assignment, when state never held a
+// name to fall back to — see GH issue #175) would otherwise permanently null
+// out the name fields even though container_id correctly reflects a real
+// assignment. Note that nulling the *name* fields here is a cosmetic
+// annoyance, not data loss on its own — Update()'s containerId resolution
+// (resolveContainerAssignmentForUpdate) is the load-bearing safeguard against
+// actually clearing the assignment server-side; this function only reduces
+// how often the cosmetic drift happens.
 func lookupContainerNameByID(ctx context.Context, client *api.Client, containerId int, hint string) string {
 	if containerId == 0 {
 		return ""
 	}
-	if client != nil {
-		container, err := client.GetStoreContainer(containerId)
-		if err == nil && container != nil && container.Name != "" {
-			return container.Name
+	if client == nil {
+		return hint
+	}
+
+	container, err := client.GetStoreContainer(containerId)
+	if err == nil && container != nil && container.Name != "" {
+		return container.Name
+	}
+	if err != nil {
+		tflog.Warn(ctx, fmt.Sprintf("Failed to resolve container name for ID %d via by-ID lookup: %s — retrying via the list endpoint before falling back to hint %q", containerId, err.Error(), hint))
+	}
+
+	if containers, listErr := client.GetStoreContainers(); listErr == nil && containers != nil {
+		for _, c := range *containers {
+			if c.Id != nil && *c.Id == containerId && c.Name != "" {
+				return c.Name
+			}
 		}
-		if err != nil {
-			tflog.Warn(ctx, fmt.Sprintf("Failed to resolve container name for ID %d: %s — falling back to hint %q", containerId, err.Error(), hint))
-		}
+	} else if listErr != nil {
+		tflog.Warn(ctx, fmt.Sprintf("Failed to resolve container name for ID %d via list-endpoint fallback: %s — falling back to hint %q", containerId, listErr.Error(), hint))
+	}
+
+	if hint == "" {
+		tflog.Warn(ctx, fmt.Sprintf("Could not resolve a name for container ID %d and no prior state value is available; container_name/application_name will read as null this cycle even though container_id (%d) is real. The underlying container/application assignment itself is not affected by this.", containerId, containerId))
 	}
 	return hint
 }

@@ -153,6 +153,15 @@ func (r resourceSecurityIdentity) Read(
 	}
 }
 
+// identityRolesDeclared reports whether the plan explicitly declares the roles
+// attribute. roles is Optional (not Computed), so a Null value means the user
+// omitted it from config (preserve existing assignments), while a non-null value
+// — including an explicit empty list — is a full-replace instruction (an empty
+// list clears all roles).
+func identityRolesDeclared(plan SecurityIdentity) bool {
+	return !plan.Roles.Null && !plan.Roles.Unknown
+}
+
 func (r resourceSecurityIdentity) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -177,52 +186,58 @@ func (r resourceSecurityIdentity) Update(
 		return
 	}
 
-	// Generate API request body from plan
-	//var validRoles types.List
-	var validRoles []attr.Value
-	var validRolesInterface []interface{}
-	for _, role := range plan.Roles.Elems {
-		//validRoles = append(validRoles.Elems, role.Name.Value)
-		tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
-		tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
-
-		//TODO: Verify role exists in Keyfactor or throw warning
-		re, err := regexp.Compile(`[^\w]`)
-		if err != nil {
-			log.Fatal(err)
-		}
-		roleStr := re.ReplaceAllString(role.String(), "")
-		tflog.Debug(ctx, fmt.Sprintf("Role string: %s", roleStr))
-		kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
-		if roleLookupErr != nil || kfRole == nil {
-			tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
-			response.Diagnostics.AddWarning(
-				"Error looking up role on Keyfactor.",
-				fmt.Sprintf(
-					"Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.",
-					roleStr,
-					state.AccountName.Value,
-					roleStr,
-				),
-			)
-			continue
-		}
-		validRoles = append(validRoles, types.String{Value: fmt.Sprintf("%s", roleStr)})
-		validRolesInterface = append(validRolesInterface, kfRole.Id)
-	}
-
-	//Update role identities
-	err := setIdentityRole(ctx, r.p.client, state.AccountName.Value, validRolesInterface)
-	if err != nil {
-		response.Diagnostics.AddError("Error updating identity roles.", "Error updating identity roles: "+err.Error())
-	}
-
-	var result = SecurityIdentity{
+	// setIdentityRole is a full-replace sync of the identity's role assignments.
+	// Only run it when the plan explicitly declares the roles attribute. When
+	// roles is genuinely undeclared (Null) — the user simply omitted it from
+	// config — Null must not be conflated with an explicit empty list; the former
+	// preserves the identity's existing roles, the latter clears them. Running
+	// the full-replace sync on an undeclared Null plan stripped every real role
+	// assignment on any unrelated Update.
+	result := SecurityIdentity{
 		ID:           types.Int64{Value: int64(state.ID.Value)},
 		AccountName:  types.String{Value: state.AccountName.Value},
 		IdentityType: types.String{Value: state.IdentityType.Value},
 		Valid:        types.Bool{Value: state.Valid.Value},
-		Roles:        plan.Roles,
+		Roles:        state.Roles,
+	}
+
+	if identityRolesDeclared(plan) {
+		// Generate API request body from plan
+		var validRolesInterface []interface{}
+		for _, role := range plan.Roles.Elems {
+			tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
+			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
+
+			//TODO: Verify role exists in Keyfactor or throw warning
+			re, err := regexp.Compile(`[^\w]`)
+			if err != nil {
+				log.Fatal(err)
+			}
+			roleStr := re.ReplaceAllString(role.String(), "")
+			tflog.Debug(ctx, fmt.Sprintf("Role string: %s", roleStr))
+			kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
+			if roleLookupErr != nil || kfRole == nil {
+				tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
+				response.Diagnostics.AddWarning(
+					"Error looking up role on Keyfactor.",
+					fmt.Sprintf(
+						"Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.",
+						roleStr,
+						state.AccountName.Value,
+						roleStr,
+					),
+				)
+				continue
+			}
+			validRolesInterface = append(validRolesInterface, kfRole.Id)
+		}
+
+		//Update role identities (full-replace; an explicit empty list clears them)
+		err := setIdentityRole(ctx, r.p.client, state.AccountName.Value, validRolesInterface)
+		if err != nil {
+			response.Diagnostics.AddError("Error updating identity roles.", "Error updating identity roles: "+err.Error())
+		}
+		result.Roles = plan.Roles
 	}
 
 	// Set state

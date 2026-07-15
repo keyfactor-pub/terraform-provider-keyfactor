@@ -527,6 +527,76 @@ func Contains(sl []int, val int) bool {
 /*
  * The resourceTemplateAttachRoleRead function is responsible for reading a Keyfactor security role.
  */
+// buildTemplateRoleBindingUpdateArg builds the UpdateTemplate request used by
+// both the attach and detach paths. Command's UpdateTemplate is a full
+// replacement, so every field omitted from the request is reset server-side.
+//
+// The previous inline construction only set a handful of fields and ran the
+// values it did copy through the zero-collapsing pointer helpers
+// (stringToPointer/intToPointer map "" and 0 to nil, which omitempty then
+// drops). The net effect was that on every role attach/detach this resource
+// silently reset template settings it does not even manage — RequiresApproval,
+// KeyRetentionDays, KeyArchival, EnrollmentFields, MetadataFields,
+// TemplateRegexes — plus any FriendlyName/KeyRetention/AllowedEnrollmentTypes
+// that happened to be empty/zero.
+//
+// This helper faithfully round-trips every field returned by GetTemplate,
+// changing only the allowed-requester list, using non-collapsing pointers so a
+// legitimate empty string or zero value is preserved rather than dropped.
+func buildTemplateRoleBindingUpdateArg(
+	template *api.GetTemplateResponse,
+	allowedRequesters []string,
+) *api.UpdateTemplateArg {
+	// Ensure a non-nil slice so an emptied requester list is sent as [] rather
+	// than being dropped by omitempty.
+	requesters := append([]string{}, allowedRequesters...)
+	useAllowedRequesters := len(requesters) > 0
+
+	keyType := template.KeyType
+	friendlyName := template.FriendlyName
+	keyRetention := template.KeyRetention
+	keyRetentionDays := template.KeyRetentionDays
+	keyArchival := template.KeyArchival
+	allowedEnrollmentTypes := template.AllowedEnrollmentTypes
+	rfcEnforcement := template.RFCEnforcement
+	requiresApproval := template.RequiresApproval
+
+	arg := &api.UpdateTemplateArg{
+		Id:                     template.Id,
+		CommonName:             template.CommonName,
+		TemplateName:           template.TemplateName,
+		Oid:                    template.Oid,
+		KeySize:                template.KeySize,
+		ForestRoot:             template.ForestRoot,
+		KeyType:                &keyType,
+		FriendlyName:           &friendlyName,
+		KeyRetention:           &keyRetention,
+		KeyRetentionDays:       &keyRetentionDays,
+		KeyArchival:            &keyArchival,
+		AllowedEnrollmentTypes: &allowedEnrollmentTypes,
+		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
+		AllowedRequesters:      &requesters,
+		RFCEnforcement:         &rfcEnforcement,
+		RequiresApproval:       &requiresApproval,
+	}
+
+	// Preserve the collection-valued settings this resource does not manage.
+	if template.EnrollmentFields != nil {
+		ef := template.EnrollmentFields
+		arg.EnrollmentFields = &ef
+	}
+	if template.MetadataFields != nil {
+		mf := template.MetadataFields
+		arg.MetadataFields = &mf
+	}
+	if template.TemplateRegexes != nil {
+		rx := template.TemplateRegexes
+		arg.TemplateRegexes = &rx
+	}
+
+	return arg
+}
+
 func addAllowedRequesterToTemplate(
 	ctx context.Context,
 	kfClient *api.Client,
@@ -625,26 +695,9 @@ func addAllowedRequesterToTemplate(
 	// If it's not already added, create update context to add role to template.
 
 	newAllowedRequester = append(newAllowedRequester, roleName)
-	useAllowedRequesters := false
-	if len(newAllowedRequester) > 0 {
-		useAllowedRequesters = true
-	}
 	// Fill required fields with information retrieved from the get request above
 	tflog.Debug(ctx, "Creating update context to add role to template")
-	updateContext := &api.UpdateTemplateArg{
-		Id:                     template.Id,
-		CommonName:             template.CommonName,
-		TemplateName:           template.TemplateName,
-		Oid:                    template.Oid,
-		KeySize:                template.KeySize,
-		ForestRoot:             template.ForestRoot,
-		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
-		AllowedRequesters:      &newAllowedRequester,
-		FriendlyName:           stringToPointer(template.FriendlyName),
-		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
-		KeyRetention:           stringToPointer(template.KeyRetention),
-		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
-	}
+	updateContext := buildTemplateRoleBindingUpdateArg(template, newAllowedRequester)
 
 	tflog.Trace(
 		ctx, "Updating template in Keyfactor with context:", map[string]interface{}{
@@ -704,25 +757,8 @@ func removeRoleFromTemplate(
 		}
 	}
 
-	useAllowedRequesters := false
-	if len(newAllowedRequester) > 0 {
-		useAllowedRequesters = true
-	}
 	// Fill required fields with information retrieved from the get request above
-	updateContext := &api.UpdateTemplateArg{
-		Id:                     template.Id,
-		CommonName:             template.CommonName,
-		TemplateName:           template.TemplateName,
-		Oid:                    template.Oid,
-		KeySize:                template.KeySize,
-		ForestRoot:             template.ForestRoot,
-		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
-		AllowedRequesters:      &newAllowedRequester,
-		FriendlyName:           stringToPointer(template.FriendlyName),
-		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
-		KeyRetention:           stringToPointer(template.KeyRetention),
-		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
-	}
+	updateContext := buildTemplateRoleBindingUpdateArg(template, newAllowedRequester)
 
 	tflog.Trace(
 		ctx, "Updating template in Keyfactor with context:", map[string]interface{}{

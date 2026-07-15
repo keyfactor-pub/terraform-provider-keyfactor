@@ -386,7 +386,14 @@ func mapOAuthSecurityClaimsFromRole(
 			continue
 		}
 
-		provider := *claim.Provider
+		// claim.Provider may be nil when the API omits the sub-object (the same
+		// condition mapOAuthSecurityClaim already guards against, e.g. Command
+		// 25.5.1 + Authentik OIDC).
+		var providerAuthScheme *string
+		if claim.Provider != nil {
+			providerAuthScheme = claim.Provider.AuthenticationScheme.Get()
+		}
+
 		claimTypeEnum, err := kfv2.ParseCSSCMSCoreEnumsClaimType(*claim.ClaimType.Get())
 
 		// This shouldn't happen since the claim type is coming from the API
@@ -402,7 +409,7 @@ func mapOAuthSecurityClaimsFromRole(
 		temp := kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
 			ClaimType:                    *claimTypeEnum,
 			ClaimValue:                   *claim.ClaimValue.Get(),
-			ProviderAuthenticationScheme: *provider.AuthenticationScheme.Get(),
+			ProviderAuthenticationScheme: getStringType(providerAuthScheme).Value,
 			Description:                  *claim.Description.Get(),
 		}
 		claims = append(claims, temp)

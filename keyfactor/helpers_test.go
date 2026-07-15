@@ -6,6 +6,7 @@ import (
 
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -251,6 +252,70 @@ func TestAddOAuthSecurityClaimToRole(t *testing.T) {
 		result := addOAuthSecurityClaimToRole(ctx, existingClaims, claim)
 		assert.Equal(t, 1, len(result)) // Should not have added duplicate claim
 	})
+}
+
+// TestUnitMapOAuthSecurityClaimsFromRole_NilProviderDoesNotPanic is the
+// red/green regression test for the nil-pointer dereference in
+// mapOAuthSecurityClaimsFromRole: `provider := *claim.Provider` dereferenced
+// the Provider sub-object unconditionally, even though it is documented as
+// nilable (the exact same "API omits the sub-object" scenario already handled
+// defensively in mapOAuthSecurityClaim, e.g. Command 25.5.1 + Authentik OIDC).
+// A role whose claim omits Provider crashes the provider mid-apply during
+// Create()/Delete()/Update() of keyfactor_oauth_security_role and
+// keyfactor_oauth_security_role_claim_association, all of which call this
+// function to rebuild the claims list before a PUT.
+func TestUnitMapOAuthSecurityClaimsFromRole_NilProviderDoesNotPanic(t *testing.T) {
+	ctx := context.Background()
+
+	claimType := "OAuthSubject"
+	claimValue := "test-subject"
+	description := "a claim with no Provider sub-object"
+
+	remoteState := &kfv2.SecuritySecurityRolesSecurityRoleResponse{
+		Id: ptr(int32(99)),
+		Claims: []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse{
+			{
+				Id:          ptr(int32(1)),
+				Description: *kfv2.NewNullableString(&description),
+				ClaimType:   *kfv2.NewNullableString(&claimType),
+				ClaimValue:  *kfv2.NewNullableString(&claimValue),
+				Provider:    nil, // the exact condition this test reproduces
+			},
+		},
+	}
+
+	var diagnostics diag.Diagnostics
+	var result *[]kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest
+	var ok bool
+
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("mapOAuthSecurityClaimsFromRole panicked (nil-deref regression): %v", rec)
+			}
+		}()
+		result, ok = mapOAuthSecurityClaimsFromRole(ctx, &diagnostics, remoteState, nil)
+	}()
+
+	if !ok {
+		t.Fatalf("expected mapOAuthSecurityClaimsFromRole to succeed, got diagnostics: %+v", diagnostics)
+	}
+	if diagnostics.HasError() {
+		t.Fatalf("expected no diagnostic errors, got: %+v", diagnostics)
+	}
+	if result == nil || len(*result) != 1 {
+		t.Fatalf("expected exactly one mapped claim, got: %+v", result)
+	}
+
+	mapped := (*result)[0]
+	assert.Equal(t, kfv2.CSSCMSCOREENUMSCLAIMTYPE_OAuthSubject, mapped.ClaimType)
+	assert.Equal(t, claimValue, mapped.ClaimValue)
+	assert.Equal(t, description, mapped.Description)
+	// No Provider sub-object was present on the remote claim, so the
+	// authentication scheme has no known value: it must degrade to the
+	// zero-value "" (matching getStringType's null-safe convention used
+	// elsewhere in this file), never panic.
+	assert.Equal(t, "", mapped.ProviderAuthenticationScheme)
 }
 
 func TestNormalizeSerialNumber(t *testing.T) {

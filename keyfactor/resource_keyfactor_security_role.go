@@ -91,6 +91,35 @@ func (r resourceSecurityRole) Read(
 	}
 }
 
+// buildSecurityRoleUpdateArg builds the UpdateSecurityRole request from the
+// plan. permissions is Optional (not Computed): a Null value means the user
+// omitted the attribute and the existing permissions must be preserved, so the
+// Permissions field is left nil and omitted from the request (the `omitempty`
+// pointer fires). Previously a Null plan resolved to a nil Go slice that was
+// still wrapped in a non-nil pointer (&permissions); the non-nil pointer
+// bypassed omitempty and marshaled as `"Permissions": null`, telling Command to
+// clear every permission the role had. An explicit empty list is a real clear
+// signal and is sent as `[]`.
+func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, roleId int) *api.UpdateSecurityRoleArg {
+	arg := &api.UpdateSecurityRoleArg{
+		Id: roleId,
+		CreateSecurityRoleArg: api.CreateSecurityRoleArg{
+			Name:        plan.Name.Value,
+			Description: plan.Description.Value,
+		},
+	}
+	if !plan.Permissions.Null && !plan.Permissions.Unknown {
+		permissions := []string{}
+		plan.Permissions.ElementsAs(ctx, &permissions, false)
+		if permissions == nil {
+			permissions = []string{}
+		}
+		sort.Strings(permissions)
+		arg.Permissions = &permissions
+	}
+	return arg
+}
+
 func (r resourceSecurityRole) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -118,18 +147,7 @@ func (r resourceSecurityRole) Update(
 	tflog.SetField(ctx, "id", roleId)
 
 	// Generate API request body from plan
-
-	var permissions []string
-	plan.Permissions.ElementsAs(ctx, &permissions, false)
-	//Update role identities
-	updateArg := &api.UpdateSecurityRoleArg{
-		Id: int(roleId),
-		CreateSecurityRoleArg: api.CreateSecurityRoleArg{
-			Name:        plan.Name.Value,
-			Description: plan.Description.Value,
-			Permissions: &permissions,
-		},
-	}
+	updateArg := buildSecurityRoleUpdateArg(ctx, plan, int(roleId))
 
 	remoteState, err := r.p.client.UpdateSecurityRole(updateArg)
 	if err != nil {
@@ -140,22 +158,11 @@ func (r resourceSecurityRole) Update(
 		return
 	}
 
-	var permissionValues []attr.Value
-	sort.Strings(*remoteState.Permissions)
-	for _, perm := range *remoteState.Permissions {
-		tflog.Info(ctx, "Permission: "+perm)
-		permissionValues = append(
-			permissionValues, types.String{
-				Value: perm,
-			},
-		)
-	}
-
 	var result = SecurityRole{
 		ID:          types.Int64{Value: int64(state.ID.Value)},
 		Name:        types.String{Value: remoteState.Name},
 		Description: types.String{Value: remoteState.Description},
-		Permissions: types.List{ElemType: types.StringType, Elems: permissionValues},
+		Permissions: plan.Permissions,
 	}
 
 	// Set state

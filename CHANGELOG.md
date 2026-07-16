@@ -14,13 +14,14 @@ _None — this release is fixes plus internal/dependency work._
 - fix: `keyfactor_certificate_store` `Update` no longer silently clears an existing container/application assignment when `application_name`/`container_name` is not declared in config — a resolved container ID of `0` was previously omitted from the update request entirely, which Command interprets as "unassign," destroying a real out-of-band assignment before Terraform's own consistency check could even flag it. The existing `container_id` is now preserved whenever prior state shows a real assignment and the plan gives no explicit name (an explicit empty-string name still clears it). Fixes [#175](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/175)
 - fix: `keyfactor_certificate_store` container/application name resolution (`lookupContainerNameByID`) now retries via the list endpoint before falling back to a hint, and that list-endpoint fallback is now paginated (previously silently truncated to Command's first page)
 - fix: `keyfactor_certificate_store` `Update` always re-resolves the container/application name by ID after a successful update instead of trusting a locally-resolved name, preventing a same-apply state mismatch if Command's canonical name differs (case/whitespace normalization, or an out-of-band rename)
-- fix: `keyfactor_certificate_store` no longer sends an explicit empty `InventorySchedule` object when the config doesn't declare one, and no longer sends a redundant nil-pointer dereference risk when the agent identifier lookup returns no matches
+- fix: `keyfactor_certificate_store` no longer sends an explicit empty `InventorySchedule` object when the config doesn't declare one
+- fix: `keyfactor_certificate_store` `Create`/`Update` no longer crash the provider with a nil-pointer dereference when the agent identifier lookup returns no matching agent
 
 ### Provider-wide inconsistent-state audit
 
 A resource-wide audit for the same bug class as #175 (a resolved zero/empty/nil value collapsing "attribute never declared" and "attribute explicitly cleared" into one signal, silently clearing real server-side state or crashing the provider) turned up and fixed 20 additional issues across 12 resources:
 
-- fix: nil-pointer-dereference crashes eliminated in `keyfactor_certificate_store` (agent lookup), `keyfactor_certificate_deploy` (failed certificate read), `keyfactor_oauth_security_role_claim_association` (null role fields), and `mapOAuthSecurityClaimsFromRole` (null claim provider)
+- fix: nil-pointer-dereference crashes eliminated in `keyfactor_certificate_deploy` (failed certificate read), `keyfactor_oauth_security_role_claim_association` (null role fields), and `mapOAuthSecurityClaimsFromRole` (null claim provider) — see also the `keyfactor_certificate_store` agent-lookup crash fix above
 - fix: `keyfactor_oauth_security_role_claim_association` `Create` no longer falls through and dereferences a nil claim response when the security-claim GET fails
 - fix: `keyfactor_application` no longer silently drops a live schedule on an unrelated update when `schedule_*` attributes are undeclared
 - fix: `keyfactor_certificate_authority` no longer silently clears scan schedules or `allowed_requesters` on an unrelated update

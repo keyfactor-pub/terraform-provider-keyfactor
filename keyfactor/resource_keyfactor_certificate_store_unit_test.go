@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
@@ -159,6 +160,80 @@ func TestUnitLookupContainerNameByID_ListEndpointFallback(t *testing.T) {
 	}
 	if byIDHits == 0 {
 		t.Fatalf("expected the by-ID endpoint to be tried first, got %d hits", byIDHits)
+	}
+}
+
+// TestUnitLookupContainerNameByID_ListEndpointFallbackPagination is a
+// regression test for the follow-up to GH issue #175's fix #1: the
+// list-endpoint fallback calls client.GetStoreContainers(), which the SDK
+// paginates server-side. Command returns only the first page's worth of
+// containers per request; a container sorted beyond that first page (e.g. a
+// lab/tenant with more than a page's worth of containers) would previously
+// never be found via the fallback, silently falling through to hint even
+// though the container is real and simply not on page 1.
+//
+// This test forces the by-ID lookup to fail (so the list-endpoint fallback
+// runs) and serves the list endpoint as a genuinely paginated API would: a
+// full first page that does NOT include the target container, followed by a
+// second, shorter page that does. The fix (GetStoreContainers pagination in
+// keyfactor-go-client, mirroring the GetTemplates fix for issue #172) must
+// walk pages until it finds the target, rather than only inspecting page 1.
+func TestUnitLookupContainerNameByID_ListEndpointFallbackPagination(t *testing.T) {
+	const (
+		containerID   = 4242
+		containerName = "tf-late-sorted-container"
+		pageSize      = 100
+	)
+	var byIDHits, listHits int
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(fmt.Sprintf("/KeyfactorAPI/CertificateStoreContainers/%d", containerID), func(w http.ResponseWriter, r *http.Request) {
+		byIDHits++
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	mux.HandleFunc("/KeyfactorAPI/CertificateStoreContainers", func(w http.ResponseWriter, r *http.Request) {
+		listHits++
+		page, _ := strconv.Atoi(r.URL.Query().Get("PageReturned"))
+		if page < 1 {
+			page = 1
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		switch page {
+		case 1:
+			// A full first page that does NOT contain the target container —
+			// simulates a lab/tenant with more containers than fit on page 1.
+			fullPage := make([]api.CertStoreContainer, pageSize)
+			for i := range fullPage {
+				id := i + 1
+				fullPage[i] = api.CertStoreContainer{Id: &id, Name: fmt.Sprintf("Container-%d", id)}
+			}
+			_ = json.NewEncoder(w).Encode(fullPage)
+		case 2:
+			id := containerID
+			_ = json.NewEncoder(w).Encode([]api.CertStoreContainer{{Id: &id, Name: containerName}})
+		default:
+			_ = json.NewEncoder(w).Encode([]api.CertStoreContainer{})
+		}
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newContainerLookupClient(server)
+
+	got := lookupContainerNameByID(context.Background(), client, containerID, "fallback-hint")
+	if got != containerName {
+		t.Fatalf(
+			"expected paginated list-endpoint fallback to resolve %q, got %q (byIDHits=%d listHits=%d) — "+
+				"a container past page 1 of GetStoreContainers was not found",
+			containerName, got, byIDHits, listHits,
+		)
+	}
+	if byIDHits == 0 {
+		t.Fatalf("expected the by-ID endpoint to be tried first, got %d hits", byIDHits)
+	}
+	if listHits < 2 {
+		t.Fatalf("expected the list endpoint to be paged at least twice to find the target container, got %d hits", listHits)
 	}
 }
 

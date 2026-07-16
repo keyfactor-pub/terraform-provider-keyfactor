@@ -2046,6 +2046,12 @@ func normalizeThumbprint(tp string) string {
 // independent code path) before giving up. Only if both lookups fail does the
 // function fall back to hint (e.g. the previously-resolved name from state).
 //
+// The "paginated list endpoint" fallback is client.GetStoreContainers(),
+// which walks every page of CertificateStoreContainers server-side (the same
+// PageReturned/ReturnLimit pattern used by GetTemplates for GH issue #172)
+// before returning. This function does not need its own paging loop — it
+// just needs to scan the complete, already-paginated result for containerId.
+//
 // This matters because callers write the returned value into
 // container_name/application_name state via syncApplicationAndContainerName.
 // A single transient failure with an empty hint (the case on the very first

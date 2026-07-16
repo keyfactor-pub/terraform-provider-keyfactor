@@ -466,3 +466,19 @@ func TestUnitEnumPtrToTfInt64(t *testing.T) {
 		assert.Equal(t, int64(4), pamParameterDataTypePtrToTfInt64(&dt).Value)
 	})
 }
+
+// TestUnitDerefOrEmpty covers the plain-string dereference helper that
+// replaced the getStringType(v).Value idiom (a Terraform-state conversion
+// helper being used purely to discard its Null flag) at 7 call sites across
+// helpers.go and resource_keyfactor_oauth_security_role_claim_association.go.
+// No behavior change: nil still maps to "", and a non-nil pointer's value
+// still passes through unchanged.
+func TestUnitDerefOrEmpty(t *testing.T) {
+	assert.Equal(t, "", derefOrEmpty(nil))
+
+	s := "hello"
+	assert.Equal(t, "hello", derefOrEmpty(&s))
+
+	empty := ""
+	assert.Equal(t, "", derefOrEmpty(&empty))
+}

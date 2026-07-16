@@ -451,7 +451,7 @@ func mapOAuthSecurityClaimsFromRole(
 		temp := kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
 			ClaimType:                    *claimTypeEnum,
 			ClaimValue:                   *claim.ClaimValue.Get(),
-			ProviderAuthenticationScheme: getStringType(providerAuthScheme).Value,
+			ProviderAuthenticationScheme: derefOrEmpty(providerAuthScheme),
 			Description:                  *claim.Description.Get(),
 		}
 		claims = append(claims, temp)
@@ -1942,6 +1942,19 @@ func getStringType(value *string) types.String {
 		return types.String{Value: "", Null: true}
 	}
 	return types.String{Value: *value}
+}
+
+// derefOrEmpty dereferences a *string, returning "" for a nil pointer. Use
+// this directly wherever code needs a plain Go string from an SDK-nullable
+// field and has no use for the Null flag -- e.g. building an SDK request DTO
+// with a plain (non-nullable) string field. getStringType(v).Value is
+// equivalent but round-trips through a types.String purely to throw the Null
+// flag away, which obscures the intent at the call site.
+func derefOrEmpty(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }
 
 // Gets Terraform plan for a given resource type. If there's an error retrieving the state, an error is appended to diagnostics.

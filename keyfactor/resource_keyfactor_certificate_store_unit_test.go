@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -639,6 +641,122 @@ func TestUnitResolveContainerAssignmentForUpdate_UnknownPlanValuesDoNotMisbehave
 			"resolveContainerAssignmentForUpdate resolved containerId to 0 for Unknown plan values with an existing assignment (state container_id=500) — "+
 				"this would clear a real assignment; got effectiveName %q",
 			effectiveName,
+		)
+	}
+}
+
+// TestUnitCertificateStoreCreate_OmitsEmptyInventoryScheduleFromRequestBody is
+// the red/green regression test for Create() calling the raw
+// createInventorySchedule(plan.InventorySchedule.Value) instead of the
+// null-safe inventoryScheduleForRequest(plan.InventorySchedule) helper that
+// Update() already uses. createInventorySchedule always returns a non-nil
+// &api.InventorySchedule{} for an empty/unrecognized interval, and
+// CreateStoreFctArgs.InventorySchedule is `*InventorySchedule` with
+// `json:"InventorySchedule,omitempty"` — omitempty only omits a nil pointer,
+// so an undeclared inventory_schedule was sent to Command as an explicit
+// empty `"InventorySchedule":{}` object instead of being omitted entirely.
+//
+// This test drives resourceCertificateStore.Create() end-to-end against an
+// httptest server and captures the raw JSON body POSTed to
+// /KeyfactorAPI/CertificateStores, asserting the InventorySchedule key is
+// either absent or does not decode to a non-nil object.
+func TestUnitCertificateStoreCreate_OmitsEmptyInventoryScheduleFromRequestBody(t *testing.T) {
+	const (
+		storeTypeName = "AGeneric"
+		agentGuid     = "11111111-1111-1111-1111-111111111111"
+	)
+
+	var capturedBody []byte
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/CertificateStoreTypes/Name/"+storeTypeName, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]api.CertificateStoreType{
+			{Name: storeTypeName, ShortName: storeTypeName, StoreType: 1},
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Agents", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]api.Agent{
+			{AgentId: agentGuid, ClientMachine: "test-machine", Status: 2},
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/CertificateStores", func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Fatalf("failed to read captured POST body: %s", readErr)
+		}
+		capturedBody = body
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(api.CreateStoreResponse{
+			Id:            "22222222-2222-2222-2222-222222222222",
+			ClientMachine: "test-machine",
+			Storepath:     "/test/path",
+			AgentId:       agentGuid,
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newContainerLookupClient(server)
+	r := resourceCertificateStore{p: provider{configured: true, client: client}}
+
+	schema, sDiags := resourceCertificateStoreType{}.GetSchema(context.Background())
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	plan := CertificateStore{
+		ClientMachine:         types.String{Value: "test-machine"},
+		StorePath:             types.String{Value: "/test/path"},
+		StoreType:             types.String{Value: storeTypeName},
+		AgentIdentifier:       types.String{Value: agentGuid},
+		ContainerName:         types.String{Null: true},
+		ApplicationName:       types.String{Null: true},
+		InventorySchedule:     types.String{Null: true},
+		Approved:              types.Bool{Value: true},
+		CreateIfMissing:       types.Bool{Value: false},
+		AgentAssigned:         types.Bool{Value: false},
+		SetNewPasswordAllowed: types.Bool{Value: false},
+		ServerUseSsl:          types.Bool{Null: true},
+		ServerUsername:        types.String{Null: true},
+		ServerPassword:        types.String{Null: true},
+		StorePassword:         types.String{Null: true},
+		Properties:            types.Map{ElemType: types.StringType, Null: true},
+	}
+
+	ctx := context.Background()
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+
+	req := tfsdk.CreateResourceRequest{Plan: planObj}
+	resp := &tfsdk.CreateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Create(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Create returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	if capturedBody == nil {
+		t.Fatalf("expected the mock CertificateStores endpoint to capture a POST body, got none")
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal captured POST body: %s\nbody: %s", err, string(capturedBody))
+	}
+
+	if v, ok := decoded["InventorySchedule"]; ok && v != nil {
+		t.Fatalf(
+			"expected \"InventorySchedule\" to be omitted from the POST body when inventory_schedule is undeclared in the plan, "+
+				"but it was present as a non-nil value: %#v\nfull body: %s",
+			v, string(capturedBody),
 		)
 	}
 }

@@ -308,7 +308,7 @@ func (r resourceCertificateStore) Create(
 		properties["ServerUseSsl"] = strconv.FormatBool(plan.ServerUseSsl.Value)
 	}
 
-	schedule, err := createInventorySchedule(plan.InventorySchedule.Value) // TODO: Implement inventory schedule
+	schedule, err := inventoryScheduleForRequest(plan.InventorySchedule)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Invalid inventory schedule.",

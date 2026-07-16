@@ -153,3 +153,160 @@ func TestUnitSecurityIdentityRead_DetectsOutOfBandRoleDrift(t *testing.T) {
 
 	assert.Equal(t, []string{"RoleB"}, roles, "Read() must reflect the freshly-fetched server roles, not the stale prior-state roles")
 }
+
+// TestUnitSecurityIdentitySchema_RolesIsComputedWithUseStateForUnknown is a
+// regression test for "Provider produced inconsistent result after apply:
+// .roles: was null, but now cty.ListVal(...)".
+//
+// roles was Optional but NOT Computed. Update() (see identityRolesDeclared)
+// deliberately writes state.Roles (a concrete, non-null list) into the result
+// whenever the config omits roles, to preserve the identity's existing role
+// assignments across an unrelated Update. But for a non-Computed attribute,
+// Terraform Core computes the practitioner-facing plan directly from config:
+// omitted config -> planned value is Null, full stop, with no path for a
+// provider-side plan modifier to intervene. When Update() then returned a
+// non-null Roles, Core saw the final value diverge from what it planned and
+// aborted the apply with "inconsistent result after apply" on any identity
+// that already had roles assigned.
+//
+// Why this shipped: this repo's TestUnit* harness (see
+// TestUnitSecurityIdentityRead_DetectsOutOfBandRoleDrift above) calls
+// resourceSecurityIdentity's methods directly via hand-built tfsdk.Plan/
+// tfsdk.State values -- it never drives a real Terraform Core plan/apply
+// cycle (that would require github.com/hashicorp/terraform-plugin-testing,
+// which is not a dependency of this module and is blocked on this repo's
+// terraform-plugin-framework v0.10.0 pin). Because of that, Update()'s
+// returned value looked entirely correct in isolation (it does preserve the
+// right roles) -- the defect is only visible one layer up, in how Terraform
+// Core reconciles the schema-declared plan against that returned value. The
+// strongest regression test achievable without a full Core harness is
+// asserting the schema fix directly, mirroring
+// TestUnitTemplateSchema_V25CleanupFieldsUseStateForUnknown's approach for
+// the same bug class on a different resource: roles must be Optional+Computed
+// with a UseStateForUnknown plan modifier, so Core resolves the omitted-roles
+// case to "carry forward the prior state value" instead of "plan Null."
+func TestUnitSecurityIdentitySchema_RolesIsComputedWithUseStateForUnknown(t *testing.T) {
+	ctx := context.Background()
+
+	schema, diags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics building schema: %v", diags)
+	}
+
+	attribute, ok := schema.Attributes["roles"]
+	if !ok {
+		t.Fatalf("expected schema attribute %q to exist", "roles")
+	}
+
+	if !attribute.Optional || !attribute.Computed {
+		t.Fatalf("attribute %q: expected Optional+Computed, got Optional=%v Computed=%v", "roles", attribute.Optional, attribute.Computed)
+	}
+
+	found := false
+	for _, m := range attribute.PlanModifiers {
+		if _, ok := m.(tfsdk.UseStateForUnknownModifier); ok {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("attribute %q: expected UseStateForUnknown plan modifier so an omitted-from-config value carries forward from state instead of planning Null, but none was found (modifiers: %+v)", "roles", attribute.PlanModifiers)
+	}
+}
+
+// TestUnitSecurityIdentityResource_UpdatePreservesRolesWhenConfigOmitsThem is a
+// functional companion to the schema-level test above: it exercises the real
+// Update() path with a Config that omits roles (Null) but a Plan that already
+// carries the prior state's roles forward -- reproducing exactly what
+// UseStateForUnknownModifier hands Update() once the schema fix from
+// TestUnitSecurityIdentitySchema_RolesIsComputedWithUseStateForUnknown is in
+// place (see UseStateForUnknownModifier.Modify in
+// vendor/.../tfsdk/attribute_plan_modification.go: it copies AttributeState
+// into AttributePlan when AttributeConfig is null and AttributePlan is
+// unknown). It asserts Update()'s returned Roles is IDENTICAL to the planned
+// value, which is the actual invariant Terraform Core enforces ("the final
+// value of a Known planned attribute must not change") -- not just "close
+// enough" or "the right role names in some form."
+func TestUnitSecurityIdentityResource_UpdatePreservesRolesWhenConfigOmitsThem(t *testing.T) {
+	ctx := context.Background()
+
+	schema, sDiags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	priorRoles := types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "Administrator"},
+	}}
+
+	state := SecurityIdentity{
+		ID:           types.Int64{Value: 42},
+		AccountName:  types.String{Value: "KEYFACTOR\\\\tf-unit-preserve"},
+		IdentityType: types.String{Value: "User"},
+		Valid:        types.Bool{Value: true},
+		Roles:        priorRoles,
+	}
+
+	// The plan is what UseStateForUnknownModifier produces: the prior state's
+	// roles copied forward because config is null and the raw plan was
+	// unknown. Every other field mirrors an unrelated attribute change (a
+	// realistic "unrelated Update").
+	plan := state
+
+	// The config is what the practitioner actually wrote: roles is genuinely
+	// absent (Null), which is what makes this the undeclared case rather than
+	// an explicit re-declaration of the same list.
+	config := SecurityIdentity{
+		ID:           state.ID,
+		AccountName:  state.AccountName,
+		IdentityType: state.IdentityType,
+		Valid:        state.Valid,
+		Roles:        types.List{Null: true, ElemType: types.StringType},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	// tfsdk.Config has no Set method of its own; build its Raw value the same
+	// way Plan/State do and reuse it, since Config/Plan/State all wrap an
+	// identically-shaped (Raw tftypes.Value, Schema tfsdk.Schema) pair.
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
+
+	r := resourceSecurityIdentity{p: provider{configured: true, client: nil}}
+
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result SecurityIdentity
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	var gotRoles []string
+	for _, e := range result.Roles.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected roles element to be types.String, got %T", e)
+		}
+		gotRoles = append(gotRoles, s.Value)
+	}
+
+	assert.Equal(
+		t, []string{"Administrator"}, gotRoles,
+		"Update() must write exactly the planned roles into state when config omits the attribute -- Terraform Core already committed to this planned value, so any divergence is an inconsistent-result-after-apply error",
+	)
+}

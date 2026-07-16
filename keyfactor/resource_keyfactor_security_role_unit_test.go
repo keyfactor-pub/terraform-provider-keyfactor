@@ -150,3 +150,90 @@ func TestUnitSecurityRoleResource_UpdatePreservesPlanPermissionsOrder(t *testing
 		"Update() must write permissions to state in the plan's declared order, not a re-sorted server copy, or Terraform sees drift on any non-alphabetical config",
 	)
 }
+
+// TestUnitSecurityRoleResource_UpdateSurfacesRealServerDrift is the companion
+// regression test to TestUnitSecurityRoleResource_UpdatePreservesPlanPermissionsOrder:
+// unconditionally echoing plan.Permissions back into state (to avoid the
+// ordering-drift bug above) also masks genuine server-side drift — e.g.
+// Command rejecting or dropping a permission during Update. When the
+// server's response Permissions is NOT the same set as the plan's declared
+// permissions (regardless of order), Update() must write the server's
+// permissions into state so the next plan surfaces the real drift, instead
+// of silently echoing back permissions Command never actually persisted.
+func TestUnitSecurityRoleResource_UpdateSurfacesRealServerDrift(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Server drops "Certificates:EditMetadata" -- simulating Command
+		// rejecting/dropping a permission during update. This is a genuinely
+		// different set than the plan, not just a different order.
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role",
+			"Description": "Unit test role",
+			"Permissions": []string{"Certificates:Read"},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	planPermissions := types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "Certificates:Read"},
+		types.String{Value: "Certificates:EditMetadata"},
+	}}
+
+	plan := SecurityRole{
+		ID:          types.Int64{Value: 5},
+		Name:        types.String{Value: "tf-unit-role"},
+		Description: types.String{Value: "Unit test role"},
+		Permissions: planPermissions,
+	}
+	state := plan
+
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityRole{p: provider{configured: true, client: client}}
+
+	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result SecurityRole
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	var permissions []string
+	for _, e := range result.Permissions.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected permissions element to be types.String, got %T", e)
+		}
+		permissions = append(permissions, s.Value)
+	}
+
+	assert.Equal(
+		t, []string{"Certificates:Read"}, permissions,
+		"Update() must write the server's actual permissions into state when they genuinely differ from the plan (real drift), not silently echo back the plan's declared permissions",
+	)
+}

@@ -120,6 +120,68 @@ func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, roleId i
 	return arg
 }
 
+// permissionSetsEqual compares two permission slices as sets — order-
+// insensitive, but case-SENSITIVE (Command permission strings are
+// case-sensitive, e.g. "Certificates:Read").
+func permissionSetsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aSorted := append([]string{}, a...)
+	bSorted := append([]string{}, b...)
+	sort.Strings(aSorted)
+	sort.Strings(bSorted)
+	for i := range aSorted {
+		if aSorted[i] != bSorted[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// permissionsToTfList builds a types.List of permission strings, for writing
+// server-reported permissions into state when they genuinely differ from the
+// plan.
+func permissionsToTfList(permissions []string) types.List {
+	result := types.List{ElemType: types.StringType, Elems: []attr.Value{}}
+	for _, p := range permissions {
+		result.Elems = append(result.Elems, types.String{Value: p})
+	}
+	return result
+}
+
+// permissionsResultForUpdate decides what to write into state's Permissions
+// after a successful Update: it must preserve plan.Permissions verbatim
+// (declared order intact) when the server's response reports the same set of
+// permissions -- regardless of order -- avoiding the alphabetical-resort
+// drift bug this preserves against. But it must NOT mask genuine server-side
+// permission drift (Command rejecting/normalizing/dropping a permission): if
+// the server's reported set differs from the plan's, the server's
+// permissions are written instead, so real drift surfaces on the next plan.
+//
+// A Null/Unknown plan (permissions undeclared) has nothing to preserve the
+// order of, so it is always treated as "sets differ" and the server's
+// permissions win.
+func permissionsResultForUpdate(ctx context.Context, planPermissions types.List, remotePermissions *[]string) types.List {
+	var remote []string
+	if remotePermissions != nil {
+		remote = *remotePermissions
+	}
+
+	if planPermissions.Null || planPermissions.Unknown {
+		return permissionsToTfList(remote)
+	}
+
+	var planValues []string
+	planPermissions.ElementsAs(ctx, &planValues, false)
+
+	if !permissionSetsEqual(planValues, remote) {
+		return permissionsToTfList(remote)
+	}
+
+	return planPermissions
+}
+
 func (r resourceSecurityRole) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -162,7 +224,7 @@ func (r resourceSecurityRole) Update(
 		ID:          types.Int64{Value: int64(state.ID.Value)},
 		Name:        types.String{Value: remoteState.Name},
 		Description: types.String{Value: remoteState.Description},
-		Permissions: plan.Permissions,
+		Permissions: permissionsResultForUpdate(ctx, plan.Permissions, remoteState.Permissions),
 	}
 
 	// Set state

@@ -65,6 +65,76 @@ oauth-security-demo-destroy:
 	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/oauth_security_demo && $(MAKE) destroy SUFFIX="$(SUFFIX)"
 
 
+## security-role-demo: Run full lifecycle demo in terraform/security_role_demo/
+##   (build, init, validate, plan, apply, import, reconcile, drift-check, destroy)
+##   Usage: make security-role-demo [SUFFIX=_TF]
+security-role-demo:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_role_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
+
+## security-role-demo-apply: Build and apply security role demo (leave running for portal review)
+security-role-demo-apply:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_role_demo && $(MAKE) build init validate plan apply SUFFIX="$(SUFFIX)"
+
+## security-role-demo-destroy: Destroy security role demo resources
+security-role-demo-destroy:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_role_demo && $(MAKE) destroy SUFFIX="$(SUFFIX)"
+
+## security-role-demo-oob-drift: Regression proof for PR178 — mutate the role's
+##   permissions out-of-band via a direct Command API call and verify
+##   `terraform plan` detects the drift instead of reporting "No changes".
+security-role-demo-oob-drift:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_role_demo && $(MAKE) build init validate lab-oob-drift SUFFIX="$(SUFFIX)"
+
+
+## security-role-permissions-demo: Run full lifecycle demo in terraform/security_role_permissions_demo/
+##   (build, init, validate, plan, apply, import, reconcile, drift-check, destroy)
+##   Separate demo from security-role-demo (PR178); proves the different
+##   PR179 permissions Optional+Computed fix.
+##   Usage: make security-role-permissions-demo [SUFFIX=_TF]
+security-role-permissions-demo:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_role_permissions_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
+
+## security-role-permissions-demo-apply: Build and apply security role permissions demo (leave running for portal review)
+security-role-permissions-demo-apply:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_role_permissions_demo && $(MAKE) build init validate plan apply SUFFIX="$(SUFFIX)"
+
+## security-role-permissions-demo-destroy: Destroy security role permissions demo resources
+security-role-permissions-demo-destroy:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_role_permissions_demo && $(MAKE) destroy SUFFIX="$(SUFFIX)"
+
+## security-role-permissions-demo-omit-update: Regression proof for PR179 — apply with
+##   permissions declared, then apply again with description changed (unrelated
+##   attribute) and permissions omitted from config; must succeed without an
+##   inconsistent-result crash and permissions must remain intact server-side.
+security-role-permissions-demo-omit-update:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_role_permissions_demo && $(MAKE) build init validate lab-omit-permissions-update SUFFIX="$(SUFFIX)"
+
+
+## security-identity-demo: Run full lifecycle demo in terraform/security_identity_demo/
+##   (build, init, validate, plan, apply, import, reconcile, drift-check, destroy)
+##   NOTE: keyfactor_identity manages AD identities only; the default lab
+##   (KEYFACTOR_ENV_FILE, OAuth/EJBCA, no AD) rejects any account_name at
+##   Create with HTTP 400. Point ACCOUNT_NAME at a real AD-backed lab account.
+##   Usage: make security-identity-demo [SUFFIX=_TF] [ACCOUNT_NAME='DOMAIN\\user']
+security-identity-demo:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_identity_demo && $(MAKE) all SUFFIX="$(SUFFIX)" ACCOUNT_NAME="$(ACCOUNT_NAME)"
+
+## security-identity-demo-apply: Build and apply security identity demo (leave running for portal review)
+security-identity-demo-apply:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_identity_demo && $(MAKE) build init validate plan apply SUFFIX="$(SUFFIX)" ACCOUNT_NAME="$(ACCOUNT_NAME)"
+
+## security-identity-demo-destroy: Destroy security identity demo resources
+security-identity-demo-destroy:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_identity_demo && $(MAKE) destroy SUFFIX="$(SUFFIX)" ACCOUNT_NAME="$(ACCOUNT_NAME)"
+
+## security-identity-demo-omit-update: Regression proof for PR179 — apply with roles
+##   declared, then apply again with roles omitted from config; must succeed
+##   without an inconsistent-result crash and roles must remain intact
+##   server-side. Requires an AD-backed lab (see NOTE above).
+security-identity-demo-omit-update:
+	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/security_identity_demo && $(MAKE) build init validate lab-omit-roles-update SUFFIX="$(SUFFIX)" ACCOUNT_NAME="$(ACCOUNT_NAME)"
+
+
 ## k8s-orchestrator-demo: Run full lifecycle demo in terraform/k8s_orchestrator_demo/
 ##   (build, init, validate, plan, apply, import, drift-check, destroy)
 ##   Usage: make k8s-orchestrator-demo
@@ -1253,4 +1323,4 @@ api-get-cert-store:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
-.PHONY: store-type-demo application-demo oauth-security-demo oauth-security-demo-apply oauth-security-demo-destroy k8s-orchestrator-demo k8s-orchestrator-demo-apply k8s-orchestrator-demo-destroy ecc-pfx-debug-build ecc-pfx-debug-plan ecc-pfx-debug-apply ecc-pfx-debug-destroy build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-cert-import testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-template-role-binding-import testunit-record-cert-store-import testunit-record-oauth-role-import testunit-record-oauth-role-claim-assoc-import testunit-record-oauth-role-claim-assoc-multi testunit-record-oauth-role-nil testunit-record-oauth-claim-nil testunit-record-all testunit-check testunit-ca testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testint-oauth-access-token testint-ca-snapshot testint-ca-diff testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-update-ca api-ca-schema-diff api-ca-gap-fields api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key api-list-agents
+.PHONY: store-type-demo application-demo oauth-security-demo oauth-security-demo-apply oauth-security-demo-destroy security-role-permissions-demo security-role-permissions-demo-apply security-role-permissions-demo-destroy security-role-permissions-demo-omit-update security-identity-demo security-identity-demo-apply security-identity-demo-destroy security-identity-demo-omit-update k8s-orchestrator-demo k8s-orchestrator-demo-apply k8s-orchestrator-demo-destroy ecc-pfx-debug-build ecc-pfx-debug-plan ecc-pfx-debug-apply ecc-pfx-debug-destroy build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-cert-import testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-template-role-binding-import testunit-record-cert-store-import testunit-record-oauth-role-import testunit-record-oauth-role-claim-assoc-import testunit-record-oauth-role-claim-assoc-multi testunit-record-oauth-role-nil testunit-record-oauth-claim-nil testunit-record-all testunit-check testunit-ca testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testint-oauth-access-token testint-ca-snapshot testint-ca-diff testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-update-ca api-ca-schema-diff api-ca-gap-fields api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key api-list-agents

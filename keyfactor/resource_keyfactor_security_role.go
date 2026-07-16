@@ -118,15 +118,24 @@ func (r resourceSecurityRole) Read(
 // user declare this attribute" (see the call site in Update() -- this must be
 // request.Config.Permissions, not request.Plan.Permissions, now that
 // permissions is Optional+Computed; see permissionsResultForUpdate's doc
-// comment for why). A Null value means the user omitted the attribute and the
-// existing permissions must be preserved, so the Permissions field is left
-// nil and omitted from the request (the `omitempty` pointer fires).
-// Previously a Null value resolved to a nil Go slice that was still wrapped
-// in a non-nil pointer (&permissions); the non-nil pointer bypassed omitempty
-// and marshaled as `"Permissions": null`, telling Command to clear every
-// permission the role had. An explicit empty list is a real clear signal and
-// is sent as `[]`.
-func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, declaredPermissions types.List, roleId int) *api.UpdateSecurityRoleArg {
+// comment for why), and the role's current state permissions to fall back to
+// when the attribute is undeclared.
+//
+// Command's PUT /Security/Roles is a full-replace endpoint, NOT a merge
+// patch: confirmed live against a real Command instance, a PUT body that
+// simply omits the "Permissions" key entirely (as opposed to sending
+// "Permissions": null) still resets the role's permissions to an empty list
+// server-side. (This differs from how Command treats Enabled/Private, which
+// ARE preserved when omitted -- Permissions gets special-cased clear-if-absent
+// handling server-side.) So leaving the Permissions field nil/omitted on the
+// request can never mean "leave unchanged" for this endpoint; the only way to
+// preserve the role's existing permissions across an Update that omits
+// `permissions` from config is to resend them explicitly from state.
+//
+// A Null declaredPermissions value means the user omitted the attribute, so
+// statePermissions (the role's last-known permissions) is sent instead. An
+// explicit empty list is a real clear signal and is sent as `[]`.
+func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, declaredPermissions types.List, statePermissions types.List, roleId int) *api.UpdateSecurityRoleArg {
 	arg := &api.UpdateSecurityRoleArg{
 		Id: roleId,
 		CreateSecurityRoleArg: api.CreateSecurityRoleArg{
@@ -134,15 +143,21 @@ func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, declared
 			Description: plan.Description.Value,
 		},
 	}
-	if !declaredPermissions.Null && !declaredPermissions.Unknown {
-		permissions := []string{}
-		declaredPermissions.ElementsAs(ctx, &permissions, false)
-		if permissions == nil {
-			permissions = []string{}
-		}
-		sort.Strings(permissions)
-		arg.Permissions = &permissions
+
+	permsSource := declaredPermissions
+	if permsSource.Null || permsSource.Unknown {
+		permsSource = statePermissions
 	}
+
+	permissions := []string{}
+	if !permsSource.Null && !permsSource.Unknown {
+		permsSource.ElementsAs(ctx, &permissions, false)
+	}
+	if permissions == nil {
+		permissions = []string{}
+	}
+	sort.Strings(permissions)
+	arg.Permissions = &permissions
 	return arg
 }
 
@@ -258,8 +273,13 @@ func (r resourceSecurityRole) Update(
 	roleId := state.ID.Value
 	tflog.SetField(ctx, "id", roleId)
 
-	// Generate API request body from plan
-	updateArg := buildSecurityRoleUpdateArg(ctx, plan, config.Permissions, int(roleId))
+	// Generate API request body from plan. state.Permissions is passed so that
+	// when config.Permissions is undeclared, buildSecurityRoleUpdateArg can
+	// resend the role's current permissions explicitly rather than omitting
+	// the field -- Command's PUT endpoint clears permissions when the field
+	// is absent, it does not treat absence as "leave unchanged" (see
+	// buildSecurityRoleUpdateArg's doc comment).
+	updateArg := buildSecurityRoleUpdateArg(ctx, plan, config.Permissions, state.Permissions, int(roleId))
 
 	remoteState, err := r.p.client.UpdateSecurityRole(updateArg)
 	if err != nil {

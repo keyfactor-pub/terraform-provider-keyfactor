@@ -13,24 +13,46 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestUnitSecurityRoleUpdateArgPermissions is a regression test for the bug
-// where a Null (undeclared) permissions attribute resolved to a nil Go slice
-// that was still wrapped in a non-nil pointer (&permissions). The non-nil
-// pointer bypassed the SDK's `omitempty`, so the request marshaled as
-// `"Permissions": null` and cleared every permission the role had. permissions
-// is Optional (not Computed): Null must omit the field (preserve), while an
-// explicit empty list must be sent as [] (clear).
+// TestUnitSecurityRoleUpdateArgPermissions is a regression test for two
+// distinct bugs found in buildSecurityRoleUpdateArg, in order of discovery:
+//
+//  1. (original) A Null (undeclared) permissions attribute resolved to a nil
+//     Go slice that was still wrapped in a non-nil pointer (&permissions).
+//     The non-nil pointer bypassed the SDK's `omitempty`, so the request
+//     marshaled as `"Permissions": null` and cleared every permission the
+//     role had.
+//  2. (found validating PR179 live against a real Command instance, NOT
+//     catchable by any mock/VCR test that doesn't model the server's actual
+//     merge semantics) Command's PUT /Security/Roles is a full-replace
+//     endpoint: omitting the "Permissions" key from the request body
+//     entirely -- not just avoiding an explicit null -- STILL resets the
+//     role's permissions to an empty list server-side. Unlike Enabled/Private
+//     (which Command preserves when omitted), Permissions gets clear-if-absent
+//     handling. So "omit the field to preserve" was never actually true for
+//     this endpoint; the only way to genuinely preserve permissions across an
+//     Update that omits `permissions` from config is to resend the role's
+//     current (state) permissions explicitly. buildSecurityRoleUpdateArg now
+//     takes the state's permissions as a fallback for exactly this.
 func TestUnitSecurityRoleUpdateArgPermissions(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("undeclared permissions omits the field (preserve)", func(t *testing.T) {
+	statePermissions := types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "certificates:read"},
+		types.String{Value: "auditing:read"},
+	}}
+
+	t.Run("undeclared permissions resends state permissions (preserve)", func(t *testing.T) {
 		plan := SecurityRole{
 			Name:        types.String{Value: "role"},
 			Permissions: types.List{Null: true, ElemType: types.StringType},
 		}
-		arg := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, 5)
-		assert.Nil(t, arg.Permissions,
-			"undeclared permissions must be omitted so Command preserves the role's existing permissions")
+		declared := types.List{Null: true, ElemType: types.StringType}
+		arg := buildSecurityRoleUpdateArg(ctx, plan, declared, statePermissions, 5)
+		if assert.NotNil(t, arg.Permissions,
+			"undeclared permissions must still be sent explicitly -- Command's PUT clears permissions when the field is absent, it does not preserve them") {
+			assert.ElementsMatch(t, []string{"certificates:read", "auditing:read"}, *arg.Permissions,
+				"undeclared permissions must resend the role's current state permissions, not omit the field")
+		}
 	})
 
 	t.Run("explicit empty list clears", func(t *testing.T) {
@@ -38,10 +60,10 @@ func TestUnitSecurityRoleUpdateArgPermissions(t *testing.T) {
 			Name:        types.String{Value: "role"},
 			Permissions: types.List{ElemType: types.StringType, Elems: []attr.Value{}},
 		}
-		arg := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, 5)
+		arg := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, statePermissions, 5)
 		if assert.NotNil(t, arg.Permissions, "explicit permissions=[] must be sent as a clear signal") {
 			assert.Equal(t, []string{}, *arg.Permissions,
-				"an explicit empty permissions list must serialize as [] (clear), not null")
+				"an explicit empty permissions list must serialize as [] (clear), not preserved from state")
 		}
 	})
 
@@ -53,7 +75,7 @@ func TestUnitSecurityRoleUpdateArgPermissions(t *testing.T) {
 				types.String{Value: "auditing:read"},
 			}},
 		}
-		arg := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, 5)
+		arg := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, statePermissions, 5)
 		if assert.NotNil(t, arg.Permissions) {
 			assert.ElementsMatch(t, []string{"certificates:read", "auditing:read"}, *arg.Permissions)
 		}
@@ -499,21 +521,18 @@ func TestUnitSecurityRoleSchema_PermissionsIsComputedWithUseStateForUnknown(t *t
 // final value of a Known planned attribute must not change") -- not just "the
 // right permissions in some form."
 //
-// NOTE on red/green: unlike the schema test above, this one does NOT fail
-// against the pre-fix code, and that gap is itself informative. Pre-fix
-// Update() reads plan.Permissions directly (ignoring Config entirely) and
-// forwards it verbatim to the mock server, which echoes it back unchanged --
-// so the round trip is self-consistent regardless of which value (plan vs
-// config) drove the "declared" decision. The actual defect only exists one
-// layer up, in whether Terraform CORE's plan matches Update()'s return value
-// (see the schema test's comment and TestUnitKeyfactorIdentityResource in
-// resource_keyfactor_security_identity_test.go for a resource where a real
-// Core plan/apply cycle does catch this class of bug). This test is retained
-// as plumbing coverage for the Config-vs-Plan wiring introduced by the fix
-// (a future change that reverts to reading plan.Permissions for the
-// "declared" check would still pass it, by coincidence of this specific
-// scenario, but would fail the schema test's sibling concern if it also
-// dropped Computed/the plan modifier).
+// NOTE on red/green: this test's mock server models Command's REAL PUT
+// /Security/Roles full-replace semantics (confirmed live against
+// int25-4-1.kftestlab.com while validating PR179 end-to-end): a request body
+// that omits the "Permissions" key entirely is treated as clearing
+// permissions to [], not as "leave unchanged". An earlier version of this
+// mock unconditionally echoed back a fixed Permissions list regardless of
+// what the request actually sent, which made it pass even against the
+// original pre-fix buildSecurityRoleUpdateArg (nil/omitted Permissions on an
+// undeclared config) -- masking the exact data-loss bug a real Terraform
+// apply cycle against a live Command instance caught. With the body-aware
+// mock below, this test now genuinely fails if buildSecurityRoleUpdateArg
+// omits Permissions instead of resending the state's current permissions.
 //
 // The server response deliberately matches the prior state's permission set
 // exactly (same set, different case-preserved order is irrelevant here since
@@ -526,12 +545,25 @@ func TestUnitSecurityRoleResource_UpdatePreservesPermissionsWhenConfigOmitsThem(
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Permissions *[]string `json:"Permissions"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+
+		// Mimic Command's real full-replace behavior: an absent/null
+		// Permissions key clears permissions to an empty list; the field is
+		// never treated as "leave unchanged".
+		permissions := []string{}
+		if body.Permissions != nil {
+			permissions = *body.Permissions
+		}
+
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"Id":          5,
 			"Name":        "tf-unit-role-preserve",
 			"Description": "Updated description, unrelated to permissions",
-			"Permissions": []string{"Certificates:Read"},
+			"Permissions": permissions,
 		})
 	})
 	server := httptest.NewTLSServer(mux)

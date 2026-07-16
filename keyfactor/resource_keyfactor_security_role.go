@@ -68,23 +68,41 @@ func (r resourceSecurityRole) Read(
 		return
 	}
 
-	tflog.Info(ctx, "Read called on security remoteState resource")
+	tflog.Info(ctx, "Read called on security role resource")
 	roleId := state.ID.Value
-	//roleName := state.Name.Value
+	roleName := state.Name.Value
 	tflog.SetField(ctx, "role_id", roleId)
 
-	//remoteState, err := r.p.client.GetSecurityRole(int(roleId))
-	//if remoteState == nil {
-	//	response.Diagnostics.AddError("Unknown role error.", fmt.Sprintf("Unable to find role '%s' on Keyfactor. Read failed.", roleName))
-	//	return
-	//}
+	remoteState, err := r.p.client.GetSecurityRole(int(roleId))
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error reading role from Keyfactor.",
+			fmt.Sprintf("Unknown error while trying to read role '%s' (id %v) on Keyfactor. Read failed. ", roleName, roleId)+err.Error(),
+		)
+		return
+	}
+	if remoteState == nil {
+		response.Diagnostics.AddError(
+			"Unknown role error.",
+			fmt.Sprintf("Unable to find role '%s' (id %v) on Keyfactor. Read failed.", roleName, roleId),
+		)
+		return
+	}
 
-	//if err != nil {
-	//	response.Diagnostics.AddError("Error listing roles from Keyfactor.", "Error reading roles: "+err.Error())
-	//	return
-	//}
+	// permissionsResultForUpdate preserves the plan/state's declared order
+	// when the server's permission set is unchanged, but surfaces the
+	// server's permissions when the set genuinely differs -- this is the
+	// same order-vs-drift invariant Update relies on (see doc comment
+	// above), applied here so Read can detect real out-of-band permission
+	// changes without introducing a spurious alphabetical-resort diff.
+	result := SecurityRole{
+		ID:          types.Int64{Value: int64(remoteState.Id)},
+		Name:        types.String{Value: remoteState.Name},
+		Description: types.String{Value: remoteState.Description},
+		Permissions: permissionsResultForUpdate(ctx, state.Permissions, &remoteState.Permissions),
+	}
 
-	diags = response.State.Set(ctx, &state)
+	diags = response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return

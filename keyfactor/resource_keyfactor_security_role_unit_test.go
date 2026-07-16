@@ -237,3 +237,171 @@ func TestUnitSecurityRoleResource_UpdateSurfacesRealServerDrift(t *testing.T) {
 		"Update() must write the server's actual permissions into state when they genuinely differ from the plan (real drift), not silently echo back the plan's declared permissions",
 	)
 }
+
+// TestUnitSecurityRoleResource_ReadDetectsOutOfBandDrift is a regression test
+// for resourceSecurityRole.Read never actually contacting Keyfactor Command:
+// since the resource was first written (2022-09-01, commit dc082e2), the
+// GetSecurityRole call in Read was commented out and Read simply re-set
+// whatever was already in Terraform state. Consequence: if a role's name,
+// description, or permissions were changed directly in Command (out-of-band),
+// `terraform plan`/refresh never detected the drift.
+//
+// This exercises the real Read() path against a mock Command server that
+// returns a Description (and Permissions) different from prior state, proving
+// Read now surfaces the server's current values instead of echoing back
+// stale state.
+func TestUnitSecurityRoleResource_ReadDetectsOutOfBandDrift(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/5", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Server reports a Description and Permissions set that differ from
+		// prior state -- simulating an out-of-band change made directly in
+		// Keyfactor Command.
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role",
+			"Description": "Changed out-of-band in Command",
+			"Permissions": []string{"Certificates:Read"},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	// Prior state reflects what Terraform last knew -- stale relative to the
+	// server's current values above.
+	priorState := SecurityRole{
+		ID:          types.Int64{Value: 5},
+		Name:        types.String{Value: "tf-unit-role"},
+		Description: types.String{Value: "Original description"},
+		Permissions: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "Certificates:Read"},
+			types.String{Value: "Certificates:EditMetadata"},
+		}},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &priorState); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityRole{p: provider{configured: true, client: client}}
+
+	req := tfsdk.ReadResourceRequest{State: stateObj}
+	resp := &tfsdk.ReadResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Read(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Read returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result SecurityRole
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	assert.Equal(
+		t, "Changed out-of-band in Command", result.Description.Value,
+		"Read() must surface the server's current description, not silently re-set stale prior state -- this is the out-of-band drift detection bug",
+	)
+
+	var permissions []string
+	for _, e := range result.Permissions.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected permissions element to be types.String, got %T", e)
+		}
+		permissions = append(permissions, s.Value)
+	}
+	assert.Equal(
+		t, []string{"Certificates:Read"}, permissions,
+		"Read() must surface the server's actual permission set when it genuinely differs from prior state (real drift), not echo back stale state",
+	)
+}
+
+// TestUnitSecurityRoleResource_ReadPreservesPermissionsOrderWhenUnchanged is
+// the companion test to
+// TestUnitSecurityRoleResource_ReadDetectsOutOfBandDrift: it guards against a
+// naive fix that always writes the server's (alphabetically sorted)
+// permissions into state on Read, which would introduce a spurious
+// "permissions reordered" diff on every refresh even when nothing changed.
+// When the server's permission set is unchanged (same set, any order), Read
+// must preserve the state's declared order.
+func TestUnitSecurityRoleResource_ReadPreservesPermissionsOrderWhenUnchanged(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/5", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Server returns the same set of permissions as prior state, but
+		// alphabetically sorted -- a different order.
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role",
+			"Description": "Unit test role",
+			"Permissions": []string{"Certificates:EditMetadata", "Certificates:Read"},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	// Prior state declares permissions in non-alphabetical order.
+	priorState := SecurityRole{
+		ID:          types.Int64{Value: 5},
+		Name:        types.String{Value: "tf-unit-role"},
+		Description: types.String{Value: "Unit test role"},
+		Permissions: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "Certificates:Read"},
+			types.String{Value: "Certificates:EditMetadata"},
+		}},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &priorState); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityRole{p: provider{configured: true, client: client}}
+
+	req := tfsdk.ReadResourceRequest{State: stateObj}
+	resp := &tfsdk.ReadResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Read(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Read returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result SecurityRole
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	var permissions []string
+	for _, e := range result.Permissions.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected permissions element to be types.String, got %T", e)
+		}
+		permissions = append(permissions, s.Value)
+	}
+
+	assert.Equal(
+		t, []string{"Certificates:Read", "Certificates:EditMetadata"}, permissions,
+		"Read() must preserve prior state's declared permissions order when the server's set is unchanged, not write back a re-sorted server copy",
+	)
+}

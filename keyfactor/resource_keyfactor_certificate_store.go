@@ -560,7 +560,17 @@ func (r resourceCertificateStore) resolveContainerAssignmentForUpdate(
 		return id, effectiveName, nil
 	}
 
-	planTrulyUndeclared := plan.ApplicationName.IsNull() && plan.ContainerName.IsNull()
+	// Terraform Core resolves all Unknown plan values to known values before
+	// invoking Update() during apply, so ApplicationName/ContainerName should
+	// never actually be Unknown here in production. Treat Unknown the same
+	// as Null defensively anyway (rather than falling through to
+	// containerId=0, which — per GH issue #175 — Command interprets as an
+	// explicit "clear the assignment" instruction): this function is also
+	// called directly from unit tests with hand-constructed CertificateStore
+	// values, and there's no safe reason to require callers to know that
+	// Unknown must be normalized to Null before calling in.
+	planTrulyUndeclared := (plan.ApplicationName.IsNull() || plan.ApplicationName.IsUnknown()) &&
+		(plan.ContainerName.IsNull() || plan.ContainerName.IsUnknown())
 	if planTrulyUndeclared && state.ContainerID.Value != 0 {
 		preservedId := int(state.ContainerID.Value)
 		preservedName, preservedNameIsNull := state.effectiveContainerName()
@@ -605,6 +615,30 @@ func (r resourceCertificateStore) resolveContainerAssignmentForUpdate(
 	}
 
 	return 0, "", nil
+}
+
+// resolveContainerNameAfterUpdate determines the container/application name
+// to write into state once Update()'s UpdateStore call has succeeded.
+//
+// It always performs a fresh by-ID lookup via lookupContainerNameByID rather
+// than trusting updateEffectiveName (the value resolveContainerAssignmentForUpdate
+// computed *before* the update request was sent) as-is. A prior optimization
+// reused updateEffectiveName directly whenever the server-assigned
+// resolvedContainerId matched the requested containerId, on the assumption
+// that resolveContainerAssignmentForUpdate had already confidently resolved
+// it. That assumption doesn't hold in resolveContainerAssignmentForUpdate's
+// "preserve existing assignment" branch: when state already had a resolved
+// name, that name is carried over from state as-is, without querying Command
+// in this Update() call. If Command's canonical name has since changed
+// out-of-band (case/whitespace normalization, or a rename between the last
+// Read() and this Update() while the ID stayed stable), the optimization
+// would write the stale state value into the new state, diverging from what
+// an immediate Read() would independently produce — an "inconsistent result
+// after apply" risk. lookupContainerNameByID still accepts updateEffectiveName
+// as its fallback hint, so a lookup failure degrades to the previous
+// behavior instead of nulling the field.
+func (r resourceCertificateStore) resolveContainerNameAfterUpdate(ctx context.Context, resolvedContainerId int, updateEffectiveName string) string {
+	return lookupContainerNameByID(ctx, r.p.client, resolvedContainerId, updateEffectiveName)
 }
 
 func (r resourceCertificateStore) Update(
@@ -798,21 +832,7 @@ func (r resourceCertificateStore) Update(
 		ServerUseSsl:          plan.ServerUseSsl,
 	}
 	// Resolve container name from ContainerId (server never returns ContainerName).
-	//
-	// resolveContainerAssignmentForUpdate already confidently resolved
-	// updateEffectiveName above (either from an explicit plan value, or by
-	// preserving/re-resolving it from state) whenever it's non-empty. As long
-	// as the container/application actually assigned server-side
-	// (updateResponse.ContainerId) matches what we asked for, reuse that name
-	// instead of spending up to 2 more HTTP round trips re-resolving
-	// something we already know. Only fall back to a fresh lookup when we
-	// don't already have a confident answer (updateEffectiveName is empty) or
-	// the server assigned something other than what we requested.
-	if updateResponse.ContainerId == containerId && updateEffectiveName != "" {
-		result.syncApplicationAndContainerName(updateEffectiveName)
-	} else {
-		result.syncApplicationAndContainerName(lookupContainerNameByID(ctx, r.p.client, updateResponse.ContainerId, updateEffectiveName))
-	}
+	result.syncApplicationAndContainerName(r.resolveContainerNameAfterUpdate(ctx, updateResponse.ContainerId, updateEffectiveName))
 
 	// Set state
 	diags = response.State.Set(ctx, &result)

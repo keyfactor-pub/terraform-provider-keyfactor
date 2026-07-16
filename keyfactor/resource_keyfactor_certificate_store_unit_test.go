@@ -487,3 +487,158 @@ func TestUnitCertificateStoreUpdate_PreservedAssignmentNeverPairsWithEmptyName(t
 		)
 	}
 }
+
+// TestUnitCertificateStoreUpdate_ReResolvesContainerNameByIDInsteadOfTrustingStaleState
+// is the red/green regression test for the follow-up to GH issue #175:
+// resolveContainerNameAfterUpdate (called from Update() after a successful
+// UpdateStore call) must always re-resolve the container/application name via
+// a fresh by-ID lookup, never trust the possibly-stale
+// updateEffectiveName value resolveContainerAssignmentForUpdate computed
+// *before* the update request was sent.
+//
+// Root cause this guards against: resolveContainerAssignmentForUpdate's
+// "preserve existing assignment" branch (config declares no
+// application_name/container_name; a real container_id already exists in
+// state) carries the name over from state as-is, without querying Command in
+// that same Update() call. If Command's canonical name changed out-of-band
+// between the last Read() and this Update() while the ID stayed stable (a
+// case/whitespace normalization, or an out-of-band rename), a prior
+// optimization removed by this fix would have written that stale name into
+// the new state whenever the server-assigned container ID matched the
+// requested one — diverging from what an immediate Read() would
+// independently produce via lookupContainerNameByID, i.e. exactly a
+// "provider produced inconsistent result after apply" trigger.
+//
+// oldBehavior below is a faithful, byte-for-byte transcription of the
+// removed Update() branch (see the diff in commit f6c1809 and this fix's
+// commit message) — not a guess at what the bug looked like. Asserting it
+// against these inputs first proves the reproduction is real (red) before
+// asserting the fixed production helper (resolveContainerNameAfterUpdate)
+// produces the authoritative name instead (green).
+func TestUnitCertificateStoreUpdate_ReResolvesContainerNameByIDInsteadOfTrustingStaleState(t *testing.T) {
+	const (
+		containerID   = 500
+		staleName     = "mycontainer" // carried over from state, never re-verified against Command this call
+		canonicalName = "MyContainer" // what Command's by-ID endpoint actually returns now
+	)
+	var byIDHits int
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(fmt.Sprintf("/KeyfactorAPI/CertificateStoreContainers/%d", containerID), func(w http.ResponseWriter, r *http.Request) {
+		byIDHits++
+		id := containerID
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(api.CertStoreContainer{Id: &id, Name: canonicalName})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newContainerLookupClient(server)
+	r := resourceCertificateStore{p: provider{client: client}}
+
+	// oldBehavior mirrors the pre-fix Update() code exactly:
+	//   if updateResponse.ContainerId == containerId && updateEffectiveName != "" {
+	//       result.syncApplicationAndContainerName(updateEffectiveName)
+	//   } else {
+	//       result.syncApplicationAndContainerName(lookupContainerNameByID(...))
+	//   }
+	oldBehavior := func(updateResponseContainerId, requestedContainerId int, updateEffectiveName string) string {
+		if updateResponseContainerId == requestedContainerId && updateEffectiveName != "" {
+			return updateEffectiveName
+		}
+		return lookupContainerNameByID(context.Background(), client, updateResponseContainerId, updateEffectiveName)
+	}
+
+	// RED: reproduce the bug. The server assigned exactly the requested
+	// container (updateResponse.ContainerId == containerId == 500), and
+	// updateEffectiveName is non-empty, so the removed optimization would
+	// have trusted staleName without ever calling the API.
+	reproduced := oldBehavior(containerID, containerID, staleName)
+	if reproduced != staleName {
+		t.Fatalf("sanity check failed: expected the old-behavior transcription to reproduce the stale name %q, got %q", staleName, reproduced)
+	}
+	if byIDHits != 0 {
+		t.Fatalf("old-behavior transcription must never call the API in this branch (that's the bug) — got %d by-ID hits", byIDHits)
+	}
+
+	// GREEN: the fix. resolveContainerNameAfterUpdate always re-resolves via
+	// the by-ID endpoint, so the authoritative/current name wins over the
+	// stale one — matching what an independent Read() would produce.
+	got := r.resolveContainerNameAfterUpdate(context.Background(), containerID, staleName)
+	if got != canonicalName {
+		t.Fatalf(
+			"expected resolveContainerNameAfterUpdate to re-resolve and return the authoritative name %q, got %q (byIDHits=%d) — "+
+				"Update() must not diverge from what Read() would independently produce",
+			canonicalName, got, byIDHits,
+		)
+	}
+	if byIDHits == 0 {
+		t.Fatalf("expected resolveContainerNameAfterUpdate to call the by-ID endpoint at least once")
+	}
+}
+
+// TestUnitResolveContainerAssignmentForUpdate_UnknownPlanValuesDoNotMisbehave
+// guards an invariant flagged in review: resolveContainerAssignmentForUpdate's
+// "truly undeclared" check originally read
+// `plan.ApplicationName.IsNull() && plan.ContainerName.IsNull()` — checking
+// IsNull() only, never IsUnknown(). In practice, Terraform Core resolves all
+// Unknown plan values to known values before invoking Update() during apply,
+// so IsUnknown() should never be true on the plan passed into this function
+// in a real apply. This test constructs that (should-be-unreachable-in-
+// production) input directly — ApplicationName/ContainerName both Unknown,
+// with a real existing container_id in state — to check whether the current
+// behavior is actually safe.
+//
+// It is not, as originally written: with the pre-fix check, Unknown is not
+// Null, so planTrulyUndeclared was false, the "preserve existing assignment"
+// branch never ran, and the function fell all the way through to
+// `return 0, "", nil` — resolving containerId to 0 and, per GH issue #175,
+// silently clearing a real container/application assignment. This test
+// failed against that code (containerId == 0) before the fix below.
+//
+// The fix broadens planTrulyUndeclared to treat Unknown the same as Null
+// (`IsNull() || IsUnknown()` for both fields), so the existing assignment is
+// preserved here exactly as it already is for genuinely Null plan values.
+// This is a defensive, production-inert change: real Update() calls never
+// see Unknown here, so this only changes behavior for hand-constructed
+// inputs like this test (or any future caller) that don't go through
+// Terraform Core's plan-resolution first.
+func TestUnitResolveContainerAssignmentForUpdate_UnknownPlanValuesDoNotMisbehave(t *testing.T) {
+	r := resourceCertificateStore{p: provider{}}
+
+	state := CertificateStore{
+		ContainerID:     types.Int64{Value: 500},
+		ContainerName:   types.String{Value: "existing-app", Null: false},
+		ApplicationName: types.String{Value: "existing-app", Null: false},
+	}
+	plan := CertificateStore{
+		ContainerName:   types.String{Unknown: true},
+		ApplicationName: types.String{Unknown: true},
+	}
+
+	var containerId int
+	var effectiveName string
+	var err error
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("resolveContainerAssignmentForUpdate panicked on Unknown plan values: %v", rec)
+			}
+		}()
+		containerId, effectiveName, err = r.resolveContainerAssignmentForUpdate(context.Background(), plan, state)
+	}()
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+
+	// The load-bearing invariant: an existing real assignment (container_id
+	// 500) must never be silently cleared (resolved to 0) just because the
+	// plan values happen to be Unknown rather than Null.
+	if containerId == 0 {
+		t.Fatalf(
+			"resolveContainerAssignmentForUpdate resolved containerId to 0 for Unknown plan values with an existing assignment (state container_id=500) — "+
+				"this would clear a real assignment; got effectiveName %q",
+			effectiveName,
+		)
+	}
+}

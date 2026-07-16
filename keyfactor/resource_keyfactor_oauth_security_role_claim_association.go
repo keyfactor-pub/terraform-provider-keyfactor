@@ -278,6 +278,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 			"Unknown OAuth security claim error.",
 			fmt.Sprintf("Unknown error while trying to import OAuth security claim ID %d from Keyfactor. Read failed. "+err.Error(), claimId),
 		)
+
+		return
 	}
 
 	existingClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteRoleState, nil)

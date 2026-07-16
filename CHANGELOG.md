@@ -21,6 +21,7 @@ _None — this release is fixes plus internal/dependency work._
 A resource-wide audit for the same bug class as #175 (a resolved zero/empty/nil value collapsing "attribute never declared" and "attribute explicitly cleared" into one signal, silently clearing real server-side state or crashing the provider) turned up and fixed 20 additional issues across 12 resources:
 
 - fix: nil-pointer-dereference crashes eliminated in `keyfactor_certificate_store` (agent lookup), `keyfactor_certificate_deploy` (failed certificate read), `keyfactor_oauth_security_role_claim_association` (null role fields), and `mapOAuthSecurityClaimsFromRole` (null claim provider)
+- fix: `keyfactor_oauth_security_role_claim_association` `Create` no longer falls through and dereferences a nil claim response when the security-claim GET fails
 - fix: `keyfactor_application` no longer silently drops a live schedule on an unrelated update when `schedule_*` attributes are undeclared
 - fix: `keyfactor_certificate_authority` no longer silently clears scan schedules or `allowed_requesters` on an unrelated update
 - fix: `keyfactor_certificate_store_type` explicit `false`/empty-string/`[]` values are no longer indistinguishable from "not configured" and dropped from the request
@@ -43,7 +44,7 @@ A resource-wide audit for the same bug class as #175 (a resolved zero/empty/nil 
 
 - **GA dependency gate:** `go.mod` is pinned to `keyfactor-go-client/v3 v3.5.6-rc.2`. Move the pin (and the dependency note above) to GA `v3.5.6` once Keyfactor/keyfactor-go-client#55 and #56 are merged and released. This release stays a prerelease until then.
 - **RC-only validation:** the unit suite is validated against `v3.5.6-rc.2` (including a vendor-free run against the real published module) and integration is green on the lab; re-validate against GA `v3.5.6` before release.
-- **Deferred follow-ups (non-blocking):** extract the shared `httptest` mock helper (currently duplicated across unit tests); optional structured-logging (SIEM-friendly fields) enhancements from the compliance audit; a same-class fall-through/nil-deref bug noted but not yet fixed in `keyfactor_oauth_security_role_claim_association`'s `Create()` claim-GET path.
+- **Deferred follow-ups (non-blocking):** extract the shared `httptest` mock helper (currently duplicated across unit tests); optional structured-logging (SIEM-friendly fields) enhancements from the compliance audit.
 
 # v2.9.0
 

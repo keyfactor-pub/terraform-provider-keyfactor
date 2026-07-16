@@ -148,6 +148,90 @@ func TestUnitOAuthSecurityRoleClaimAssociation_CreateNullRoleFieldsDoesNotPanic(
 	}
 }
 
+// TestUnitOAuthSecurityRoleClaimAssociation_CreateClaimGetErrorDoesNotPanic is
+// the red/green regression test for the fall-through bug in
+// resourceOAuthSecurityRoleClaimAssociation.Create: when the security-claim
+// GET (`/Security/Claims/{claimId}`) fails, the generated SDK Execute()
+// returns a nil `*SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse`
+// alongside the error, but Create only called response.Diagnostics.AddError
+// without returning — execution fell through and dereferenced
+// `remoteClaimState.Provider`, panicking on the nil claim response. This
+// mirrors the identical (already-fixed) pattern for the role GET a few lines
+// above.
+func TestUnitOAuthSecurityRoleClaimAssociation_CreateClaimGetErrorDoesNotPanic(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		roleId  int32 = 44
+		claimId int32 = 8
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(fmt.Sprintf("/KeyfactorAPI/Security/Roles/%d", roleId), func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(nullFieldsRoleResponseBody(roleId)))
+	})
+	mux.HandleFunc(fmt.Sprintf("/KeyfactorAPI/Security/Claims/%d", claimId), func(w http.ResponseWriter, r *http.Request) {
+		// Simulate the claim GET failing. The generated SDK Execute() treats
+		// any status >= 300 as an error and returns a nil claim response.
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"Message":"internal error"}`))
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	sdkClient := newOAuthRoleClaimAssocMockClient(server)
+
+	schema, sDiags := resourceOAuthSecurityRoleClaimAssociationType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	plan := OAuthSecurityRoleClaimAssociation{
+		ID:      types.String{Unknown: true},
+		RoleID:  types.Int64{Value: int64(roleId)},
+		ClaimID: types.Int64{Value: int64(claimId)},
+	}
+
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceOAuthSecurityRoleClaimAssociation{p: provider{configured: true, sdkClient: sdkClient}}
+
+	req := tfsdk.CreateResourceRequest{Plan: planObj}
+	resp := &tfsdk.CreateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	// The whole point of this regression test: Create must NOT panic when the
+	// claim GET fails, and must surface a diagnostic instead of silently
+	// continuing.
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("Create panicked (claim-GET-error fall-through regression): %v", rec)
+			}
+		}()
+		r.Create(ctx, req, resp)
+	}()
+
+	if !resp.Diagnostics.HasError() {
+		t.Fatalf("expected Create to fail with a diagnostic when the claim GET errors, got no diagnostics")
+	}
+
+	found := false
+	for _, d := range resp.Diagnostics {
+		if strings.Contains(d.Summary(), "claim") || strings.Contains(d.Detail(), "claim") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected a diagnostic mentioning the claim error, got: %+v", resp.Diagnostics)
+	}
+}
+
 // TestUnitOAuthSecurityRoleClaimAssociation_DeleteNullRoleFieldsDoesNotPanic is
 // the Delete-path counterpart: the same nil-deref pattern exists when building
 // the update request that removes the claim from the role.

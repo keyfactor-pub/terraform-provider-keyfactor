@@ -153,6 +153,10 @@ func (r resourceCertificateTemplateRoleBinding) Read(
 	diags = state.TemplateNames.ElementsAs(ctx, &templateNames, true)
 	kfTemplates, err := kfClient.GetTemplates()
 	if err != nil {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_TEMPLATE_READ,
+			"There was an error getting templates from Keyfactor Command: "+err.Error(),
+		)
 		return
 	}
 	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)

@@ -214,3 +214,74 @@ func TestUnitTemplateRoleBindingRead_DetectsOutOfBandDetach(t *testing.T) {
 
 	assert.Equal(t, []string{"WebServer"}, names, "Read() must drop templates the role was detached from out-of-band, not echo back stale prior state")
 }
+
+// TestUnitTemplateRoleBindingRead_SurfacesGetTemplatesError is a regression
+// test for Read() silently swallowing a GetTemplates() API error:
+//
+//	kfTemplates, err := kfClient.GetTemplates()
+//	if err != nil {
+//		return
+//	}
+//
+// This returned with NO diagnostic and no logging, so a transient API failure
+// during Read (e.g. Command unreachable, auth expired) looked identical to a
+// completely successful, no-op refresh -- `terraform plan`/refresh would
+// silently keep stale state instead of surfacing the error, and worse, execution
+// would have fallen through to the un-set `state` if the early return had been
+// removed by a future edit. Create()'s identical GetTemplates() call already
+// handles this correctly (AddError + return); Read() must mirror it.
+//
+// This drives Read() end-to-end against a mock Command server whose /Templates
+// endpoint returns 500, and asserts response.Diagnostics.HasError() is true
+// with the same ERR_SUMMARY_TEMPLATE_READ summary Create() uses.
+func TestUnitTemplateRoleBindingRead_SurfacesGetTemplatesError(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Templates/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"Message":"simulated Command outage"}`))
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceCertificateTemplateRoleBindingType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	priorState := CertificateTemplateRoleBinding{
+		ID:       types.String{Value: "deadbeef"},
+		RoleName: types.String{Value: "tf-unit-role"},
+		TemplateNames: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "WebServer"},
+		}},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &priorState); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceCertificateTemplateRoleBinding{p: provider{configured: true, client: client}}
+
+	req := tfsdk.ReadResourceRequest{State: stateObj}
+	resp := &tfsdk.ReadResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Read(ctx, req, resp)
+
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("Read() must surface a diagnostic when GetTemplates() fails, not silently return success")
+	}
+
+	found := false
+	for _, d := range resp.Diagnostics {
+		if d.Summary() == ERR_SUMMARY_TEMPLATE_READ {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected a diagnostic with summary %q (matching Create()'s handling of the same GetTemplates() error), got: %+v", ERR_SUMMARY_TEMPLATE_READ, resp.Diagnostics)
+}

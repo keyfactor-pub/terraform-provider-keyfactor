@@ -316,6 +316,21 @@ func TestUnitMapOAuthSecurityClaimsFromRole_NilProviderDoesNotPanic(t *testing.T
 	// zero-value "" (matching getStringType's null-safe convention used
 	// elsewhere in this file), never panic.
 	assert.Equal(t, "", mapped.ProviderAuthenticationScheme)
+
+	// Silently substituting "" here is itself a corruption risk on the
+	// full-replace PUT this feeds (see the doc comment on
+	// mapOAuthSecurityClaimsFromRole): if Command omitted Provider due to the
+	// known bug rather than the claim genuinely having none, this update
+	// would clear a real provider association. A warning must surface so the
+	// risk is visible instead of masked.
+	foundWarning := false
+	for _, d := range diagnostics.Warnings() {
+		if d.Summary() == "OAuth security claim missing provider association" {
+			foundWarning = true
+			break
+		}
+	}
+	assert.True(t, foundWarning, "expected a warning diagnostic flagging the missing Provider sub-object, got: %+v", diagnostics)
 }
 
 func TestNormalizeSerialNumber(t *testing.T) {

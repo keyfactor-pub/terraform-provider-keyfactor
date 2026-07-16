@@ -388,10 +388,52 @@ func mapOAuthSecurityClaimsFromRole(
 
 		// claim.Provider may be nil when the API omits the sub-object (the same
 		// condition mapOAuthSecurityClaim already guards against, e.g. Command
-		// 25.5.1 + Authentik OIDC).
+		// 25.5.1 + Authentik OIDC). Unlike mapOAuthSecurityClaim (used for
+		// Read/state-mapping of a single claim, where a `local` prior value is
+		// available to fall back to), this function has no prior-value
+		// fallback: it maps EVERY claim on the role from the server's own
+		// just-fetched response, for callers that need to preserve claims
+		// they are not modifying (resource_keyfactor_oauth_security_role.go's
+		// Update, and the attach/detach paths in
+		// resource_keyfactor_oauth_security_role_claim_association.go) across
+		// a full-replace PUT. If the omission is a genuine "no provider"
+		// state, substituting "" is correct; if it is the same server-side
+		// omission bug the comment above references, silently substituting ""
+		// here sends `"ProviderAuthenticationScheme": ""` for a claim that
+		// still has a real provider association, and the PUT is a full
+		// replace -- Command would clear that claim's provider on an
+		// otherwise-unrelated update. There is no reliable way to distinguish
+		// the two cases from inside this function, so surface a warning
+		// instead of masking the risk.
 		var providerAuthScheme *string
 		if claim.Provider != nil {
 			providerAuthScheme = claim.Provider.AuthenticationScheme.Get()
+		} else {
+			claimId := int32(-1)
+			if claim.Id != nil {
+				claimId = *claim.Id
+			}
+			claimType := ""
+			if v := claim.ClaimType.Get(); v != nil {
+				claimType = *v
+			}
+			claimValue := ""
+			if v := claim.ClaimValue.Get(); v != nil {
+				claimValue = *v
+			}
+			diagnostics.AddWarning(
+				"OAuth security claim missing provider association",
+				fmt.Sprintf(
+					"Keyfactor Command returned claim ID %d (type %q, value %q) with no Provider sub-object. "+
+						"This provider is preserving unrelated claims verbatim across a full-replace update, but "+
+						"cannot tell whether this claim genuinely has no provider association or whether Command "+
+						"omitted a real one (a known issue on some Command/identity-provider combinations, e.g. "+
+						"Command 25.5.1 + Authentik OIDC). ProviderAuthenticationScheme will be sent as an empty "+
+						"string for this claim; if it previously had a provider association, this update may clear "+
+						"it. Verify this claim's provider association in Keyfactor Command after applying.",
+					claimId, claimType, claimValue,
+				),
+			)
 		}
 
 		claimTypeEnum, err := kfv2.ParseCSSCMSCoreEnumsClaimType(*claim.ClaimType.Get())

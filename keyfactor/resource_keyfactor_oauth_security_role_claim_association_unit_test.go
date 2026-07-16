@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	kfsdk "github.com/Keyfactor/keyfactor-go-client-sdk/v24"
@@ -145,6 +146,132 @@ func TestUnitOAuthSecurityRoleClaimAssociation_CreateNullRoleFieldsDoesNotPanic(
 
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("expected Create to succeed with null role Name/Description/PermissionSetId, got diagnostics: %+v", resp.Diagnostics)
+	}
+}
+
+// oauthRoleClaimAssocUnreachableAuthConfig points the SDK at an address
+// nothing is listening on, so the HTTP client fails at the transport layer
+// (connection refused) before any *http.Response is read. This reproduces
+// the shape the generated SDK's callAPI/Execute methods return on a
+// transport-level failure: (nil, err) — a nil *http.Response alongside a
+// non-nil error.
+type oauthRoleClaimAssocUnreachableAuthConfig struct{}
+
+func (m *oauthRoleClaimAssocUnreachableAuthConfig) GetServerConfig() *auth_providers.Server {
+	return &auth_providers.Server{
+		Host:          "127.0.0.1:1",
+		SkipTLSVerify: true,
+	}
+}
+
+func (m *oauthRoleClaimAssocUnreachableAuthConfig) GetHttpClient() (*http.Client, error) {
+	return &http.Client{Timeout: 5 * time.Second}, nil
+}
+
+func (m *oauthRoleClaimAssocUnreachableAuthConfig) Authenticate() error { return nil }
+
+func newOAuthRoleClaimAssocUnreachableClient() *kfsdk.APIClient {
+	return kfsdk.NewAPIClientWithAuth(&oauthRoleClaimAssocUnreachableAuthConfig{})
+}
+
+// TestUnitOAuthSecurityRoleClaimAssociation_CreateTransportErrorDoesNotPanic
+// is the red/green regression test for the bug where Create() logs
+// httpResp.StatusCode via tflog.Debug before checking `err != nil`. On a
+// transport-level failure (DNS/connection-refused/TLS failure), the
+// generated SDK's callAPI returns a nil *http.Response alongside the error,
+// and Execute() passes that nil response straight through — dereferencing
+// .StatusCode on it panics.
+func TestUnitOAuthSecurityRoleClaimAssociation_CreateTransportErrorDoesNotPanic(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		roleId  int32 = 45
+		claimId int32 = 9
+	)
+
+	sdkClient := newOAuthRoleClaimAssocUnreachableClient()
+
+	schema, sDiags := resourceOAuthSecurityRoleClaimAssociationType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	plan := OAuthSecurityRoleClaimAssociation{
+		ID:      types.String{Unknown: true},
+		RoleID:  types.Int64{Value: int64(roleId)},
+		ClaimID: types.Int64{Value: int64(claimId)},
+	}
+
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceOAuthSecurityRoleClaimAssociation{p: provider{configured: true, sdkClient: sdkClient}}
+
+	req := tfsdk.CreateResourceRequest{Plan: planObj}
+	resp := &tfsdk.CreateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("Create panicked (nil httpResp transport-error regression): %v", rec)
+			}
+		}()
+		r.Create(ctx, req, resp)
+	}()
+
+	if !resp.Diagnostics.HasError() {
+		t.Fatalf("expected Create to fail with a diagnostic on a transport-level error, got no diagnostics")
+	}
+}
+
+// TestUnitOAuthSecurityRoleClaimAssociation_DeleteTransportErrorDoesNotPanic
+// is the Delete-path counterpart: Delete() dereferences httpReq.StatusCode
+// (both in the tflog.Debug call and the `== 404` check) before checking
+// `err != nil`, and panics identically on a nil httpReq.
+func TestUnitOAuthSecurityRoleClaimAssociation_DeleteTransportErrorDoesNotPanic(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		roleId  int32 = 46
+		claimId int32 = 10
+	)
+
+	sdkClient := newOAuthRoleClaimAssocUnreachableClient()
+
+	schema, sDiags := resourceOAuthSecurityRoleClaimAssociationType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	state := OAuthSecurityRoleClaimAssociation{
+		ID:      types.String{Value: fmt.Sprintf("%d/%d", roleId, claimId)},
+		RoleID:  types.Int64{Value: int64(roleId)},
+		ClaimID: types.Int64{Value: int64(claimId)},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceOAuthSecurityRoleClaimAssociation{p: provider{configured: true, sdkClient: sdkClient}}
+
+	req := tfsdk.DeleteResourceRequest{State: stateObj}
+	resp := &tfsdk.DeleteResourceResponse{State: stateObj}
+
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("Delete panicked (nil httpReq transport-error regression): %v", rec)
+			}
+		}()
+		r.Delete(ctx, req, resp)
+	}()
+
+	if !resp.Diagnostics.HasError() {
+		t.Fatalf("expected Delete to fail with a diagnostic on a transport-level error, got no diagnostics")
 	}
 }
 

@@ -160,15 +160,13 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 
 	remoteState, httpReq, err := req.Execute()
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
-
-	if httpReq.StatusCode == 404 {
-		tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
-		response.State.RemoveResource(ctx)
-		return
-	}
-
 	if err != nil {
+		if httpReq != nil && httpReq.StatusCode == 404 {
+			tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+			response.State.RemoveResource(ctx)
+			return
+		}
+
 		response.Diagnostics.AddError(
 			"Unknown OAuth security role error.",
 			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. "+err.Error(), roleId),
@@ -176,6 +174,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 
 		return
 	}
+
+	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 
 	updatedClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteState, &claimId)
 	if !ok {
@@ -254,8 +254,6 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 	remoteRoleState, httpResp, err := roleRequest.Execute()
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpResp.StatusCode))
-
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Unknown OAuth security role error.",
@@ -264,6 +262,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 		return
 	}
+
+	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpResp.StatusCode))
 
 	claimsApi := r.p.sdkClient.V1.SecurityClaimsApi
 	claimRequest := claimsApi.NewGetSecurityClaimsByIdRequest(ctx, claimId)

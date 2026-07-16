@@ -414,3 +414,55 @@ func TestNormalizePEMLineEndings(t *testing.T) {
 		})
 	}
 }
+
+// TestUnitEnumPtrToTfInt64 covers the generic helper that replaced four
+// near-identical 5-line hand-rolled converters (enrollmentTypePtrToTfInt64
+// and keyRetentionPtrToTfInt64 in resource_keyfactor_certificate_authority.go,
+// cleanupTimeUnitsPtrToTfInt64 in the same file, and
+// pamParameterDataTypePtrToTfInt64 in resource_keyfactor_pam_provider_type.go)
+// -- a pure refactor with no intended behavior change. Nil must map to Null
+// (not the enum's zero value, which is itself meaningful for several of
+// these enums), and a non-nil pointer must carry its value through as an
+// int64.
+func TestUnitEnumPtrToTfInt64(t *testing.T) {
+	type fakeEnum int32
+
+	t.Run("nil pointer maps to Null", func(t *testing.T) {
+		got := enumPtrToTfInt64[fakeEnum](nil)
+		assert.True(t, got.Null, "expected Null=true for a nil enum pointer")
+	})
+
+	t.Run("non-nil pointer carries its value, including the enum zero value", func(t *testing.T) {
+		zero := fakeEnum(0)
+		got := enumPtrToTfInt64(&zero)
+		assert.False(t, got.Null, "expected Null=false for a non-nil pointer, even when the pointee is the enum zero value")
+		assert.Equal(t, int64(0), got.Value)
+
+		five := fakeEnum(5)
+		got = enumPtrToTfInt64(&five)
+		assert.False(t, got.Null)
+		assert.Equal(t, int64(5), got.Value)
+	})
+
+	t.Run("thin wrappers around real SDK enum types still delegate correctly", func(t *testing.T) {
+		// Exercises the actual call sites' types, not just the generic
+		// helper directly -- guards against a future edit accidentally
+		// reintroducing divergent behavior in one of the wrappers.
+		assert.True(t, enrollmentTypePtrToTfInt64(nil).Null)
+		assert.True(t, keyRetentionPtrToTfInt64(nil).Null)
+		assert.True(t, cleanupTimeUnitsPtrToTfInt64(nil).Null)
+		assert.True(t, pamParameterDataTypePtrToTfInt64(nil).Null)
+
+		et := kfv1.CSSCMSCoreEnumsEnrollmentType(2)
+		assert.Equal(t, int64(2), enrollmentTypePtrToTfInt64(&et).Value)
+
+		kr := kfv1.CSSCMSCoreEnumsKeyRetentionPolicy(3)
+		assert.Equal(t, int64(3), keyRetentionPtrToTfInt64(&kr).Value)
+
+		ctu := kfv1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits(1)
+		assert.Equal(t, int64(1), cleanupTimeUnitsPtrToTfInt64(&ctu).Value)
+
+		dt := kfv1.CSSCMSDataModelEnumsPamParameterDataType(4)
+		assert.Equal(t, int64(4), pamParameterDataTypePtrToTfInt64(&dt).Value)
+	})
+}

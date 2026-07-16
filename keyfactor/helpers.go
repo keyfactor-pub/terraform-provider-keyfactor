@@ -1919,6 +1919,22 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
+// enumPtrToTfInt64 converts a pointer to an int32-backed SDK enum type (e.g.
+// CSSCMSCoreEnumsEnrollmentType, CSSCMSCoreEnumsKeyRetentionPolicy,
+// CSSCMSDataModelEnumsCertificateCleanupTimeUnits,
+// CSSCMSDataModelEnumsPamParameterDataType) to a types.Int64. A nil pointer
+// (the server omitted the field) becomes Null, rather than the enum's zero
+// value -- zero is itself a valid, meaningful enum value for several of these
+// types, so collapsing "absent" to 0 would be indistinguishable from the
+// server actually returning 0, and could send a false "0" back on a
+// subsequent PUT.
+func enumPtrToTfInt64[T ~int32](v *T) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
+}
+
 // Converts a pointer to a string to a types.String object.
 // If the pointer is nil, it returns a types.String with Null set to true.
 func getStringType(value *string) types.String {

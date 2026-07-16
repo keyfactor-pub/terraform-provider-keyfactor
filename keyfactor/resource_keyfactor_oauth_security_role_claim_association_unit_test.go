@@ -15,31 +15,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-// oauthRoleClaimAssocMockAuthConfig implements the structurally-equivalent
-// AuthConfig interfaces required by the keyfactor-go-client-sdk v1 and v2 API
-// clients (Authenticate, GetHttpClient, GetServerConfig), backed by an
-// httptest server. Host is the bare "host:port" (no scheme) because the SDK's
-// prepareRequest sets url.Host directly from GetServerConfig().Host and forces
-// url.Scheme = "https" itself.
-type oauthRoleClaimAssocMockAuthConfig struct {
-	server *httptest.Server
-}
-
-func (m *oauthRoleClaimAssocMockAuthConfig) GetServerConfig() *auth_providers.Server {
-	return &auth_providers.Server{
-		Host:          strings.TrimPrefix(m.server.URL, "https://"),
-		SkipTLSVerify: true,
-	}
-}
-
-func (m *oauthRoleClaimAssocMockAuthConfig) GetHttpClient() (*http.Client, error) {
-	return m.server.Client(), nil
-}
-
-func (m *oauthRoleClaimAssocMockAuthConfig) Authenticate() error { return nil }
-
+// newOAuthRoleClaimAssocMockClient builds a kfsdk.APIClient backed by an
+// httptest server, for unit tests of the OAuth security role claim
+// association resource. See mockAuthConfig / newSDKMockAuthConfig in
+// test_helpers_test.go.
 func newOAuthRoleClaimAssocMockClient(server *httptest.Server) *kfsdk.APIClient {
-	return kfsdk.NewAPIClientWithAuth(&oauthRoleClaimAssocMockAuthConfig{server: server})
+	return kfsdk.NewAPIClientWithAuth(newSDKMockAuthConfig(server))
 }
 
 // roleResponseBody builds a /Security/Roles/{id} GET response body with Name,

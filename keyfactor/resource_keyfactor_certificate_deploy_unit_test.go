@@ -7,36 +7,17 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-// certDeployMockAuthConfig implements api.AuthConfig for httptest-backed unit
-// tests of the certificate deployment resource.
-type certDeployMockAuthConfig struct {
-	server *httptest.Server
-}
-
-func (m *certDeployMockAuthConfig) GetServerConfig() *auth_providers.Server {
-	return &auth_providers.Server{
-		Host:          m.server.URL,
-		APIPath:       "KeyfactorAPI",
-		SkipTLSVerify: true,
-	}
-}
-
-func (m *certDeployMockAuthConfig) GetHttpClient() (*http.Client, error) {
-	return m.server.Client(), nil
-}
-
-func (m *certDeployMockAuthConfig) Authenticate() error       { return nil }
-func (m *certDeployMockAuthConfig) GetCommandVersion() string { return "25.1.0.0" }
-
+// newCertDeployMockClient builds an api.Client backed by an httptest server,
+// for unit tests of the certificate deployment resource. See mockAuthConfig
+// in test_helpers_test.go.
 func newCertDeployMockClient(server *httptest.Server) *api.Client {
 	return &api.Client{
-		AuthClient: &certDeployMockAuthConfig{server: server},
+		AuthClient: newCertAPIMockAuthConfig(server),
 	}
 }
 

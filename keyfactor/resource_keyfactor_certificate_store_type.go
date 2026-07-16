@@ -418,13 +418,13 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 		Name:               types.String{Value: resp.Name},
 		ShortName:          types.String{Value: resp.ShortName},
 		Capability:         types.String{Value: resp.Capability},
-		LocalStore:         types.Bool{Value: derefBool(resp.LocalStore)},
+		LocalStore:         boolPtrToTfBool(resp.LocalStore),
 		StorePathType:      types.String{Value: resp.StorePathType},
 		StorePathValue:     types.String{Value: resp.StorePathValue},
 		PrivateKeyAllowed:  types.String{Value: resp.PrivateKeyAllowed},
-		ServerRequired:     types.Bool{Value: derefBool(resp.ServerRequired)},
-		PowerShell:         types.Bool{Value: derefBool(resp.PowerShell)},
-		BlueprintAllowed:   types.Bool{Value: derefBool(resp.BlueprintAllowed)},
+		ServerRequired:     boolPtrToTfBool(resp.ServerRequired),
+		PowerShell:         boolPtrToTfBool(resp.PowerShell),
+		BlueprintAllowed:   boolPtrToTfBool(resp.BlueprintAllowed),
 		CustomAliasAllowed: types.String{Value: resp.CustomAliasAllowed},
 		ImportType:         types.Int64{Value: int64(resp.ImportType)},
 		ServerRegistration: types.Int64{Value: int64(resp.ServerRegistration)},
@@ -482,11 +482,6 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 	}
 
 	return state
-}
-
-// derefBool returns the pointed-to bool, or false when the pointer is nil.
-func derefBool(p *bool) bool {
-	return p != nil && *p
 }
 
 func certStoreTypeDefToAPIRequest(plan KeyfactorCertStoreTypeDef) api.CertificateStoreType {

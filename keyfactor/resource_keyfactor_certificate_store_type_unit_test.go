@@ -3,6 +3,8 @@ package keyfactor
 import (
 	"testing"
 
+	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 )
@@ -94,4 +96,110 @@ func TestUnitCertStoreTypeExplicitEmptyListsClear(t *testing.T) {
 	reqNil := certStoreTypeDefToAPIRequest(planNil)
 	assert.Nil(t, reqNil.Properties, "unset properties must be omitted, not sent as an empty clear")
 	assert.Nil(t, reqNil.EntryParameters, "unset entry_parameters must be omitted")
+}
+
+// TestUnitCertStoreTypeDefToState_BoolPointersPreserveNull is a regression
+// test for certStoreTypeDefToState collapsing a nil *bool response field
+// (local_store, server_required, power_shell, blueprint_allowed) to
+// types.Bool{Value: false} via the derefBool helper, instead of
+// types.Bool{Null: true}. A server that omits these Optional+Computed fields
+// (nil pointer) must read into state as null, not a concrete false — a
+// concrete false is indistinguishable from a server that actually reported
+// false, and can cause "inconsistent result after apply" or silently mask
+// real drift.
+func TestUnitCertStoreTypeDefToState_BoolPointersPreserveNull(t *testing.T) {
+	// All four pointers nil: must read as Null, not Value:false.
+	respNil := &api.CertificateStoreType{
+		Name:      "AGeneric",
+		ShortName: "AGeneric",
+		StoreType: 1,
+	}
+	stateNil := certStoreTypeDefToState(respNil)
+
+	assert.True(t, stateNil.LocalStore.Null, "nil LocalStore must read as Null")
+	assert.False(t, stateNil.LocalStore.Value, "Null LocalStore must not also carry Value:true")
+	assert.True(t, stateNil.ServerRequired.Null, "nil ServerRequired must read as Null")
+	assert.True(t, stateNil.PowerShell.Null, "nil PowerShell must read as Null")
+	assert.True(t, stateNil.BlueprintAllowed.Null, "nil BlueprintAllowed must read as Null")
+
+	// All four pointers explicitly false: must read as Value:false, Null:false.
+	respFalse := &api.CertificateStoreType{
+		Name:             "AGeneric",
+		ShortName:        "AGeneric",
+		StoreType:        1,
+		LocalStore:       boolPtr(false),
+		ServerRequired:   boolPtr(false),
+		PowerShell:       boolPtr(false),
+		BlueprintAllowed: boolPtr(false),
+	}
+	stateFalse := certStoreTypeDefToState(respFalse)
+
+	assert.False(t, stateFalse.LocalStore.Null, "explicit false LocalStore must not read as Null")
+	assert.False(t, stateFalse.LocalStore.Value)
+	assert.False(t, stateFalse.ServerRequired.Null)
+	assert.False(t, stateFalse.ServerRequired.Value)
+	assert.False(t, stateFalse.PowerShell.Null)
+	assert.False(t, stateFalse.PowerShell.Value)
+	assert.False(t, stateFalse.BlueprintAllowed.Null)
+	assert.False(t, stateFalse.BlueprintAllowed.Value)
+}
+
+// TestUnitCertStoreTypeToAttrValue_BoolPointersPreserveNull is the data-source
+// counterpart of TestUnitCertStoreTypeDefToState_BoolPointersPreserveNull,
+// covering certStoreTypeToAttrValue in
+// data_source_keyfactor_certificate_store_types.go.
+func TestUnitCertStoreTypeToAttrValue_BoolPointersPreserveNull(t *testing.T) {
+	respNil := api.CertificateStoreType{
+		Name:      "AGeneric",
+		ShortName: "AGeneric",
+		StoreType: 1,
+	}
+	objNil, ok := certStoreTypeToAttrValue(respNil).(types.Object)
+	if !ok {
+		t.Fatalf("expected certStoreTypeToAttrValue to return types.Object")
+	}
+
+	assertNullBool(t, objNil.Attrs, "local_store", true)
+	assertNullBool(t, objNil.Attrs, "server_required", true)
+	assertNullBool(t, objNil.Attrs, "power_shell", true)
+	assertNullBool(t, objNil.Attrs, "blueprint_allowed", true)
+
+	respFalse := api.CertificateStoreType{
+		Name:             "AGeneric",
+		ShortName:        "AGeneric",
+		StoreType:        1,
+		LocalStore:       boolPtr(false),
+		ServerRequired:   boolPtr(false),
+		PowerShell:       boolPtr(false),
+		BlueprintAllowed: boolPtr(false),
+	}
+	objFalse, ok := certStoreTypeToAttrValue(respFalse).(types.Object)
+	if !ok {
+		t.Fatalf("expected certStoreTypeToAttrValue to return types.Object")
+	}
+
+	assertNullBool(t, objFalse.Attrs, "local_store", false)
+	assertNullBool(t, objFalse.Attrs, "server_required", false)
+	assertNullBool(t, objFalse.Attrs, "power_shell", false)
+	assertNullBool(t, objFalse.Attrs, "blueprint_allowed", false)
+}
+
+// assertNullBool asserts attrs[key] is a types.Bool with the expected Null
+// flag, and (when not null) an explicit false Value.
+func assertNullBool(t *testing.T, attrs map[string]attr.Value, key string, wantNull bool) {
+	t.Helper()
+	v, ok := attrs[key]
+	if !ok {
+		t.Fatalf("expected attribute %q to be present", key)
+	}
+	b, ok := v.(types.Bool)
+	if !ok {
+		t.Fatalf("expected attribute %q to be types.Bool, got %T", key, v)
+	}
+	if b.Null != wantNull {
+		t.Fatalf("attribute %q: expected Null=%v, got Null=%v Value=%v", key, wantNull, b.Null, b.Value)
+	}
+	if !wantNull && b.Value {
+		t.Fatalf("attribute %q: expected Value=false, got Value=true", key)
+	}
 }

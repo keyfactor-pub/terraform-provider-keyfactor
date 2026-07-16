@@ -21,16 +21,15 @@ _None — this release is fixes plus internal/dependency work._
 
 A resource-wide audit for the same bug class as #175 (a resolved zero/empty/nil value collapsing "attribute never declared" and "attribute explicitly cleared" into one signal, silently clearing real server-side state or crashing the provider) turned up and fixed 20 additional issues across 12 resources:
 
-- fix: nil-pointer-dereference crashes eliminated in `keyfactor_certificate_deploy` (failed certificate read), `keyfactor_oauth_security_role_claim_association` (null role fields), and `mapOAuthSecurityClaimsFromRole` (null claim provider) — see also the `keyfactor_certificate_store` agent-lookup crash fix above
-- fix: `keyfactor_oauth_security_role_claim_association` `Create` no longer falls through and dereferences a nil claim response when the security-claim GET fails
+- fix: nil-pointer-dereference crashes eliminated in `keyfactor_certificate_deploy` (failed certificate read), `keyfactor_oauth_security_role_claim_association` (null role fields, a failed security-claim GET falling through instead of returning, and a nil HTTP response on transport-level failures in `Create`/`Delete`), and `mapOAuthSecurityClaimsFromRole` (null claim provider) — see also the `keyfactor_certificate_store` agent-lookup crash fix above
 - fix: `keyfactor_application` no longer silently drops a live schedule on an unrelated update when `schedule_*` attributes are undeclared
 - fix: `keyfactor_certificate_authority` no longer silently clears scan schedules or `allowed_requesters` on an unrelated update
-- fix: `keyfactor_certificate_store_type` explicit `false`/empty-string/`[]` values are no longer indistinguishable from "not configured" and dropped from the request
+- fix: `keyfactor_certificate_store_type` explicit `false`/empty-string/`[]` values are no longer indistinguishable from "not configured" and dropped from the request; reading back `local_store`/`server_required`/`power_shell`/`blueprint_allowed` from Command now preserves a genuinely-null API value instead of collapsing it to `false`
 - fix: `keyfactor_certificate_template` explicit empty lists (`template_regexes`, `template_defaults`, `enrollment_fields`, `metadata_fields`) now actually clear server-side instead of no-op'ing; 4 Command v25+ attributes now correctly carry forward via `UseStateForUnknown`
 - fix: `keyfactor_pam_provider_type` explicit empty `display_name` is preserved instead of falling back to a server default; a nil `data_type` now reads as null instead of a misleading concrete value
 - fix: `keyfactor_pam_provider` an explicit `param_values` clear now reaches the update request instead of silently no-op'ing
 - fix: `keyfactor_security_identity` `Update` preserves existing roles when `roles` is undeclared (previously stripped all real role assignments); `Read` now detects out-of-band role drift instead of echoing stale state
-- fix: `keyfactor_security_role` `Update` no longer sends an explicit `Permissions: null` when `permissions` is undeclared, and no longer causes drift by rewriting a sorted copy of the permission list into state
+- fix: `keyfactor_security_role` `Update` no longer sends an explicit `Permissions: null` when `permissions` is undeclared, and no longer masks real server-side permission drift by echoing the client's raw plan value into state instead of Command's confirmed result
 - fix: `keyfactor_template_role_binding` role attach/detach no longer risks resetting unrelated template settings; `Read` now detects out-of-band role detachment instead of reporting stale success
 - fix: `keyfactor_certificate` `owner_role_name` no longer causes a spurious `ChangeCertificateOwnerRole` call (and potential drift) when left undeclared in config
 

@@ -6,36 +6,17 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-// certUpdateMockAuthConfig implements api.AuthConfig for httptest-backed unit
-// tests of the certificate resource Update path.
-type certUpdateMockAuthConfig struct {
-	server *httptest.Server
-}
-
-func (m *certUpdateMockAuthConfig) GetServerConfig() *auth_providers.Server {
-	return &auth_providers.Server{
-		Host:          m.server.URL,
-		APIPath:       "KeyfactorAPI",
-		SkipTLSVerify: true,
-	}
-}
-
-func (m *certUpdateMockAuthConfig) GetHttpClient() (*http.Client, error) {
-	return m.server.Client(), nil
-}
-
-func (m *certUpdateMockAuthConfig) Authenticate() error       { return nil }
-func (m *certUpdateMockAuthConfig) GetCommandVersion() string { return "25.1.0.0" }
-
+// newCertUpdateMockClient builds an api.Client backed by an httptest server,
+// for unit tests of the certificate resource Update path. See mockAuthConfig
+// in test_helpers_test.go.
 func newCertUpdateMockClient(server *httptest.Server) *api.Client {
 	return &api.Client{
-		AuthClient: &certUpdateMockAuthConfig{server: server},
+		AuthClient: newCertAPIMockAuthConfig(server),
 	}
 }
 
@@ -152,5 +133,82 @@ func TestUnitKeyfactorCertificateResource_UpdateNilGetResponse(t *testing.T) {
 	if !found {
 		t.Logf("diagnostics: %+v", resp.Diagnostics)
 		t.Fatalf("expected a %q error diagnostic", ERR_SUMMARY_CERTIFICATE_RESOURCE_READ)
+	}
+}
+
+// TestUnitKeyfactorCertificateResource_OwnerRoleNameUndeclaredNoSpuriousChange
+// is a regression test for owner_role_name being wiped on every Update when
+// the config never declares it. owner_role_name was schema'd Optional-only
+// (not Computed), so Read()'s unconditional overwrite with server truth was
+// itself a source of "inconsistent result after apply", and Update() diffed
+// plan.OwnerRoleName.Value (empty string when undeclared) against
+// state.OwnerRoleName.Value (a real role name), firing
+// ChangeCertificateOwnerRole with an explicit empty NewRoleName and clearing
+// an assignment the user never touched via Terraform.
+//
+// The fix makes owner_role_name Optional+Computed with UseStateForUnknown (so
+// an undeclared plan carries the prior state value forward, matching every
+// other Optional+Computed scalar in this resource) and moves the Update()
+// diff decision into certificateOwnerRoleChanged, which explicitly refuses to
+// report a change when the plan value is Null/Unknown.
+func TestUnitKeyfactorCertificateResource_OwnerRoleNameUndeclaredNoSpuriousChange(t *testing.T) {
+	state := CommandCertificate{
+		OwnerRoleName: types.String{Value: "ExistingOwnerRole"},
+	}
+
+	// Plan never declared owner_role_name: Null, not the zero-value "".
+	planUndeclared := CommandCertificate{
+		OwnerRoleName: types.String{Null: true},
+	}
+	if certificateOwnerRoleChanged(planUndeclared, state) {
+		t.Fatalf("expected no owner role change when plan never declares owner_role_name, but certificateOwnerRoleChanged returned true")
+	}
+
+	// Plan explicitly sets a different owner_role_name: the change must fire.
+	planChanged := CommandCertificate{
+		OwnerRoleName: types.String{Value: "NewOwnerRole"},
+	}
+	if !certificateOwnerRoleChanged(planChanged, state) {
+		t.Fatalf("expected an owner role change when plan explicitly sets a different owner_role_name, but certificateOwnerRoleChanged returned false")
+	}
+
+	// Plan explicitly re-declares the same value as state: no change.
+	planUnchanged := CommandCertificate{
+		OwnerRoleName: types.String{Value: "ExistingOwnerRole"},
+	}
+	if certificateOwnerRoleChanged(planUnchanged, state) {
+		t.Fatalf("expected no owner role change when plan explicitly matches state, but certificateOwnerRoleChanged returned true")
+	}
+}
+
+// TestUnitKeyfactorCertificateResource_OwnerRoleNameIsComputed guards the
+// schema half of the same fix: owner_role_name must be Optional+Computed with
+// UseStateForUnknown so Read() overwriting it with server truth doesn't
+// itself produce "Provider produced inconsistent result after apply" for an
+// attribute the config never set.
+func TestUnitKeyfactorCertificateResource_OwnerRoleNameIsComputed(t *testing.T) {
+	ctx := context.Background()
+	schema, diags := resourceCommandCertificateType{}.GetSchema(ctx)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics building schema: %v", diags)
+	}
+
+	attr, ok := schema.Attributes["owner_role_name"]
+	if !ok {
+		t.Fatalf("expected schema attribute %q to exist", "owner_role_name")
+	}
+	if !attr.Optional || !attr.Computed {
+		t.Fatalf("owner_role_name: expected Optional+Computed, got Optional=%v Computed=%v", attr.Optional, attr.Computed)
+	}
+
+	found := false
+	for _, m := range attr.PlanModifiers {
+		if _, ok := m.(tfsdk.UseStateForUnknownModifier); ok {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("owner_role_name: expected UseStateForUnknown plan modifier, but none was found (modifiers: %+v)", attr.PlanModifiers)
 	}
 }

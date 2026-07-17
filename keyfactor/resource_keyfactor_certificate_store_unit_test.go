@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -158,6 +162,80 @@ func TestUnitLookupContainerNameByID_ListEndpointFallback(t *testing.T) {
 	}
 	if byIDHits == 0 {
 		t.Fatalf("expected the by-ID endpoint to be tried first, got %d hits", byIDHits)
+	}
+}
+
+// TestUnitLookupContainerNameByID_ListEndpointFallbackPagination is a
+// regression test for the follow-up to GH issue #175's fix #1: the
+// list-endpoint fallback calls client.GetStoreContainers(), which the SDK
+// paginates server-side. Command returns only the first page's worth of
+// containers per request; a container sorted beyond that first page (e.g. a
+// lab/tenant with more than a page's worth of containers) would previously
+// never be found via the fallback, silently falling through to hint even
+// though the container is real and simply not on page 1.
+//
+// This test forces the by-ID lookup to fail (so the list-endpoint fallback
+// runs) and serves the list endpoint as a genuinely paginated API would: a
+// full first page that does NOT include the target container, followed by a
+// second, shorter page that does. The fix (GetStoreContainers pagination in
+// keyfactor-go-client, mirroring the GetTemplates fix for issue #172) must
+// walk pages until it finds the target, rather than only inspecting page 1.
+func TestUnitLookupContainerNameByID_ListEndpointFallbackPagination(t *testing.T) {
+	const (
+		containerID   = 4242
+		containerName = "tf-late-sorted-container"
+		pageSize      = 100
+	)
+	var byIDHits, listHits int
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(fmt.Sprintf("/KeyfactorAPI/CertificateStoreContainers/%d", containerID), func(w http.ResponseWriter, r *http.Request) {
+		byIDHits++
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	mux.HandleFunc("/KeyfactorAPI/CertificateStoreContainers", func(w http.ResponseWriter, r *http.Request) {
+		listHits++
+		page, _ := strconv.Atoi(r.URL.Query().Get("PageReturned"))
+		if page < 1 {
+			page = 1
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		switch page {
+		case 1:
+			// A full first page that does NOT contain the target container —
+			// simulates a lab/tenant with more containers than fit on page 1.
+			fullPage := make([]api.CertStoreContainer, pageSize)
+			for i := range fullPage {
+				id := i + 1
+				fullPage[i] = api.CertStoreContainer{Id: &id, Name: fmt.Sprintf("Container-%d", id)}
+			}
+			_ = json.NewEncoder(w).Encode(fullPage)
+		case 2:
+			id := containerID
+			_ = json.NewEncoder(w).Encode([]api.CertStoreContainer{{Id: &id, Name: containerName}})
+		default:
+			_ = json.NewEncoder(w).Encode([]api.CertStoreContainer{})
+		}
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newContainerLookupClient(server)
+
+	got := lookupContainerNameByID(context.Background(), client, containerID, "fallback-hint")
+	if got != containerName {
+		t.Fatalf(
+			"expected paginated list-endpoint fallback to resolve %q, got %q (byIDHits=%d listHits=%d) — "+
+				"a container past page 1 of GetStoreContainers was not found",
+			containerName, got, byIDHits, listHits,
+		)
+	}
+	if byIDHits == 0 {
+		t.Fatalf("expected the by-ID endpoint to be tried first, got %d hits", byIDHits)
+	}
+	if listHits < 2 {
+		t.Fatalf("expected the list endpoint to be paged at least twice to find the target container, got %d hits", listHits)
 	}
 }
 
@@ -337,6 +415,39 @@ func TestUnitContainerNameArgPointer_NeverPairsNonzeroIdWithEmptyName(t *testing
 	}
 }
 
+// TestUnitResolveApprovedAgentID_EmptyAgentsNilErrorDoesNotPanic is the
+// red/green regression test for the nil-pointer dereference in
+// resolveApprovedAgentID (extracted from the Create()/Update() agent-lookup
+// blocks): when GetAgent returns an empty agents slice paired with a nil
+// error, the len(agents) == 0 branch called agentErr.Error() unconditionally.
+// Since the preceding `agentErr != nil` branch already returns, agentErr is
+// guaranteed nil in this branch, so that call panics with a nil pointer
+// dereference. This exact combination is constructed directly here (bypassing
+// the real GetAgent HTTP call, whose current implementation happens to always
+// pair an empty result with a non-nil error) because the framework requires
+// resolveApprovedAgentID to be defensive regardless of what the SDK layer
+// guarantees today.
+func TestUnitResolveApprovedAgentID_EmptyAgentsNilErrorDoesNotPanic(t *testing.T) {
+	var agentId string
+	var diags diag.Diagnostics
+
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("resolveApprovedAgentID panicked (nil-deref regression): %v", rec)
+			}
+		}()
+		agentId, diags = resolveApprovedAgentID("some-agent-identifier", []api.Agent{}, nil)
+	}()
+
+	if agentId != "" {
+		t.Fatalf("expected empty agentId when no agents are found, got %q", agentId)
+	}
+	if !diags.HasError() {
+		t.Fatalf("expected a diagnostic error when no agents are found, got none")
+	}
+}
+
 // TestUnitCertificateStoreUpdate_PreservedAssignmentNeverPairsWithEmptyName
 // combines resolveContainerAssignmentForUpdate and containerNameArgPointer —
 // the same two steps Update() performs — to directly assert the exact
@@ -375,6 +486,277 @@ func TestUnitCertificateStoreUpdate_PreservedAssignmentNeverPairsWithEmptyName(t
 				"ContainerName must be omitted (nil) instead",
 			containerId,
 			*namePtr,
+		)
+	}
+}
+
+// TestUnitCertificateStoreUpdate_ReResolvesContainerNameByIDInsteadOfTrustingStaleState
+// is the red/green regression test for the follow-up to GH issue #175:
+// resolveContainerNameAfterUpdate (called from Update() after a successful
+// UpdateStore call) must always re-resolve the container/application name via
+// a fresh by-ID lookup, never trust the possibly-stale
+// updateEffectiveName value resolveContainerAssignmentForUpdate computed
+// *before* the update request was sent.
+//
+// Root cause this guards against: resolveContainerAssignmentForUpdate's
+// "preserve existing assignment" branch (config declares no
+// application_name/container_name; a real container_id already exists in
+// state) carries the name over from state as-is, without querying Command in
+// that same Update() call. If Command's canonical name changed out-of-band
+// between the last Read() and this Update() while the ID stayed stable (a
+// case/whitespace normalization, or an out-of-band rename), a prior
+// optimization removed by this fix would have written that stale name into
+// the new state whenever the server-assigned container ID matched the
+// requested one — diverging from what an immediate Read() would
+// independently produce via lookupContainerNameByID, i.e. exactly a
+// "provider produced inconsistent result after apply" trigger.
+//
+// oldBehavior below is a faithful, byte-for-byte transcription of the
+// removed Update() branch (see the diff in commit f6c1809 and this fix's
+// commit message) — not a guess at what the bug looked like. Asserting it
+// against these inputs first proves the reproduction is real (red) before
+// asserting the fixed production helper (resolveContainerNameAfterUpdate)
+// produces the authoritative name instead (green).
+func TestUnitCertificateStoreUpdate_ReResolvesContainerNameByIDInsteadOfTrustingStaleState(t *testing.T) {
+	const (
+		containerID   = 500
+		staleName     = "mycontainer" // carried over from state, never re-verified against Command this call
+		canonicalName = "MyContainer" // what Command's by-ID endpoint actually returns now
+	)
+	var byIDHits int
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(fmt.Sprintf("/KeyfactorAPI/CertificateStoreContainers/%d", containerID), func(w http.ResponseWriter, r *http.Request) {
+		byIDHits++
+		id := containerID
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(api.CertStoreContainer{Id: &id, Name: canonicalName})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newContainerLookupClient(server)
+	r := resourceCertificateStore{p: provider{client: client}}
+
+	// oldBehavior mirrors the pre-fix Update() code exactly:
+	//   if updateResponse.ContainerId == containerId && updateEffectiveName != "" {
+	//       result.syncApplicationAndContainerName(updateEffectiveName)
+	//   } else {
+	//       result.syncApplicationAndContainerName(lookupContainerNameByID(...))
+	//   }
+	oldBehavior := func(updateResponseContainerId, requestedContainerId int, updateEffectiveName string) string {
+		if updateResponseContainerId == requestedContainerId && updateEffectiveName != "" {
+			return updateEffectiveName
+		}
+		return lookupContainerNameByID(context.Background(), client, updateResponseContainerId, updateEffectiveName)
+	}
+
+	// RED: reproduce the bug. The server assigned exactly the requested
+	// container (updateResponse.ContainerId == containerId == 500), and
+	// updateEffectiveName is non-empty, so the removed optimization would
+	// have trusted staleName without ever calling the API.
+	reproduced := oldBehavior(containerID, containerID, staleName)
+	if reproduced != staleName {
+		t.Fatalf("sanity check failed: expected the old-behavior transcription to reproduce the stale name %q, got %q", staleName, reproduced)
+	}
+	if byIDHits != 0 {
+		t.Fatalf("old-behavior transcription must never call the API in this branch (that's the bug) — got %d by-ID hits", byIDHits)
+	}
+
+	// GREEN: the fix. resolveContainerNameAfterUpdate always re-resolves via
+	// the by-ID endpoint, so the authoritative/current name wins over the
+	// stale one — matching what an independent Read() would produce.
+	got := r.resolveContainerNameAfterUpdate(context.Background(), containerID, staleName)
+	if got != canonicalName {
+		t.Fatalf(
+			"expected resolveContainerNameAfterUpdate to re-resolve and return the authoritative name %q, got %q (byIDHits=%d) — "+
+				"Update() must not diverge from what Read() would independently produce",
+			canonicalName, got, byIDHits,
+		)
+	}
+	if byIDHits == 0 {
+		t.Fatalf("expected resolveContainerNameAfterUpdate to call the by-ID endpoint at least once")
+	}
+}
+
+// TestUnitResolveContainerAssignmentForUpdate_UnknownPlanValuesDoNotMisbehave
+// guards an invariant flagged in review: resolveContainerAssignmentForUpdate's
+// "truly undeclared" check originally read
+// `plan.ApplicationName.IsNull() && plan.ContainerName.IsNull()` — checking
+// IsNull() only, never IsUnknown(). In practice, Terraform Core resolves all
+// Unknown plan values to known values before invoking Update() during apply,
+// so IsUnknown() should never be true on the plan passed into this function
+// in a real apply. This test constructs that (should-be-unreachable-in-
+// production) input directly — ApplicationName/ContainerName both Unknown,
+// with a real existing container_id in state — to check whether the current
+// behavior is actually safe.
+//
+// It is not, as originally written: with the pre-fix check, Unknown is not
+// Null, so planTrulyUndeclared was false, the "preserve existing assignment"
+// branch never ran, and the function fell all the way through to
+// `return 0, "", nil` — resolving containerId to 0 and, per GH issue #175,
+// silently clearing a real container/application assignment. This test
+// failed against that code (containerId == 0) before the fix below.
+//
+// The fix broadens planTrulyUndeclared to treat Unknown the same as Null
+// (`IsNull() || IsUnknown()` for both fields), so the existing assignment is
+// preserved here exactly as it already is for genuinely Null plan values.
+// This is a defensive, production-inert change: real Update() calls never
+// see Unknown here, so this only changes behavior for hand-constructed
+// inputs like this test (or any future caller) that don't go through
+// Terraform Core's plan-resolution first.
+func TestUnitResolveContainerAssignmentForUpdate_UnknownPlanValuesDoNotMisbehave(t *testing.T) {
+	r := resourceCertificateStore{p: provider{}}
+
+	state := CertificateStore{
+		ContainerID:     types.Int64{Value: 500},
+		ContainerName:   types.String{Value: "existing-app", Null: false},
+		ApplicationName: types.String{Value: "existing-app", Null: false},
+	}
+	plan := CertificateStore{
+		ContainerName:   types.String{Unknown: true},
+		ApplicationName: types.String{Unknown: true},
+	}
+
+	var containerId int
+	var effectiveName string
+	var err error
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("resolveContainerAssignmentForUpdate panicked on Unknown plan values: %v", rec)
+			}
+		}()
+		containerId, effectiveName, err = r.resolveContainerAssignmentForUpdate(context.Background(), plan, state)
+	}()
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+
+	// The load-bearing invariant: an existing real assignment (container_id
+	// 500) must never be silently cleared (resolved to 0) just because the
+	// plan values happen to be Unknown rather than Null.
+	if containerId == 0 {
+		t.Fatalf(
+			"resolveContainerAssignmentForUpdate resolved containerId to 0 for Unknown plan values with an existing assignment (state container_id=500) — "+
+				"this would clear a real assignment; got effectiveName %q",
+			effectiveName,
+		)
+	}
+}
+
+// TestUnitCertificateStoreCreate_OmitsEmptyInventoryScheduleFromRequestBody is
+// the red/green regression test for Create() calling the raw
+// createInventorySchedule(plan.InventorySchedule.Value) instead of the
+// null-safe inventoryScheduleForRequest(plan.InventorySchedule) helper that
+// Update() already uses. createInventorySchedule always returns a non-nil
+// &api.InventorySchedule{} for an empty/unrecognized interval, and
+// CreateStoreFctArgs.InventorySchedule is `*InventorySchedule` with
+// `json:"InventorySchedule,omitempty"` — omitempty only omits a nil pointer,
+// so an undeclared inventory_schedule was sent to Command as an explicit
+// empty `"InventorySchedule":{}` object instead of being omitted entirely.
+//
+// This test drives resourceCertificateStore.Create() end-to-end against an
+// httptest server and captures the raw JSON body POSTed to
+// /KeyfactorAPI/CertificateStores, asserting the InventorySchedule key is
+// either absent or does not decode to a non-nil object.
+func TestUnitCertificateStoreCreate_OmitsEmptyInventoryScheduleFromRequestBody(t *testing.T) {
+	const (
+		storeTypeName = "AGeneric"
+		agentGuid     = "11111111-1111-1111-1111-111111111111"
+	)
+
+	var capturedBody []byte
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/CertificateStoreTypes/Name/"+storeTypeName, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]api.CertificateStoreType{
+			{Name: storeTypeName, ShortName: storeTypeName, StoreType: 1},
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Agents", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]api.Agent{
+			{AgentId: agentGuid, ClientMachine: "test-machine", Status: 2},
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/CertificateStores", func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			t.Fatalf("failed to read captured POST body: %s", readErr)
+		}
+		capturedBody = body
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(api.CreateStoreResponse{
+			Id:            "22222222-2222-2222-2222-222222222222",
+			ClientMachine: "test-machine",
+			Storepath:     "/test/path",
+			AgentId:       agentGuid,
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newContainerLookupClient(server)
+	r := resourceCertificateStore{p: provider{configured: true, client: client}}
+
+	schema, sDiags := resourceCertificateStoreType{}.GetSchema(context.Background())
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	plan := CertificateStore{
+		ClientMachine:         types.String{Value: "test-machine"},
+		StorePath:             types.String{Value: "/test/path"},
+		StoreType:             types.String{Value: storeTypeName},
+		AgentIdentifier:       types.String{Value: agentGuid},
+		ContainerName:         types.String{Null: true},
+		ApplicationName:       types.String{Null: true},
+		InventorySchedule:     types.String{Null: true},
+		Approved:              types.Bool{Value: true},
+		CreateIfMissing:       types.Bool{Value: false},
+		AgentAssigned:         types.Bool{Value: false},
+		SetNewPasswordAllowed: types.Bool{Value: false},
+		ServerUseSsl:          types.Bool{Null: true},
+		ServerUsername:        types.String{Null: true},
+		ServerPassword:        types.String{Null: true},
+		StorePassword:         types.String{Null: true},
+		Properties:            types.Map{ElemType: types.StringType, Null: true},
+	}
+
+	ctx := context.Background()
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+
+	req := tfsdk.CreateResourceRequest{Plan: planObj}
+	resp := &tfsdk.CreateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Create(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Create returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	if capturedBody == nil {
+		t.Fatalf("expected the mock CertificateStores endpoint to capture a POST body, got none")
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal captured POST body: %s\nbody: %s", err, string(capturedBody))
+	}
+
+	if v, ok := decoded["InventorySchedule"]; ok && v != nil {
+		t.Fatalf(
+			"expected \"InventorySchedule\" to be omitted from the POST body when inventory_schedule is undeclared in the plan, "+
+				"but it was present as a non-nil value: %#v\nfull body: %s",
+			v, string(capturedBody),
 		)
 	}
 }

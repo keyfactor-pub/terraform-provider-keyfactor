@@ -34,7 +34,11 @@ func (r resourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Schema
 					ElemType: types.StringType,
 				},
 				Optional:    true,
+				Computed:    true,
 				Description: "An array containing the role IDs that the identity is attached to.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.UseStateForUnknown(),
+				},
 			},
 			"id": {
 				Type:        types.Int64Type,
@@ -106,32 +110,15 @@ func (r resourceSecurityIdentity) Read(
 		if accountName == identity.AccountName {
 			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %s", accountName))
 
+			// Build the roles list from the freshly-fetched identity.Roles, not
+			// from state.Roles.Elems. Re-validating the identity's PRIOR state
+			// just echoed back whatever was already in state, so real
+			// server-side role drift (roles changed out-of-band) was never
+			// detected — Read() always reported stale "unchanged" success.
 			var validRoles []attr.Value
-			var validRolesInterface []interface{}
-			for _, role := range state.Roles.Elems {
-				//validRoles = append(validRoles.Elems, role.Name.Value)
-				tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
-				tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
-
-				//TODO: Verify role exists in Keyfactor or throw warning
-				re, _ := regexp.Compile(`[^\w]`)
-				roleStr := re.ReplaceAllString(role.String(), "")
-				kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
-				if roleLookupErr != nil || kfRole == nil {
-					tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
-					response.Diagnostics.AddWarning(
-						"Error looking up role on Keyfactor.",
-						fmt.Sprintf(
-							"Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.",
-							roleStr,
-							state.AccountName.Value,
-							roleStr,
-						),
-					)
-					continue
-				}
-				validRoles = append(validRoles, types.String{Value: fmt.Sprintf("%s", roleStr)})
-				validRolesInterface = append(validRolesInterface, kfRole.Id)
+			for _, role := range identity.Roles {
+				tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role.Name))
+				validRoles = append(validRoles, types.String{Value: role.Name})
 			}
 
 			state = SecurityIdentity{
@@ -153,6 +140,27 @@ func (r resourceSecurityIdentity) Read(
 	}
 }
 
+// identityRolesDeclared reports whether the config explicitly declares the
+// roles attribute. A Null value means the user omitted it from config
+// (preserve existing assignments), while a non-null value — including an
+// explicit empty list — is a full-replace instruction (an empty list clears
+// all roles).
+//
+// This must be evaluated against the CONFIG, not the plan. roles is
+// Optional+Computed (with a UseStateForUnknown plan modifier, added to fix
+// "Provider produced inconsistent result after apply" when an unrelated
+// Update omitted roles from config): when the attribute is genuinely
+// undeclared, Terraform Core still resolves request.Plan.Roles to the prior
+// state's value (copied forward by the plan modifier so the CLI doesn't show
+// spurious "(known after apply)" noise on every unrelated plan). Checking
+// plan.Roles.Null here would therefore always be false, indistinguishable
+// from a real declaration of the same list. request.Config.Roles is never
+// touched by plan modifiers, so it still reports Null exactly when the user
+// omitted the attribute.
+func identityRolesDeclared(config SecurityIdentity) bool {
+	return !config.Roles.Null && !config.Roles.Unknown
+}
+
 func (r resourceSecurityIdentity) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -161,6 +169,16 @@ func (r resourceSecurityIdentity) Update(
 	// Get plan values
 	var plan SecurityIdentity
 	diags := request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Get config values. roles is Optional+Computed, so request.Plan.Roles is
+	// no longer a reliable signal of whether the user declared the attribute
+	// (see identityRolesDeclared's doc comment) — request.Config.Roles is.
+	var config SecurityIdentity
+	diags = request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -177,52 +195,58 @@ func (r resourceSecurityIdentity) Update(
 		return
 	}
 
-	// Generate API request body from plan
-	//var validRoles types.List
-	var validRoles []attr.Value
-	var validRolesInterface []interface{}
-	for _, role := range plan.Roles.Elems {
-		//validRoles = append(validRoles.Elems, role.Name.Value)
-		tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
-		tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
-
-		//TODO: Verify role exists in Keyfactor or throw warning
-		re, err := regexp.Compile(`[^\w]`)
-		if err != nil {
-			log.Fatal(err)
-		}
-		roleStr := re.ReplaceAllString(role.String(), "")
-		tflog.Debug(ctx, fmt.Sprintf("Role string: %s", roleStr))
-		kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
-		if roleLookupErr != nil || kfRole == nil {
-			tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
-			response.Diagnostics.AddWarning(
-				"Error looking up role on Keyfactor.",
-				fmt.Sprintf(
-					"Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.",
-					roleStr,
-					state.AccountName.Value,
-					roleStr,
-				),
-			)
-			continue
-		}
-		validRoles = append(validRoles, types.String{Value: fmt.Sprintf("%s", roleStr)})
-		validRolesInterface = append(validRolesInterface, kfRole.Id)
-	}
-
-	//Update role identities
-	err := setIdentityRole(ctx, r.p.client, state.AccountName.Value, validRolesInterface)
-	if err != nil {
-		response.Diagnostics.AddError("Error updating identity roles.", "Error updating identity roles: "+err.Error())
-	}
-
-	var result = SecurityIdentity{
+	// setIdentityRole is a full-replace sync of the identity's role assignments.
+	// Only run it when the plan explicitly declares the roles attribute. When
+	// roles is genuinely undeclared (Null) — the user simply omitted it from
+	// config — Null must not be conflated with an explicit empty list; the former
+	// preserves the identity's existing roles, the latter clears them. Running
+	// the full-replace sync on an undeclared Null plan stripped every real role
+	// assignment on any unrelated Update.
+	result := SecurityIdentity{
 		ID:           types.Int64{Value: int64(state.ID.Value)},
 		AccountName:  types.String{Value: state.AccountName.Value},
 		IdentityType: types.String{Value: state.IdentityType.Value},
 		Valid:        types.Bool{Value: state.Valid.Value},
-		Roles:        plan.Roles,
+		Roles:        state.Roles,
+	}
+
+	if identityRolesDeclared(config) {
+		// Generate API request body from plan
+		var validRolesInterface []interface{}
+		for _, role := range plan.Roles.Elems {
+			tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
+			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
+
+			//TODO: Verify role exists in Keyfactor or throw warning
+			re, err := regexp.Compile(`[^\w]`)
+			if err != nil {
+				log.Fatal(err)
+			}
+			roleStr := re.ReplaceAllString(role.String(), "")
+			tflog.Debug(ctx, fmt.Sprintf("Role string: %s", roleStr))
+			kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
+			if roleLookupErr != nil || kfRole == nil {
+				tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
+				response.Diagnostics.AddWarning(
+					"Error looking up role on Keyfactor.",
+					fmt.Sprintf(
+						"Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.",
+						roleStr,
+						state.AccountName.Value,
+						roleStr,
+					),
+				)
+				continue
+			}
+			validRolesInterface = append(validRolesInterface, kfRole.Id)
+		}
+
+		//Update role identities (full-replace; an explicit empty list clears them)
+		err := setIdentityRole(ctx, r.p.client, state.AccountName.Value, validRolesInterface)
+		if err != nil {
+			response.Diagnostics.AddError("Error updating identity roles.", "Error updating identity roles: "+err.Error())
+		}
+		result.Roles = plan.Roles
 	}
 
 	// Set state
@@ -351,13 +375,25 @@ func (r resourceSecurityIdentity) Create(
 	if validRoles == nil {
 		validRoles = plan.Roles.Elems
 	}
+
+	// roles is Optional+Computed: when config omits it entirely, plan.Roles
+	// arrives Unknown (there's no prior state yet for UseStateForUnknown to
+	// copy forward from during Create). A freshly-created identity genuinely
+	// has no roles unless declared, so resolve Unknown to a concrete empty
+	// list rather than writing an Unknown value into state, which Terraform
+	// Core would reject.
+	resultRoles := plan.Roles
+	if resultRoles.Unknown {
+		resultRoles = types.List{ElemType: types.StringType, Elems: []attr.Value{}}
+	}
+
 	// Generate resource state struct
 	var result = SecurityIdentity{
 		ID:           types.Int64{Value: int64(createResponse.Id)},
 		AccountName:  types.String{Value: accountName},
 		IdentityType: types.String{Value: plan.IdentityType.Value},
 		Valid:        types.Bool{Value: plan.Valid.Value},
-		Roles:        plan.Roles,
+		Roles:        resultRoles,
 	}
 
 	diags = response.State.Set(ctx, result)

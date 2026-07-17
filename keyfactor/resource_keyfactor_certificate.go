@@ -407,6 +407,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			"owner_role_name": {
 				Type:     types.StringType,
 				Optional: true,
+				Computed: true,
 				Description: "Optional owner role name. " +
 					"This is required if the certificate template being used requires an owner role to be set during" +
 					" enrollment. Only compatible with Keyfactor Command versions v12.3.0 and later.",
@@ -424,7 +425,7 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 > [!IMPORTANT]
 > Only compatible with Keyfactor Command versions v12.3.0 and later.
 `,
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"certificate_id": {
 				Type:          types.Int64Type,
@@ -1415,6 +1416,20 @@ func (r resourceCommandCertificate) Read(
 	}
 }
 
+// certificateOwnerRoleChanged reports whether Update should call
+// ChangeCertificateOwnerRole. owner_role_name is Optional+Computed: when the
+// plan never declares it (Null/Unknown), Terraform carries the prior state
+// value forward and we must NOT fire an owner-role change — doing so would
+// send an explicit empty/zero NewRoleName and wipe an assignment the user
+// never touched via Terraform. Only an explicit plan value that differs from
+// state should trigger the update.
+func certificateOwnerRoleChanged(plan, state CommandCertificate) bool {
+	if plan.OwnerRoleName.Null || plan.OwnerRoleName.Unknown {
+		return false
+	}
+	return plan.OwnerRoleName.Value != state.OwnerRoleName.Value
+}
+
 func (r resourceCommandCertificate) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -1550,7 +1565,7 @@ func (r resourceCommandCertificate) Update(
 	}
 
 	// Check if ownerrolename has changed
-	if plan.OwnerRoleName.Value != state.OwnerRoleName.Value {
+	if certificateOwnerRoleChanged(plan, state) {
 		tflog.Debug(ctx, "OwnerRoleName has changed, updating certificate owner role.")
 		// Check if rolename is an integer ID or string name
 		ownerInt, convErr := strconv.Atoi(plan.OwnerRoleName.Value)
@@ -1669,7 +1684,7 @@ func (r resourceCommandCertificate) Update(
 
 			CertificateFormat: plan.CertificateFormat,
 			EnrollmentPattern: plan.EnrollmentPattern,
-			OwnerRoleName:     plan.OwnerRoleName,
+			OwnerRoleName:     knownStringFromPlan(plan.OwnerRoleName),
 			PFX:               state.PFX,
 			JKS:               state.JKS,
 			Zip:               state.Zip,
@@ -1788,7 +1803,7 @@ func (r resourceCommandCertificate) Update(
 
 			CertificateFormat: plan.CertificateFormat,
 			EnrollmentPattern: plan.EnrollmentPattern,
-			OwnerRoleName:     plan.OwnerRoleName,
+			OwnerRoleName:     knownStringFromPlan(plan.OwnerRoleName),
 			PFX:               state.PFX,
 			JKS:               state.JKS,
 			Zip:               state.Zip,
@@ -3015,7 +3030,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		IsPendingRevocation:  types.Bool{Value: false}, // Newly enrolled certificates are not pending revocation
 		RenewalConfig:        plan.RenewalConfig,
 		CertificateFormat:    plan.CertificateFormat,
-		OwnerRoleName:        plan.OwnerRoleName,
+		OwnerRoleName:        knownStringFromPlan(plan.OwnerRoleName),
 		EnrollmentPattern:    plan.EnrollmentPattern,
 		NotBefore:            types.String{Null: true}, // Not provided in enroll response
 		NotAfter:             types.String{Null: true}, // Not provided in enroll response
@@ -3657,7 +3672,7 @@ func (r resourceCommandCertificate) enrollCSR(
 		RenewalConfig:        plan.RenewalConfig,
 		EnrollmentPattern:    plan.EnrollmentPattern,
 		CertificateFormat:    plan.CertificateFormat,
-		OwnerRoleName:        plan.OwnerRoleName,
+		OwnerRoleName:        knownStringFromPlan(plan.OwnerRoleName),
 		PFX:                  types.String{Null: true}, // Null because CSR enrollment does not provide a PFX
 		JKS:                  types.String{Null: true}, // Null because CSR enrollment does not provide a JKS
 		Zip:                  types.String{Null: true}, // Null because CSR enrollment does not provide a ZIP

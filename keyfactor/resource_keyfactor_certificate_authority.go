@@ -637,19 +637,13 @@ func boolPtrToTfBool(v *bool) types.Bool {
 // enrollmentTypePtrToTfInt64 converts a *CSSCMSCoreEnumsEnrollmentType pointer to types.Int64.
 // Nil (server field absent) becomes Null so the value is not sent on PUT.
 func enrollmentTypePtrToTfInt64(v *v1.CSSCMSCoreEnumsEnrollmentType) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
+	return enumPtrToTfInt64(v)
 }
 
 // keyRetentionPtrToTfInt64 converts a *CSSCMSCoreEnumsKeyRetentionPolicy pointer to types.Int64.
 // Nil (server field absent) becomes Null so the value is not sent on PUT.
 func keyRetentionPtrToTfInt64(v *v1.CSSCMSCoreEnumsKeyRetentionPolicy) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
+	return enumPtrToTfInt64(v)
 }
 
 // nullableBoolToTfBool converts a NullableBool from the SDK response to a types.Bool.
@@ -664,10 +658,7 @@ func nullableBoolToTfBool(v v1.NullableBool) types.Bool {
 // cleanupTimeUnitsPtrToTfInt64 converts a *CSSCMSDataModelEnumsCertificateCleanupTimeUnits pointer to types.Int64.
 // Nil (server field absent) becomes Null so the value is not sent on PUT.
 func cleanupTimeUnitsPtrToTfInt64(v *v1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
+	return enumPtrToTfInt64(v)
 }
 
 func stringSliceToTfList(vals []string) types.List {
@@ -837,6 +828,35 @@ func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCert
 	}
 }
 
+// preserveCAUpdateFields reconciles Update() plan values that Command's CA PUT
+// treats as full-replace (an omitted field is cleared server-side, not left
+// unchanged). For scan/threshold schedules and the allowed-requester list, a
+// Null plan value means the attribute is simply undeclared in config, NOT that
+// the user wants it cleared — so preserve the prior state value rather than
+// letting buildCARequest omit it (which would clear it). This runs only on the
+// Update() path; Create() and the Delete() clear-schedule path intentionally
+// still let a Null value omit/clear.
+//
+// Note on allowed_requesters: Command's GET does not return the list, so after
+// an ImportState (which cannot populate it) the prior state is itself Null and
+// there is no value to preserve. In that case the field remains omitted from
+// the request, relying on Command to leave an omitted AllowedRequesters
+// unchanged; users importing a standalone CA with an allowed-requester list
+// should declare allowed_requesters in config so it is carried in state.
+func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, state KeyfactorCertificateAuthority) {
+	preserveInt := func(p *types.Int64, s types.Int64) {
+		if p.Null && !s.Null && !s.Unknown {
+			*p = s
+		}
+	}
+	preserveInt(&plan.FullScanIntervalMinutes, state.FullScanIntervalMinutes)
+	preserveInt(&plan.IncrementalScanIntervalMinutes, state.IncrementalScanIntervalMinutes)
+	preserveInt(&plan.ThresholdCheckIntervalMinutes, state.ThresholdCheckIntervalMinutes)
+	if plan.AllowedRequesters.Null && !state.AllowedRequesters.Null && !state.AllowedRequesters.Unknown {
+		plan.AllowedRequesters = state.AllowedRequesters
+	}
+}
+
 func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
 	LogFunctionEntry(ctx, "resourceCertificateAuthority.Create")
 
@@ -947,6 +967,18 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 	}
 
 	tflog.Info(ctx, fmt.Sprintf("Updating certificate authority ID %d", id))
+
+	// Command's CA PUT is a full replacement: any scan/threshold schedule or
+	// allowed-requester list omitted from the body is cleared server-side (the
+	// Delete path below deliberately exploits this to clear Windows Task
+	// Scheduler entries). buildCARequest omits FullScan/IncrementalScan/
+	// ThresholdCheck/AllowedRequesters whenever the plan value is Null. On an
+	// Update() that leaves those attributes undeclared (Null in the plan) this
+	// silently wipes a live schedule or the CA's real allowed-requester list.
+	// Mirror GH issue #175: preserve the prior state value when the plan simply
+	// does not declare the attribute, so an unrelated Update never clears state
+	// the user never asked to change.
+	preserveCAUpdateFields(&plan, state)
 
 	updateReq := buildCARequest(ctx, plan)
 	idInt32 := int32(id)

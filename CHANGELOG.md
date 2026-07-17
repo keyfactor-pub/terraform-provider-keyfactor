@@ -11,21 +11,44 @@ _None — this release is fixes plus internal/dependency work._
 
 ### Certificate Stores
 
-- fix: `keyfactor_certificate_store` `Update` no longer silently clears an existing container/application assignment when `application_name`/`container_name` is not declared in config — a resolved container ID of `0` was previously omitted from the update request entirely, which Command interprets as "unassign," destroying a real out-of-band assignment before Terraform's own consistency check could even flag it. The existing `container_id` is now preserved whenever prior state shows a real assignment and the plan gives no explicit name. Fixes [#175](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/175)
-- fix: `keyfactor_certificate_store` container/application name resolution (`lookupContainerNameByID`) now retries via the list endpoint before falling back to a hint, reducing spurious `container_name`/`application_name` nulling on a single transient/permission-scoped lookup failure
+- fix: `keyfactor_certificate_store` `Update` no longer silently clears an existing container/application assignment when `application_name`/`container_name` is not declared in config — a resolved container ID of `0` was previously omitted from the update request entirely, which Command interprets as "unassign," destroying a real out-of-band assignment before Terraform's own consistency check could even flag it. The existing `container_id` is now preserved whenever prior state shows a real assignment and the plan gives no explicit name (an explicit empty-string name still clears it). Fixes [#175](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/175)
+- fix: `keyfactor_certificate_store` container/application name resolution (`lookupContainerNameByID`) now retries via the list endpoint before falling back to a hint, and that list-endpoint fallback is now paginated (previously silently truncated to Command's first page)
+- fix: `keyfactor_certificate_store` `Update` always re-resolves the container/application name by ID after a successful update instead of trusting a locally-resolved name, preventing a same-apply state mismatch if Command's canonical name differs (case/whitespace normalization, or an out-of-band rename)
+- fix: `keyfactor_certificate_store` no longer sends an explicit empty `InventorySchedule` object when the config doesn't declare one
+- fix: `keyfactor_certificate_store` `Create`/`Update` no longer crash the provider with a nil-pointer dereference when the agent identifier lookup returns no matching agent
+
+### Provider-wide inconsistent-state audit
+
+A provider-wide audit for the same bug class as #175 — an omitted attribute and an explicitly-cleared attribute being treated as the same thing, which could silently clear real server-side state or crash the provider — found and fixed issues across 12 resources:
+
+- fix: nil-pointer-dereference crashes eliminated in `keyfactor_certificate_deploy`, `keyfactor_oauth_security_role_claim_association`, and OAuth claim role-mapping, on certain error responses from Command
+- fix: `keyfactor_application` no longer silently drops an existing schedule on an unrelated update when `schedule_*` attributes are omitted from config
+- fix: `keyfactor_certificate_authority` no longer silently clears scan schedules or `allowed_requesters` on an unrelated update
+- fix: `keyfactor_certificate_store_type` explicit `false`/empty values for `local_store`, `server_required`, `power_shell`, and `blueprint_allowed` are no longer dropped from requests or misread as `false`
+- fix: `keyfactor_certificate_template` explicit empty lists (`template_regexes`, `template_defaults`, `enrollment_fields`, `metadata_fields`) now actually clear server-side; 4 Command v25+ attributes no longer drift on refresh
+- fix: `keyfactor_pam_provider_type` explicit empty `display_name` is now preserved instead of falling back to a server default; a null `data_type` no longer reads as a misleading concrete value
+- fix: `keyfactor_pam_provider` an explicit `param_values` clear now reaches the update request instead of being silently ignored
+- fix: `keyfactor_security_identity` no longer strips existing role assignments on an unrelated update when `roles` is omitted from config; `Read` now detects role changes made outside Terraform instead of showing stale data. `roles` is now `Optional`+`Computed`, which also fixes a `Provider produced inconsistent result after apply` error on updates to identities that already have roles assigned
+- fix: `keyfactor_security_role` no longer clears a role's `permissions` on an unrelated update when `permissions` is omitted from config — this previously happened two ways: an explicit clear being sent by mistake, and (even after that fix) Command's update endpoint treating a merely-missing field the same as an explicit clear. `Read` now detects permission/description changes made outside Terraform instead of showing stale data, and `permissions` is now `Optional`+`Computed`, fixing a `Provider produced inconsistent result after apply` error on updates to roles that already have permissions assigned
+- fix: `keyfactor_template_role_binding` role attach/detach no longer risks clearing unrelated template settings; `Read` now detects role changes made outside Terraform and surfaces an error instead of failing silently when template data can't be read
+- fix: `keyfactor_template_role_binding` role attach/detach no longer fails with `'Policies' cannot be empty` on templates linked to an enrollment pattern — Command's update endpoint is full-replace and was clearing the template's key-algorithm policy whenever it wasn't resent. Fixes [#180](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/180)
+- fix: `keyfactor_certificate` `owner_role_name` no longer causes a spurious ownership change (and drift) when left unset in config
+- fix: OAuth security claims missing a provider sub-object in Command's response now surface a warning instead of silently clearing the claim's provider association on the next update
 
 ## Chore / Internal
 
-- chore(deps): bump `keyfactor-go-client/v3` to `v3.5.6-rc.1` — `GetTemplates` now paginates automatically, with a max-page safety bound, per-iteration response-body close, and audit logging.
+- chore(deps): bump `keyfactor-go-client/v3` to GA `v3.5.6` — adds nullable `*bool` store-type flags, `EntryPassword` `omitempty`, paginated `GetStoreContainers` and `GetTemplates`, and the `TemplatePolicy` model needed to fix #180 (Keyfactor/keyfactor-go-client#55, #56, #57).
 - test(template): re-recorded the five `GET /Templates` VCR cassettes for the paginated request (`?PageReturned&ReturnLimit`); added an opt-in `newVCRProviderFactoriesReplayable` variant used only by the read-only certificate-template data-source unit test.
 - test(integration): two lab-constraint-only failures (`TestIntKeyfactorCertificateResource_SANs`, `TestIntKeyfactorCertificateAuthorityResourceUpdate`) are now handled in-test (skip with warning) so unexpected failures still fail.
 - chore(release): add `# v2.9.1` CHANGELOG section; version set to `2.9.1-rc.1`.
+- refactor: deduped four near-identical `*enumType -> types.Int64` pointer converters (`enrollmentTypePtrToTfInt64`, `keyRetentionPtrToTfInt64`, `cleanupTimeUnitsPtrToTfInt64`, `pamParameterDataTypePtrToTfInt64`) into one generic `enumPtrToTfInt64` helper; no behavior change.
+- refactor: replaced the `getStringType(...).Value` idiom (7 call sites in `helpers.go` and `resource_keyfactor_oauth_security_role_claim_association.go`) with a plain `derefOrEmpty` helper; no behavior change.
+- test: extracted the shared `httptest`-backed mock `AuthConfig` helper (`mockAuthConfig` in `test_helpers_test.go`) that replaced three near-identical per-file mocks in the certificate, certificate-deploy, and OAuth security role claim association unit tests.
 
 ## Pending (before GA v2.9.1)
 
-- **GA dependency gate:** `go.mod` is pinned to `keyfactor-go-client/v3 v3.5.6-rc.1`. Move the pin (and the dependency note above) to GA `v3.5.6` once Keyfactor/keyfactor-go-client#55 is merged and released. This release stays a prerelease until then.
-- **RC-only validation:** the unit suite is validated against `v3.5.6-rc.1` and integration is green on the lab; re-validate against GA `v3.5.6` before release.
-- **Deferred follow-ups (non-blocking):** extract the shared `httptest` mock helper (currently duplicated across unit tests); optional structured-logging (SIEM-friendly fields) enhancements from the compliance audit.
+- **Deferred follow-ups (non-blocking):** optional structured-logging (SIEM-friendly fields) enhancements from the compliance audit.
+- **Known open gap (not yet fixed):** `keyfactor_certificate_authority` has many Optional+Computed pointer fields where server-side omission could still flip a value to zero — same bug class as the `keyfactor_security_identity`/`keyfactor_security_role` fixes above, unaudited.
 
 # v2.9.0
 

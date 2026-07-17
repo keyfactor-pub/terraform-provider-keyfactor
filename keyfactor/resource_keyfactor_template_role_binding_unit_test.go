@@ -102,6 +102,63 @@ func TestUnitTemplateRoleBindingUpdateArgPreservesUnrelatedFields(t *testing.T) 
 	})
 }
 
+// TestUnitTemplateRoleBindingUpdateArgPreservesTemplatePolicy is a regression
+// test for GitHub issue #180: attaching or detaching a role from a template
+// linked to an enrollment pattern failed on every attempt with
+// "'Policies' cannot be empty", because api.UpdateTemplateArg had no field to
+// carry the template's TemplatePolicy (PrimaryKeyAlgorithms /
+// AlternativeKeyAlgorithms, AllowKeyReuse, AllowWildcards, etc) forward, so
+// buildTemplateRoleBindingUpdateArg could never populate it even though
+// GetTemplate always returns it for enrollment-pattern-linked templates.
+// Command's PUT /Templates is a full replacement: omitting TemplatePolicy
+// collapses its internally-derived policy set to empty and the server
+// rejects the request outright (confirmed against a live Command 25.4.1
+// instance). Templates with no policy configured (nil TemplatePolicy) must
+// not have one fabricated.
+func TestUnitTemplateRoleBindingUpdateArgPreservesTemplatePolicy(t *testing.T) {
+	allowKeyReuse := true
+	allowWildcards := true
+	policy := &api.TemplatePolicy{
+		TemplateId:     4,
+		AllowKeyReuse:  &allowKeyReuse,
+		AllowWildcards: &allowWildcards,
+		PrimaryKeyAlgorithms: []api.TemplateKeyAlgorithm{
+			{Name: "RSA", BitLengths: []int{2048, 3072, 4096}},
+			{Name: "Ed25519", BitLengths: []int{255}},
+		},
+	}
+
+	t.Run("template with a configured policy round-trips it on attach", func(t *testing.T) {
+		template := &api.GetTemplateResponse{
+			Id:             4,
+			CommonName:     "Server_tlsServerAuth-1y",
+			TemplatePolicy: policy,
+		}
+
+		arg := buildTemplateRoleBindingUpdateArg(template, []string{"Administrator"})
+
+		if assert.NotNil(t, arg.TemplatePolicy, "TemplatePolicy must be preserved, not dropped") {
+			assert.Same(t, policy, arg.TemplatePolicy)
+			if assert.Len(t, arg.TemplatePolicy.PrimaryKeyAlgorithms, 2) {
+				assert.Equal(t, "RSA", arg.TemplatePolicy.PrimaryKeyAlgorithms[0].Name)
+			}
+		}
+	})
+
+	t.Run("template with no configured policy leaves TemplatePolicy nil", func(t *testing.T) {
+		template := &api.GetTemplateResponse{
+			Id:         5,
+			CommonName: "Admin_Authentication-2048-3y",
+			// TemplatePolicy intentionally nil, matching what GetTemplate
+			// returns for templates that have never had one configured.
+		}
+
+		arg := buildTemplateRoleBindingUpdateArg(template, []string{"Administrator"})
+
+		assert.Nil(t, arg.TemplatePolicy, "TemplatePolicy must stay nil when the template has none configured")
+	})
+}
+
 // TestUnitTemplateNamesStillAttached is a direct regression test for the
 // helper extracted from Read(): it must drop any template name whose template
 // no longer lists roleName as an allowed requester (out-of-band detach),

@@ -636,6 +636,18 @@ func buildTemplateRoleBindingUpdateArg(
 		arg.TemplateRegexes = &rx
 	}
 
+	// Preserve TemplatePolicy (PrimaryKeyAlgorithms/AlternativeKeyAlgorithms,
+	// AllowKeyReuse, AllowWildcards, etc). Command's PUT /Templates derives an
+	// internal "Policies" set from this object; for any template linked to an
+	// enrollment pattern, omitting it here collapses that set to empty and
+	// Command rejects the whole update with "'Policies' cannot be empty" —
+	// confirmed against a live Command 25.4.1 instance (issue #180). Templates
+	// with no policy configured return a nil TemplatePolicy, which is fine to
+	// leave unset here since there is nothing to lose by omitting it.
+	if template.TemplatePolicy != nil {
+		arg.TemplatePolicy = template.TemplatePolicy
+	}
+
 	return arg
 }
 

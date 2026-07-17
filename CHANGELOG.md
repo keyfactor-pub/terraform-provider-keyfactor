@@ -36,7 +36,7 @@ A provider-wide audit for the same bug class as #175 — an omitted attribute an
 
 ## Chore / Internal
 
-- chore(deps): bump `keyfactor-go-client/v3` to `v3.5.6-rc.2` — adds nullable `*bool` store-type flags, `EntryPassword` `omitempty`, and paginated `GetStoreContainers` (Keyfactor/keyfactor-go-client#56, stacked on the still-open #55) on top of the `v3.5.6-rc.1` `GetTemplates` pagination work.
+- chore(deps): bump `keyfactor-go-client/v3` to GA `v3.5.6` — adds nullable `*bool` store-type flags, `EntryPassword` `omitempty`, paginated `GetStoreContainers` and `GetTemplates`, and the `TemplatePolicy` model needed to fix #180 (Keyfactor/keyfactor-go-client#55, #56, #57).
 - test(template): re-recorded the five `GET /Templates` VCR cassettes for the paginated request (`?PageReturned&ReturnLimit`); added an opt-in `newVCRProviderFactoriesReplayable` variant used only by the read-only certificate-template data-source unit test.
 - test(integration): two lab-constraint-only failures (`TestIntKeyfactorCertificateResource_SANs`, `TestIntKeyfactorCertificateAuthorityResourceUpdate`) are now handled in-test (skip with warning) so unexpected failures still fail.
 - chore(release): add `# v2.9.1` CHANGELOG section; version set to `2.9.1-rc.1`.
@@ -46,11 +46,9 @@ A provider-wide audit for the same bug class as #175 — an omitted attribute an
 
 ## Pending (before GA v2.9.1)
 
-- **GA dependency gate:** `go.mod` is pinned to `keyfactor-go-client/v3 v3.5.6-rc.2`. Keyfactor/keyfactor-go-client#55 and #56 have merged into `v3`, but no GA tag has been cut yet; #57 (see the `keyfactor_template_role_binding` gap below) should land in the same `v3.5.6` GA cut. This release stays a prerelease until GA `v3.5.6` ships and the pin moves.
-- **RC-only validation:** the unit suite is validated against `v3.5.6-rc.2` (including a vendor-free run against the real published module) and integration is green on the lab; re-validate against GA `v3.5.6` before release.
 - **Deferred follow-ups (non-blocking):** optional structured-logging (SIEM-friendly fields) enhancements from the compliance audit.
 - **Known open gap (not yet fixed):** `keyfactor_certificate_authority` has many Optional+Computed pointer fields where server-side omission could still flip a value to zero — same bug class as the `keyfactor_security_identity`/`keyfactor_security_role` fixes above, unaudited.
-- **Known open gap (not yet fixed):** `keyfactor_template_role_binding` attach/detach fails on any template linked to an enrollment pattern with `'Policies' cannot be empty`. Tracked as [#180](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/180); fix depends on [Keyfactor/keyfactor-go-client#57](https://github.com/Keyfactor/keyfactor-go-client/pull/57) merging and being published.
+- **Known open gap (not yet fixed):** `keyfactor_template_role_binding` attach/detach fails on any template linked to an enrollment pattern with `'Policies' cannot be empty`. Tracked as [#180](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/180); the go-client fix is merged and GA'd (`v3.5.6`), but the provider-side change to actually use it hasn't landed on this branch yet.
 
 # v2.9.0
 

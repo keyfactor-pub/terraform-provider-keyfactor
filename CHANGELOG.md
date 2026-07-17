@@ -31,6 +31,7 @@ A provider-wide audit for the same bug class as #175 — an omitted attribute an
 - fix: `keyfactor_security_identity` no longer strips existing role assignments on an unrelated update when `roles` is omitted from config; `Read` now detects role changes made outside Terraform instead of showing stale data. `roles` is now `Optional`+`Computed`, which also fixes a `Provider produced inconsistent result after apply` error on updates to identities that already have roles assigned
 - fix: `keyfactor_security_role` no longer clears a role's `permissions` on an unrelated update when `permissions` is omitted from config — this previously happened two ways: an explicit clear being sent by mistake, and (even after that fix) Command's update endpoint treating a merely-missing field the same as an explicit clear. `Read` now detects permission/description changes made outside Terraform instead of showing stale data, and `permissions` is now `Optional`+`Computed`, fixing a `Provider produced inconsistent result after apply` error on updates to roles that already have permissions assigned
 - fix: `keyfactor_template_role_binding` role attach/detach no longer risks clearing unrelated template settings; `Read` now detects role changes made outside Terraform and surfaces an error instead of failing silently when template data can't be read
+- fix: `keyfactor_template_role_binding` role attach/detach no longer fails with `'Policies' cannot be empty` on templates linked to an enrollment pattern — Command's update endpoint is full-replace and was clearing the template's key-algorithm policy whenever it wasn't resent. Fixes [#180](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/180)
 - fix: `keyfactor_certificate` `owner_role_name` no longer causes a spurious ownership change (and drift) when left unset in config
 - fix: OAuth security claims missing a provider sub-object in Command's response now surface a warning instead of silently clearing the claim's provider association on the next update
 
@@ -48,7 +49,6 @@ A provider-wide audit for the same bug class as #175 — an omitted attribute an
 
 - **Deferred follow-ups (non-blocking):** optional structured-logging (SIEM-friendly fields) enhancements from the compliance audit.
 - **Known open gap (not yet fixed):** `keyfactor_certificate_authority` has many Optional+Computed pointer fields where server-side omission could still flip a value to zero — same bug class as the `keyfactor_security_identity`/`keyfactor_security_role` fixes above, unaudited.
-- **Known open gap (not yet fixed):** `keyfactor_template_role_binding` attach/detach fails on any template linked to an enrollment pattern with `'Policies' cannot be empty`. Tracked as [#180](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/180); the go-client fix is merged and GA'd (`v3.5.6`), but the provider-side change to actually use it hasn't landed on this branch yet.
 
 # v2.9.0
 

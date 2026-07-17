@@ -34,7 +34,11 @@ func (r resourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Schema
 					ElemType: types.StringType,
 				},
 				Optional:    true,
+				Computed:    true,
 				Description: "An array containing the role IDs that the identity is attached to.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.UseStateForUnknown(),
+				},
 			},
 			"id": {
 				Type:        types.Int64Type,
@@ -136,13 +140,25 @@ func (r resourceSecurityIdentity) Read(
 	}
 }
 
-// identityRolesDeclared reports whether the plan explicitly declares the roles
-// attribute. roles is Optional (not Computed), so a Null value means the user
-// omitted it from config (preserve existing assignments), while a non-null value
-// — including an explicit empty list — is a full-replace instruction (an empty
-// list clears all roles).
-func identityRolesDeclared(plan SecurityIdentity) bool {
-	return !plan.Roles.Null && !plan.Roles.Unknown
+// identityRolesDeclared reports whether the config explicitly declares the
+// roles attribute. A Null value means the user omitted it from config
+// (preserve existing assignments), while a non-null value — including an
+// explicit empty list — is a full-replace instruction (an empty list clears
+// all roles).
+//
+// This must be evaluated against the CONFIG, not the plan. roles is
+// Optional+Computed (with a UseStateForUnknown plan modifier, added to fix
+// "Provider produced inconsistent result after apply" when an unrelated
+// Update omitted roles from config): when the attribute is genuinely
+// undeclared, Terraform Core still resolves request.Plan.Roles to the prior
+// state's value (copied forward by the plan modifier so the CLI doesn't show
+// spurious "(known after apply)" noise on every unrelated plan). Checking
+// plan.Roles.Null here would therefore always be false, indistinguishable
+// from a real declaration of the same list. request.Config.Roles is never
+// touched by plan modifiers, so it still reports Null exactly when the user
+// omitted the attribute.
+func identityRolesDeclared(config SecurityIdentity) bool {
+	return !config.Roles.Null && !config.Roles.Unknown
 }
 
 func (r resourceSecurityIdentity) Update(
@@ -153,6 +169,16 @@ func (r resourceSecurityIdentity) Update(
 	// Get plan values
 	var plan SecurityIdentity
 	diags := request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Get config values. roles is Optional+Computed, so request.Plan.Roles is
+	// no longer a reliable signal of whether the user declared the attribute
+	// (see identityRolesDeclared's doc comment) — request.Config.Roles is.
+	var config SecurityIdentity
+	diags = request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -184,7 +210,7 @@ func (r resourceSecurityIdentity) Update(
 		Roles:        state.Roles,
 	}
 
-	if identityRolesDeclared(plan) {
+	if identityRolesDeclared(config) {
 		// Generate API request body from plan
 		var validRolesInterface []interface{}
 		for _, role := range plan.Roles.Elems {
@@ -349,13 +375,25 @@ func (r resourceSecurityIdentity) Create(
 	if validRoles == nil {
 		validRoles = plan.Roles.Elems
 	}
+
+	// roles is Optional+Computed: when config omits it entirely, plan.Roles
+	// arrives Unknown (there's no prior state yet for UseStateForUnknown to
+	// copy forward from during Create). A freshly-created identity genuinely
+	// has no roles unless declared, so resolve Unknown to a concrete empty
+	// list rather than writing an Unknown value into state, which Terraform
+	// Core would reject.
+	resultRoles := plan.Roles
+	if resultRoles.Unknown {
+		resultRoles = types.List{ElemType: types.StringType, Elems: []attr.Value{}}
+	}
+
 	// Generate resource state struct
 	var result = SecurityIdentity{
 		ID:           types.Int64{Value: int64(createResponse.Id)},
 		AccountName:  types.String{Value: accountName},
 		IdentityType: types.String{Value: plan.IdentityType.Value},
 		Valid:        types.Bool{Value: plan.Valid.Value},
-		Roles:        plan.Roles,
+		Roles:        resultRoles,
 	}
 
 	diags = response.State.Set(ctx, result)

@@ -21,6 +21,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -617,6 +618,59 @@ func (v *vcrAuthConfig) GetServerConfig() *auth_providers.Server {
 func (v *vcrAuthConfig) GetCommandVersion() string {
 	// VCR tests always target a v25+ lab; use the Applications endpoint.
 	return "25.1.0.0"
+}
+
+// mockAuthConfig implements the AuthConfig-shaped interfaces required by both
+// api.Client (keyfactor-go-client v3) and the keyfactor-go-client-sdk v24
+// v1/v2 API clients, backed by an httptest server. It replaces three
+// near-identical per-file mock AuthConfig types (certUpdateMockAuthConfig,
+// certDeployMockAuthConfig, oauthRoleClaimAssocMockAuthConfig) that
+// duplicated the same GetServerConfig/GetHttpClient/Authenticate/
+// GetCommandVersion bodies.
+//
+// apiPath and stripScheme cover the one real difference between the two
+// consumers: api.Client wants Host as a full URL (scheme included) plus an
+// explicit APIPath segment, while the SDK v24 clients' prepareRequest sets
+// url.Scheme = "https" itself and takes Host verbatim -- passing it a
+// scheme-prefixed URL would double up the scheme, so Host must be the bare
+// "host:port" form for that caller (see newSDKMockAuthConfig).
+type mockAuthConfig struct {
+	server      *httptest.Server
+	apiPath     string
+	stripScheme bool
+}
+
+func (m *mockAuthConfig) GetServerConfig() *auth_providers.Server {
+	host := m.server.URL
+	if m.stripScheme {
+		host = strings.TrimPrefix(host, "https://")
+	}
+	return &auth_providers.Server{
+		Host:          host,
+		APIPath:       m.apiPath,
+		SkipTLSVerify: true,
+	}
+}
+
+func (m *mockAuthConfig) GetHttpClient() (*http.Client, error) {
+	return m.server.Client(), nil
+}
+
+func (m *mockAuthConfig) Authenticate() error       { return nil }
+func (m *mockAuthConfig) GetCommandVersion() string { return "25.1.0.0" }
+
+// newCertAPIMockAuthConfig builds a mockAuthConfig suitable for api.Client
+// (keyfactor-go-client v3), which wants a scheme-prefixed Host plus an
+// explicit APIPath.
+func newCertAPIMockAuthConfig(server *httptest.Server) *mockAuthConfig {
+	return &mockAuthConfig{server: server, apiPath: "KeyfactorAPI"}
+}
+
+// newSDKMockAuthConfig builds a mockAuthConfig suitable for the
+// keyfactor-go-client-sdk v24 v1/v2 API clients, which want a bare
+// "host:port" Host with no scheme and no separate APIPath.
+func newSDKMockAuthConfig(server *httptest.Server) *mockAuthConfig {
+	return &mockAuthConfig{server: server, stripScheme: true}
 }
 
 // newVCRServer returns a fake *auth_providers.Server suitable for VCR replay.

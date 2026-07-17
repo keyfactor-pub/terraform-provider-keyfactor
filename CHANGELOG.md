@@ -28,10 +28,11 @@ A resource-wide audit for the same bug class as #175 (a resolved zero/empty/nil 
 - fix: `keyfactor_certificate_template` explicit empty lists (`template_regexes`, `template_defaults`, `enrollment_fields`, `metadata_fields`) now actually clear server-side instead of no-op'ing; 4 Command v25+ attributes now correctly carry forward via `UseStateForUnknown`
 - fix: `keyfactor_pam_provider_type` explicit empty `display_name` is preserved instead of falling back to a server default; a nil `data_type` now reads as null instead of a misleading concrete value
 - fix: `keyfactor_pam_provider` an explicit `param_values` clear now reaches the update request instead of silently no-op'ing
-- fix: `keyfactor_security_identity` `Update` preserves existing roles when `roles` is undeclared (previously stripped all real role assignments); `Read` now detects out-of-band role drift instead of echoing stale state
-- fix: `keyfactor_security_role` `Update` no longer sends an explicit `Permissions: null` when `permissions` is undeclared, and no longer masks real server-side permission drift by echoing the client's raw plan value into state instead of Command's confirmed result
-- fix: `keyfactor_template_role_binding` role attach/detach no longer risks resetting unrelated template settings; `Read` now detects out-of-band role detachment instead of reporting stale success
+- fix: `keyfactor_security_identity` `Update` preserves existing roles when `roles` is undeclared (previously stripped all real role assignments); `Read` now detects out-of-band role drift instead of echoing stale state; `roles` is now `Optional`+`Computed` with `UseStateForUnknown`, fixing a remaining `Provider produced inconsistent result after apply` on any unrelated `Update` to an identity that already had roles assigned
+- fix: `keyfactor_security_role` `Update` no longer sends an explicit `Permissions: null` when `permissions` is undeclared, and no longer masks real server-side permission drift by echoing the client's raw plan value into state instead of Command's confirmed result; `permissions` is now `Optional`+`Computed` with `UseStateForUnknown`, fixing the same `Provider produced inconsistent result after apply` class of failure as the `keyfactor_security_identity` `roles` fix above
+- fix: `keyfactor_template_role_binding` role attach/detach no longer risks resetting unrelated template settings; `Read` now detects out-of-band role detachment instead of reporting stale success, and now surfaces a diagnostic (instead of silently returning) if the template list can't be read
 - fix: `keyfactor_certificate` `owner_role_name` no longer causes a spurious `ChangeCertificateOwnerRole` call (and potential drift) when left undeclared in config
+- fix: OAuth security claims missing a `Provider` sub-object in Command's response (a known omission on some Command/identity-provider combinations) now surface a warning instead of silently sending an empty `ProviderAuthenticationScheme` on the next unrelated `keyfactor_oauth_security_role` or `keyfactor_oauth_security_role_claim_association` update, which risked clearing a real provider association
 
 ## Chore / Internal
 
@@ -39,12 +40,16 @@ A resource-wide audit for the same bug class as #175 (a resolved zero/empty/nil 
 - test(template): re-recorded the five `GET /Templates` VCR cassettes for the paginated request (`?PageReturned&ReturnLimit`); added an opt-in `newVCRProviderFactoriesReplayable` variant used only by the read-only certificate-template data-source unit test.
 - test(integration): two lab-constraint-only failures (`TestIntKeyfactorCertificateResource_SANs`, `TestIntKeyfactorCertificateAuthorityResourceUpdate`) are now handled in-test (skip with warning) so unexpected failures still fail.
 - chore(release): add `# v2.9.1` CHANGELOG section; version set to `2.9.1-rc.1`.
+- refactor: deduped four near-identical `*enumType -> types.Int64` pointer converters (`enrollmentTypePtrToTfInt64`, `keyRetentionPtrToTfInt64`, `cleanupTimeUnitsPtrToTfInt64`, `pamParameterDataTypePtrToTfInt64`) into one generic `enumPtrToTfInt64` helper; no behavior change.
+- refactor: replaced the `getStringType(...).Value` idiom (7 call sites in `helpers.go` and `resource_keyfactor_oauth_security_role_claim_association.go`) with a plain `derefOrEmpty` helper; no behavior change.
+- test: extracted the shared `httptest`-backed mock `AuthConfig` helper (`mockAuthConfig` in `test_helpers_test.go`) that replaced three near-identical per-file mocks in the certificate, certificate-deploy, and OAuth security role claim association unit tests.
 
 ## Pending (before GA v2.9.1)
 
 - **GA dependency gate:** `go.mod` is pinned to `keyfactor-go-client/v3 v3.5.6-rc.2`. Move the pin (and the dependency note above) to GA `v3.5.6` once Keyfactor/keyfactor-go-client#55 and #56 are merged and released. This release stays a prerelease until then.
 - **RC-only validation:** the unit suite is validated against `v3.5.6-rc.2` (including a vendor-free run against the real published module) and integration is green on the lab; re-validate against GA `v3.5.6` before release.
-- **Deferred follow-ups (non-blocking):** extract the shared `httptest` mock helper (currently duplicated across unit tests); optional structured-logging (SIEM-friendly fields) enhancements from the compliance audit.
+- **Deferred follow-ups (non-blocking):** optional structured-logging (SIEM-friendly fields) enhancements from the compliance audit.
+- **Known open gap (not yet fixed):** `keyfactor_certificate_authority` has many Optional+Computed pointer fields where server-side omission could still flip a value to zero — same bug class as the `keyfactor_security_identity`/`keyfactor_security_role` fixes above, unaudited.
 
 # v2.9.0
 

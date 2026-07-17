@@ -133,10 +133,7 @@ func pamProviderTypeResponseToState(resp *v1.PAMProviderTypeResponse) KeyfactorP
 // value (0), which is itself a valid, meaningful data type value and must not be
 // conflated with "not set." Nil maps to Null instead of a spurious concrete 0.
 func pamParameterDataTypePtrToTfInt64(v *v1.CSSCMSDataModelEnumsPamParameterDataType) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
+	return enumPtrToTfInt64(v)
 }
 
 func readHTTPResponseBody(resp *http.Response) string {

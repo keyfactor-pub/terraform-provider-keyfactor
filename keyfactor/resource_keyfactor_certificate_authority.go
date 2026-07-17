@@ -637,19 +637,13 @@ func boolPtrToTfBool(v *bool) types.Bool {
 // enrollmentTypePtrToTfInt64 converts a *CSSCMSCoreEnumsEnrollmentType pointer to types.Int64.
 // Nil (server field absent) becomes Null so the value is not sent on PUT.
 func enrollmentTypePtrToTfInt64(v *v1.CSSCMSCoreEnumsEnrollmentType) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
+	return enumPtrToTfInt64(v)
 }
 
 // keyRetentionPtrToTfInt64 converts a *CSSCMSCoreEnumsKeyRetentionPolicy pointer to types.Int64.
 // Nil (server field absent) becomes Null so the value is not sent on PUT.
 func keyRetentionPtrToTfInt64(v *v1.CSSCMSCoreEnumsKeyRetentionPolicy) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
+	return enumPtrToTfInt64(v)
 }
 
 // nullableBoolToTfBool converts a NullableBool from the SDK response to a types.Bool.
@@ -664,10 +658,7 @@ func nullableBoolToTfBool(v v1.NullableBool) types.Bool {
 // cleanupTimeUnitsPtrToTfInt64 converts a *CSSCMSDataModelEnumsCertificateCleanupTimeUnits pointer to types.Int64.
 // Nil (server field absent) becomes Null so the value is not sent on PUT.
 func cleanupTimeUnitsPtrToTfInt64(v *v1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
+	return enumPtrToTfInt64(v)
 }
 
 func stringSliceToTfList(vals []string) types.List {

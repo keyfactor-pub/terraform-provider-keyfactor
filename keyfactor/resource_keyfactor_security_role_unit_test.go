@@ -13,24 +13,46 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestUnitSecurityRoleUpdateArgPermissions is a regression test for the bug
-// where a Null (undeclared) permissions attribute resolved to a nil Go slice
-// that was still wrapped in a non-nil pointer (&permissions). The non-nil
-// pointer bypassed the SDK's `omitempty`, so the request marshaled as
-// `"Permissions": null` and cleared every permission the role had. permissions
-// is Optional (not Computed): Null must omit the field (preserve), while an
-// explicit empty list must be sent as [] (clear).
+// TestUnitSecurityRoleUpdateArgPermissions is a regression test for two
+// distinct bugs found in buildSecurityRoleUpdateArg, in order of discovery:
+//
+//  1. (original) A Null (undeclared) permissions attribute resolved to a nil
+//     Go slice that was still wrapped in a non-nil pointer (&permissions).
+//     The non-nil pointer bypassed the SDK's `omitempty`, so the request
+//     marshaled as `"Permissions": null` and cleared every permission the
+//     role had.
+//  2. (found validating PR179 live against a real Command instance, NOT
+//     catchable by any mock/VCR test that doesn't model the server's actual
+//     merge semantics) Command's PUT /Security/Roles is a full-replace
+//     endpoint: omitting the "Permissions" key from the request body
+//     entirely -- not just avoiding an explicit null -- STILL resets the
+//     role's permissions to an empty list server-side. Unlike Enabled/Private
+//     (which Command preserves when omitted), Permissions gets clear-if-absent
+//     handling. So "omit the field to preserve" was never actually true for
+//     this endpoint; the only way to genuinely preserve permissions across an
+//     Update that omits `permissions` from config is to resend the role's
+//     current (state) permissions explicitly. buildSecurityRoleUpdateArg now
+//     takes the state's permissions as a fallback for exactly this.
 func TestUnitSecurityRoleUpdateArgPermissions(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("undeclared permissions omits the field (preserve)", func(t *testing.T) {
+	statePermissions := types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "certificates:read"},
+		types.String{Value: "auditing:read"},
+	}}
+
+	t.Run("undeclared permissions resends state permissions (preserve)", func(t *testing.T) {
 		plan := SecurityRole{
 			Name:        types.String{Value: "role"},
 			Permissions: types.List{Null: true, ElemType: types.StringType},
 		}
-		arg := buildSecurityRoleUpdateArg(ctx, plan, 5)
-		assert.Nil(t, arg.Permissions,
-			"undeclared permissions must be omitted so Command preserves the role's existing permissions")
+		declared := types.List{Null: true, ElemType: types.StringType}
+		arg := buildSecurityRoleUpdateArg(ctx, plan, declared, statePermissions, 5)
+		if assert.NotNil(t, arg.Permissions,
+			"undeclared permissions must still be sent explicitly -- Command's PUT clears permissions when the field is absent, it does not preserve them") {
+			assert.ElementsMatch(t, []string{"certificates:read", "auditing:read"}, *arg.Permissions,
+				"undeclared permissions must resend the role's current state permissions, not omit the field")
+		}
 	})
 
 	t.Run("explicit empty list clears", func(t *testing.T) {
@@ -38,10 +60,10 @@ func TestUnitSecurityRoleUpdateArgPermissions(t *testing.T) {
 			Name:        types.String{Value: "role"},
 			Permissions: types.List{ElemType: types.StringType, Elems: []attr.Value{}},
 		}
-		arg := buildSecurityRoleUpdateArg(ctx, plan, 5)
+		arg := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, statePermissions, 5)
 		if assert.NotNil(t, arg.Permissions, "explicit permissions=[] must be sent as a clear signal") {
 			assert.Equal(t, []string{}, *arg.Permissions,
-				"an explicit empty permissions list must serialize as [] (clear), not null")
+				"an explicit empty permissions list must serialize as [] (clear), not preserved from state")
 		}
 	})
 
@@ -53,7 +75,7 @@ func TestUnitSecurityRoleUpdateArgPermissions(t *testing.T) {
 				types.String{Value: "auditing:read"},
 			}},
 		}
-		arg := buildSecurityRoleUpdateArg(ctx, plan, 5)
+		arg := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, statePermissions, 5)
 		if assert.NotNil(t, arg.Permissions) {
 			assert.ElementsMatch(t, []string{"certificates:read", "auditing:read"}, *arg.Permissions)
 		}
@@ -120,10 +142,20 @@ func TestUnitSecurityRoleResource_UpdatePreservesPlanPermissionsOrder(t *testing
 	if d := stateObj.Set(ctx, &state); d.HasError() {
 		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
 	}
+	// Config mirrors the plan here (permissions is explicitly declared) --
+	// Update() now reads request.Config to distinguish "declared" from
+	// "omitted", since permissions is Optional+Computed (see
+	// permissionsResultForUpdate's doc comment).
+	config := plan
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
 
 	r := resourceSecurityRole{p: provider{configured: true, client: client}}
 
-	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj}
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
 
 	r.Update(ctx, req, resp)
@@ -154,7 +186,7 @@ func TestUnitSecurityRoleResource_UpdatePreservesPlanPermissionsOrder(t *testing
 // TestUnitSecurityRoleResource_UpdateSurfacesRealServerDrift is the companion
 // regression test to TestUnitSecurityRoleResource_UpdatePreservesPlanPermissionsOrder:
 // unconditionally echoing plan.Permissions back into state (to avoid the
-// ordering-drift bug above) also masks genuine server-side drift — e.g.
+// ordering-drift bug above) also masks genuine server-side drift -- e.g.
 // Command rejecting or dropping a permission during Update. When the
 // server's response Permissions is NOT the same set as the plan's declared
 // permissions (regardless of order), Update() must write the server's
@@ -207,10 +239,20 @@ func TestUnitSecurityRoleResource_UpdateSurfacesRealServerDrift(t *testing.T) {
 	if d := stateObj.Set(ctx, &state); d.HasError() {
 		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
 	}
+	// Config mirrors the plan here (permissions is explicitly declared) --
+	// Update() now reads request.Config to distinguish "declared" from
+	// "omitted", since permissions is Optional+Computed (see
+	// permissionsResultForUpdate's doc comment).
+	config := plan
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
 
 	r := resourceSecurityRole{p: provider{configured: true, client: client}}
 
-	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj}
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
 
 	r.Update(ctx, req, resp)
@@ -403,5 +445,204 @@ func TestUnitSecurityRoleResource_ReadPreservesPermissionsOrderWhenUnchanged(t *
 	assert.Equal(
 		t, []string{"Certificates:Read", "Certificates:EditMetadata"}, permissions,
 		"Read() must preserve prior state's declared permissions order when the server's set is unchanged, not write back a re-sorted server copy",
+	)
+}
+
+// TestUnitSecurityRoleSchema_PermissionsIsComputedWithUseStateForUnknown is a
+// regression test for "Provider produced inconsistent result after apply:
+// .permissions: was null, but now cty.ListVal(...)" -- the identical defect to
+// the one fixed for keyfactor_identity's `roles` attribute (see
+// TestUnitSecurityIdentitySchema_RolesIsComputedWithUseStateForUnknown in
+// resource_keyfactor_security_identity_unit_test.go).
+//
+// permissions was Optional but NOT Computed. permissionsResultForUpdate (used
+// by Update()) deliberately writes a concrete, non-null permissions list into
+// the result whenever the config omits permissions, to preserve the role's
+// existing permissions across an unrelated Update. But for a non-Computed
+// attribute, Terraform Core plans directly from config with no path for a
+// provider-side plan modifier to intervene, so an omitted-from-config
+// permissions attribute always plans as Null. Any role with permissions
+// already assigned then failed apply with "Provider produced inconsistent
+// result after apply" on any unrelated Update.
+//
+// Why this shipped: this repo's TestUnit* harness for this resource
+// (TestUnitSecurityRoleResource_UpdatePreservesPlanPermissionsOrder etc.,
+// above) calls resourceSecurityRole's methods directly via hand-built
+// tfsdk.Plan/tfsdk.State values -- it never drives a real Terraform Core
+// plan/apply cycle, so a schema-shape defect like this one is invisible to
+// it (Update()'s return value looks correct in isolation). Unlike
+// TestUnitKeyfactorIdentityResource, this resource's one VCR-backed
+// resource.UnitTest (TestUnitKeyfactorSecurityRoleResource) never has a step
+// that omits permissions from config -- extending its cassette would require
+// recording a new interaction against a live lab, out of scope for this fix.
+// The strongest regression test achievable without that is asserting the
+// schema fix directly, mirroring
+// TestUnitTemplateSchema_V25CleanupFieldsUseStateForUnknown's approach for
+// the same bug class on a different resource.
+func TestUnitSecurityRoleSchema_PermissionsIsComputedWithUseStateForUnknown(t *testing.T) {
+	ctx := context.Background()
+
+	schema, diags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics building schema: %v", diags)
+	}
+
+	attribute, ok := schema.Attributes["permissions"]
+	if !ok {
+		t.Fatalf("expected schema attribute %q to exist", "permissions")
+	}
+
+	if !attribute.Optional || !attribute.Computed {
+		t.Fatalf("attribute %q: expected Optional+Computed, got Optional=%v Computed=%v", "permissions", attribute.Optional, attribute.Computed)
+	}
+
+	found := false
+	for _, m := range attribute.PlanModifiers {
+		if _, ok := m.(tfsdk.UseStateForUnknownModifier); ok {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("attribute %q: expected UseStateForUnknown plan modifier so an omitted-from-config value carries forward from state instead of planning Null, but none was found (modifiers: %+v)", "permissions", attribute.PlanModifiers)
+	}
+}
+
+// TestUnitSecurityRoleResource_UpdatePreservesPermissionsWhenConfigOmitsThem
+// is a functional companion to the schema-level test above: it exercises the
+// real Update() path with a Config that omits permissions (Null) but a Plan
+// that already carries the prior state's permissions forward -- reproducing
+// exactly what UseStateForUnknownModifier hands Update() once the schema fix
+// is in place (see UseStateForUnknownModifier.Modify in
+// vendor/.../tfsdk/attribute_plan_modification.go: it copies AttributeState
+// into AttributePlan when AttributeConfig is null and AttributePlan is
+// unknown). It asserts Update()'s returned Permissions is IDENTICAL to the
+// planned value, which is the actual invariant Terraform Core enforces ("the
+// final value of a Known planned attribute must not change") -- not just "the
+// right permissions in some form."
+//
+// NOTE on red/green: this test's mock server models Command's REAL PUT
+// /Security/Roles full-replace semantics (confirmed live against
+// int25-4-1.kftestlab.com while validating PR179 end-to-end): a request body
+// that omits the "Permissions" key entirely is treated as clearing
+// permissions to [], not as "leave unchanged". An earlier version of this
+// mock unconditionally echoed back a fixed Permissions list regardless of
+// what the request actually sent, which made it pass even against the
+// original pre-fix buildSecurityRoleUpdateArg (nil/omitted Permissions on an
+// undeclared config) -- masking the exact data-loss bug a real Terraform
+// apply cycle against a live Command instance caught. With the body-aware
+// mock below, this test now genuinely fails if buildSecurityRoleUpdateArg
+// omits Permissions instead of resending the state's current permissions.
+//
+// The server response deliberately matches the prior state's permission set
+// exactly (same set, different case-preserved order is irrelevant here since
+// the plan/state list is already used verbatim): this isolates the
+// "undeclared config" code path from permissionsResultForUpdate's separate
+// drift-detection behavior, which is already covered by
+// TestUnitSecurityRoleResource_UpdateSurfacesRealServerDrift above.
+func TestUnitSecurityRoleResource_UpdatePreservesPermissionsWhenConfigOmitsThem(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Permissions *[]string `json:"Permissions"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+
+		// Mimic Command's real full-replace behavior: an absent/null
+		// Permissions key clears permissions to an empty list; the field is
+		// never treated as "leave unchanged".
+		permissions := []string{}
+		if body.Permissions != nil {
+			permissions = *body.Permissions
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role-preserve",
+			"Description": "Updated description, unrelated to permissions",
+			"Permissions": permissions,
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	priorPermissions := types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "Certificates:Read"},
+	}}
+
+	state := SecurityRole{
+		ID:          types.Int64{Value: 5},
+		Name:        types.String{Value: "tf-unit-role-preserve"},
+		Description: types.String{Value: "Original description"},
+		Permissions: priorPermissions,
+	}
+
+	// The plan is what UseStateForUnknownModifier produces: the prior
+	// state's permissions copied forward because config is null and the raw
+	// plan was unknown. Only description changes, mirroring an unrelated
+	// Update.
+	plan := state
+	plan.Description = types.String{Value: "Updated description, unrelated to permissions"}
+
+	// The config is what the practitioner actually wrote: permissions is
+	// genuinely absent (Null).
+	config := SecurityRole{
+		ID:          state.ID,
+		Name:        state.Name,
+		Description: plan.Description,
+		Permissions: types.List{Null: true, ElemType: types.StringType},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
+
+	r := resourceSecurityRole{p: provider{configured: true, client: client}}
+
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result SecurityRole
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	var gotPermissions []string
+	for _, e := range result.Permissions.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected permissions element to be types.String, got %T", e)
+		}
+		gotPermissions = append(gotPermissions, s.Value)
+	}
+
+	assert.Equal(
+		t, []string{"Certificates:Read"}, gotPermissions,
+		"Update() must write exactly the planned permissions into state when config omits the attribute -- Terraform Core already committed to this planned value, so any divergence is an inconsistent-result-after-apply error",
 	)
 }

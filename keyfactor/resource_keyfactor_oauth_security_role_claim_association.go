@@ -187,10 +187,10 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 
 	updateReq := api.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
 		Id:              int32(roleId),
-		Name:            getStringType(remoteState.Name.Get()).Value,
-		Description:     getStringType(remoteState.Description.Get()).Value,
+		Name:            derefOrEmpty(remoteState.Name.Get()),
+		Description:     derefOrEmpty(remoteState.Description.Get()),
 		EmailAddress:    remoteState.EmailAddress,
-		PermissionSetId: getStringType(remoteState.PermissionSetId).Value,
+		PermissionSetId: derefOrEmpty(remoteState.PermissionSetId),
 		Permissions:     remoteState.Permissions,
 		Claims:          claims,
 	})
@@ -313,10 +313,10 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 	updateReq := roleApi.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
 		Id:              int32(roleId),
-		Name:            getStringType(remoteRoleState.Name.Get()).Value,
-		Description:     getStringType(remoteRoleState.Description.Get()).Value,
+		Name:            derefOrEmpty(remoteRoleState.Name.Get()),
+		Description:     derefOrEmpty(remoteRoleState.Description.Get()),
 		EmailAddress:    remoteRoleState.EmailAddress,
-		PermissionSetId: getStringType(remoteRoleState.PermissionSetId).Value,
+		PermissionSetId: derefOrEmpty(remoteRoleState.PermissionSetId),
 		Permissions:     remoteRoleState.Permissions,
 		Claims:          updatedClaims,
 	})

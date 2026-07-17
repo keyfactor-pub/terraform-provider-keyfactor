@@ -35,8 +35,12 @@ func (r resourceSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schema, di
 			"permissions": {
 				Type:                types.ListType{ElemType: types.StringType},
 				Optional:            true,
+				Computed:            true,
 				Description:         "An array containing the permissions assigned to the role in a list of Name:Value pairs",
 				MarkdownDescription: "An array containing the permissions assigned to the role in a list of Name:Value pairs. For more information about allowed permission values, please refer to the Keyfactor Command [Version One Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version1).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.UseStateForUnknown(),
+				},
 			},
 		},
 		Description:         "IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource.",
@@ -110,15 +114,28 @@ func (r resourceSecurityRole) Read(
 }
 
 // buildSecurityRoleUpdateArg builds the UpdateSecurityRole request from the
-// plan. permissions is Optional (not Computed): a Null value means the user
-// omitted the attribute and the existing permissions must be preserved, so the
-// Permissions field is left nil and omitted from the request (the `omitempty`
-// pointer fires). Previously a Null plan resolved to a nil Go slice that was
-// still wrapped in a non-nil pointer (&permissions); the non-nil pointer
-// bypassed omitempty and marshaled as `"Permissions": null`, telling Command to
-// clear every permission the role had. An explicit empty list is a real clear
-// signal and is sent as `[]`.
-func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, roleId int) *api.UpdateSecurityRoleArg {
+// plan, given the permissions value to treat as authoritative for "did the
+// user declare this attribute" (see the call site in Update() -- this must be
+// request.Config.Permissions, not request.Plan.Permissions, now that
+// permissions is Optional+Computed; see permissionsResultForUpdate's doc
+// comment for why), and the role's current state permissions to fall back to
+// when the attribute is undeclared.
+//
+// Command's PUT /Security/Roles is a full-replace endpoint, NOT a merge
+// patch: confirmed live against a real Command instance, a PUT body that
+// simply omits the "Permissions" key entirely (as opposed to sending
+// "Permissions": null) still resets the role's permissions to an empty list
+// server-side. (This differs from how Command treats Enabled/Private, which
+// ARE preserved when omitted -- Permissions gets special-cased clear-if-absent
+// handling server-side.) So leaving the Permissions field nil/omitted on the
+// request can never mean "leave unchanged" for this endpoint; the only way to
+// preserve the role's existing permissions across an Update that omits
+// `permissions` from config is to resend them explicitly from state.
+//
+// A Null declaredPermissions value means the user omitted the attribute, so
+// statePermissions (the role's last-known permissions) is sent instead. An
+// explicit empty list is a real clear signal and is sent as `[]`.
+func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, declaredPermissions types.List, statePermissions types.List, roleId int) *api.UpdateSecurityRoleArg {
 	arg := &api.UpdateSecurityRoleArg{
 		Id: roleId,
 		CreateSecurityRoleArg: api.CreateSecurityRoleArg{
@@ -126,15 +143,21 @@ func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, roleId i
 			Description: plan.Description.Value,
 		},
 	}
-	if !plan.Permissions.Null && !plan.Permissions.Unknown {
-		permissions := []string{}
-		plan.Permissions.ElementsAs(ctx, &permissions, false)
-		if permissions == nil {
-			permissions = []string{}
-		}
-		sort.Strings(permissions)
-		arg.Permissions = &permissions
+
+	permsSource := declaredPermissions
+	if permsSource.Null || permsSource.Unknown {
+		permsSource = statePermissions
 	}
+
+	permissions := []string{}
+	if !permsSource.Null && !permsSource.Unknown {
+		permsSource.ElementsAs(ctx, &permissions, false)
+	}
+	if permissions == nil {
+		permissions = []string{}
+	}
+	sort.Strings(permissions)
+	arg.Permissions = &permissions
 	return arg
 }
 
@@ -169,7 +192,7 @@ func permissionsToTfList(permissions []string) types.List {
 }
 
 // permissionsResultForUpdate decides what to write into state's Permissions
-// after a successful Update: it must preserve plan.Permissions verbatim
+// after a successful Update: it must preserve planPermissions verbatim
 // (declared order intact) when the server's response reports the same set of
 // permissions -- regardless of order -- avoiding the alphabetical-resort
 // drift bug this preserves against. But it must NOT mask genuine server-side
@@ -177,9 +200,22 @@ func permissionsToTfList(permissions []string) types.List {
 // the server's reported set differs from the plan's, the server's
 // permissions are written instead, so real drift surfaces on the next plan.
 //
-// A Null/Unknown plan (permissions undeclared) has nothing to preserve the
-// order of, so it is always treated as "sets differ" and the server's
-// permissions win.
+// A Null/Unknown planPermissions (permissions undeclared) has nothing to
+// preserve the order of, so it is always treated as "sets differ" and the
+// server's permissions win.
+//
+// permissions is Optional+Computed (with a UseStateForUnknown plan modifier,
+// added to fix "Provider produced inconsistent result after apply" when an
+// unrelated Update omitted permissions from config): the Update() call site
+// must pass request.Config.Permissions here, NOT request.Plan.Permissions.
+// Once the modifier is in place, an omitted-from-config Plan value is no
+// longer null -- Terraform Core resolves it to the prior state's value so the
+// CLI doesn't show spurious "(known after apply)" noise on every unrelated
+// plan -- so checking Plan would misclassify "omitted" as "explicitly
+// re-declared the same list", and buildSecurityRoleUpdateArg would start
+// sending an unnecessary Permissions payload on every Update. Config is never
+// touched by plan modifiers, so it still reports Null exactly when the user
+// omitted the attribute.
 func permissionsResultForUpdate(ctx context.Context, planPermissions types.List, remotePermissions *[]string) types.List {
 	var remote []string
 	if remotePermissions != nil {
@@ -213,6 +249,17 @@ func (r resourceSecurityRole) Update(
 		return
 	}
 
+	// Get config values. permissions is Optional+Computed, so
+	// request.Plan.Permissions is no longer a reliable signal of whether the
+	// user declared the attribute (see permissionsResultForUpdate's doc
+	// comment) -- request.Config.Permissions is.
+	var config SecurityRole
+	diags = request.Config.Get(ctx, &config)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
 	tflog.Info(ctx, "Update called on security identity resource")
 
 	// Get current state
@@ -226,8 +273,13 @@ func (r resourceSecurityRole) Update(
 	roleId := state.ID.Value
 	tflog.SetField(ctx, "id", roleId)
 
-	// Generate API request body from plan
-	updateArg := buildSecurityRoleUpdateArg(ctx, plan, int(roleId))
+	// Generate API request body from plan. state.Permissions is passed so that
+	// when config.Permissions is undeclared, buildSecurityRoleUpdateArg can
+	// resend the role's current permissions explicitly rather than omitting
+	// the field -- Command's PUT endpoint clears permissions when the field
+	// is absent, it does not treat absence as "leave unchanged" (see
+	// buildSecurityRoleUpdateArg's doc comment).
+	updateArg := buildSecurityRoleUpdateArg(ctx, plan, config.Permissions, state.Permissions, int(roleId))
 
 	remoteState, err := r.p.client.UpdateSecurityRole(updateArg)
 	if err != nil {
@@ -242,7 +294,7 @@ func (r resourceSecurityRole) Update(
 		ID:          types.Int64{Value: int64(state.ID.Value)},
 		Name:        types.String{Value: remoteState.Name},
 		Description: types.String{Value: remoteState.Description},
-		Permissions: permissionsResultForUpdate(ctx, plan.Permissions, remoteState.Permissions),
+		Permissions: permissionsResultForUpdate(ctx, config.Permissions, remoteState.Permissions),
 	}
 
 	// Set state
@@ -334,11 +386,22 @@ func (r resourceSecurityRole) Create(
 	}
 	tflog.Trace(ctx, "Created security role", map[string]interface{}{"role_name": plan.Name.Value})
 
+	// permissions is Optional+Computed: when config omits it entirely,
+	// plan.Permissions arrives Unknown (there's no prior state yet for
+	// UseStateForUnknown to copy forward from during Create). A
+	// freshly-created role genuinely has no permissions unless declared, so
+	// resolve Unknown to a concrete empty list rather than writing an Unknown
+	// value into state, which Terraform Core would reject.
+	resultPermissions := plan.Permissions
+	if resultPermissions.Unknown {
+		resultPermissions = types.List{ElemType: types.StringType, Elems: []attr.Value{}}
+	}
+
 	var result = SecurityRole{
 		ID:          types.Int64{Value: int64(createResponse.Id)},
 		Name:        types.String{Value: createResponse.Name},
 		Description: types.String{Value: createResponse.Description},
-		Permissions: plan.Permissions,
+		Permissions: resultPermissions,
 	}
 
 	diags = response.State.Set(ctx, result)

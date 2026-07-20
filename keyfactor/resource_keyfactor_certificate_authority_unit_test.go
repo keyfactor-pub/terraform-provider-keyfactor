@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"testing"
+	"time"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -27,8 +28,11 @@ func TestUnitCAUpdatePreservesScanSchedules(t *testing.T) {
 	// this incoming plan value, per its doc comment).
 	state := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes:        types.Int64{Value: 60},
+		FullScanDailyTime:              types.String{Null: true},
 		IncrementalScanIntervalMinutes: types.Int64{Value: 5},
+		IncrementalScanDailyTime:       types.String{Null: true},
 		ThresholdCheckIntervalMinutes:  types.Int64{Value: 30},
+		ThresholdCheckDailyTime:        types.String{Null: true},
 	}
 	config := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes:        types.Int64{Null: true},
@@ -37,12 +41,16 @@ func TestUnitCAUpdatePreservesScanSchedules(t *testing.T) {
 	}
 	plan := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes:        types.Int64{Null: true},
+		FullScanDailyTime:              types.String{Null: true},
 		IncrementalScanIntervalMinutes: types.Int64{Null: true},
+		IncrementalScanDailyTime:       types.String{Null: true},
 		ThresholdCheckIntervalMinutes:  types.Int64{Null: true},
+		ThresholdCheckDailyTime:        types.String{Null: true},
 	}
 
 	preserveCAUpdateFields(&plan, config, state)
-	req := buildCARequest(ctx, plan)
+	req, buildDiags := buildCARequest(ctx, plan)
+	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
 	if assert.NotNil(t, req.FullScan, "FullScan must be preserved, not omitted (omission clears it server-side)") {
 		assert.NotNil(t, req.FullScan.Interval)
@@ -80,7 +88,8 @@ func TestUnitCAUpdatePreservesAllowedRequesters(t *testing.T) {
 	}
 
 	preserveCAUpdateFields(&plan, config, state)
-	req := buildCARequest(ctx, plan)
+	req, buildDiags := buildCARequest(ctx, plan)
+	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
 	assert.Equal(t, []string{"Role-A", "Role-B"}, req.AllowedRequesters,
 		"allowed_requesters must be preserved from state, not cleared, on an undeclared Update")
@@ -106,7 +115,8 @@ func TestUnitCAUpdatePostImportAllowedRequestersOmitted(t *testing.T) {
 	}
 
 	preserveCAUpdateFields(&plan, config, state)
-	req := buildCARequest(ctx, plan)
+	req, buildDiags := buildCARequest(ctx, plan)
+	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
 	assert.Nil(t, req.AllowedRequesters,
 		"allowed_requesters must be omitted (nil) when it was never populated, not sent as an explicit empty clear")
@@ -139,7 +149,8 @@ func TestUnitCAUpdatePreservesScanScheduleWhenPlanIsUnknownNotNull(t *testing.T)
 	}
 
 	preserveCAUpdateFields(&plan, config, state)
-	req := buildCARequest(ctx, plan)
+	req, buildDiags := buildCARequest(ctx, plan)
+	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
 	assert.Equal(t, types.Int64{Value: 60}, plan.FullScanIntervalMinutes,
 		"an undeclared-in-config schedule must be preserved from state even when the incoming plan value is Unknown rather than Null")
@@ -206,8 +217,177 @@ func TestUnitCAUpdateExplicitEmptyAllowedRequestersIsSent(t *testing.T) {
 	plan := KeyfactorCertificateAuthority{AllowedRequesters: explicitEmpty}
 
 	preserveCAUpdateFields(&plan, config, state)
-	req := buildCARequest(ctx, plan)
+	req, buildDiags := buildCARequest(ctx, plan)
+	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
 	assert.NotNil(t, req.AllowedRequesters, "an explicitly declared empty list must be sent through, not preserved from the old state")
 	assert.Len(t, req.AllowedRequesters, 0, "the cleared list must be sent as an explicit empty list, not the old requesters")
+}
+
+// TestUnitCAReadPreservesDailySchedule is a regression test for the bug where
+// caResponseToState only recognized the Interval variant of a Command schedule.
+// A CA whose FullScan/IncrementalScan/ThresholdCheck is Daily-shaped (Command's
+// KeyfactorSchedule model supports Interval, Daily, Weekly, Monthly, ExactlyOnce,
+// and Immediate as mutually exclusive variants) fell into the same "no schedule
+// at all" Null branch as an actually-unconfigured schedule, because there was no
+// schema attribute to hold the Daily value. Verified live against a real CA
+// (int25-4-1.kftestlab.com, CA id 1) whose real FullScan.Daily.Time schedule was
+// silently wiped by an Update that never touched schedule config.
+func TestUnitCAReadPreservesDailySchedule(t *testing.T) {
+	dailyTime := time.Date(2026, 7, 17, 15, 46, 0, 0, time.UTC)
+	resp := &v1.CertificateAuthoritiesCertificateAuthorityResponse{
+		FullScan: &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
+			Daily: &v1.KeyfactorCommonSchedulingModelsTimeModel{Time: &dailyTime},
+		},
+		// IncrementalScan/ThresholdCheck left nil: genuinely unconfigured, must
+		// stay Null on both variants (i.e. Daily support must not manufacture a
+		// value where none exists).
+	}
+
+	state := caResponseToState(resp)
+
+	assert.True(t, state.FullScanIntervalMinutes.Null,
+		"a Daily-shaped schedule must not populate the Interval attribute")
+	if assert.False(t, state.FullScanDailyTime.Null,
+		"a Daily-shaped schedule must be captured into full_scan_daily_time, not collapsed to Null (Null is indistinguishable from no schedule at all)") {
+		assert.Equal(t, "2026-07-17T15:46:00Z", state.FullScanDailyTime.Value)
+	}
+
+	assert.True(t, state.IncrementalScanIntervalMinutes.Null)
+	assert.True(t, state.IncrementalScanDailyTime.Null)
+	assert.True(t, state.ThresholdCheckIntervalMinutes.Null)
+	assert.True(t, state.ThresholdCheckDailyTime.Null)
+}
+
+// TestUnitCAUpdatePreservesDailySchedule is the Update-path half of the Daily
+// schedule regression: a Daily-shaped schedule captured into prior state (via the
+// fixed caResponseToState) must be resent on an Update that leaves the schedule
+// undeclared in config, exactly like the existing Interval preservation behavior.
+// Before the fix, a Daily schedule could never even reach state as non-Null (see
+// TestUnitCAReadPreservesDailySchedule), so preserveCAUpdateFields had nothing to
+// preserve and buildCARequest always omitted FullScan — which Command's
+// full-replace PUT semantics interpret as "clear it".
+func TestUnitCAUpdatePreservesDailySchedule(t *testing.T) {
+	ctx := context.Background()
+
+	state := KeyfactorCertificateAuthority{
+		FullScanIntervalMinutes: types.Int64{Null: true},
+		FullScanDailyTime:       types.String{Value: "2026-07-17T15:46:00Z"},
+	}
+	config := KeyfactorCertificateAuthority{
+		FullScanIntervalMinutes: types.Int64{Null: true},  // undeclared
+		FullScanDailyTime:       types.String{Null: true}, // undeclared
+	}
+	plan := KeyfactorCertificateAuthority{
+		FullScanIntervalMinutes: types.Int64{Null: true},
+		FullScanDailyTime:       types.String{Null: true},
+	}
+
+	preserveCAUpdateFields(&plan, config, state)
+	req, buildDiags := buildCARequest(ctx, plan)
+	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
+
+	if assert.NotNil(t, req.FullScan, "a Daily schedule must be preserved, not omitted (omission clears it server-side)") {
+		assert.Nil(t, req.FullScan.Interval, "a preserved Daily schedule must not also set Interval")
+		if assert.NotNil(t, req.FullScan.Daily) {
+			assert.NotNil(t, req.FullScan.Daily.Time)
+			assert.Equal(t, "2026-07-17T15:46:00Z", req.FullScan.Daily.Time.UTC().Format(time.RFC3339))
+		}
+	}
+}
+
+// TestUnitCAUpdateScheduleVariantSwitchDoesNotResurrectOther verifies that when a
+// config-declared change switches a schedule from Daily to Interval (or vice
+// versa), preserveCAUpdateFields does not resurrect the OTHER variant from prior
+// state alongside the newly-declared one. Command's schedule is a tagged union;
+// sending both Interval and Daily on the same PUT would be invalid.
+func TestUnitCAUpdateScheduleVariantSwitchDoesNotResurrectOther(t *testing.T) {
+	ctx := context.Background()
+
+	// Prior state: Daily. Plan: user has now declared an Interval, switching the
+	// variant entirely.
+	state := KeyfactorCertificateAuthority{
+		FullScanIntervalMinutes: types.Int64{Null: true},
+		FullScanDailyTime:       types.String{Value: "2026-07-17T15:46:00Z"},
+	}
+	// config declares the new Interval value directly -- this is the switch.
+	config := KeyfactorCertificateAuthority{
+		FullScanIntervalMinutes: types.Int64{Value: 60},
+		FullScanDailyTime:       types.String{Null: true},
+	}
+	plan := KeyfactorCertificateAuthority{
+		FullScanIntervalMinutes: types.Int64{Value: 60},
+		FullScanDailyTime:       types.String{Null: true},
+	}
+
+	preserveCAUpdateFields(&plan, config, state)
+	req, buildDiags := buildCARequest(ctx, plan)
+	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
+
+	if assert.NotNil(t, req.FullScan) {
+		assert.Nil(t, req.FullScan.Daily,
+			"switching to Interval must not resurrect the old Daily value from prior state")
+		if assert.NotNil(t, req.FullScan.Interval) {
+			assert.Equal(t, int32(60), *req.FullScan.Interval.Minutes)
+		}
+	}
+}
+
+// TestUnitCAValidateConfigRejectsConflictingScheduleAttributes verifies the
+// plan-time guard added alongside the Daily schedule support: declaring both
+// *_interval_minutes and *_daily_time for the same schedule is invalid (Command's
+// schedule is a tagged union, never both at once) and must be rejected before
+// Create/Update ever runs, rather than silently preferring one.
+func TestUnitCAValidateConfigRejectsConflictingScheduleAttributes(t *testing.T) {
+	cfg := KeyfactorCertificateAuthority{
+		FullScanIntervalMinutes: types.Int64{Value: 60},
+		FullScanDailyTime:       types.String{Value: "2026-07-17T15:46:00Z"},
+	}
+
+	diags := validateCAScheduleAttributes(cfg)
+
+	assert.True(t, diags.HasError(),
+		"setting both full_scan_interval_minutes and full_scan_daily_time must be a plan-time error")
+}
+
+// TestUnitCAValidateConfigRejectsMalformedDailyTime verifies that a non-RFC3339
+// *_daily_time value is rejected at plan time, since buildSchedule/time.Parse
+// assumes a valid RFC3339 string by the time it runs on the Create/Update path.
+func TestUnitCAValidateConfigRejectsMalformedDailyTime(t *testing.T) {
+	cfg := KeyfactorCertificateAuthority{
+		FullScanDailyTime: types.String{Value: "not-a-timestamp"},
+	}
+
+	diags := validateCAScheduleAttributes(cfg)
+
+	assert.True(t, diags.HasError(), "a non-RFC3339 full_scan_daily_time must be a plan-time error")
+}
+
+// TestUnitCAValidateConfigAllowsEitherVariantAlone confirms the common,
+// non-error cases: a schedule declared as Interval only, Daily only, or entirely
+// undeclared must all pass validation cleanly.
+func TestUnitCAValidateConfigAllowsEitherVariantAlone(t *testing.T) {
+	// allNull is the baseline: every schedule attribute explicitly Null (as a real
+	// plan/config would represent "undeclared"). Go zero-value struct literals
+	// default types.String/types.Int64 to a KNOWN empty value (Null: false), not
+	// Null, so every attribute this sub-test does not care about must be spelled
+	// out explicitly or it will spuriously look "declared" to validateCAScheduleAttributes.
+	allNull := KeyfactorCertificateAuthority{
+		FullScanIntervalMinutes:        types.Int64{Null: true},
+		FullScanDailyTime:              types.String{Null: true},
+		IncrementalScanIntervalMinutes: types.Int64{Null: true},
+		IncrementalScanDailyTime:       types.String{Null: true},
+		ThresholdCheckIntervalMinutes:  types.Int64{Null: true},
+		ThresholdCheckDailyTime:        types.String{Null: true},
+	}
+
+	intervalOnly := allNull
+	intervalOnly.FullScanIntervalMinutes = types.Int64{Value: 60}
+	assert.False(t, validateCAScheduleAttributes(intervalOnly).HasError())
+
+	dailyOnly := allNull
+	dailyOnly.FullScanDailyTime = types.String{Value: "2026-07-17T15:46:00Z"}
+	assert.False(t, validateCAScheduleAttributes(dailyOnly).HasError())
+
+	assert.False(t, validateCAScheduleAttributes(allNull).HasError())
 }

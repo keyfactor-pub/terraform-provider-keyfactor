@@ -310,3 +310,263 @@ func TestUnitSecurityIdentityResource_UpdatePreservesRolesWhenConfigOmitsThem(t 
 		"Update() must write exactly the planned roles into state when config omits the attribute -- Terraform Core already committed to this planned value, so any divergence is an inconsistent-result-after-apply error",
 	)
 }
+
+// TestUnitSecurityIdentityReadKeepsDeclaredRoleSpelling is a regression test
+// for F173-2: Read() rebuilt `roles` unconditionally from the server's
+// canonical role names (identity.Roles), even when the server's role set was
+// semantically identical to what the user declared -- just spelled
+// differently (case) or in a different but equivalent form (numeric ID vs.
+// name, see the companion ID test below). That rewrote a practitioner's
+// declared lowercase role name to Command's canonical capitalization on every
+// Read, manufacturing a permanent diff no `terraform apply` could ever
+// resolve.
+//
+// This drives Read() end-to-end against a mock Command server whose identity
+// has a single role named "Administrators", with prior state declaring the
+// same role as lowercase "administrators", and asserts Read() preserves the
+// user's declared spelling rather than overwriting it with the server's
+// canonical form.
+func TestUnitSecurityIdentityReadKeepsDeclaredRoleSpelling(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(
+		"/KeyfactorAPI/Security/Identities", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(
+				[]map[string]interface{}{
+					{
+						"Id":           42,
+						"AccountName":  "KEYFACTOR\\\\tf-unit-spelling",
+						"IdentityType": "User",
+						"Valid":        true,
+						"Roles": []map[string]interface{}{
+							{"Id": 5, "Name": "Administrators"},
+						},
+					},
+				},
+			)
+		},
+	)
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	priorState := SecurityIdentity{
+		ID:           types.Int64{Value: 42},
+		AccountName:  types.String{Value: `KEYFACTOR\\tf-unit-spelling`},
+		IdentityType: types.String{Value: "User"},
+		Valid:        types.Bool{Value: true},
+		Roles: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "administrators"},
+		}},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &priorState); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityIdentity{p: provider{configured: true, client: client}}
+
+	req := tfsdk.ReadResourceRequest{State: stateObj}
+	resp := &tfsdk.ReadResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Read(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Read returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result SecurityIdentity
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	var roles []string
+	for _, e := range result.Roles.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected roles element to be types.String, got %T", e)
+		}
+		roles = append(roles, s.Value)
+	}
+
+	assert.Equal(
+		t, []string{"administrators"}, roles,
+		"Read() must keep the declared role spelling when it is semantically the same role as the server reports, not overwrite it with the server's canonical capitalization",
+	)
+}
+
+// TestUnitSecurityIdentityReadNumericIdMatchesServerRole is a companion
+// regression test for F173-2: prior state may declare a role by its numeric
+// Command role ID rather than name (the roles attribute schema description
+// documents both forms are accepted). Read() must recognize that
+// declaration as the same role when the server reports it by name, and
+// preserve the declared numeric-ID form rather than rewriting it to the
+// server's name.
+func TestUnitSecurityIdentityReadNumericIdMatchesServerRole(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(
+		"/KeyfactorAPI/Security/Identities", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(
+				[]map[string]interface{}{
+					{
+						"Id":           42,
+						"AccountName":  "KEYFACTOR\\\\tf-unit-id",
+						"IdentityType": "User",
+						"Valid":        true,
+						"Roles": []map[string]interface{}{
+							{"Id": 5, "Name": "Administrators"},
+						},
+					},
+				},
+			)
+		},
+	)
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	priorState := SecurityIdentity{
+		ID:           types.Int64{Value: 42},
+		AccountName:  types.String{Value: `KEYFACTOR\\tf-unit-id`},
+		IdentityType: types.String{Value: "User"},
+		Valid:        types.Bool{Value: true},
+		Roles: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "5"},
+		}},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &priorState); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityIdentity{p: provider{configured: true, client: client}}
+
+	req := tfsdk.ReadResourceRequest{State: stateObj}
+	resp := &tfsdk.ReadResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Read(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Read returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result SecurityIdentity
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	var roles []string
+	for _, e := range result.Roles.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected roles element to be types.String, got %T", e)
+		}
+		roles = append(roles, s.Value)
+	}
+
+	assert.Equal(
+		t, []string{"5"}, roles,
+		"Read() must keep the declared numeric role ID when it matches the server's role by ID, not overwrite it with the server's role name",
+	)
+}
+
+// TestUnitSecurityIdentityReadSurfacesRealDrift is the negative-case
+// companion to the two tests above: when the server's role set genuinely
+// differs from what's declared (an extra role attached out-of-band), Read()
+// must still surface that as drift by writing the server's canonical role
+// names, not mask it under the "preserve declared spelling" behavior added
+// for F173-2.
+func TestUnitSecurityIdentityReadSurfacesRealDrift(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(
+		"/KeyfactorAPI/Security/Identities", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(
+				[]map[string]interface{}{
+					{
+						"Id":           42,
+						"AccountName":  "KEYFACTOR\\\\tf-unit-realdrift",
+						"IdentityType": "User",
+						"Valid":        true,
+						"Roles": []map[string]interface{}{
+							{"Id": 5, "Name": "Administrators"},
+							{"Id": 6, "Name": "Auditors"},
+						},
+					},
+				},
+			)
+		},
+	)
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	priorState := SecurityIdentity{
+		ID:           types.Int64{Value: 42},
+		AccountName:  types.String{Value: `KEYFACTOR\\tf-unit-realdrift`},
+		IdentityType: types.String{Value: "User"},
+		Valid:        types.Bool{Value: true},
+		Roles: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "administrators"},
+		}},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &priorState); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityIdentity{p: provider{configured: true, client: client}}
+
+	req := tfsdk.ReadResourceRequest{State: stateObj}
+	resp := &tfsdk.ReadResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Read(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Read returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result SecurityIdentity
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	var roles []string
+	for _, e := range result.Roles.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected roles element to be types.String, got %T", e)
+		}
+		roles = append(roles, s.Value)
+	}
+
+	assert.Equal(
+		t, []string{"Administrators", "Auditors"}, roles,
+		"Read() must surface real out-of-band role drift with the server's canonical names, not hide it behind declared-spelling preservation",
+	)
+}

@@ -33,9 +33,13 @@ func (r resourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Schema
 				Type: types.ListType{
 					ElemType: types.StringType,
 				},
-				Optional:    true,
-				Computed:    true,
-				Description: "An array containing the role IDs that the identity is attached to.",
+				Optional: true,
+				Computed: true,
+				Description: "An array of role names or numeric role IDs that the identity is attached to. " +
+					"Role names are matched case-insensitively against Keyfactor Command's role names, so a " +
+					"declared spelling that only differs in case from the server is not reported as drift. " +
+					"Omit to leave role membership unmanaged (preserved on update); set [] explicitly to " +
+					"remove all roles.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{
 					tfsdk.UseStateForUnknown(),
 				},
@@ -110,22 +114,21 @@ func (r resourceSecurityIdentity) Read(
 		if accountName == identity.AccountName {
 			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %s", accountName))
 
-			// Build the roles list from the freshly-fetched identity.Roles, not
-			// from state.Roles.Elems. Re-validating the identity's PRIOR state
-			// just echoed back whatever was already in state, so real
-			// server-side role drift (roles changed out-of-band) was never
-			// detected — Read() always reported stale "unchanged" success.
-			var validRoles []attr.Value
-			for _, role := range identity.Roles {
-				tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role.Name))
-				validRoles = append(validRoles, types.String{Value: role.Name})
-			}
-
+			// identityRolesResultForRead builds the roles list from the
+			// freshly-fetched identity.Roles when it genuinely differs from
+			// the prior state (so real server-side role drift -- roles
+			// changed out-of-band -- is detected, unlike the old code which
+			// just echoed back whatever was already in state), but preserves
+			// the prior state's declared spelling/order when the role sets
+			// are semantically the same (case-insensitive name or numeric
+			// ID), so Read doesn't itself manufacture a spurious diff by
+			// rewriting a user's declared casing/ID-form to Command's
+			// canonical name.
 			state = SecurityIdentity{
 				ID:           types.Int64{Value: int64(identity.Id)},
 				AccountName:  types.String{Value: identity.AccountName},
 				IdentityType: types.String{Value: identity.IdentityType},
-				Roles:        types.List{Elems: validRoles, ElemType: types.StringType},
+				Roles:        identityRolesResultForRead(state.Roles, identity.Roles),
 				Valid:        types.Bool{Value: identity.Valid},
 			}
 			break
@@ -159,6 +162,86 @@ func (r resourceSecurityIdentity) Read(
 // omitted the attribute.
 func identityRolesDeclared(config SecurityIdentity) bool {
 	return !config.Roles.Null && !config.Roles.Unknown
+}
+
+// identityRolesCanonical builds a types.List of the server's canonical role
+// names, for writing server-reported roles into state when they genuinely
+// differ from the prior state.
+func identityRolesCanonical(serverRoles []api.SecurityRoleInformation) types.List {
+	elems := make([]attr.Value, 0, len(serverRoles))
+	for _, role := range serverRoles {
+		elems = append(elems, types.String{Value: role.Name})
+	}
+	return types.List{ElemType: types.StringType, Elems: elems}
+}
+
+// identityRolesResultForRead decides what to write into state's Roles after
+// Read: if the prior state's role list is semantically equal to the server's
+// role list -- every state entry matched bijectively to a distinct server
+// role, either by numeric role ID or by case-insensitive role name -- the
+// prior state is returned VERBATIM, preserving the user's declared
+// spelling/order/ID-vs-name form. Otherwise the server's canonical role names
+// are returned, so genuine out-of-band role drift (a role added, removed, or
+// actually renamed) surfaces on the next plan instead of being silently
+// overwritten by Read.
+//
+// This mirrors permissionsResultForUpdate's order-vs-drift invariant
+// (resource_keyfactor_security_role.go) applied to security_identity's roles
+// attribute: the roles schema description documents that entries may be role
+// names OR numeric role IDs, and that role names match case-insensitively
+// (GetSecurityRole's lookup and Command's role names themselves are
+// case-insensitive), so a declared casing difference or ID-vs-name form must
+// not be reported as drift merely because Read rewrote it to the server's
+// spelling.
+//
+// A Null/Unknown stateRoles (nothing declared/known yet) has nothing to
+// preserve and always returns the server's canonical names. A state list
+// whose length doesn't match the server's, or that contains an element that
+// cannot be bijectively matched to a distinct server role, is treated as
+// real drift and also returns the server's canonical names.
+func identityRolesResultForRead(stateRoles types.List, serverRoles []api.SecurityRoleInformation) types.List {
+	if stateRoles.Null || stateRoles.Unknown {
+		return identityRolesCanonical(serverRoles)
+	}
+	if len(stateRoles.Elems) != len(serverRoles) {
+		return identityRolesCanonical(serverRoles)
+	}
+
+	// Require a bijective (1:1) match: each server role may satisfy at most
+	// one state entry, so duplicate/ambiguous entries can't false-positive a
+	// match against a single server role.
+	claimed := make([]bool, len(serverRoles))
+	for _, elem := range stateRoles.Elems {
+		s, ok := elem.(types.String)
+		if !ok {
+			return identityRolesCanonical(serverRoles)
+		}
+
+		matched := false
+		if id, err := strconv.Atoi(s.Value); err == nil {
+			for i, role := range serverRoles {
+				if !claimed[i] && role.Id == id {
+					claimed[i] = true
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			for i, role := range serverRoles {
+				if !claimed[i] && strings.EqualFold(role.Name, s.Value) {
+					claimed[i] = true
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			return identityRolesCanonical(serverRoles)
+		}
+	}
+
+	return stateRoles
 }
 
 func (r resourceSecurityIdentity) Update(

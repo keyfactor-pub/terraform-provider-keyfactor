@@ -830,12 +830,25 @@ func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCert
 
 // preserveCAUpdateFields reconciles Update() plan values that Command's CA PUT
 // treats as full-replace (an omitted field is cleared server-side, not left
-// unchanged). For scan/threshold schedules and the allowed-requester list, a
-// Null plan value means the attribute is simply undeclared in config, NOT that
-// the user wants it cleared — so preserve the prior state value rather than
-// letting buildCARequest omit it (which would clear it). This runs only on the
-// Update() path; Create() and the Delete() clear-schedule path intentionally
-// still let a Null value omit/clear.
+// unchanged). For scan/threshold schedules and the allowed-requester list, an
+// UNDECLARED attribute means the attribute is simply absent from config, NOT
+// that the user wants it cleared — so preserve the prior state value rather
+// than letting buildCARequest omit it (which would clear it). This runs only
+// on the Update() path; Create() and the Delete() clear-schedule path
+// intentionally still let an undeclared value omit/clear.
+//
+// Declared-ness is keyed on declaredInConfig(config.X) — request.Config, NOT
+// plan.X.Null — per the attribute contract in attribute_contract.go: these
+// attributes are Optional+Computed with a UseStateForUnknown-family plan
+// modifier, so an undeclared attribute's Plan value is usually already
+// resolved to the prior state (not Null) by the time this function runs.
+// Checking plan.X.Null would therefore only catch the case where state was
+// ALSO already Null (nothing to preserve either way) and silently miss any
+// case where a plan modifier resolves an undeclared attribute to something
+// other than the literal prior state (e.g. the mutually-exclusive schedule
+// variant handling pairedVariantModifier introduces). Config is never
+// touched by plan modifiers, so it is the only signal that survives that
+// class of change.
 //
 // Note on allowed_requesters: Command's GET does not return the list, so after
 // an ImportState (which cannot populate it) the prior state is itself Null and
@@ -843,16 +856,16 @@ func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCert
 // the request, relying on Command to leave an omitted AllowedRequesters
 // unchanged; users importing a standalone CA with an allowed-requester list
 // should declare allowed_requesters in config so it is carried in state.
-func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, state KeyfactorCertificateAuthority) {
-	preserveInt := func(p *types.Int64, s types.Int64) {
-		if p.Null && !s.Null && !s.Unknown {
+func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, config, state KeyfactorCertificateAuthority) {
+	preserveInt := func(p *types.Int64, c types.Int64, s types.Int64) {
+		if !declaredInConfig(c) && !s.Null && !s.Unknown {
 			*p = s
 		}
 	}
-	preserveInt(&plan.FullScanIntervalMinutes, state.FullScanIntervalMinutes)
-	preserveInt(&plan.IncrementalScanIntervalMinutes, state.IncrementalScanIntervalMinutes)
-	preserveInt(&plan.ThresholdCheckIntervalMinutes, state.ThresholdCheckIntervalMinutes)
-	if plan.AllowedRequesters.Null && !state.AllowedRequesters.Null && !state.AllowedRequesters.Unknown {
+	preserveInt(&plan.FullScanIntervalMinutes, config.FullScanIntervalMinutes, state.FullScanIntervalMinutes)
+	preserveInt(&plan.IncrementalScanIntervalMinutes, config.IncrementalScanIntervalMinutes, state.IncrementalScanIntervalMinutes)
+	preserveInt(&plan.ThresholdCheckIntervalMinutes, config.ThresholdCheckIntervalMinutes, state.ThresholdCheckIntervalMinutes)
+	if !declaredInConfig(config.AllowedRequesters) && !state.AllowedRequesters.Null && !state.AllowedRequesters.Unknown {
 		plan.AllowedRequesters = state.AllowedRequesters
 	}
 }
@@ -950,6 +963,18 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 		return
 	}
 
+	// Get config values. The scan/threshold schedules and allowed_requesters
+	// are Optional+Computed, so request.Plan is no longer a reliable signal
+	// of whether the user actually declared them (see preserveCAUpdateFields'
+	// doc comment and declaredInConfig in attribute_contract.go) —
+	// request.Config is.
+	var config KeyfactorCertificateAuthority
+	diags = request.Config.Get(ctx, &config)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
 	var state KeyfactorCertificateAuthority
 	diags = request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
@@ -973,12 +998,12 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 	// Delete path below deliberately exploits this to clear Windows Task
 	// Scheduler entries). buildCARequest omits FullScan/IncrementalScan/
 	// ThresholdCheck/AllowedRequesters whenever the plan value is Null. On an
-	// Update() that leaves those attributes undeclared (Null in the plan) this
-	// silently wipes a live schedule or the CA's real allowed-requester list.
-	// Mirror GH issue #175: preserve the prior state value when the plan simply
-	// does not declare the attribute, so an unrelated Update never clears state
-	// the user never asked to change.
-	preserveCAUpdateFields(&plan, state)
+	// Update() that leaves those attributes undeclared this silently wipes a
+	// live schedule or the CA's real allowed-requester list. Mirror GH issue
+	// #175: preserve the prior state value when config simply does not
+	// declare the attribute, so an unrelated Update never clears state the
+	// user never asked to change.
+	preserveCAUpdateFields(&plan, config, state)
 
 	updateReq := buildCARequest(ctx, plan)
 	idInt32 := int32(id)

@@ -256,10 +256,12 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"allowed_requesters": {
-				Type:          types.ListType{ElemType: types.StringType},
-				Optional:      true,
-				Computed:      true,
-				Description:   "An array of strings indicating Keyfactor Command security roles that are allowed to enroll for certificates via Keyfactor Command for this CA. Applies to standalone CAs only. Write-only: not returned by the server GET; preserved from plan/state.",
+				Type:     types.ListType{ElemType: types.StringType},
+				Optional: true,
+				Computed: true,
+				Description: "An array of strings indicating Keyfactor Command security roles that are allowed to enroll for certificates via Keyfactor Command for this CA. Applies to standalone CAs only. " +
+					"Requires Keyfactor Command v25.5 or later for reads to reflect the server's actual list; on older Command versions this may read back empty even when configured server-side. " +
+					"Omit to leave unmanaged (preserved on update); set [] explicitly to clear.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 
@@ -813,19 +815,26 @@ func setNullableInt32IfKnown(_ interface{}, v types.Int64, setter func(int32)) {
 	}
 }
 
-// preserveSecrets copies write-only secret fields from source (plan or prior state) into the target state.
+// preserveSecrets copies write-only secret fields from source (plan or prior
+// state) into the target state. These fields (explicit_password,
+// auth_certificate, auth_certificate_password, client_secret, force_save) are
+// never returned by the server in any form, so there is no server truth to
+// prefer over the previously-known value.
+//
+// allowed_requesters is NOT handled here (as of Command v25.5+, confirmed
+// live: GET /CertificateAuthority returns both UseAllowedRequesters and
+// AllowedRequesters with real values). caResponseToState already maps the
+// server's list into state, so echoing plan/state over it here would mask
+// genuine out-of-band drift (e.g. a role removed from the allowed-requester
+// list directly in Command) behind a silently "corrected" Read. See G3 in
+// the attribute contract: Read must surface server truth for any attribute
+// the server can actually report.
 func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCertificateAuthority) {
 	target.ExplicitPassword = source.ExplicitPassword
 	target.AuthCertificate = source.AuthCertificate
 	target.AuthCertificatePassword = source.AuthCertificatePassword
 	target.ClientSecret = source.ClientSecret
 	target.ForceSave = source.ForceSave
-	// AllowedRequesters is not returned by the server GET; preserve from plan/state.
-	// Only copy when the value is known (not null AND not unknown) to avoid
-	// propagating Unknown into state during Create where there is no prior state.
-	if !source.AllowedRequesters.Null && !source.AllowedRequesters.Unknown {
-		target.AllowedRequesters = source.AllowedRequesters
-	}
 }
 
 // preserveCAUpdateFields reconciles Update() plan values that Command's CA PUT
@@ -850,12 +859,14 @@ func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCert
 // touched by plan modifiers, so it is the only signal that survives that
 // class of change.
 //
-// Note on allowed_requesters: Command's GET does not return the list, so after
-// an ImportState (which cannot populate it) the prior state is itself Null and
-// there is no value to preserve. In that case the field remains omitted from
-// the request, relying on Command to leave an omitted AllowedRequesters
-// unchanged; users importing a standalone CA with an allowed-requester list
-// should declare allowed_requesters in config so it is carried in state.
+// Note on allowed_requesters: on Command v25.5+ (confirmed live), GET
+// /CertificateAuthority reports the real list, so caResponseToState
+// (state, prior to this function running) generally already carries a real
+// value to preserve here — including after ImportState. On older Command
+// versions that do not return the list on GET, the prior state may itself be
+// Null and there is nothing to preserve; in that case the field remains
+// omitted from the request, relying on Command to leave an omitted
+// AllowedRequesters unchanged.
 func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, config, state KeyfactorCertificateAuthority) {
 	preserveInt := func(p *types.Int64, c types.Int64, s types.Int64) {
 		if !declaredInConfig(c) && !s.Null && !s.Unknown {

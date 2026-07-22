@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 )
@@ -145,4 +147,67 @@ func TestUnitCAUpdatePreservesScanScheduleWhenPlanIsUnknownNotNull(t *testing.T)
 		assert.NotNil(t, req.FullScan.Interval)
 		assert.Equal(t, int32(60), *req.FullScan.Interval.Minutes)
 	}
+}
+
+// TestUnitCAReadSurfacesAllowedRequestersDrift is the regression test for G3:
+// preserveSecrets used to echo the prior state/plan's allowed_requesters over
+// whatever caResponseToState had just mapped from the server's GET response,
+// even though Command v25.5+ genuinely returns the list (confirmed live).
+// That meant Read() could never detect a role added/removed from the
+// allowed-requester list out-of-band -- it always silently "corrected" the
+// server's real value back to the stale one already in state.
+//
+// This builds a server response reporting a DIFFERENT allowed-requester list
+// than prior state/plan carries, runs it through caResponseToState then
+// preserveSecrets (mirroring the Read()/Create()/Update() call sequence), and
+// asserts the server's list wins -- not the stale echo.
+func TestUnitCAReadSurfacesAllowedRequestersDrift(t *testing.T) {
+	resp := &v1.CertificateAuthoritiesCertificateAuthorityResponse{}
+	resp.SetId(9)
+	resp.SetLogicalName("Standalone-CA")
+	resp.SetHostName("http://ca.lab/ejbca")
+	caType := v1.CSSCMSCoreEnumsCertificateAuthorityType(1)
+	resp.CAType = &caType
+	resp.AllowedRequesters = []string{"Role-C"} // server truth, changed out-of-band
+
+	staleSource := KeyfactorCertificateAuthority{
+		AllowedRequesters: stringSliceToTfList([]string{"Role-A", "Role-B"}), // what Terraform last knew
+	}
+
+	newState := caResponseToState(resp)
+	preserveSecrets(&newState, staleSource)
+
+	var got []string
+	for _, e := range newState.AllowedRequesters.Elems {
+		if sv, ok := e.(types.String); ok {
+			got = append(got, sv.Value)
+		}
+	}
+
+	assert.Equal(t, []string{"Role-C"}, got,
+		"Read must surface the server's real allowed_requesters, not silently re-echo a stale prior value")
+}
+
+// TestUnitCAUpdateExplicitEmptyAllowedRequestersIsSent is the companion
+// regression test for the clear path: with the config-keyed
+// preserveCAUpdateFields, an explicitly-declared empty list ([]) in config is
+// NOT undeclared (declaredInConfig treats a non-null, even empty, list as
+// declared), so it must be sent through to buildCARequest as a real clearing
+// value rather than being preserved from the old (non-empty) state.
+func TestUnitCAUpdateExplicitEmptyAllowedRequestersIsSent(t *testing.T) {
+	ctx := context.Background()
+
+	state := KeyfactorCertificateAuthority{
+		AllowedRequesters: stringSliceToTfList([]string{"Role-A", "Role-B"}),
+	}
+	// An explicit [] in config: Null=false, Elems empty -- declared, not omitted.
+	explicitEmpty := types.List{ElemType: types.StringType, Elems: []attr.Value{}}
+	config := KeyfactorCertificateAuthority{AllowedRequesters: explicitEmpty}
+	plan := KeyfactorCertificateAuthority{AllowedRequesters: explicitEmpty}
+
+	preserveCAUpdateFields(&plan, config, state)
+	req := buildCARequest(ctx, plan)
+
+	assert.NotNil(t, req.AllowedRequesters, "an explicitly declared empty list must be sent through, not preserved from the old state")
+	assert.Len(t, req.AllowedRequesters, 0, "the cleared list must be sent as an explicit empty list, not the old requesters")
 }

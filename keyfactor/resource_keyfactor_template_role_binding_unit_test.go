@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -341,4 +342,76 @@ func TestUnitTemplateRoleBindingRead_SurfacesGetTemplatesError(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "expected a diagnostic with summary %q (matching Create()'s handling of the same GetTemplates() error), got: %+v", ERR_SUMMARY_TEMPLATE_READ, resp.Diagnostics)
+}
+
+// TestUnitTemplateRoleBindingUpdatePreservesKeyUsage is a regression test for
+// F173-1: buildTemplateRoleBindingUpdateArg never copied KeyUsage from the
+// GetTemplate response onto the UpdateTemplate request, so every role
+// attach/detach silently reset the template's KeyUsage bitmask to 0 on
+// Command, even though this resource does not manage KeyUsage at all.
+//
+// This drives addAllowedRequesterToTemplate end-to-end against a mock Command
+// server: GET /Templates/{id} returns KeyUsage 160 (digitalSignature |
+// keyEncipherment), and the test captures the PUT /Templates body to assert
+// KeyUsage 160 round-trips through unchanged. On the unfixed code the PUT
+// body has no "KeyUsage" field at all (omitempty on a nil *int), which
+// Command's full-replacement UpdateTemplate interprets as clearing it to 0.
+func TestUnitTemplateRoleBindingUpdatePreservesKeyUsage(t *testing.T) {
+	ctx := context.Background()
+
+	var capturedPUTBody []byte
+
+	mux := http.NewServeMux()
+	mux.HandleFunc(
+		"/KeyfactorAPI/Templates/", func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet:
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(
+					map[string]interface{}{
+						"Id":                   42,
+						"CommonName":           "WebServer",
+						"TemplateName":         "WebServer",
+						"KeyUsage":             160,
+						"AllowedRequesters":    []string{},
+						"UseAllowedRequesters": false,
+					},
+				)
+			case http.MethodPut:
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatalf("reading PUT body: %v", err)
+				}
+				capturedPUTBody = body
+				w.WriteHeader(http.StatusOK)
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"Id": 42})
+			default:
+				t.Fatalf("unexpected method %s", r.Method)
+			}
+		},
+	)
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	diags := addAllowedRequesterToTemplate(ctx, client, "tf-unit-role", "42")
+	if diags.HasError() {
+		t.Fatalf("addAllowedRequesterToTemplate returned unexpected diagnostics: %+v", diags)
+	}
+
+	if capturedPUTBody == nil {
+		t.Fatal("expected UpdateTemplate to PUT a request body, got none")
+	}
+
+	var putArg map[string]interface{}
+	if err := json.Unmarshal(capturedPUTBody, &putArg); err != nil {
+		t.Fatalf("unmarshaling captured PUT body: %v", err)
+	}
+
+	keyUsage, ok := putArg["KeyUsage"]
+	if !assert.True(t, ok, "PUT body must carry a KeyUsage field, not omit it: %s", string(capturedPUTBody)) {
+		return
+	}
+	assert.Equal(t, float64(160), keyUsage, "KeyUsage must round-trip from GetTemplate onto UpdateTemplate unchanged")
 }

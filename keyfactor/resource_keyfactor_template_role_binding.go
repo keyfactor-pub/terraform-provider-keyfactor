@@ -584,7 +584,8 @@ func Contains(sl []int, val int) bool {
 //
 // This helper faithfully round-trips every field returned by GetTemplate,
 // changing only the allowed-requester list, using non-collapsing pointers so a
-// legitimate empty string or zero value is preserved rather than dropped.
+// legitimate empty string or zero value (including a KeyUsage of 0) is
+// preserved rather than dropped.
 func buildTemplateRoleBindingUpdateArg(
 	template *api.GetTemplateResponse,
 	allowedRequesters []string,
@@ -602,6 +603,7 @@ func buildTemplateRoleBindingUpdateArg(
 	allowedEnrollmentTypes := template.AllowedEnrollmentTypes
 	rfcEnforcement := template.RFCEnforcement
 	requiresApproval := template.RequiresApproval
+	keyUsage := template.KeyUsage
 
 	arg := &api.UpdateTemplateArg{
 		Id:                     template.Id,
@@ -620,6 +622,7 @@ func buildTemplateRoleBindingUpdateArg(
 		AllowedRequesters:      &requesters,
 		RFCEnforcement:         &rfcEnforcement,
 		RequiresApproval:       &requiresApproval,
+		KeyUsage:               &keyUsage,
 	}
 
 	// Preserve the collection-valued settings this resource does not manage.

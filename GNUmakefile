@@ -866,6 +866,40 @@ api-get-template:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
+# api-update-template: PUT /Templates using a TemplateUpdateRequest-shaped JSON body piped via
+# stdin. Build the body from `make api-get-template TEMPLATE_ID=<id>` output, projected down to
+# the TemplateUpdateRequest fields (see swagger
+# Keyfactor.Web.KeyfactorApi.Models.Templates.TemplateUpdateRequest) — the PUT is a full
+# replace, so omitted fields are cleared. Unlike api-update-ca, the response body here is the
+# full updated template (not empty), so HTTP_STATUS is captured out-of-band instead of appended
+# to stdout — appending it ahead of jq would otherwise break JSON parsing.
+# Usage: cat template_put_body.json | make api-update-template
+api-update-template:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	BODY=$$(cat) && \
+	HTTP_STATUS=$$(curl -sk -o /tmp/api_update_template_resp.json -w "%{http_code}" -X PUT \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Templates" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "$$BODY") && \
+	echo "HTTP_STATUS: $$HTTP_STATUS" && \
+	cat /tmp/api_update_template_resp.json | jq .
+
+## api-template-schema-diff: Compare GET response fields vs PUT request fields from live Swagger.
+##   Prints: fields only in GET (read-only), fields only in PUT (write-only), fields in both,
+##   plus the exact declared type of KeyUsage on each side (int bitmask vs bool — V1 gate).
+api-template-schema-diff:
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
+		| jq -r '.access_token') && \
+	JQ_FILTER=$$'(.components.schemas["Keyfactor.Web.KeyfactorApi.Models.Templates.TemplateRetrievalResponse"].properties) as $$get | (.components.schemas["Keyfactor.Web.KeyfactorApi.Models.Templates.TemplateUpdateRequest"].properties) as $$put | {"GET_only_readonly": [$$get | keys[] | select(. as $$k | $$put | has($$k) | not)], "PUT_only_writeonly": [$$put | keys[] | select(. as $$k | $$get | has($$k) | not)], "in_both": [$$get | keys[] | select(. as $$k | $$put | has($$k))], "KeyUsage_GET_type": $$get.KeyUsage, "KeyUsage_PUT_type": $$put.KeyUsage}' && \
+	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/swagger/v1/swagger.json" \
+		-H "Authorization: Bearer $$TOKEN" | jq "$$JQ_FILTER"
+
 # Certificate API targets
 #   make api-list-certs                              — list 5 most recent certs
 #   make api-get-cert CERT_ID=123                    — get certificate context by ID
@@ -900,6 +934,39 @@ api-get-cert:
 		-H "x-keyfactor-requested-with: APIClient" \
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
+
+# api-set-cert-owner / api-clear-cert-owner: PUT /Certificates/{id}/Owner (204 No Content).
+# Per live swagger (Keyfactor.Web.KeyfactorApi.Models.Certificates.OwnerRequest), the endpoint
+# description says: "If removing the owner, leave both empty." api-clear-cert-owner sends {}
+# to exercise that documented clear payload.
+# Usage:
+#   make api-set-cert-owner CERT_ID=169 CERT_OWNER_ROLE="Administrator"
+#   make api-clear-cert-owner CERT_ID=169
+CERT_OWNER_ROLE ?=
+
+api-set-cert-owner:
+	@if [ -z "$(CERT_ID)" ] || [ -z "$(CERT_OWNER_ROLE)" ]; then echo "Usage: make api-set-cert-owner CERT_ID=<id> CERT_OWNER_ROLE=<role name>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	HTTP_STATUS=$$(curl -sk -o /tmp/api_cert_owner_resp.json -w "%{http_code}" -X PUT \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates/$(CERT_ID)/Owner" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{\"NewRoleName\": \"$(CERT_OWNER_ROLE)\"}") && \
+	echo "HTTP_STATUS: $$HTTP_STATUS" && cat /tmp/api_cert_owner_resp.json
+
+api-clear-cert-owner:
+	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-clear-cert-owner CERT_ID=<id>"; exit 1; fi
+	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
+	HTTP_STATUS=$$(curl -sk -o /tmp/api_cert_owner_resp.json -w "%{http_code}" -X PUT \
+		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Certificates/$(CERT_ID)/Owner" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-H "Content-Type: application/json" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-d "{}") && \
+	echo "HTTP_STATUS: $$HTTP_STATUS" && cat /tmp/api_cert_owner_resp.json
 
 api-download-cert:
 	@if [ -z "$(CERT_ID)" ]; then echo "Usage: make api-download-cert CERT_ID=<id>"; exit 1; fi
@@ -1253,4 +1320,4 @@ api-get-cert-store:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
-.PHONY: store-type-demo application-demo oauth-security-demo oauth-security-demo-apply oauth-security-demo-destroy k8s-orchestrator-demo k8s-orchestrator-demo-apply k8s-orchestrator-demo-destroy ecc-pfx-debug-build ecc-pfx-debug-plan ecc-pfx-debug-apply ecc-pfx-debug-destroy build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-cert-import testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-template-role-binding-import testunit-record-cert-store-import testunit-record-oauth-role-import testunit-record-oauth-role-claim-assoc-import testunit-record-oauth-role-claim-assoc-multi testunit-record-oauth-role-nil testunit-record-oauth-claim-nil testunit-record-all testunit-check testunit-ca testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testint-oauth-access-token testint-ca-snapshot testint-ca-diff testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-update-ca api-ca-schema-diff api-ca-gap-fields api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key api-list-agents
+.PHONY: store-type-demo application-demo oauth-security-demo oauth-security-demo-apply oauth-security-demo-destroy k8s-orchestrator-demo k8s-orchestrator-demo-apply k8s-orchestrator-demo-destroy ecc-pfx-debug-build ecc-pfx-debug-plan ecc-pfx-debug-apply ecc-pfx-debug-destroy build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-cert-import testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-template-role-binding-import testunit-record-cert-store-import testunit-record-oauth-role-import testunit-record-oauth-role-claim-assoc-import testunit-record-oauth-role-claim-assoc-multi testunit-record-oauth-role-nil testunit-record-oauth-claim-nil testunit-record-all testunit-check testunit-ca testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testint-oauth-access-token testint-ca-snapshot testint-ca-diff testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-update-ca api-ca-schema-diff api-ca-gap-fields api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-update-template api-template-schema-diff api-list-certs api-get-cert api-set-cert-owner api-clear-cert-owner api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key api-list-agents

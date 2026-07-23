@@ -29,7 +29,7 @@ resource "keyfactor_identity" "identity" {
 
 ### Optional
 
-- `roles` (List of String) An array containing the role IDs that the identity is attached to.
+- `roles` (List of String) An array of role names or numeric role IDs that the identity is attached to. Role names are matched case-insensitively against Keyfactor Command's role names, so a declared spelling that only differs in case from the server is not reported as drift. Omit to leave role membership unmanaged (preserved on update); set [] explicitly to remove all roles.
 
 ### Read-Only
 

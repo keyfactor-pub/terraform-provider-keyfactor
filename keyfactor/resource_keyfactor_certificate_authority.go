@@ -1027,8 +1027,8 @@ func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCert
 // Null and there is nothing to preserve; in that case the field remains
 // omitted from the request, relying on Command to leave an omitted
 // AllowedRequesters unchanged.
-func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, config, state KeyfactorCertificateAuthority) {
-	preserveSchedule := func(planInterval *types.Int64, planDaily *types.String, configInterval types.Int64, configDaily types.String, stateInterval types.Int64, stateDaily types.String) {
+func preserveCAUpdateFields(ctx context.Context, plan *KeyfactorCertificateAuthority, config, state KeyfactorCertificateAuthority) {
+	preserveSchedule := func(name string, planInterval *types.Int64, planDaily *types.String, configInterval types.Int64, configDaily types.String, stateInterval types.Int64, stateDaily types.String) {
 		if declaredInConfig(configInterval) || declaredInConfig(configDaily) {
 			if !declaredInConfig(configInterval) {
 				*planInterval = types.Int64{Null: true}
@@ -1036,6 +1036,7 @@ func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, config, state K
 			if !declaredInConfig(configDaily) {
 				*planDaily = types.String{Null: true}
 			}
+			tflog.Debug(ctx, fmt.Sprintf("preserveCAUpdateFields: %s pair declared in config -- managed, enforcing config truth on plan", name))
 			return
 		}
 		if !stateInterval.Null && !stateInterval.Unknown {
@@ -1044,13 +1045,15 @@ func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, config, state K
 		if !stateDaily.Null && !stateDaily.Unknown {
 			*planDaily = stateDaily
 		}
+		tflog.Debug(ctx, fmt.Sprintf("preserveCAUpdateFields: %s pair undeclared in config -- preserving prior state value on plan", name))
 	}
-	preserveSchedule(&plan.FullScanIntervalMinutes, &plan.FullScanDailyTime, config.FullScanIntervalMinutes, config.FullScanDailyTime, state.FullScanIntervalMinutes, state.FullScanDailyTime)
-	preserveSchedule(&plan.IncrementalScanIntervalMinutes, &plan.IncrementalScanDailyTime, config.IncrementalScanIntervalMinutes, config.IncrementalScanDailyTime, state.IncrementalScanIntervalMinutes, state.IncrementalScanDailyTime)
-	preserveSchedule(&plan.ThresholdCheckIntervalMinutes, &plan.ThresholdCheckDailyTime, config.ThresholdCheckIntervalMinutes, config.ThresholdCheckDailyTime, state.ThresholdCheckIntervalMinutes, state.ThresholdCheckDailyTime)
+	preserveSchedule("full_scan", &plan.FullScanIntervalMinutes, &plan.FullScanDailyTime, config.FullScanIntervalMinutes, config.FullScanDailyTime, state.FullScanIntervalMinutes, state.FullScanDailyTime)
+	preserveSchedule("incremental_scan", &plan.IncrementalScanIntervalMinutes, &plan.IncrementalScanDailyTime, config.IncrementalScanIntervalMinutes, config.IncrementalScanDailyTime, state.IncrementalScanIntervalMinutes, state.IncrementalScanDailyTime)
+	preserveSchedule("threshold_check", &plan.ThresholdCheckIntervalMinutes, &plan.ThresholdCheckDailyTime, config.ThresholdCheckIntervalMinutes, config.ThresholdCheckDailyTime, state.ThresholdCheckIntervalMinutes, state.ThresholdCheckDailyTime)
 
 	if !declaredInConfig(config.AllowedRequesters) && !state.AllowedRequesters.Null && !state.AllowedRequesters.Unknown {
 		plan.AllowedRequesters = state.AllowedRequesters
+		tflog.Debug(ctx, "preserveCAUpdateFields: allowed_requesters undeclared in config -- preserving prior state value on plan")
 	}
 }
 
@@ -1067,18 +1070,21 @@ func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, config, state K
 // no-op for a config-declared Interval/Daily pair's sibling schedules and for
 // a genuinely undeclared-and-never-configured schedule (getResp's field is
 // nil either way).
-func applyUndeclaredScheduleFallback(updateReq *v1.CertificateAuthoritiesCertificateAuthorityRequest, config KeyfactorCertificateAuthority, getResp *v1.CertificateAuthoritiesCertificateAuthorityResponse) {
+func applyUndeclaredScheduleFallback(ctx context.Context, updateReq *v1.CertificateAuthoritiesCertificateAuthorityRequest, config KeyfactorCertificateAuthority, getResp *v1.CertificateAuthoritiesCertificateAuthorityResponse) {
 	if getResp == nil {
 		return
 	}
 	if !declaredInConfig(config.FullScanIntervalMinutes) && !declaredInConfig(config.FullScanDailyTime) {
 		updateReq.FullScan = getResp.FullScan
+		tflog.Debug(ctx, "applyUndeclaredScheduleFallback: full_scan undeclared in config -- copying current server schedule verbatim onto the request")
 	}
 	if !declaredInConfig(config.IncrementalScanIntervalMinutes) && !declaredInConfig(config.IncrementalScanDailyTime) {
 		updateReq.IncrementalScan = getResp.IncrementalScan
+		tflog.Debug(ctx, "applyUndeclaredScheduleFallback: incremental_scan undeclared in config -- copying current server schedule verbatim onto the request")
 	}
 	if !declaredInConfig(config.ThresholdCheckIntervalMinutes) && !declaredInConfig(config.ThresholdCheckDailyTime) {
 		updateReq.ThresholdCheck = getResp.ThresholdCheck
+		tflog.Debug(ctx, "applyUndeclaredScheduleFallback: threshold_check undeclared in config -- copying current server schedule verbatim onto the request")
 	}
 }
 
@@ -1107,22 +1113,24 @@ func applyUndeclaredScheduleFallback(updateReq *v1.CertificateAuthoritiesCertifi
 // declaredInConfig/pairedVariantModifier) because it operates directly on the
 // three concrete KeyfactorCertificateAuthority schedule pairs rather than a
 // single generic attr.Value.
-func keepScheduleSentinels(newState *KeyfactorCertificateAuthority, prior KeyfactorCertificateAuthority) {
-	keep := func(newInterval *types.Int64, newDaily *types.String, priorInterval types.Int64, priorDaily types.String) {
+func keepScheduleSentinels(ctx context.Context, newState *KeyfactorCertificateAuthority, prior KeyfactorCertificateAuthority) {
+	keep := func(name string, newInterval *types.Int64, newDaily *types.String, priorInterval types.Int64, priorDaily types.String) {
 		if !newInterval.Null || !newDaily.Null {
 			return
 		}
 		if !priorInterval.Null && !priorInterval.Unknown && priorInterval.Value == 0 {
 			*newInterval = types.Int64{Value: 0}
+			tflog.Debug(ctx, fmt.Sprintf("keepScheduleSentinels: %s reported no schedule -- carrying forward the declared interval=0 clear sentinel", name))
 			return
 		}
 		if !priorDaily.Null && !priorDaily.Unknown && priorDaily.Value == "" {
 			*newDaily = types.String{Value: ""}
+			tflog.Debug(ctx, fmt.Sprintf("keepScheduleSentinels: %s reported no schedule -- carrying forward the declared daily=\"\" clear sentinel", name))
 		}
 	}
-	keep(&newState.FullScanIntervalMinutes, &newState.FullScanDailyTime, prior.FullScanIntervalMinutes, prior.FullScanDailyTime)
-	keep(&newState.IncrementalScanIntervalMinutes, &newState.IncrementalScanDailyTime, prior.IncrementalScanIntervalMinutes, prior.IncrementalScanDailyTime)
-	keep(&newState.ThresholdCheckIntervalMinutes, &newState.ThresholdCheckDailyTime, prior.ThresholdCheckIntervalMinutes, prior.ThresholdCheckDailyTime)
+	keep("full_scan", &newState.FullScanIntervalMinutes, &newState.FullScanDailyTime, prior.FullScanIntervalMinutes, prior.FullScanDailyTime)
+	keep("incremental_scan", &newState.IncrementalScanIntervalMinutes, &newState.IncrementalScanDailyTime, prior.IncrementalScanIntervalMinutes, prior.IncrementalScanDailyTime)
+	keep("threshold_check", &newState.ThresholdCheckIntervalMinutes, &newState.ThresholdCheckDailyTime, prior.ThresholdCheckIntervalMinutes, prior.ThresholdCheckDailyTime)
 }
 
 func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
@@ -1166,7 +1174,7 @@ func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.
 	// Carry the declared sentinel into state so the very next plan does not
 	// see a spurious null -> 0 diff against the config that is still
 	// declaring 0.
-	keepScheduleSentinels(&state, plan)
+	keepScheduleSentinels(ctx, &state, plan)
 
 	diags = response.State.Set(ctx, &state)
 	response.Diagnostics.Append(diags...)
@@ -1217,7 +1225,7 @@ func (r resourceCertificateAuthority) Read(ctx context.Context, request tfsdk.Re
 	// pair and the prior state was a declared clear sentinel, keep the
 	// sentinel rather than surfacing a Null that would otherwise look like
 	// drift away from what the user declared.
-	keepScheduleSentinels(&newState, state)
+	keepScheduleSentinels(ctx, &newState, state)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -1311,7 +1319,7 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 	// #175: preserve the prior state value when config simply does not
 	// declare the attribute, so an unrelated Update never clears state the
 	// user never asked to change.
-	preserveCAUpdateFields(&plan, config, state)
+	preserveCAUpdateFields(ctx, &plan, config, state)
 
 	updateReq, buildDiags := buildCARequest(ctx, plan)
 	response.Diagnostics.Append(buildDiags...)
@@ -1320,7 +1328,7 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 	}
 	idInt32 := int32(id)
 	updateReq.Id = &idInt32
-	applyUndeclaredScheduleFallback(&updateReq, config, getResp)
+	applyUndeclaredScheduleFallback(ctx, &updateReq, config, getResp)
 
 	updateAPIReq := caAPI.NewUpdateCertificateAuthorityRequest(ctx).CertificateAuthoritiesCertificateAuthorityRequest(updateReq)
 	if !plan.ForceSave.Null && !plan.ForceSave.Unknown && plan.ForceSave.Value {
@@ -1343,7 +1351,7 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 	// schedule and caResponseToState collapses it to (Null, Null). Carry the
 	// planned sentinel forward so the next plan sees the same declared 0/""
 	// reflected back, not a spurious diff against Null.
-	keepScheduleSentinels(&newState, plan)
+	keepScheduleSentinels(ctx, &newState, plan)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -1465,7 +1473,17 @@ func (r resourceCertificateAuthority) ValidateConfig(ctx context.Context, reques
 		return
 	}
 
-	response.Diagnostics.Append(validateCAScheduleAttributes(cfg)...)
+	scheduleDiags := validateCAScheduleAttributes(cfg)
+	for _, d := range scheduleDiags {
+		// tflog.Warn alongside every AddAttributeError this produces (mirrors
+		// the Delete path's tflog.Warn-before-AddError pattern above): the
+		// diagnostic itself is what Terraform Core surfaces to the
+		// practitioner, but a provider-log trail of exactly which schedule
+		// attribute failed and why is useful when debugging a CI plan/apply
+		// where the CLI's rendered diagnostic text is all that's captured.
+		tflog.Warn(ctx, fmt.Sprintf("certificate authority schedule validation error: %s: %s", d.Summary(), d.Detail()))
+	}
+	response.Diagnostics.Append(scheduleDiags...)
 }
 
 // schedulePair names one of the three CA schedules (full_scan, incremental_scan,

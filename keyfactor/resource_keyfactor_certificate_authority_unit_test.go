@@ -76,7 +76,7 @@ func TestUnitCAUpdatePreservesScanSchedules(t *testing.T) {
 		ThresholdCheckDailyTime:        types.String{Null: true},
 	}
 
-	preserveCAUpdateFields(&plan, config, state)
+	preserveCAUpdateFields(ctx, &plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
 	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
@@ -112,7 +112,7 @@ func TestUnitCAUpdatePreservesAllowedRequesters(t *testing.T) {
 	plan := caAllSchedulesNull
 	plan.AllowedRequesters = types.List{Null: true, ElemType: types.StringType}
 
-	preserveCAUpdateFields(&plan, config, state)
+	preserveCAUpdateFields(ctx, &plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
 	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
@@ -136,7 +136,7 @@ func TestUnitCAUpdatePostImportAllowedRequestersOmitted(t *testing.T) {
 	plan := caAllSchedulesNull
 	plan.AllowedRequesters = types.List{Null: true, ElemType: types.StringType}
 
-	preserveCAUpdateFields(&plan, config, state)
+	preserveCAUpdateFields(ctx, &plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
 	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
@@ -166,7 +166,7 @@ func TestUnitCAUpdatePreservesScanScheduleWhenPlanIsUnknownNotNull(t *testing.T)
 	plan := caAllSchedulesNull
 	plan.FullScanIntervalMinutes = types.Int64{Unknown: true} // NOT Null -- the case the old plan.Null check missed
 
-	preserveCAUpdateFields(&plan, config, state)
+	preserveCAUpdateFields(ctx, &plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
 	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
@@ -235,7 +235,7 @@ func TestUnitCAUpdateExplicitEmptyAllowedRequestersIsSent(t *testing.T) {
 	plan := caAllSchedulesNull
 	plan.AllowedRequesters = explicitEmpty
 
-	preserveCAUpdateFields(&plan, config, state)
+	preserveCAUpdateFields(ctx, &plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
 	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
@@ -294,7 +294,7 @@ func TestUnitCAUpdatePreservesDailySchedule(t *testing.T) {
 	config := caAllSchedulesNull // every schedule undeclared
 	plan := caAllSchedulesNull
 
-	preserveCAUpdateFields(&plan, config, state)
+	preserveCAUpdateFields(ctx, &plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
 	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
@@ -325,7 +325,7 @@ func TestUnitCAUpdateScheduleVariantSwitchDoesNotResurrectOther(t *testing.T) {
 	plan := caAllSchedulesNull
 	plan.FullScanIntervalMinutes = types.Int64{Value: 60}
 
-	preserveCAUpdateFields(&plan, config, state)
+	preserveCAUpdateFields(ctx, &plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
 	assert.False(t, buildDiags.HasError(), "buildCARequest should not error: %v", buildDiags)
 
@@ -467,7 +467,7 @@ func TestUnitCAReadKeepsScheduleSentinel(t *testing.T) {
 	priorState.FullScanIntervalMinutes = types.Int64{Value: 0}
 
 	newState := caResponseToState(resp)
-	keepScheduleSentinels(&newState, priorState)
+	keepScheduleSentinels(context.Background(), &newState, priorState)
 
 	if assert.False(t, newState.FullScanIntervalMinutes.Null,
 		"a prior sentinel must be carried forward, not surfaced as the server's bare Null") {
@@ -498,7 +498,7 @@ func TestUnitCAReadSurfacesDriftOverSentinel(t *testing.T) {
 	priorState.FullScanIntervalMinutes = types.Int64{Value: 0} // the prior declared sentinel
 
 	newState := caResponseToState(resp)
-	keepScheduleSentinels(&newState, priorState)
+	keepScheduleSentinels(context.Background(), &newState, priorState)
 
 	if assert.False(t, newState.FullScanIntervalMinutes.Null,
 		"the server's real out-of-band schedule must be surfaced, not left Null") {

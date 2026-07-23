@@ -382,42 +382,42 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.Int64Type,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with full_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.",
+				Description:   "Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with full_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("full_scan_daily_time")},
 			},
 			"full_scan_daily_time": {
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes.",
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("full_scan_interval_minutes")},
 			},
 			"incremental_scan_interval_minutes": {
 				Type:          types.Int64Type,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with incremental_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.",
+				Description:   "Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with incremental_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("incremental_scan_daily_time")},
 			},
 			"incremental_scan_daily_time": {
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes.",
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("incremental_scan_interval_minutes")},
 			},
 			"threshold_check_interval_minutes": {
 				Type:          types.Int64Type,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with threshold_check_daily_time.",
+				Description:   "Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with threshold_check_daily_time. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("threshold_check_daily_time")},
 			},
 			"threshold_check_daily_time": {
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes.",
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("threshold_check_interval_minutes")},
 			},
 
@@ -690,25 +690,37 @@ func scheduleToState(sched *v1.KeyfactorCommonSchedulingKeyfactorSchedule) (type
 // cannot observe (e.g. two Unknown Config references that both happen to resolve to
 // Known values by apply time), buildSchedule itself also rejects the case where BOTH
 // are Known, rather than silently letting intervalMinutes take precedence and
-// discarding dailyTime. Returns (nil, nil) when neither is set, matching the "omit
-// the field" semantics buildCARequest relies on elsewhere. dailyTime is parsed as a
-// bare UTC time-of-day (caDailyTimeLayout) and anchored to a fixed, arbitrary date --
-// Command rewrites the date component to the current date server-side regardless of
-// what is sent (confirmed live), so a fixed anchor keeps this function deterministic
-// without affecting the schedule that is actually applied.
+// discarding dailyTime.
+//
+// G2: intervalMinutes == 0 and dailyTime == "" are declarative CLEAR sentinels, not
+// real schedule values -- either one, Known but at its sentinel value, contributes
+// nothing to the built schedule (same as if it were Null), so the pair returns
+// (nil, nil) here just like a fully-undeclared pair. The difference between a
+// sentinel and undeclared only matters one layer up, at declaredInConfig(): a
+// sentinel IS declared, so preserveCAUpdateFields/applyUndeclaredScheduleFallback
+// must NOT treat it as "undeclared, preserve/fall back to the current value" --
+// this is what turns the (nil, nil) this function returns into an actual clearing
+// PUT (field omitted) rather than the fallback re-populating it right back.
+//
+// Returns (nil, nil) when neither is set (or only a sentinel is set), matching the
+// "omit the field" semantics buildCARequest relies on elsewhere. dailyTime is parsed
+// as a bare UTC time-of-day (caDailyTimeLayout) and anchored to a fixed, arbitrary
+// date -- Command rewrites the date component to the current date server-side
+// regardless of what is sent (confirmed live), so a fixed anchor keeps this function
+// deterministic without affecting the schedule that is actually applied.
 func buildSchedule(intervalMinutes types.Int64, dailyTime types.String) (*v1.KeyfactorCommonSchedulingKeyfactorSchedule, error) {
 	intervalKnown := !intervalMinutes.Null && !intervalMinutes.Unknown
 	dailyKnown := !dailyTime.Null && !dailyTime.Unknown
 	if intervalKnown && dailyKnown {
 		return nil, fmt.Errorf("interval and daily time are both set but are mutually exclusive; set at most one")
 	}
-	if intervalKnown {
+	if intervalKnown && intervalMinutes.Value != 0 {
 		minutes := int32(intervalMinutes.Value)
 		return &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
 			Interval: &v1.KeyfactorCommonSchedulingModelsIntervalModel{Minutes: &minutes},
 		}, nil
 	}
-	if dailyKnown {
+	if dailyKnown && dailyTime.Value != "" {
 		t, err := time.Parse(caDailyTimeLayout, dailyTime.Value)
 		if err != nil {
 			return nil, fmt.Errorf("invalid daily time %q: %w", dailyTime.Value, err)
@@ -1070,6 +1082,49 @@ func applyUndeclaredScheduleFallback(updateReq *v1.CertificateAuthoritiesCertifi
 	}
 }
 
+// keepScheduleSentinels implements sentinel stability (attribute contract
+// item 4, G2) for the three CA schedule pairs: 0 for *_interval_minutes and
+// "" for *_daily_time are declarative "clear this schedule" sentinels (see
+// buildSchedule). scheduleToState cannot tell "the user cleared this
+// schedule with a sentinel" apart from "the server genuinely has no schedule
+// here" or "the server holds a variant this provider does not model" -- all
+// three collapse to (Null, Null). Left alone, that would mean a declared
+// `full_scan_interval_minutes = 0` never actually settles: Read/Update would
+// write state back as Null, and the next plan would show a spurious
+// `0 -> null -> 0` diff forever, because Optional+Computed with
+// pairedVariantModifier plans the config-declared value (0) again every time
+// state disagrees with it.
+//
+// When newState reports no schedule at all for a pair (both Null) and the
+// caller's prior value (plan on Create/Update, prior state on Read) was
+// itself a sentinel, carry that same sentinel forward into newState instead
+// of leaving it Null -- this is the only case this function touches. If
+// newState reports a REAL value for the pair, it is left alone: that is
+// genuine drift (or the schedule the user just set), and must not be masked
+// by a stale sentinel from before.
+//
+// This is CA-specific (not a generic attribute_contract.go helper like
+// declaredInConfig/pairedVariantModifier) because it operates directly on the
+// three concrete KeyfactorCertificateAuthority schedule pairs rather than a
+// single generic attr.Value.
+func keepScheduleSentinels(newState *KeyfactorCertificateAuthority, prior KeyfactorCertificateAuthority) {
+	keep := func(newInterval *types.Int64, newDaily *types.String, priorInterval types.Int64, priorDaily types.String) {
+		if !newInterval.Null || !newDaily.Null {
+			return
+		}
+		if !priorInterval.Null && !priorInterval.Unknown && priorInterval.Value == 0 {
+			*newInterval = types.Int64{Value: 0}
+			return
+		}
+		if !priorDaily.Null && !priorDaily.Unknown && priorDaily.Value == "" {
+			*newDaily = types.String{Value: ""}
+		}
+	}
+	keep(&newState.FullScanIntervalMinutes, &newState.FullScanDailyTime, prior.FullScanIntervalMinutes, prior.FullScanDailyTime)
+	keep(&newState.IncrementalScanIntervalMinutes, &newState.IncrementalScanDailyTime, prior.IncrementalScanIntervalMinutes, prior.IncrementalScanDailyTime)
+	keep(&newState.ThresholdCheckIntervalMinutes, &newState.ThresholdCheckDailyTime, prior.ThresholdCheckIntervalMinutes, prior.ThresholdCheckDailyTime)
+}
+
 func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
 	LogFunctionEntry(ctx, "resourceCertificateAuthority.Create")
 
@@ -1105,6 +1160,13 @@ func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.
 
 	state := caResponseToState(resp)
 	preserveSecrets(&state, plan)
+	// Sentinel stability (G2): a declared clear sentinel (interval 0 / daily
+	// "") on Create produces no schedule server-side, which caResponseToState
+	// reports as (Null, Null) -- indistinguishable from "never configured".
+	// Carry the declared sentinel into state so the very next plan does not
+	// see a spurious null -> 0 diff against the config that is still
+	// declaring 0.
+	keepScheduleSentinels(&state, plan)
 
 	diags = response.State.Set(ctx, &state)
 	response.Diagnostics.Append(diags...)
@@ -1151,6 +1213,11 @@ func (r resourceCertificateAuthority) Read(ctx context.Context, request tfsdk.Re
 
 	newState := caResponseToState(resp)
 	preserveSecrets(&newState, state)
+	// Sentinel stability (G2): if the server reports no schedule at all for a
+	// pair and the prior state was a declared clear sentinel, keep the
+	// sentinel rather than surfacing a Null that would otherwise look like
+	// drift away from what the user declared.
+	keepScheduleSentinels(&newState, state)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -1271,6 +1338,12 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 
 	newState := caResponseToState(resp)
 	preserveSecrets(&newState, plan)
+	// Sentinel stability (G2): a config-declared clear sentinel omits the
+	// field from the PUT (see buildSchedule), so the server reports no
+	// schedule and caResponseToState collapses it to (Null, Null). Carry the
+	// planned sentinel forward so the next plan sees the same declared 0/""
+	// reflected back, not a spurious diff against Null.
+	keepScheduleSentinels(&newState, plan)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -1430,6 +1503,11 @@ func validateCAScheduleAttributes(cfg KeyfactorCertificateAuthority) diag.Diagno
 		intervalKnown := !p.interval.Null && !p.interval.Unknown
 		dailyKnown := !p.daily.Null && !p.daily.Unknown
 
+		// Both variants declared is still a conflict regardless of whether
+		// either side is the G2 clear sentinel (interval 0 / daily "") -- a
+		// sentinel is a real, declared value like any other, so declaring
+		// both a sentinel and a real value (or two sentinels) on the same
+		// pair is exactly as ambiguous as declaring two real values.
 		if intervalKnown && dailyKnown {
 			diags.AddAttributeError(
 				path.Root(p.dailyAttr),
@@ -1441,12 +1519,26 @@ func validateCAScheduleAttributes(cfg KeyfactorCertificateAuthority) diag.Diagno
 			)
 		}
 
-		if dailyKnown {
+		// G2: 0 is the declarative "clear this schedule" sentinel for
+		// *_interval_minutes; any other negative value is simply invalid
+		// (Command does not support negative intervals).
+		if intervalKnown && p.interval.Value < 0 {
+			diags.AddAttributeError(
+				path.Root(p.intervalAttr),
+				fmt.Sprintf("Invalid %s value", p.intervalAttr),
+				fmt.Sprintf("%s must be zero (to clear the schedule) or a positive interval in minutes; got %d", p.intervalAttr, p.interval.Value),
+			)
+		}
+
+		// G2: "" is the declarative "clear this schedule" sentinel for
+		// *_daily_time; skip the time-of-day parse for it, since it is not
+		// meant to be a timestamp at all.
+		if dailyKnown && p.daily.Value != "" {
 			if _, err := time.Parse(caDailyTimeLayout, p.daily.Value); err != nil {
 				diags.AddAttributeError(
 					path.Root(p.dailyAttr),
 					fmt.Sprintf("Invalid %s value", p.dailyAttr),
-					fmt.Sprintf("%s must be a UTC time-of-day formatted \"HH:MM:SS\" (e.g. \"07:00:00\"); got %q: %s", p.dailyAttr, p.daily.Value, err.Error()),
+					fmt.Sprintf("%s must be a UTC time-of-day formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), or \"\" to clear the schedule; got %q: %s", p.dailyAttr, p.daily.Value, err.Error()),
 				)
 			}
 		}

@@ -446,3 +446,63 @@ func TestUnitCAScheduleDailyTimeNormalizesNonUTCOffset(t *testing.T) {
 	assert.Equal(t, "07:00:00", daily.Value,
 		"a Daily.Time carrying a non-UTC offset must be normalized to the correct UTC time-of-day")
 }
+
+// TestUnitCAReadKeepsScheduleSentinel is the red/green regression test for
+// G2's Read-path sentinel stability: when the server reports no schedule at
+// all (FullScan nil) and the prior state held the declared clear sentinel
+// (full_scan_interval_minutes = 0), Read must write that same sentinel back
+// into state, not the server's bare Null -- otherwise a config that still
+// declares 0 would see a spurious null diff on every subsequent plan.
+func TestUnitCAReadKeepsScheduleSentinel(t *testing.T) {
+	resp := &v1.CertificateAuthoritiesCertificateAuthorityResponse{}
+	resp.SetId(45)
+	resp.SetLogicalName("tf-unit-ca-read-sentinel")
+	resp.SetHostName("ca.lab.example.com")
+	caType := v1.CSSCMSCoreEnumsCertificateAuthorityType(1)
+	resp.CAType = &caType
+	// FullScan left nil: the server has no schedule (Command actually cleared
+	// it, per the declared sentinel on a prior apply).
+
+	priorState := caAllSchedulesNull
+	priorState.FullScanIntervalMinutes = types.Int64{Value: 0}
+
+	newState := caResponseToState(resp)
+	keepScheduleSentinels(&newState, priorState)
+
+	if assert.False(t, newState.FullScanIntervalMinutes.Null,
+		"a prior sentinel must be carried forward, not surfaced as the server's bare Null") {
+		assert.Equal(t, int64(0), newState.FullScanIntervalMinutes.Value)
+	}
+	assert.True(t, newState.FullScanDailyTime.Null)
+}
+
+// TestUnitCAReadSurfacesDriftOverSentinel is the companion case: when the
+// server reports a REAL schedule (e.g. an out-of-band re-add of the interval
+// Command's UI or another tool performed directly), Read must surface that
+// real value as genuine drift, never mask it behind a stale sentinel from
+// prior state.
+func TestUnitCAReadSurfacesDriftOverSentinel(t *testing.T) {
+	minutes := int32(30)
+	resp := &v1.CertificateAuthoritiesCertificateAuthorityResponse{
+		FullScan: &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
+			Interval: &v1.KeyfactorCommonSchedulingModelsIntervalModel{Minutes: &minutes},
+		},
+	}
+	resp.SetId(46)
+	resp.SetLogicalName("tf-unit-ca-read-sentinel-drift")
+	resp.SetHostName("ca.lab.example.com")
+	caType := v1.CSSCMSCoreEnumsCertificateAuthorityType(1)
+	resp.CAType = &caType
+
+	priorState := caAllSchedulesNull
+	priorState.FullScanIntervalMinutes = types.Int64{Value: 0} // the prior declared sentinel
+
+	newState := caResponseToState(resp)
+	keepScheduleSentinels(&newState, priorState)
+
+	if assert.False(t, newState.FullScanIntervalMinutes.Null,
+		"the server's real out-of-band schedule must be surfaced, not left Null") {
+		assert.Equal(t, int64(30), newState.FullScanIntervalMinutes.Value,
+			"real server drift (0 -> 30) must win over the stale prior sentinel")
+	}
+}

@@ -338,3 +338,136 @@ func TestUnitCAUpdatePreservesWeeklyScheduleVerbatim(t *testing.T) {
 	assert.True(t, result.FullScanDailyTime.Null,
 		"post-apply state has no attribute pair to represent a Weekly schedule in, so full_scan_daily_time must stay Null")
 }
+
+// TestUnitCAScheduleSentinelClears is the framework-realistic red/green
+// regression test for G2's Update path: declaring full_scan_interval_minutes
+// = 0 (the clear sentinel) against a CA that currently has a live 60-minute
+// Interval schedule must send a PUT that OMITS FullScan entirely (Command's
+// full-replace semantics then clear it server-side), and the resulting
+// post-apply state must show full_scan_interval_minutes = 0 -- not Null --
+// so a subsequent plan against the same config sees no drift
+// (keepScheduleSentinels).
+//
+// This also exercises the interaction the plan calls out explicitly: a
+// config-declared sentinel means the pair IS declared (declaredInConfig
+// treats 0 as a real, non-null value), so applyUndeclaredScheduleFallback's
+// "config declares neither variant" guard must NOT fire here -- if it did,
+// it would copy the mock GET's still-live 60-minute Interval right back onto
+// the request, defeating the clear.
+func TestUnitCAScheduleSentinelClears(t *testing.T) {
+	ctx := context.Background()
+
+	var capturedPutBody []byte
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/CertificateAuthority/44", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// Still live at GET time -- the clear hasn't happened yet.
+		_, _ = w.Write([]byte(`{
+			"Id": 44,
+			"LogicalName": "tf-unit-ca-sentinel-clear",
+			"HostName": "ca.lab.example.com",
+			"CAType": 1,
+			"FullScan": {"Interval": {"Minutes": 60}}
+		}`))
+	})
+	mux.HandleFunc("/KeyfactorAPI/CertificateAuthority", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		capturedPutBody = body
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// Command cleared it: the response no longer carries a FullScan at all.
+		_, _ = w.Write([]byte(`{
+			"Id": 44,
+			"LogicalName": "tf-unit-ca-sentinel-clear",
+			"HostName": "ca.lab.example.com",
+			"CAType": 1
+		}`))
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	sdkClient := newCAMockSDKClient(server)
+
+	schema, sDiags := resourceCertificateAuthorityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	state := caAllSchedulesNull
+	state.ID = types.String{Value: "44"}
+	state.LogicalName = types.String{Value: "tf-unit-ca-sentinel-clear"}
+	state.HostName = types.String{Value: "ca.lab.example.com"}
+	state.CAType = types.Int64{Value: 1}
+	state.FullScanIntervalMinutes = types.Int64{Value: 60}
+
+	// Config: the practitioner declares the clear sentinel directly.
+	config := caAllSchedulesNull
+	config.ID = state.ID
+	config.LogicalName = state.LogicalName
+	config.HostName = state.HostName
+	config.CAType = state.CAType
+	config.FullScanIntervalMinutes = types.Int64{Value: 0}
+
+	// Plan: config declared 0 directly (Known), so a real pairedWith-driven
+	// plan already carries 0 here without needing any modifier intervention.
+	plan := caAllSchedulesNull
+	plan.ID = state.ID
+	plan.LogicalName = state.LogicalName
+	plan.HostName = state.HostName
+	plan.CAType = state.CAType
+	plan.FullScanIntervalMinutes = types.Int64{Value: 0}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
+
+	r := resourceCertificateAuthority{p: provider{configured: true, sdkClient: sdkClient}}
+
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned unexpected diagnostic errors: %+v", resp.Diagnostics)
+	}
+
+	if len(capturedPutBody) == 0 {
+		t.Fatal("expected the PUT /CertificateAuthority request body to have been captured")
+	}
+
+	var wire caScheduleWireCapture
+	if err := json.Unmarshal(capturedPutBody, &wire); err != nil {
+		t.Fatalf("failed to unmarshal captured PUT body: %s\nbody: %s", err, capturedPutBody)
+	}
+	assert.Nil(t, wire.FullScan,
+		"a declared clear sentinel must send a PUT that OMITS FullScan entirely, not copy the still-live server schedule back in")
+
+	var result KeyfactorCertificateAuthority
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+	if assert.False(t, result.FullScanIntervalMinutes.Null,
+		"post-apply state must keep the declared sentinel (0), not surface the server's bare Null") {
+		assert.Equal(t, int64(0), result.FullScanIntervalMinutes.Value)
+	}
+}

@@ -56,7 +56,7 @@ resource "keyfactor_certificate_authority" "ejbca" {
 - `agent` (String) A string indicating the GUID of the Keyfactor Universal Orchestrator configured to manage the certificate authority.
 - `allow_one_click_renewals` (Boolean) A Boolean that sets whether the CA will allow One-Click Renewal on certificates.
 - `allowed_enrollment_types` (Number) An integer that sets the type(s) of enrollment that are allowed through Keyfactor Command for the certificate authority: 0=none, 1=PFX, 2=CSR, 3=both. Requires standalone=true.
-- `allowed_requesters` (List of String) An array of strings indicating Keyfactor Command security roles that are allowed to enroll for certificates via Keyfactor Command for this CA. Applies to standalone CAs only. Write-only: not returned by the server GET; preserved from plan/state.
+- `allowed_requesters` (List of String) An array of strings indicating Keyfactor Command security roles that are allowed to enroll for certificates via Keyfactor Command for this CA. Applies to standalone CAs only. Requires Keyfactor Command v25.5 or later for reads to reflect the server's actual list; on older Command versions this may read back empty even when configured server-side. Omit to leave unmanaged (preserved on update); set [] explicitly to clear.
 - `audience` (String) For HTTPS CAs, a string specifying the audience to include in token requests to the identity provider.
 - `auth_certificate` (String, Sensitive) An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only.
 - `auth_certificate_password` (String, Sensitive) An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only.
@@ -75,9 +75,9 @@ resource "keyfactor_certificate_authority" "ejbca" {
 - `failure_max` (Number) An integer that sets the maximum number of certificate requests that can fail before an alert is triggered.
 - `force_save` (Boolean) A Boolean indicating whether to save the CA record even if the CA connectivity test fails. Useful when provisioning a CA record before the CA server is reachable. Write-only — not returned by the server; preserved from config/state after reads.
 - `forest_root` (String) A string indicating the forest root name or DNS domain name (retained for legacy purposes).
-- `full_scan_daily_time` (String) RFC3339 timestamp (e.g. "2026-07-17T15:46:00Z") whose time-of-day component sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes.
+- `full_scan_daily_time` (String) UTC time-of-day, formatted "HH:MM:SS" (e.g. "07:00:00"), that sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes.
 - `full_scan_interval_minutes` (Number) Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with full_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.
-- `incremental_scan_daily_time` (String) RFC3339 timestamp (e.g. "2026-07-17T15:46:00Z") whose time-of-day component sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes.
+- `incremental_scan_daily_time` (String) UTC time-of-day, formatted "HH:MM:SS" (e.g. "07:00:00"), that sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes.
 - `incremental_scan_interval_minutes` (Number) Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with incremental_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.
 - `issuance_max` (Number) An integer that sets the maximum number of certificates that can be issued before an alert is triggered.
 - `issuance_min` (Number) An integer that sets the minimum number of certificates that should be issued before an alert is triggered.
@@ -91,7 +91,7 @@ resource "keyfactor_certificate_authority" "ejbca" {
 - `scope` (String) For HTTPS CAs, a string indicating scopes included in token requests, separated by spaces.
 - `standalone` (Boolean) A Boolean that sets whether the certificate authority is a standalone CA.
 - `subscriber_terms` (Boolean) A Boolean that sets whether to add a checkbox forcing users to agree to terms.
-- `threshold_check_daily_time` (String) RFC3339 timestamp (e.g. "2026-07-17T15:46:00Z") whose time-of-day component sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes.
+- `threshold_check_daily_time` (String) UTC time-of-day, formatted "HH:MM:SS" (e.g. "07:00:00"), that sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes.
 - `threshold_check_interval_minutes` (Number) Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with threshold_check_daily_time.
 - `time_after_expiration` (Number) Time value after expiration before cleanup occurs. Used with time_after_expiration_units.
 - `time_after_expiration_units` (Number) Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months.

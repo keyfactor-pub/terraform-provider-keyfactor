@@ -34,10 +34,17 @@ func TestUnitCAUpdatePreservesScanSchedules(t *testing.T) {
 		ThresholdCheckIntervalMinutes:  types.Int64{Value: 30},
 		ThresholdCheckDailyTime:        types.String{Null: true},
 	}
+	// Every schedule attribute config does not care about must be spelled out
+	// explicitly as Null: a Go zero-value types.String{}/types.Int64{} literal is a
+	// KNOWN empty value (Null: false), not Null, and would spuriously look
+	// "declared" to declaredInConfig.
 	config := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes:        types.Int64{Null: true},
+		FullScanDailyTime:              types.String{Null: true},
 		IncrementalScanIntervalMinutes: types.Int64{Null: true},
+		IncrementalScanDailyTime:       types.String{Null: true},
 		ThresholdCheckIntervalMinutes:  types.Int64{Null: true},
+		ThresholdCheckDailyTime:        types.String{Null: true},
 	}
 	plan := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes:        types.Int64{Null: true},
@@ -140,12 +147,15 @@ func TestUnitCAUpdatePreservesScanScheduleWhenPlanIsUnknownNotNull(t *testing.T)
 
 	state := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes: types.Int64{Value: 60},
+		FullScanDailyTime:       types.String{Null: true},
 	}
 	config := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes: types.Int64{Null: true}, // undeclared
+		FullScanIntervalMinutes: types.Int64{Null: true},  // undeclared
+		FullScanDailyTime:       types.String{Null: true}, // undeclared
 	}
 	plan := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes: types.Int64{Unknown: true}, // NOT Null -- the case the old plan.Null check missed
+		FullScanDailyTime:       types.String{Null: true},
 	}
 
 	preserveCAUpdateFields(&plan, config, state)
@@ -250,7 +260,7 @@ func TestUnitCAReadPreservesDailySchedule(t *testing.T) {
 		"a Daily-shaped schedule must not populate the Interval attribute")
 	if assert.False(t, state.FullScanDailyTime.Null,
 		"a Daily-shaped schedule must be captured into full_scan_daily_time, not collapsed to Null (Null is indistinguishable from no schedule at all)") {
-		assert.Equal(t, "2026-07-17T15:46:00Z", state.FullScanDailyTime.Value)
+		assert.Equal(t, "15:46:00", state.FullScanDailyTime.Value)
 	}
 
 	assert.True(t, state.IncrementalScanIntervalMinutes.Null)
@@ -272,7 +282,7 @@ func TestUnitCAUpdatePreservesDailySchedule(t *testing.T) {
 
 	state := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes: types.Int64{Null: true},
-		FullScanDailyTime:       types.String{Value: "2026-07-17T15:46:00Z"},
+		FullScanDailyTime:       types.String{Value: "15:46:00"},
 	}
 	config := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes: types.Int64{Null: true},  // undeclared
@@ -291,7 +301,7 @@ func TestUnitCAUpdatePreservesDailySchedule(t *testing.T) {
 		assert.Nil(t, req.FullScan.Interval, "a preserved Daily schedule must not also set Interval")
 		if assert.NotNil(t, req.FullScan.Daily) {
 			assert.NotNil(t, req.FullScan.Daily.Time)
-			assert.Equal(t, "2026-07-17T15:46:00Z", req.FullScan.Daily.Time.UTC().Format(time.RFC3339))
+			assert.Equal(t, "15:46:00", req.FullScan.Daily.Time.UTC().Format(caDailyTimeLayout))
 		}
 	}
 }
@@ -308,7 +318,7 @@ func TestUnitCAUpdateScheduleVariantSwitchDoesNotResurrectOther(t *testing.T) {
 	// variant entirely.
 	state := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes: types.Int64{Null: true},
-		FullScanDailyTime:       types.String{Value: "2026-07-17T15:46:00Z"},
+		FullScanDailyTime:       types.String{Value: "15:46:00"},
 	}
 	// config declares the new Interval value directly -- this is the switch.
 	config := KeyfactorCertificateAuthority{
@@ -341,7 +351,7 @@ func TestUnitCAUpdateScheduleVariantSwitchDoesNotResurrectOther(t *testing.T) {
 func TestUnitCAValidateConfigRejectsConflictingScheduleAttributes(t *testing.T) {
 	cfg := KeyfactorCertificateAuthority{
 		FullScanIntervalMinutes: types.Int64{Value: 60},
-		FullScanDailyTime:       types.String{Value: "2026-07-17T15:46:00Z"},
+		FullScanDailyTime:       types.String{Value: "15:46:00"},
 	}
 
 	diags := validateCAScheduleAttributes(cfg)
@@ -350,9 +360,10 @@ func TestUnitCAValidateConfigRejectsConflictingScheduleAttributes(t *testing.T) 
 		"setting both full_scan_interval_minutes and full_scan_daily_time must be a plan-time error")
 }
 
-// TestUnitCAValidateConfigRejectsMalformedDailyTime verifies that a non-RFC3339
+// TestUnitCAValidateConfigRejectsMalformedDailyTime verifies that a non-"HH:MM:SS"
 // *_daily_time value is rejected at plan time, since buildSchedule/time.Parse
-// assumes a valid RFC3339 string by the time it runs on the Create/Update path.
+// assumes a valid caDailyTimeLayout string by the time it runs on the Create/Update
+// path.
 func TestUnitCAValidateConfigRejectsMalformedDailyTime(t *testing.T) {
 	cfg := KeyfactorCertificateAuthority{
 		FullScanDailyTime: types.String{Value: "not-a-timestamp"},
@@ -360,7 +371,21 @@ func TestUnitCAValidateConfigRejectsMalformedDailyTime(t *testing.T) {
 
 	diags := validateCAScheduleAttributes(cfg)
 
-	assert.True(t, diags.HasError(), "a non-RFC3339 full_scan_daily_time must be a plan-time error")
+	assert.True(t, diags.HasError(), "a non-\"HH:MM:SS\" full_scan_daily_time must be a plan-time error")
+}
+
+// TestUnitCAValidateConfigRejectsRFC3339DailyTime guards against the old wire
+// format regressing back in: a full RFC3339 timestamp (the pre-F182-2 format) is
+// NOT a valid caDailyTimeLayout ("HH:MM:SS") value and must be rejected, not
+// silently accepted via a lenient parse.
+func TestUnitCAValidateConfigRejectsRFC3339DailyTime(t *testing.T) {
+	cfg := KeyfactorCertificateAuthority{
+		FullScanDailyTime: types.String{Value: "2026-07-17T15:46:00Z"},
+	}
+
+	diags := validateCAScheduleAttributes(cfg)
+
+	assert.True(t, diags.HasError(), "a full RFC3339 timestamp is no longer the accepted full_scan_daily_time format")
 }
 
 // TestUnitCAValidateConfigAllowsEitherVariantAlone confirms the common,
@@ -386,8 +411,43 @@ func TestUnitCAValidateConfigAllowsEitherVariantAlone(t *testing.T) {
 	assert.False(t, validateCAScheduleAttributes(intervalOnly).HasError())
 
 	dailyOnly := allNull
-	dailyOnly.FullScanDailyTime = types.String{Value: "2026-07-17T15:46:00Z"}
+	dailyOnly.FullScanDailyTime = types.String{Value: "15:46:00"}
 	assert.False(t, validateCAScheduleAttributes(dailyOnly).HasError())
 
 	assert.False(t, validateCAScheduleAttributes(allNull).HasError())
+}
+
+// TestUnitCAScheduleDailyTimeRoundTrip is the round-trip regression test for
+// F182-2: buildSchedule must accept the bare "HH:MM:SS" UTC time-of-day format and
+// scheduleToState must produce that exact same string back out, with no date
+// component or timezone offset surviving anywhere in the round trip (Command's GET
+// echoes the UTC time-of-day exactly but rewrites the anchor date to the current
+// date, so any date information the provider sent or stored would be pure noise
+// that could never round-trip cleanly).
+func TestUnitCAScheduleDailyTimeRoundTrip(t *testing.T) {
+	sched, err := buildSchedule(types.Int64{Null: true}, types.String{Value: "07:00:00"})
+	if assert.NoError(t, err) && assert.NotNil(t, sched) && assert.NotNil(t, sched.Daily) {
+		_, daily := scheduleToState(sched)
+		assert.Equal(t, "07:00:00", daily.Value,
+			"buildSchedule(\"07:00:00\") -> scheduleToState must round-trip to the same HH:MM:SS string")
+	}
+}
+
+// TestUnitCAScheduleDailyTimeNormalizesNonUTCOffset verifies that a server
+// response whose Daily.Time carries a non-UTC offset (e.g. if the SDK ever
+// deserializes a "+02:00" wire value instead of normalizing to "Z" itself) is
+// still normalized to the correct UTC time-of-day by scheduleToState, since
+// scheduleToState explicitly calls .UTC() before formatting.
+func TestUnitCAScheduleDailyTimeNormalizesNonUTCOffset(t *testing.T) {
+	loc := time.FixedZone("+02:00", 2*60*60)
+	// 09:00 in +02:00 is 07:00 UTC.
+	nonUTC := time.Date(2026, 7, 17, 9, 0, 0, 0, loc)
+	sched := &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
+		Daily: &v1.KeyfactorCommonSchedulingModelsTimeModel{Time: &nonUTC},
+	}
+
+	_, daily := scheduleToState(sched)
+
+	assert.Equal(t, "07:00:00", daily.Value,
+		"a Daily.Time carrying a non-UTC offset must be normalized to the correct UTC time-of-day")
 }

@@ -11,6 +11,27 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// caAllSchedulesNull has every schedule attribute explicitly Null, plus a
+// properly-typed null allowed_requesters (a bare types.List{} zero-value has
+// no ElemType set, which tfsdk.State/Plan.Set rejects). Tests that only care
+// about a different attribute should copy this as their base state/config/
+// plan value, since a Go zero-value types.Int64{}/types.String{} literal is a
+// KNOWN empty value (Null: false, Value: 0/""), not Null -- left unset, it
+// would spuriously look "declared" to declaredInConfig and, since
+// buildSchedule now rejects Interval and Daily both being Known (see the
+// F182-1 dual-known defense-in-depth check), a zero-value Int64{} (declared,
+// "0") alongside a zero-value String{} (declared, "") for the same schedule
+// would trip that error.
+var caAllSchedulesNull = KeyfactorCertificateAuthority{
+	FullScanIntervalMinutes:        types.Int64{Null: true},
+	FullScanDailyTime:              types.String{Null: true},
+	IncrementalScanIntervalMinutes: types.Int64{Null: true},
+	IncrementalScanDailyTime:       types.String{Null: true},
+	ThresholdCheckIntervalMinutes:  types.Int64{Null: true},
+	ThresholdCheckDailyTime:        types.String{Null: true},
+	AllowedRequesters:              types.List{Null: true, ElemType: types.StringType},
+}
+
 // TestUnitCAUpdatePreservesScanSchedules is a regression test for the bug where
 // an Update() that did not declare the scan/threshold schedule attributes
 // (undeclared in config) let buildCARequest omit FullScan/IncrementalScan/
@@ -84,15 +105,12 @@ func TestUnitCAUpdatePreservesAllowedRequesters(t *testing.T) {
 
 	// Normal lifecycle: state carries the real requester list (preserved from
 	// plan on Create/Read), config leaves it undeclared on an unrelated Update.
-	state := KeyfactorCertificateAuthority{
-		AllowedRequesters: stringSliceToTfList([]string{"Role-A", "Role-B"}),
-	}
-	config := KeyfactorCertificateAuthority{
-		AllowedRequesters: types.List{Null: true, ElemType: types.StringType},
-	}
-	plan := KeyfactorCertificateAuthority{
-		AllowedRequesters: types.List{Null: true, ElemType: types.StringType},
-	}
+	state := caAllSchedulesNull
+	state.AllowedRequesters = stringSliceToTfList([]string{"Role-A", "Role-B"})
+	config := caAllSchedulesNull
+	config.AllowedRequesters = types.List{Null: true, ElemType: types.StringType}
+	plan := caAllSchedulesNull
+	plan.AllowedRequesters = types.List{Null: true, ElemType: types.StringType}
 
 	preserveCAUpdateFields(&plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
@@ -111,15 +129,12 @@ func TestUnitCAUpdatePostImportAllowedRequestersOmitted(t *testing.T) {
 	ctx := context.Background()
 
 	// caResponseToState leaves allowed_requesters Null after an import.
-	state := KeyfactorCertificateAuthority{
-		AllowedRequesters: types.List{Null: true, ElemType: types.StringType},
-	}
-	config := KeyfactorCertificateAuthority{
-		AllowedRequesters: types.List{Null: true, ElemType: types.StringType},
-	}
-	plan := KeyfactorCertificateAuthority{
-		AllowedRequesters: types.List{Null: true, ElemType: types.StringType},
-	}
+	state := caAllSchedulesNull
+	state.AllowedRequesters = types.List{Null: true, ElemType: types.StringType}
+	config := caAllSchedulesNull
+	config.AllowedRequesters = types.List{Null: true, ElemType: types.StringType}
+	plan := caAllSchedulesNull
+	plan.AllowedRequesters = types.List{Null: true, ElemType: types.StringType}
 
 	preserveCAUpdateFields(&plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
@@ -145,18 +160,11 @@ func TestUnitCAUpdatePostImportAllowedRequestersOmitted(t *testing.T) {
 func TestUnitCAUpdatePreservesScanScheduleWhenPlanIsUnknownNotNull(t *testing.T) {
 	ctx := context.Background()
 
-	state := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes: types.Int64{Value: 60},
-		FullScanDailyTime:       types.String{Null: true},
-	}
-	config := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes: types.Int64{Null: true},  // undeclared
-		FullScanDailyTime:       types.String{Null: true}, // undeclared
-	}
-	plan := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes: types.Int64{Unknown: true}, // NOT Null -- the case the old plan.Null check missed
-		FullScanDailyTime:       types.String{Null: true},
-	}
+	state := caAllSchedulesNull
+	state.FullScanIntervalMinutes = types.Int64{Value: 60}
+	config := caAllSchedulesNull // every schedule undeclared
+	plan := caAllSchedulesNull
+	plan.FullScanIntervalMinutes = types.Int64{Unknown: true} // NOT Null -- the case the old plan.Null check missed
 
 	preserveCAUpdateFields(&plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
@@ -218,13 +226,14 @@ func TestUnitCAReadSurfacesAllowedRequestersDrift(t *testing.T) {
 func TestUnitCAUpdateExplicitEmptyAllowedRequestersIsSent(t *testing.T) {
 	ctx := context.Background()
 
-	state := KeyfactorCertificateAuthority{
-		AllowedRequesters: stringSliceToTfList([]string{"Role-A", "Role-B"}),
-	}
+	state := caAllSchedulesNull
+	state.AllowedRequesters = stringSliceToTfList([]string{"Role-A", "Role-B"})
 	// An explicit [] in config: Null=false, Elems empty -- declared, not omitted.
 	explicitEmpty := types.List{ElemType: types.StringType, Elems: []attr.Value{}}
-	config := KeyfactorCertificateAuthority{AllowedRequesters: explicitEmpty}
-	plan := KeyfactorCertificateAuthority{AllowedRequesters: explicitEmpty}
+	config := caAllSchedulesNull
+	config.AllowedRequesters = explicitEmpty
+	plan := caAllSchedulesNull
+	plan.AllowedRequesters = explicitEmpty
 
 	preserveCAUpdateFields(&plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
@@ -280,18 +289,10 @@ func TestUnitCAReadPreservesDailySchedule(t *testing.T) {
 func TestUnitCAUpdatePreservesDailySchedule(t *testing.T) {
 	ctx := context.Background()
 
-	state := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes: types.Int64{Null: true},
-		FullScanDailyTime:       types.String{Value: "15:46:00"},
-	}
-	config := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes: types.Int64{Null: true},  // undeclared
-		FullScanDailyTime:       types.String{Null: true}, // undeclared
-	}
-	plan := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes: types.Int64{Null: true},
-		FullScanDailyTime:       types.String{Null: true},
-	}
+	state := caAllSchedulesNull
+	state.FullScanDailyTime = types.String{Value: "15:46:00"}
+	config := caAllSchedulesNull // every schedule undeclared
+	plan := caAllSchedulesNull
 
 	preserveCAUpdateFields(&plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
@@ -316,19 +317,13 @@ func TestUnitCAUpdateScheduleVariantSwitchDoesNotResurrectOther(t *testing.T) {
 
 	// Prior state: Daily. Plan: user has now declared an Interval, switching the
 	// variant entirely.
-	state := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes: types.Int64{Null: true},
-		FullScanDailyTime:       types.String{Value: "15:46:00"},
-	}
+	state := caAllSchedulesNull
+	state.FullScanDailyTime = types.String{Value: "15:46:00"}
 	// config declares the new Interval value directly -- this is the switch.
-	config := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes: types.Int64{Value: 60},
-		FullScanDailyTime:       types.String{Null: true},
-	}
-	plan := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes: types.Int64{Value: 60},
-		FullScanDailyTime:       types.String{Null: true},
-	}
+	config := caAllSchedulesNull
+	config.FullScanIntervalMinutes = types.Int64{Value: 60}
+	plan := caAllSchedulesNull
+	plan.FullScanIntervalMinutes = types.Int64{Value: 60}
 
 	preserveCAUpdateFields(&plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)

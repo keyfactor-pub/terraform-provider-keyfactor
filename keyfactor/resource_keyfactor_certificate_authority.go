@@ -155,7 +155,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Optional:      true,
 				Computed:      true,
 				Description:   "A string indicating additional properties, storing configuration for the Sync External Certificates option.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{normalizedJSONPropertiesModifier{}},
 			},
 			"allowed_enrollment_types": {
 				Type:          types.Int64Type,
@@ -626,7 +626,12 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 		state.AllowedRequesters = types.List{Null: true, ElemType: types.StringType}
 	}
 
-	// Auth certificate metadata from response
+	// Auth certificate metadata from response. F9: a CA without an auth
+	// certificate configured must read these three as Null, not the Go
+	// zero-value known-empty-string a bare composite-literal omission would
+	// otherwise leave them at -- matching the null-safe pattern
+	// (boolPtrToTfBool/nullableStringToTfString/etc.) used for every other
+	// pointer field in this function.
 	if resp.AuthCertificate != nil {
 		state.AuthCertificateIssuedDN = types.String{Value: resp.AuthCertificate.GetIssuedDN()}
 		state.AuthCertificateIssuerDN = types.String{Value: resp.AuthCertificate.GetIssuerDN()}
@@ -1484,6 +1489,103 @@ func (r resourceCertificateAuthority) ValidateConfig(ctx context.Context, reques
 		tflog.Warn(ctx, fmt.Sprintf("certificate authority schedule validation error: %s: %s", d.Summary(), d.Detail()))
 	}
 	response.Diagnostics.Append(scheduleDiags...)
+
+	constraintDiags := validateCAConfigConstraints(cfg)
+	for _, d := range constraintDiags {
+		tflog.Warn(ctx, fmt.Sprintf("certificate authority config constraint validation error: %s: %s", d.Summary(), d.Detail()))
+	}
+	response.Diagnostics.Append(constraintDiags...)
+}
+
+// caHTTPSType is the ca_type value (per this resource's "ca_type" attribute
+// description: "0 = DCOM (Microsoft ADCS) or 1 = HTTPS (e.g. EJBCA)")
+// identifying an HTTPS CA, the variant for which
+// new_end_entity_on_renew_and_reissue=true is required.
+const caHTTPSType = 1
+
+// validateCAConfigConstraints enforces config-time constraints documented on
+// this resource's attributes (F3/F4 from the Optional+Computed audit) that
+// were previously only descriptive text, never actually checked:
+//
+//  1. enforce_unique_dn and new_end_entity_on_renew_and_reissue are mutually
+//     exclusive -- rejecting both explicitly set true.
+//  2. new_end_entity_on_renew_and_reissue is required to be true for HTTPS
+//     CAs (ca_type=1) -- rejecting an explicit false paired with ca_type=1.
+//  3. allowed_enrollment_types, use_allowed_requesters, and
+//     allowed_requesters all apply to standalone CAs only -- rejecting any
+//     of them being declared while standalone is explicitly set false.
+//
+// Every check here follows the same declaredInConfig-style discipline as
+// validateCAScheduleAttributes: a null or unknown value is never an error,
+// since config-time validation cannot resolve a value that isn't known yet
+// (e.g. standalone referencing another resource's not-yet-known output), and
+// ValidateConfig only ever sees Config, never Plan/State. Only an explicitly
+// configured, known violation is rejected. Factored out of ValidateConfig so
+// it can be unit tested directly against a KeyfactorCertificateAuthority
+// value, matching validateCAScheduleAttributes's precedent.
+func validateCAConfigConstraints(cfg KeyfactorCertificateAuthority) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	enforceUniqueDNKnown := !cfg.EnforceUniqueDN.Null && !cfg.EnforceUniqueDN.Unknown
+	newEndEntityKnown := !cfg.NewEndEntityOnRenewAndReissue.Null && !cfg.NewEndEntityOnRenewAndReissue.Unknown
+
+	// F3: enforce_unique_dn and new_end_entity_on_renew_and_reissue are
+	// mutually exclusive -- only an issue when BOTH are explicitly true.
+	if enforceUniqueDNKnown && newEndEntityKnown &&
+		cfg.EnforceUniqueDN.Value && cfg.NewEndEntityOnRenewAndReissue.Value {
+		diags.AddAttributeError(
+			path.Root("new_end_entity_on_renew_and_reissue"),
+			"Conflicting certificate authority attributes",
+			"enforce_unique_dn and new_end_entity_on_renew_and_reissue are mutually exclusive and cannot both be set to true.",
+		)
+	}
+
+	// F4: new_end_entity_on_renew_and_reissue is required to be true for
+	// HTTPS CAs (ca_type=1) -- only an issue when ca_type is known to be 1
+	// AND new_end_entity_on_renew_and_reissue is explicitly declared false;
+	// leaving it undeclared/unknown is not an error here (Create/Update may
+	// still default or reject it server-side).
+	caTypeKnown := !cfg.CAType.Null && !cfg.CAType.Unknown
+	if caTypeKnown && cfg.CAType.Value == caHTTPSType &&
+		newEndEntityKnown && !cfg.NewEndEntityOnRenewAndReissue.Value {
+		diags.AddAttributeError(
+			path.Root("new_end_entity_on_renew_and_reissue"),
+			"Invalid certificate authority attribute for HTTPS CA",
+			"new_end_entity_on_renew_and_reissue must be true (or left unset) for HTTPS CAs (ca_type=1); got false.",
+		)
+	}
+
+	// F4: allowed_enrollment_types, use_allowed_requesters, and
+	// allowed_requesters all apply to standalone CAs only -- only an issue
+	// when standalone is explicitly declared false; standalone left
+	// undeclared/unknown never trips this (config-time validation can't
+	// resolve a computed/unresolved standalone value).
+	standaloneKnown := !cfg.Standalone.Null && !cfg.Standalone.Unknown
+	if standaloneKnown && !cfg.Standalone.Value {
+		if !cfg.AllowedEnrollmentTypes.Null && !cfg.AllowedEnrollmentTypes.Unknown {
+			diags.AddAttributeError(
+				path.Root("allowed_enrollment_types"),
+				"Invalid certificate authority attribute for a non-standalone CA",
+				"allowed_enrollment_types requires standalone=true.",
+			)
+		}
+		if !cfg.UseAllowedRequesters.Null && !cfg.UseAllowedRequesters.Unknown {
+			diags.AddAttributeError(
+				path.Root("use_allowed_requesters"),
+				"Invalid certificate authority attribute for a non-standalone CA",
+				"use_allowed_requesters applies to standalone CAs only.",
+			)
+		}
+		if !cfg.AllowedRequesters.Null && !cfg.AllowedRequesters.Unknown {
+			diags.AddAttributeError(
+				path.Root("allowed_requesters"),
+				"Invalid certificate authority attribute for a non-standalone CA",
+				"allowed_requesters applies to standalone CAs only.",
+			)
+		}
+	}
+
+	return diags
 }
 
 // schedulePair names one of the three CA schedules (full_scan, incremental_scan,
@@ -1769,4 +1871,65 @@ func normalizePropertiesJSON(s string) string {
 	}
 	b, _ := json.Marshal(m)
 	return string(b)
+}
+
+// normalizedJSONPropertiesModifier is the plan modifier for "properties" (F1).
+// properties is Optional+Computed, storing a JSON blob (Sync External
+// Certificates configuration). Command's GET re-serializes the stored JSON
+// through its own encoder, which is free to reorder keys or change
+// whitespace relative to whatever text the practitioner wrote in config or
+// whatever text is currently in state. A bare tfsdk.UseStateForUnknown()
+// only suppresses the diff when config leaves properties undeclared
+// (Plan Unknown); it does nothing when config DOES declare a literal JSON
+// string, since the framework's raw proposed-new-state already plans that
+// literal config text verbatim. If Command's stored formatting differs from
+// the config text even by whitespace, every subsequent plan shows a
+// permanent properties diff (and Update resends the reformatted value)
+// even though the value is semantically unchanged -- this is what
+// normalizePropertiesJSON (previously dead code) exists to detect.
+//
+// Modify runs in this order:
+//  1. No prior state (Create) -- nothing to compare against; leave the plan
+//     alone.
+//  2. Plan is Unknown (properties undeclared in config, Computed-only) --
+//     fall back to plain UseStateForUnknown semantics: copy state forward.
+//  3. Plan and state are both known strings and, once parsed and
+//     re-marshaled, are semantically equal -- keep the prior state value
+//     (byte-for-byte) so the diff (and the Update PUT) disappears.
+//  4. Otherwise (a genuine value change, or either side isn't a comparable
+//     JSON string) -- leave the plan as computed, surfacing a real diff.
+type normalizedJSONPropertiesModifier struct{}
+
+func (m normalizedJSONPropertiesModifier) Description(_ context.Context) string {
+	return "Suppresses a properties diff when the server's stored JSON differs from state only in key order/whitespace."
+}
+
+func (m normalizedJSONPropertiesModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m normalizedJSONPropertiesModifier) Modify(_ context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil {
+		return
+	}
+	stateVal, ok := req.AttributeState.(types.String)
+	if !ok || stateVal.Unknown {
+		// No usable prior state (e.g. Create) -- nothing to compare against.
+		return
+	}
+
+	if resp.AttributePlan.IsUnknown() {
+		// Undeclared in config: plain UseStateForUnknown semantics.
+		resp.AttributePlan = req.AttributeState
+		return
+	}
+
+	planVal, ok := resp.AttributePlan.(types.String)
+	if !ok || planVal.Null || stateVal.Null {
+		return
+	}
+
+	if normalizePropertiesJSON(planVal.Value) == normalizePropertiesJSON(stateVal.Value) {
+		resp.AttributePlan = req.AttributeState
+	}
 }

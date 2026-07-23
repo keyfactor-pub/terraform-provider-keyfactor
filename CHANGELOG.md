@@ -39,6 +39,10 @@ A provider-wide audit for the same bug class as #175 — an omitted attribute an
 - fix: `keyfactor_certificate` `owner_role_name` no longer causes a spurious ownership change (and drift) when left unset in config
 - fix: `keyfactor_certificate` `owner_role_name = ""` now declaratively clears certificate ownership — previously an explicit empty string took the same code path as a real role name and sent `{"NewRoleName":""}` to `PUT /Certificates/{id}/Owner`, which Command does not treat as a clear. Per verified Command v25.5 behavior, removing an owner requires omitting both `NewRoleId` and `NewRoleName` from the request entirely; the clear sentinel is preserved on Read so config-vs-state stays settled instead of drifting `"" -> null -> ""`. Omitting `owner_role_name` from config continues to mean the owner is unmanaged/preserved
 - fix: OAuth security claims missing a provider sub-object in Command's response now surface a warning instead of silently clearing the claim's provider association on the next update
+- fix: `keyfactor_certificate_authority` `properties` no longer shows a perpetual diff (and re-sends on every `apply`) when Command's stored JSON differs from state only in key order or whitespace
+- fix: `keyfactor_certificate_authority` `auth_certificate_issued_dn`, `auth_certificate_issuer_dn`, and `auth_certificate_thumbprint` now correctly read as unset (`null`) instead of a known empty string when the CA has no auth certificate configured
+- fix: `keyfactor_certificate_authority` now rejects invalid attribute combinations at plan time instead of silently accepting them: `enforce_unique_dn` and `new_end_entity_on_renew_and_reissue` can no longer both be set to `true`; `new_end_entity_on_renew_and_reissue = false` is rejected for HTTPS CAs (`ca_type = 1`); and `allowed_enrollment_types`/`use_allowed_requesters`/`allowed_requesters` are rejected when `standalone` is explicitly set to `false`. Leaving any of these attributes unset (or referencing an unresolved value) is never an error
+- docs: `keyfactor_certificate_authority` `explicit_password`, `auth_certificate`, `auth_certificate_password`, and `client_secret` descriptions now note that, unlike this resource's other attributes, removing them from config clears the stored credential server-side on the next apply rather than leaving it unmanaged
 
 ### Certificate Authorities — schedule variants
 
@@ -67,7 +71,7 @@ Command represents each CA's `full_scan`/`incremental_scan`/`threshold_check` sc
 ## Pending (before GA v2.9.1)
 
 - **Deferred follow-ups (non-blocking):** optional structured-logging (SIEM-friendly fields) enhancements from the compliance audit.
-- **Known open gap (not yet fixed):** `keyfactor_certificate_authority` has many Optional+Computed pointer fields where server-side omission could still flip a value to zero — same bug class as the `keyfactor_security_identity`/`keyfactor_security_role` fixes above, unaudited.
+- **Known open gap — now substantially remediated:** a follow-up audit of `keyfactor_certificate_authority`'s Optional+Computed pointer fields (the same bug class as the `keyfactor_security_identity`/`keyfactor_security_role` fixes above) found the majority of fields already routed through null-safe helpers (`boolPtrToTfBool`, `nullableStringToTfString`, `nullableInt32ToTfInt64`, etc.); it turned up and fixed two concrete residuals: the auth-certificate metadata fields reading as a known empty string instead of `null` when absent, and `properties` showing a perpetual diff from Command's JSON re-serialization — see the fixes above.
 
 # v2.9.0
 

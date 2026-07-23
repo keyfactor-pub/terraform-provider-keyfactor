@@ -26,10 +26,16 @@ import (
 var caAllSchedulesNull = KeyfactorCertificateAuthority{
 	FullScanIntervalMinutes:        types.Int64{Null: true},
 	FullScanDailyTime:              types.String{Null: true},
+	FullScanWeeklyDays:             types.List{Null: true, ElemType: types.StringType},
+	FullScanWeeklyTime:             types.String{Null: true},
 	IncrementalScanIntervalMinutes: types.Int64{Null: true},
 	IncrementalScanDailyTime:       types.String{Null: true},
+	IncrementalScanWeeklyDays:      types.List{Null: true, ElemType: types.StringType},
+	IncrementalScanWeeklyTime:      types.String{Null: true},
 	ThresholdCheckIntervalMinutes:  types.Int64{Null: true},
 	ThresholdCheckDailyTime:        types.String{Null: true},
+	ThresholdCheckWeeklyDays:       types.List{Null: true, ElemType: types.StringType},
+	ThresholdCheckWeeklyTime:       types.String{Null: true},
 	AllowedRequesters:              types.List{Null: true, ElemType: types.StringType},
 }
 
@@ -48,34 +54,17 @@ func TestUnitCAUpdatePreservesScanSchedules(t *testing.T) {
 	// plan mirrors that (a real UseStateForUnknown-family modifier would have
 	// already resolved it, but preserveCAUpdateFields must key on config, not
 	// this incoming plan value, per its doc comment).
-	state := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes:        types.Int64{Value: 60},
-		FullScanDailyTime:              types.String{Null: true},
-		IncrementalScanIntervalMinutes: types.Int64{Value: 5},
-		IncrementalScanDailyTime:       types.String{Null: true},
-		ThresholdCheckIntervalMinutes:  types.Int64{Value: 30},
-		ThresholdCheckDailyTime:        types.String{Null: true},
-	}
+	state := caAllSchedulesNull
+	state.FullScanIntervalMinutes = types.Int64{Value: 60}
+	state.IncrementalScanIntervalMinutes = types.Int64{Value: 5}
+	state.ThresholdCheckIntervalMinutes = types.Int64{Value: 30}
 	// Every schedule attribute config does not care about must be spelled out
-	// explicitly as Null: a Go zero-value types.String{}/types.Int64{} literal is a
-	// KNOWN empty value (Null: false), not Null, and would spuriously look
-	// "declared" to declaredInConfig.
-	config := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes:        types.Int64{Null: true},
-		FullScanDailyTime:              types.String{Null: true},
-		IncrementalScanIntervalMinutes: types.Int64{Null: true},
-		IncrementalScanDailyTime:       types.String{Null: true},
-		ThresholdCheckIntervalMinutes:  types.Int64{Null: true},
-		ThresholdCheckDailyTime:        types.String{Null: true},
-	}
-	plan := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes:        types.Int64{Null: true},
-		FullScanDailyTime:              types.String{Null: true},
-		IncrementalScanIntervalMinutes: types.Int64{Null: true},
-		IncrementalScanDailyTime:       types.String{Null: true},
-		ThresholdCheckIntervalMinutes:  types.Int64{Null: true},
-		ThresholdCheckDailyTime:        types.String{Null: true},
-	}
+	// explicitly as Null (caAllSchedulesNull does this, including the weekly
+	// pair): a Go zero-value types.String{}/types.Int64{}/types.List{} literal
+	// is a KNOWN empty value (Null: false), not Null, and would spuriously
+	// look "declared" to declaredInConfig.
+	config := caAllSchedulesNull
+	plan := caAllSchedulesNull
 
 	preserveCAUpdateFields(ctx, &plan, config, state)
 	req, buildDiags := buildCARequest(ctx, plan)
@@ -350,7 +339,7 @@ func TestUnitCAValidateConfigRejectsConflictingScheduleAttributes(t *testing.T) 
 		FullScanDailyTime:       types.String{Value: "15:46:00"},
 	}
 
-	diags := validateCAScheduleAttributes(cfg)
+	diags := validateCAScheduleAttributes(context.Background(), cfg)
 
 	assert.True(t, diags.HasError(),
 		"setting both full_scan_interval_minutes and full_scan_daily_time must be a plan-time error")
@@ -365,7 +354,7 @@ func TestUnitCAValidateConfigRejectsMalformedDailyTime(t *testing.T) {
 		FullScanDailyTime: types.String{Value: "not-a-timestamp"},
 	}
 
-	diags := validateCAScheduleAttributes(cfg)
+	diags := validateCAScheduleAttributes(context.Background(), cfg)
 
 	assert.True(t, diags.HasError(), "a non-\"HH:MM:SS\" full_scan_daily_time must be a plan-time error")
 }
@@ -379,7 +368,7 @@ func TestUnitCAValidateConfigRejectsRFC3339DailyTime(t *testing.T) {
 		FullScanDailyTime: types.String{Value: "2026-07-17T15:46:00Z"},
 	}
 
-	diags := validateCAScheduleAttributes(cfg)
+	diags := validateCAScheduleAttributes(context.Background(), cfg)
 
 	assert.True(t, diags.HasError(), "a full RFC3339 timestamp is no longer the accepted full_scan_daily_time format")
 }
@@ -390,27 +379,21 @@ func TestUnitCAValidateConfigRejectsRFC3339DailyTime(t *testing.T) {
 func TestUnitCAValidateConfigAllowsEitherVariantAlone(t *testing.T) {
 	// allNull is the baseline: every schedule attribute explicitly Null (as a real
 	// plan/config would represent "undeclared"). Go zero-value struct literals
-	// default types.String/types.Int64 to a KNOWN empty value (Null: false), not
-	// Null, so every attribute this sub-test does not care about must be spelled
-	// out explicitly or it will spuriously look "declared" to validateCAScheduleAttributes.
-	allNull := KeyfactorCertificateAuthority{
-		FullScanIntervalMinutes:        types.Int64{Null: true},
-		FullScanDailyTime:              types.String{Null: true},
-		IncrementalScanIntervalMinutes: types.Int64{Null: true},
-		IncrementalScanDailyTime:       types.String{Null: true},
-		ThresholdCheckIntervalMinutes:  types.Int64{Null: true},
-		ThresholdCheckDailyTime:        types.String{Null: true},
-	}
+	// default types.String/types.Int64/types.List to a KNOWN empty value (Null:
+	// false), not Null, so every attribute this sub-test does not care about must
+	// be spelled out explicitly (via caAllSchedulesNull) or it will spuriously look
+	// "declared" to validateCAScheduleAttributes.
+	allNull := caAllSchedulesNull
 
 	intervalOnly := allNull
 	intervalOnly.FullScanIntervalMinutes = types.Int64{Value: 60}
-	assert.False(t, validateCAScheduleAttributes(intervalOnly).HasError())
+	assert.False(t, validateCAScheduleAttributes(context.Background(), intervalOnly).HasError())
 
 	dailyOnly := allNull
 	dailyOnly.FullScanDailyTime = types.String{Value: "15:46:00"}
-	assert.False(t, validateCAScheduleAttributes(dailyOnly).HasError())
+	assert.False(t, validateCAScheduleAttributes(context.Background(), dailyOnly).HasError())
 
-	assert.False(t, validateCAScheduleAttributes(allNull).HasError())
+	assert.False(t, validateCAScheduleAttributes(context.Background(), allNull).HasError())
 }
 
 // TestUnitCAScheduleDailyTimeRoundTrip is the round-trip regression test for
@@ -421,9 +404,10 @@ func TestUnitCAValidateConfigAllowsEitherVariantAlone(t *testing.T) {
 // date, so any date information the provider sent or stored would be pure noise
 // that could never round-trip cleanly).
 func TestUnitCAScheduleDailyTimeRoundTrip(t *testing.T) {
-	sched, err := buildSchedule(types.Int64{Null: true}, types.String{Value: "07:00:00"})
+	nullWeeklyDays := types.List{Null: true, ElemType: types.StringType}
+	sched, err := buildSchedule(context.Background(), types.Int64{Null: true}, types.String{Value: "07:00:00"}, nullWeeklyDays, types.String{Null: true})
 	if assert.NoError(t, err) && assert.NotNil(t, sched) && assert.NotNil(t, sched.Daily) {
-		_, daily := scheduleToState(sched)
+		_, daily, _, _ := scheduleToState(sched)
 		assert.Equal(t, "07:00:00", daily.Value,
 			"buildSchedule(\"07:00:00\") -> scheduleToState must round-trip to the same HH:MM:SS string")
 	}
@@ -442,7 +426,7 @@ func TestUnitCAScheduleDailyTimeNormalizesNonUTCOffset(t *testing.T) {
 		Daily: &v1.KeyfactorCommonSchedulingModelsTimeModel{Time: &nonUTC},
 	}
 
-	_, daily := scheduleToState(sched)
+	_, daily, _, _ := scheduleToState(sched)
 
 	assert.Equal(t, "07:00:00", daily.Value,
 		"a Daily.Time carrying a non-UTC offset must be normalized to the correct UTC time-of-day")

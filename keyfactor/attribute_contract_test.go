@@ -278,3 +278,129 @@ func TestUnitPairedVariantModifier_SiblingUnknownTreatedAsDeclared(t *testing.T)
 		assert.True(t, got.Null, "an Unknown-in-config sibling must still count as declared, planning this attribute Null, got %+v", got)
 	}
 }
+
+// threeWayTestModel is a minimal three-attribute schema used only to verify
+// pairedWith generalizes beyond a single sibling to an arbitrary group of
+// OTHER-variant attribute names -- this is the shape
+// keyfactor_certificate_authority's three-way full_scan_interval_minutes /
+// full_scan_daily_time / full_scan_weekly_days+full_scan_weekly_time group
+// relies on (each attribute's sibling list names every attribute belonging to
+// the OTHER variants, never its own co-attribute).
+type threeWayTestModel struct {
+	Interval types.Int64  `tfsdk:"interval"`
+	Daily    types.String `tfsdk:"daily"`
+	Third    types.String `tfsdk:"third"`
+}
+
+func threeWayTestSchema() tfsdk.Schema {
+	return tfsdk.Schema{
+		Attributes: map[string]tfsdk.Attribute{
+			"interval": {Type: types.Int64Type, Optional: true, Computed: true},
+			"daily":    {Type: types.StringType, Optional: true, Computed: true},
+			"third":    {Type: types.StringType, Optional: true, Computed: true},
+		},
+	}
+}
+
+func buildThreeWayTestConfig(t *testing.T, ctx context.Context, schema tfsdk.Schema, model threeWayTestModel) tfsdk.Config {
+	t.Helper()
+	p := tfsdk.Plan{Schema: schema}
+	if d := p.Set(ctx, &model); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	return tfsdk.Config{Schema: schema, Raw: p.Raw}
+}
+
+// TestUnitPairedVariantModifier_ThreeWayGroup_SecondSiblingDeclaredPlansNull
+// verifies pairedWith generalizes to a THREE-way group, not just a pair:
+// declaring the group's SECOND-listed sibling ("third") -- not just the
+// first ("daily") -- must still plan "interval" explicitly Null, exercising
+// the loop-over-all-siblings behavior added for the weekly variant (a
+// bare two-way pairedVariantModifier predating this change could only ever
+// see one sibling at all).
+func TestUnitPairedVariantModifier_ThreeWayGroup_SecondSiblingDeclaredPlansNull(t *testing.T) {
+	ctx := context.Background()
+	schema := threeWayTestSchema()
+
+	config := buildThreeWayTestConfig(
+		t, ctx, schema, threeWayTestModel{
+			Interval: types.Int64{Null: true},         // undeclared
+			Daily:    types.String{Null: true},        // undeclared
+			Third:    types.String{Value: "declared"}, // the SECOND-listed sibling is declared
+		},
+	)
+	state := tfsdk.State{Schema: schema}
+	if d := state.Set(
+		ctx, &threeWayTestModel{
+			Interval: types.Int64{Value: 60}, // prior interval schedule, now being superseded
+			Daily:    types.String{Null: true},
+			Third:    types.String{Null: true},
+		},
+	); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	req := tfsdk.ModifyAttributePlanRequest{
+		AttributePath:   path.Root("interval"),
+		Config:          config,
+		State:           state,
+		AttributeConfig: types.Int64{Null: true},
+		AttributeState:  types.Int64{Value: 60},
+		AttributePlan:   types.Int64{Unknown: true},
+	}
+	resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: req.AttributePlan}
+
+	pairedWith("daily", "third").Modify(ctx, req, resp)
+
+	assert.False(t, resp.Diagnostics.HasError(), "unexpected diagnostics: %+v", resp.Diagnostics)
+	got, ok := resp.AttributePlan.(types.Int64)
+	if assert.True(t, ok, "expected resp.AttributePlan to be types.Int64, got %T", resp.AttributePlan) {
+		assert.True(t, got.Null, "declaring the SECOND-listed group sibling must still null this attribute, got %+v", got)
+	}
+}
+
+// TestUnitPairedVariantModifier_ThreeWayGroup_NeitherSiblingDeclaredCopiesState
+// is the three-way companion to
+// TestUnitPairedVariantModifier_NeitherDeclaredCopiesState: when NONE of the
+// group's siblings are declared, state is copied forward as before.
+func TestUnitPairedVariantModifier_ThreeWayGroup_NeitherSiblingDeclaredCopiesState(t *testing.T) {
+	ctx := context.Background()
+	schema := threeWayTestSchema()
+
+	config := buildThreeWayTestConfig(
+		t, ctx, schema, threeWayTestModel{
+			Interval: types.Int64{Null: true},
+			Daily:    types.String{Null: true},
+			Third:    types.String{Null: true},
+		},
+	)
+	state := tfsdk.State{Schema: schema}
+	if d := state.Set(
+		ctx, &threeWayTestModel{
+			Interval: types.Int64{Value: 60},
+			Daily:    types.String{Null: true},
+			Third:    types.String{Null: true},
+		},
+	); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	req := tfsdk.ModifyAttributePlanRequest{
+		AttributePath:   path.Root("interval"),
+		Config:          config,
+		State:           state,
+		AttributeConfig: types.Int64{Null: true},
+		AttributeState:  types.Int64{Value: 60},
+		AttributePlan:   types.Int64{Unknown: true},
+	}
+	resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: req.AttributePlan}
+
+	pairedWith("daily", "third").Modify(ctx, req, resp)
+
+	assert.False(t, resp.Diagnostics.HasError(), "unexpected diagnostics: %+v", resp.Diagnostics)
+	got, ok := resp.AttributePlan.(types.Int64)
+	if assert.True(t, ok, "expected resp.AttributePlan to be types.Int64, got %T", resp.AttributePlan) {
+		assert.Equal(t, int64(60), got.Value, "the prior state value must be copied forward when no sibling in the group is declared")
+		assert.False(t, got.Null)
+	}
+}

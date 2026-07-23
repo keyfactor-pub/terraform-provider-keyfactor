@@ -636,6 +636,10 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 		state.AuthCertificateIssuedDN = types.String{Value: resp.AuthCertificate.GetIssuedDN()}
 		state.AuthCertificateIssuerDN = types.String{Value: resp.AuthCertificate.GetIssuerDN()}
 		state.AuthCertificateThumbprint = types.String{Value: resp.AuthCertificate.GetThumbprint()}
+	} else {
+		state.AuthCertificateIssuedDN = types.String{Null: true}
+		state.AuthCertificateIssuerDN = types.String{Null: true}
+		state.AuthCertificateThumbprint = types.String{Null: true}
 	}
 
 	// Schedules. Command represents FullScan/IncrementalScan/ThresholdCheck as a

@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
@@ -151,6 +152,33 @@ func getConfigAttributeValue(ctx context.Context, config tfsdk.Config, p path.Pa
 	var v attr.Value
 	diags := config.GetAttribute(ctx, p, &v)
 	return v, diags
+}
+
+// keepStringSentinel implements sentinel stability (attribute contract item
+// 4) for a single Optional+Computed string attribute whose empty string ""
+// is a declarative "clear" sentinel (as opposed to Null, which means
+// "undeclared/unmanaged") -- e.g. certificate's owner_role_name. The wire
+// protocol for these attributes typically cannot distinguish "the server
+// genuinely reports nothing" from "the practitioner declared an explicit
+// clear": both surface as serverValue == "".
+//
+// When serverValue is empty AND prior (the previous state value on Read, or
+// the plan value when constructing post-apply state) was itself the ""
+// sentinel, this returns the "" sentinel (Known, non-null) rather than
+// collapsing to Null. Without this, an Optional+Computed attribute plans the
+// declared "" again on every subsequent plan (config still says ""), while
+// state kept flipping to Null -- a permanent spurious `"" -> null -> ""`
+// diff. When serverValue is non-empty, that is a genuine value (freshly set,
+// or changed out-of-band) and must always be surfaced, never masked by a
+// stale sentinel.
+func keepStringSentinel(serverValue string, prior types.String) types.String {
+	if serverValue != "" {
+		return types.String{Value: serverValue}
+	}
+	if !prior.Null && !prior.Unknown && prior.Value == "" {
+		return types.String{Value: ""}
+	}
+	return types.String{Null: true}
 }
 
 // nullValueOfType builds a null attr.Value sharing the same underlying type

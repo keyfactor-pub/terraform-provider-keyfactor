@@ -2,8 +2,11 @@ package keyfactor
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
@@ -210,5 +213,103 @@ func TestUnitKeyfactorCertificateResource_OwnerRoleNameIsComputed(t *testing.T) 
 	}
 	if !found {
 		t.Errorf("owner_role_name: expected UseStateForUnknown plan modifier, but none was found (modifiers: %+v)", attr.PlanModifiers)
+	}
+}
+
+// TestUnitCertificateOwnerRoleClearSendsEmptyPayload is a regression test for
+// declaratively clearing owner_role_name (G1). Per the verified live Command
+// v25.5 behavior (Swagger doc: "If removing the owner, leave both empty" --
+// confirmed with a real PUT: HTTP 204, subsequent GET shows
+// OwnerRoleId/OwnerRoleName null), the wire payload for clearing ownership
+// must omit BOTH NewRoleId and NewRoleName -- i.e. `{}`.
+//
+// Before this fix, ownerChangeRequestForPlan("") reproduced the historical
+// inline Update() logic: strconv.Atoi("") fails, so it fell into the
+// "treat as name" branch and sent {"NewRoleName":""} -- a non-empty pointer
+// to an empty string is NOT omitted by Go's `omitempty` (only a nil pointer
+// is), so this is NOT the verified clear payload and is an unverified,
+// possibly-rejected wire shape.
+//
+// This drives the real HTTP call through api.Client.ChangeCertificateOwnerRole
+// so the assertion exercises actual JSON-over-the-wire shaping, not just the
+// in-memory struct.
+func TestUnitCertificateOwnerRoleClearSendsEmptyPayload(t *testing.T) {
+	const certID = 845070
+
+	var capturedBody string
+	var sawRequest bool
+	mux := http.NewServeMux()
+	mux.HandleFunc(fmt.Sprintf("/KeyfactorAPI/Certificates/%d/Owner", certID), func(w http.ResponseWriter, r *http.Request) {
+		sawRequest = true
+		body, _ := io.ReadAll(r.Body)
+		capturedBody = strings.TrimSpace(string(body))
+		w.WriteHeader(http.StatusNoContent)
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	state := CommandCertificate{OwnerRoleName: types.String{Value: "Administrator"}}
+	plan := CommandCertificate{OwnerRoleName: types.String{Value: ""}}
+
+	if !certificateOwnerRoleChanged(plan, state) {
+		t.Fatalf("expected certificateOwnerRoleChanged to report a change when explicitly clearing a declared owner")
+	}
+
+	ownerRequest := ownerChangeRequestForPlan(plan.OwnerRoleName.Value)
+	if err := client.ChangeCertificateOwnerRole(certID, ownerRequest); err != nil {
+		t.Fatalf("ChangeCertificateOwnerRole returned error: %v", err)
+	}
+
+	if !sawRequest {
+		t.Fatalf("expected a PUT to /Certificates/%d/Owner, got none", certID)
+	}
+	if capturedBody != "{}" {
+		t.Fatalf("expected the verified clear payload {} (both NewRoleId/NewRoleName omitted), got %q", capturedBody)
+	}
+}
+
+// TestUnitCertificateOwnerRoleClearNoopWhenAlreadyEmpty verifies that
+// declaring owner_role_name = "" against a certificate that already has no
+// owner (prior state Null, server-value "") is a no-op: certificateOwnerRoleChanged
+// must not report a change, so Update never calls the owner endpoint at all.
+func TestUnitCertificateOwnerRoleClearNoopWhenAlreadyEmpty(t *testing.T) {
+	state := CommandCertificate{OwnerRoleName: types.String{Null: true}}
+	plan := CommandCertificate{OwnerRoleName: types.String{Value: ""}}
+
+	if certificateOwnerRoleChanged(plan, state) {
+		t.Fatalf("expected no owner role change when clearing an already-empty owner, but certificateOwnerRoleChanged returned true")
+	}
+}
+
+// TestUnitCertificateReadKeepsOwnerClearSentinel is a regression test for
+// sentinel stability (attribute contract item 4) on owner_role_name Read.
+// When the server reports no owner (serverValue == "") AND the prior state
+// itself declared the "" clear sentinel, Read must keep "" (Known,
+// non-null) rather than collapsing to Null -- otherwise the very next plan
+// would show a spurious `"" -> null -> ""` diff forever, since config still
+// declares owner_role_name = "".
+//
+// On the unfixed keepStringSentinel (which unconditionally applies
+// isNullString), an empty serverValue always collapses to Null regardless of
+// the prior sentinel, so this is red before the fix.
+func TestUnitCertificateReadKeepsOwnerClearSentinel(t *testing.T) {
+	prior := types.String{Value: ""}
+	got := keepStringSentinel("", prior)
+	if got.Null || got.Value != "" {
+		t.Fatalf("expected the \"\" clear sentinel to be preserved (Value=\"\", Null=false), got %+v", got)
+	}
+}
+
+// TestUnitCertificateReadSurfacesOwnerDriftOverSentinel verifies the other
+// half of sentinel stability: if a REAL owner appears out-of-band (server
+// reports a non-empty value) while prior state held the "" clear sentinel,
+// Read must surface that as drift -- never mask it with the stale sentinel.
+func TestUnitCertificateReadSurfacesOwnerDriftOverSentinel(t *testing.T) {
+	prior := types.String{Value: ""}
+	got := keepStringSentinel("SomeRole", prior)
+	if got.Null || got.Value != "SomeRole" {
+		t.Fatalf("expected server-side drift to be surfaced (Value=\"SomeRole\", Null=false), got %+v", got)
 	}
 }

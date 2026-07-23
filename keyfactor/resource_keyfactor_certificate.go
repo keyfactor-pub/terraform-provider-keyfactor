@@ -410,9 +410,14 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Computed: true,
 				Description: "Optional owner role name. " +
 					"This is required if the certificate template being used requires an owner role to be set during" +
-					" enrollment. Only compatible with Keyfactor Command versions v12.3.0 and later.",
+					" enrollment. Only compatible with Keyfactor Command versions v12.3.0 and later. " +
+					"Omitting this attribute leaves ownership unmanaged/preserved (server-side changes are not corrected); " +
+					"an explicit empty string (\"\") declaratively clears the certificate's owner.",
 				MarkdownDescription: `
 A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
+
+> [!NOTE]
+> **Attribute contract**: omitting ` + "`owner_role_name`" + ` from config leaves ownership unmanaged -- Terraform never sends a clearing value, and drift from an out-of-band owner change is still surfaced on plan/refresh. Declaring an explicit empty string (` + "`owner_role_name = \"\"`" + `) is a declarative "clear the owner" sentinel: Terraform sends a PUT with no role identifier, which Keyfactor Command interprets as removing the certificate's owner.
 
 Expanded Change Owner Permission: A user who holds the Certificates > Expanded Change Owner permission can set the certificate owner to any role within the permission sets they are a member of. This permission setting overrides the Certificates > Collections > Change Owner permission (both Global and Collection-level) if both are set.
 
@@ -1210,9 +1215,9 @@ func (r resourceCommandCertificate) Read(
 		enrollmentPatternName = state.EnrollmentPattern.Value
 	}
 
-	var ownerRoleName string
-	if certGetResp != nil && certGetResp.OwnerRoleName != "" {
-		ownerRoleName = certGetResp.OwnerRoleName
+	var serverOwnerRoleName string
+	if certGetResp != nil {
+		serverOwnerRoleName = certGetResp.OwnerRoleName
 	}
 	tflog.Debug(ctx, "Creating state object for certificate.")
 	result := CommandCertificate{
@@ -1262,10 +1267,10 @@ func (r resourceCommandCertificate) Read(
 			Value: certGetResp != nil && strings.Contains(strings.ToLower(certGetResp.CertStateString), "pending"),
 		},
 		RenewalConfig: renewalConfig,
-		OwnerRoleName: types.String{
-			Value: ownerRoleName,
-			Null:  isNullString(ownerRoleName),
-		},
+		// Sentinel stability (attribute contract item 4): keep the "" clear
+		// sentinel if the server reports no owner AND prior state itself held
+		// the sentinel; otherwise write server truth (drift-visible).
+		OwnerRoleName:       keepStringSentinel(serverOwnerRoleName, state.OwnerRoleName),
 		EnrollmentPattern:   state.EnrollmentPattern,   // This may be mutated below
 		CertificateTemplate: state.CertificateTemplate, // This may be mutated below
 		NotBefore: types.String{
@@ -1430,6 +1435,34 @@ func certificateOwnerRoleChanged(plan, state CommandCertificate) bool {
 	return plan.OwnerRoleName.Value != state.OwnerRoleName.Value
 }
 
+// ownerChangeRequestForPlan builds the PUT /Certificates/{id}/Owner payload
+// for a declared owner_role_name plan value. Only called when
+// certificateOwnerRoleChanged reports a change, so ownerRoleName is always a
+// Known plan value here (never Null/Unknown).
+//
+// An explicit empty string ("") is the declarative "clear ownership"
+// sentinel (attribute contract item 3): per the Keyfactor Command API (PUT
+// /Certificates/{id}/Owner Swagger doc: "If removing the owner, leave both
+// empty"), a request with both NewRoleId and NewRoleName unset clears the
+// certificate's owner -- verified live against a v25.5 lab: HTTP 204,
+// subsequent GET shows OwnerRoleId/OwnerRoleName null. api.OwnerRequest's
+// fields are `omitempty` pointers, so &api.OwnerRequest{} serializes to
+// exactly `{}` (a non-nil pointer to an empty string, by contrast, is NOT
+// omitted by encoding/json -- omitempty only checks for a nil pointer -- so
+// this must be a genuinely nil field, not `NewRoleName: &""`).
+//
+// A non-empty value may be either a numeric role ID or a role name; try
+// parsing as an int first and fall back to treating it as a name.
+func ownerChangeRequestForPlan(ownerRoleName string) *api.OwnerRequest {
+	if ownerRoleName == "" {
+		return &api.OwnerRequest{}
+	}
+	if ownerInt, convErr := strconv.Atoi(ownerRoleName); convErr == nil {
+		return &api.OwnerRequest{NewRoleId: &ownerInt}
+	}
+	return &api.OwnerRequest{NewRoleName: &ownerRoleName}
+}
+
 func (r resourceCommandCertificate) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -1567,14 +1600,7 @@ func (r resourceCommandCertificate) Update(
 	// Check if ownerrolename has changed
 	if certificateOwnerRoleChanged(plan, state) {
 		tflog.Debug(ctx, "OwnerRoleName has changed, updating certificate owner role.")
-		// Check if rolename is an integer ID or string name
-		ownerInt, convErr := strconv.Atoi(plan.OwnerRoleName.Value)
-		ownerRequest := &api.OwnerRequest{}
-		if convErr != nil {
-			ownerRequest.NewRoleName = &plan.OwnerRoleName.Value
-		} else {
-			ownerRequest.NewRoleId = &ownerInt
-		}
+		ownerRequest := ownerChangeRequestForPlan(plan.OwnerRoleName.Value)
 
 		oErr := r.p.client.ChangeCertificateOwnerRole(certificateID, ownerRequest)
 		if oErr != nil {

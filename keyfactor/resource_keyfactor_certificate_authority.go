@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -359,66 +360,114 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 
-			// --- Schedules (flat interval minutes, or daily time-of-day) ---
+			// --- Schedules (flat interval minutes, daily time-of-day, or weekly days+time) ---
 			// Command represents each of these three schedules as one of several mutually
 			// exclusive variants (Interval, Daily, Weekly, Monthly, ExactlyOnce, Immediate);
-			// this provider currently supports the two variants seen in practice: Interval
-			// and Daily. Setting both the *_interval_minutes and *_daily_time attribute for
-			// the same schedule is invalid and rejected at plan time (ValidateConfig).
+			// this provider models the three variants seen in practice: Interval, Daily, and
+			// Weekly. Declaring attributes from more than one of these variants for the same
+			// schedule is invalid and rejected at plan time (ValidateConfig). Weekly is
+			// represented by a CO-REQUIRED pair (*_weekly_days, *_weekly_time): declaring one
+			// without the other is also rejected at plan time.
 			//
-			// Each half of a pair uses pairedWith(sibling) instead of a bare
+			// Every schedule attribute uses pairedWith(...siblings) instead of a bare
 			// tfsdk.UseStateForUnknown(): a plain UseStateForUnknown resurrects this
 			// attribute's PRIOR STATE value as Known on every plan, even when the config
-			// just switched the schedule to its sibling variant -- so an Interval->Daily
+			// just switched the schedule to a different variant -- so an Interval->Daily
 			// switch would plan the OLD interval as still Known alongside the new daily
 			// time, and Update would then send both (or send the stale interval alone if
 			// buildSchedule's precedence silently dropped the daily value), producing a
 			// PUT that doesn't match what the user declared and, after the server echoes
 			// it back on the following Read, "Provider produced inconsistent result after
 			// apply" (F182-1). pairedWith instead plans this attribute explicitly Null the
-			// moment its sibling is declared in config, so the diff Terraform shows (e.g.
-			// full_scan_interval_minutes: 60 -> null) is truthful.
+			// moment any OTHER variant in the group is declared in config, so the diff
+			// Terraform shows (e.g. full_scan_interval_minutes: 60 -> null) is truthful.
+			// Each attribute's sibling list names every OTHER variant's attribute(s), never
+			// its own co-attribute (e.g. full_scan_weekly_days does not list
+			// full_scan_weekly_time as a sibling -- the two are co-required, not mutually
+			// exclusive, with each other).
 			"full_scan_interval_minutes": {
 				Type:          types.Int64Type,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with full_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("full_scan_daily_time")},
+				Description:   "Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with full_scan_daily_time and full_scan_weekly_days/full_scan_weekly_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval), \"\" (daily), or the weekly clear sentinel ([] + \"\") explicitly to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("full_scan_daily_time", "full_scan_weekly_days", "full_scan_weekly_time")},
 			},
 			"full_scan_daily_time": {
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("full_scan_interval_minutes")},
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes and full_scan_weekly_days/full_scan_weekly_time. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval), \"\" (daily), or the weekly clear sentinel ([] + \"\") explicitly to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("full_scan_interval_minutes", "full_scan_weekly_days", "full_scan_weekly_time")},
+			},
+			"full_scan_weekly_days": {
+				Type:          types.ListType{ElemType: types.StringType},
+				Optional:      true,
+				Computed:      true,
+				Description:   "Day names (e.g. [\"Monday\", \"Friday\"]) for a weekly full synchronization schedule for this certificate authority. Must be exact, case-sensitive day names: Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday. Co-required with full_scan_weekly_time (both or neither). Mutually exclusive with full_scan_interval_minutes and full_scan_daily_time. Omit to leave the server-side schedule unmanaged (preserved on update); set [] together with full_scan_weekly_time = \"\" to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("full_scan_interval_minutes", "full_scan_daily_time")},
+			},
+			"full_scan_weekly_time": {
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), for a weekly full synchronization schedule for this certificate authority. Co-required with full_scan_weekly_days (both or neither). Mutually exclusive with full_scan_interval_minutes and full_scan_daily_time. Omit to leave the server-side schedule unmanaged (preserved on update); set \"\" together with full_scan_weekly_days = [] to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("full_scan_interval_minutes", "full_scan_daily_time")},
 			},
 			"incremental_scan_interval_minutes": {
 				Type:          types.Int64Type,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with incremental_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("incremental_scan_daily_time")},
+				Description:   "Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with incremental_scan_daily_time and incremental_scan_weekly_days/incremental_scan_weekly_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval), \"\" (daily), or the weekly clear sentinel ([] + \"\") explicitly to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("incremental_scan_daily_time", "incremental_scan_weekly_days", "incremental_scan_weekly_time")},
 			},
 			"incremental_scan_daily_time": {
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("incremental_scan_interval_minutes")},
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes and incremental_scan_weekly_days/incremental_scan_weekly_time. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval), \"\" (daily), or the weekly clear sentinel ([] + \"\") explicitly to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("incremental_scan_interval_minutes", "incremental_scan_weekly_days", "incremental_scan_weekly_time")},
+			},
+			"incremental_scan_weekly_days": {
+				Type:          types.ListType{ElemType: types.StringType},
+				Optional:      true,
+				Computed:      true,
+				Description:   "Day names (e.g. [\"Monday\", \"Friday\"]) for a weekly incremental synchronization schedule for this certificate authority. Must be exact, case-sensitive day names: Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday. Co-required with incremental_scan_weekly_time (both or neither). Mutually exclusive with incremental_scan_interval_minutes and incremental_scan_daily_time. Omit to leave the server-side schedule unmanaged (preserved on update); set [] together with incremental_scan_weekly_time = \"\" to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("incremental_scan_interval_minutes", "incremental_scan_daily_time")},
+			},
+			"incremental_scan_weekly_time": {
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), for a weekly incremental synchronization schedule for this certificate authority. Co-required with incremental_scan_weekly_days (both or neither). Mutually exclusive with incremental_scan_interval_minutes and incremental_scan_daily_time. Omit to leave the server-side schedule unmanaged (preserved on update); set \"\" together with incremental_scan_weekly_days = [] to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("incremental_scan_interval_minutes", "incremental_scan_daily_time")},
 			},
 			"threshold_check_interval_minutes": {
 				Type:          types.Int64Type,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with threshold_check_daily_time. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("threshold_check_daily_time")},
+				Description:   "Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with threshold_check_daily_time and threshold_check_weekly_days/threshold_check_weekly_time. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval), \"\" (daily), or the weekly clear sentinel ([] + \"\") explicitly to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("threshold_check_daily_time", "threshold_check_weekly_days", "threshold_check_weekly_time")},
 			},
 			"threshold_check_daily_time": {
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval) or \"\" (daily) explicitly to clear it.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("threshold_check_interval_minutes")},
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes and threshold_check_weekly_days/threshold_check_weekly_time. Omit to leave the server-side schedule unmanaged (preserved on update); set 0 (interval), \"\" (daily), or the weekly clear sentinel ([] + \"\") explicitly to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("threshold_check_interval_minutes", "threshold_check_weekly_days", "threshold_check_weekly_time")},
+			},
+			"threshold_check_weekly_days": {
+				Type:          types.ListType{ElemType: types.StringType},
+				Optional:      true,
+				Computed:      true,
+				Description:   "Day names (e.g. [\"Monday\", \"Friday\"]) for a weekly threshold monitoring check schedule on this CA. Must be exact, case-sensitive day names: Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday. Co-required with threshold_check_weekly_time (both or neither). Mutually exclusive with threshold_check_interval_minutes and threshold_check_daily_time. Omit to leave the server-side schedule unmanaged (preserved on update); set [] together with threshold_check_weekly_time = \"\" to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("threshold_check_interval_minutes", "threshold_check_daily_time")},
+			},
+			"threshold_check_weekly_time": {
+				Type:          types.StringType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), for a weekly threshold monitoring check schedule on this CA. Co-required with threshold_check_weekly_days (both or neither). Mutually exclusive with threshold_check_interval_minutes and threshold_check_daily_time. Omit to leave the server-side schedule unmanaged (preserved on update); set \"\" together with threshold_check_weekly_days = [] to clear it.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{pairedWith("threshold_check_interval_minutes", "threshold_check_daily_time")},
 			},
 
 			// --- Write-only control flags ---
@@ -540,10 +589,16 @@ type KeyfactorCertificateAuthority struct {
 	// Schedules
 	FullScanIntervalMinutes        types.Int64  `tfsdk:"full_scan_interval_minutes"`
 	FullScanDailyTime              types.String `tfsdk:"full_scan_daily_time"`
+	FullScanWeeklyDays             types.List   `tfsdk:"full_scan_weekly_days"`
+	FullScanWeeklyTime             types.String `tfsdk:"full_scan_weekly_time"`
 	IncrementalScanIntervalMinutes types.Int64  `tfsdk:"incremental_scan_interval_minutes"`
 	IncrementalScanDailyTime       types.String `tfsdk:"incremental_scan_daily_time"`
+	IncrementalScanWeeklyDays      types.List   `tfsdk:"incremental_scan_weekly_days"`
+	IncrementalScanWeeklyTime      types.String `tfsdk:"incremental_scan_weekly_time"`
 	ThresholdCheckIntervalMinutes  types.Int64  `tfsdk:"threshold_check_interval_minutes"`
 	ThresholdCheckDailyTime        types.String `tfsdk:"threshold_check_daily_time"`
+	ThresholdCheckWeeklyDays       types.List   `tfsdk:"threshold_check_weekly_days"`
+	ThresholdCheckWeeklyTime       types.String `tfsdk:"threshold_check_weekly_time"`
 
 	// Write-only control flags
 	ForceSave types.Bool `tfsdk:"force_save"`
@@ -643,15 +698,16 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 	}
 
 	// Schedules. Command represents FullScan/IncrementalScan/ThresholdCheck as a
-	// KeyfactorSchedule that can be Interval-shaped OR Daily-shaped (among other
-	// variants not yet supported here). A Daily-shaped schedule must NOT collapse
-	// to Null here — Null is indistinguishable from "no schedule configured at
-	// all" and buildCARequest would then omit the field entirely on the next PUT,
-	// which Command's full-replace semantics interpret as "clear this schedule",
-	// silently wiping a real, live Daily scan schedule server-side.
-	state.FullScanIntervalMinutes, state.FullScanDailyTime = scheduleToState(resp.FullScan)
-	state.IncrementalScanIntervalMinutes, state.IncrementalScanDailyTime = scheduleToState(resp.IncrementalScan)
-	state.ThresholdCheckIntervalMinutes, state.ThresholdCheckDailyTime = scheduleToState(resp.ThresholdCheck)
+	// KeyfactorSchedule that can be Interval-shaped, Daily-shaped, OR
+	// Weekly-shaped (among other variants not yet supported here). A
+	// Daily-shaped or Weekly-shaped schedule must NOT collapse to Null here —
+	// Null is indistinguishable from "no schedule configured at all" and
+	// buildCARequest would then omit the field entirely on the next PUT, which
+	// Command's full-replace semantics interpret as "clear this schedule",
+	// silently wiping a real, live Daily or Weekly scan schedule server-side.
+	state.FullScanIntervalMinutes, state.FullScanDailyTime, state.FullScanWeeklyDays, state.FullScanWeeklyTime = scheduleToState(resp.FullScan)
+	state.IncrementalScanIntervalMinutes, state.IncrementalScanDailyTime, state.IncrementalScanWeeklyDays, state.IncrementalScanWeeklyTime = scheduleToState(resp.IncrementalScan)
+	state.ThresholdCheckIntervalMinutes, state.ThresholdCheckDailyTime, state.ThresholdCheckWeeklyDays, state.ThresholdCheckWeeklyTime = scheduleToState(resp.ThresholdCheck)
 
 	// force_save is write-only; always null from server reads.
 	state.ForceSave = types.Bool{Null: true}
@@ -667,21 +723,91 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 // can never round-trip -- only the time-of-day is meaningful. See F182-2.
 const caDailyTimeLayout = "15:04:05"
 
+// caDayNameToEnum maps the exact, case-sensitive day names this provider
+// accepts for *_weekly_days to Command's SystemDayOfWeek enum values. Only
+// this canonical capitalization is accepted (validated in
+// validateCAScheduleAttributes) rather than normalizing other casings, so
+// that a value round-tripped from Read (see caDayEnumToName) always compares
+// equal, byte-for-byte, to what the practitioner declared — avoiding a plan
+// modifier or extra normalization layer just to reconcile case differences.
+var caDayNameToEnum = map[string]v1.SystemDayOfWeek{
+	"Sunday":    v1.SYSTEMDAYOFWEEK_Sunday,
+	"Monday":    v1.SYSTEMDAYOFWEEK_Monday,
+	"Tuesday":   v1.SYSTEMDAYOFWEEK_Tuesday,
+	"Wednesday": v1.SYSTEMDAYOFWEEK_Wednesday,
+	"Thursday":  v1.SYSTEMDAYOFWEEK_Thursday,
+	"Friday":    v1.SYSTEMDAYOFWEEK_Friday,
+	"Saturday":  v1.SYSTEMDAYOFWEEK_Saturday,
+}
+
+// caDayEnumToName is the reverse of caDayNameToEnum, used by scheduleToState
+// to render a server-reported Weekly schedule's Days back into the same
+// canonical day-name strings *_weekly_days accepts.
+var caDayEnumToName = map[v1.SystemDayOfWeek]string{
+	v1.SYSTEMDAYOFWEEK_Sunday:    "Sunday",
+	v1.SYSTEMDAYOFWEEK_Monday:    "Monday",
+	v1.SYSTEMDAYOFWEEK_Tuesday:   "Tuesday",
+	v1.SYSTEMDAYOFWEEK_Wednesday: "Wednesday",
+	v1.SYSTEMDAYOFWEEK_Thursday:  "Thursday",
+	v1.SYSTEMDAYOFWEEK_Friday:    "Friday",
+	v1.SYSTEMDAYOFWEEK_Saturday:  "Saturday",
+}
+
+// caDayNamesToEnums converts *_weekly_days config values (day names) into the
+// SystemDayOfWeek enum values buildSchedule needs to construct a Weekly wire
+// request. Returns an error naming the offending value if any name is not
+// one of the seven canonical, case-sensitive day names.
+func caDayNamesToEnums(names []string) ([]v1.SystemDayOfWeek, error) {
+	days := make([]v1.SystemDayOfWeek, 0, len(names))
+	for _, n := range names {
+		d, ok := caDayNameToEnum[n]
+		if !ok {
+			return nil, fmt.Errorf("invalid weekly day name %q: must be one of Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday (exact, case-sensitive)", n)
+		}
+		days = append(days, d)
+	}
+	return days, nil
+}
+
+// caDayEnumsToNames converts a server-reported Weekly schedule's Days into
+// the canonical day-name strings *_weekly_days stores in state, sorted by
+// enum value (Sunday=0 .. Saturday=6) for a stable, deterministic ordering
+// regardless of what order Command returned them in -- without this, a
+// server-side reorder of the same day set (no real change) would show as
+// spurious drift on every plan.
+func caDayEnumsToNames(days []v1.SystemDayOfWeek) []string {
+	sorted := make([]v1.SystemDayOfWeek, len(days))
+	copy(sorted, days)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+
+	names := make([]string, 0, len(sorted))
+	for _, d := range sorted {
+		if name, ok := caDayEnumToName[d]; ok {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // scheduleToState converts a Command KeyfactorSchedule (as returned for FullScan,
-// IncrementalScan, or ThresholdCheck) into the pair of Terraform attribute values used
-// to represent it: an Interval-shaped *_interval_minutes value and a Daily-shaped
-// *_daily_time value. Command's schedule is a tagged union — at most one variant is
-// populated at a time — so at most one of the two returned values will be non-null.
-// Both come back Null when the schedule is nil (server has no schedule configured) or
-// when it holds a variant this provider does not yet model (Weekly/Monthly/
-// ExactlyOnce/Immediate); in the latter case, Update's read-modify-write preserves
-// whatever the server returned verbatim (see the GET-before-PUT block in Update),
-// since this function has no attribute pair to represent those variants in state.
-func scheduleToState(sched *v1.KeyfactorCommonSchedulingKeyfactorSchedule) (types.Int64, types.String) {
+// IncrementalScan, or ThresholdCheck) into the set of Terraform attribute values used
+// to represent it: an Interval-shaped *_interval_minutes value, a Daily-shaped
+// *_daily_time value, and a Weekly-shaped *_weekly_days/*_weekly_time pair. Command's
+// schedule is a tagged union — at most one variant is populated at a time — so at most
+// one of the three representations returned will be non-null (the Weekly pair counts
+// as a single representation: both its values are set together, or neither is).
+// All four come back Null when the schedule is nil (server has no schedule configured)
+// or when it holds a variant this provider does not yet model (Monthly/ExactlyOnce/
+// Immediate); in the latter case, Update's read-modify-write preserves whatever the
+// server returned verbatim (see the GET-before-PUT block in Update), since this
+// function has no attribute pair to represent those variants in state.
+func scheduleToState(sched *v1.KeyfactorCommonSchedulingKeyfactorSchedule) (types.Int64, types.String, types.List, types.String) {
 	interval := types.Int64{Null: true}
 	daily := types.String{Null: true}
+	weeklyDays := types.List{Null: true, ElemType: types.StringType}
+	weeklyTime := types.String{Null: true}
 	if sched == nil {
-		return interval, daily
+		return interval, daily, weeklyDays, weeklyTime
 	}
 	if sched.Interval != nil {
 		interval = types.Int64{Value: int64(sched.Interval.GetMinutes())}
@@ -689,40 +815,72 @@ func scheduleToState(sched *v1.KeyfactorCommonSchedulingKeyfactorSchedule) (type
 	if sched.Daily != nil && sched.Daily.Time != nil {
 		daily = types.String{Value: sched.Daily.Time.UTC().Format(caDailyTimeLayout)}
 	}
-	return interval, daily
+	if sched.Weekly != nil {
+		weeklyDays = stringSliceToTfList(caDayEnumsToNames(sched.Weekly.Days))
+		if sched.Weekly.Time != nil {
+			weeklyTime = types.String{Value: sched.Weekly.Time.UTC().Format(caDailyTimeLayout)}
+		} else {
+			weeklyTime = types.String{Value: ""}
+		}
+	}
+	return interval, daily, weeklyDays, weeklyTime
 }
 
-// buildSchedule constructs a Command KeyfactorSchedule from a plan/state pair of
-// Interval and Daily attribute values. The two representations are mutually exclusive
-// -- primarily enforced at plan time by resourceCertificateAuthority.ValidateConfig,
-// which sees Config, not Plan. As defense-in-depth against a case ValidateConfig
-// cannot observe (e.g. two Unknown Config references that both happen to resolve to
-// Known values by apply time), buildSchedule itself also rejects the case where BOTH
-// are Known, rather than silently letting intervalMinutes take precedence and
-// discarding dailyTime.
+// buildSchedule constructs a Command KeyfactorSchedule from a plan/state's Interval,
+// Daily, and Weekly attribute values. The three representations are mutually
+// exclusive -- primarily enforced at plan time by
+// resourceCertificateAuthority.ValidateConfig, which sees Config, not Plan. As
+// defense-in-depth against a case ValidateConfig cannot observe (e.g. Unknown Config
+// references that all happen to resolve to Known, non-sentinel values by apply time),
+// buildSchedule itself also rejects the case where more than one variant is Known and
+// non-sentinel, rather than silently letting one variant take precedence and
+// discarding the others. The Weekly pair (weeklyDays/weeklyTime) is co-required --
+// declaring exactly one of the two is also rejected here as defense-in-depth, mirroring
+// validateCAScheduleAttributes's plan-time check.
 //
-// G2: intervalMinutes == 0 and dailyTime == "" are declarative CLEAR sentinels, not
-// real schedule values -- either one, Known but at its sentinel value, contributes
-// nothing to the built schedule (same as if it were Null), so the pair returns
-// (nil, nil) here just like a fully-undeclared pair. The difference between a
-// sentinel and undeclared only matters one layer up, at declaredInConfig(): a
-// sentinel IS declared, so preserveCAUpdateFields/applyUndeclaredScheduleFallback
-// must NOT treat it as "undeclared, preserve/fall back to the current value" --
-// this is what turns the (nil, nil) this function returns into an actual clearing
-// PUT (field omitted) rather than the fallback re-populating it right back.
+// G2: intervalMinutes == 0, dailyTime == "", and the weekly pair (weeklyDays == []
+// AND weeklyTime == "") are declarative CLEAR sentinels, not real schedule values --
+// any one of them, Known but at its sentinel value, contributes nothing to the built
+// schedule (same as if it were Null), so the schedule returns nil here just like a
+// fully-undeclared set. The difference between a sentinel and undeclared only matters
+// one layer up, at declaredInConfig(): a sentinel IS declared, so
+// preserveCAUpdateFields/applyUndeclaredScheduleFallback must NOT treat it as
+// "undeclared, preserve/fall back to the current value" -- this is what turns the nil
+// this function returns into an actual clearing PUT (field omitted) rather than the
+// fallback re-populating it right back.
 //
-// Returns (nil, nil) when neither is set (or only a sentinel is set), matching the
-// "omit the field" semantics buildCARequest relies on elsewhere. dailyTime is parsed
-// as a bare UTC time-of-day (caDailyTimeLayout) and anchored to a fixed, arbitrary
-// date -- Command rewrites the date component to the current date server-side
-// regardless of what is sent (confirmed live), so a fixed anchor keeps this function
-// deterministic without affecting the schedule that is actually applied.
-func buildSchedule(intervalMinutes types.Int64, dailyTime types.String) (*v1.KeyfactorCommonSchedulingKeyfactorSchedule, error) {
+// Returns (nil, nil) when none of the three variants is set (or only a sentinel is
+// set), matching the "omit the field" semantics buildCARequest relies on elsewhere.
+// dailyTime/weeklyTime are parsed as a bare UTC time-of-day (caDailyTimeLayout) and
+// anchored to a fixed, arbitrary date -- Command rewrites the date component to the
+// current date server-side regardless of what is sent (confirmed live for Daily; the
+// same anchoring is applied to Weekly for consistency), so a fixed anchor keeps this
+// function deterministic without affecting the schedule that is actually applied.
+func buildSchedule(ctx context.Context, intervalMinutes types.Int64, dailyTime types.String, weeklyDays types.List, weeklyTime types.String) (*v1.KeyfactorCommonSchedulingKeyfactorSchedule, error) {
 	intervalKnown := !intervalMinutes.Null && !intervalMinutes.Unknown
 	dailyKnown := !dailyTime.Null && !dailyTime.Unknown
-	if intervalKnown && dailyKnown {
-		return nil, fmt.Errorf("interval and daily time are both set but are mutually exclusive; set at most one")
+	weeklyDaysKnown := !weeklyDays.Null && !weeklyDays.Unknown
+	weeklyTimeKnown := !weeklyTime.Null && !weeklyTime.Unknown
+
+	if weeklyDaysKnown != weeklyTimeKnown {
+		return nil, fmt.Errorf("weekly_days and weekly_time are co-required; set both or neither")
 	}
+	weeklyKnown := weeklyDaysKnown && weeklyTimeKnown
+
+	variantsDeclared := 0
+	if intervalKnown {
+		variantsDeclared++
+	}
+	if dailyKnown {
+		variantsDeclared++
+	}
+	if weeklyKnown {
+		variantsDeclared++
+	}
+	if variantsDeclared > 1 {
+		return nil, fmt.Errorf("interval, daily time, and weekly schedule are mutually exclusive; set at most one")
+	}
+
 	if intervalKnown && intervalMinutes.Value != 0 {
 		minutes := int32(intervalMinutes.Value)
 		return &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
@@ -738,6 +896,31 @@ func buildSchedule(intervalMinutes types.Int64, dailyTime types.String) (*v1.Key
 		return &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
 			Daily: &v1.KeyfactorCommonSchedulingModelsTimeModel{Time: &anchored},
 		}, nil
+	}
+	if weeklyKnown {
+		var dayNames []string
+		weeklyDays.ElementsAs(ctx, &dayNames, false)
+		daysEmpty := len(dayNames) == 0
+		timeEmpty := weeklyTime.Value == ""
+		if daysEmpty != timeEmpty {
+			return nil, fmt.Errorf("weekly_days and weekly_time must either both be set to real values or both be empty (to clear the schedule); got a mismatched pair")
+		}
+		if !daysEmpty && !timeEmpty {
+			days, err := caDayNamesToEnums(dayNames)
+			if err != nil {
+				return nil, err
+			}
+			t, err := time.Parse(caDailyTimeLayout, weeklyTime.Value)
+			if err != nil {
+				return nil, fmt.Errorf("invalid weekly time %q: %w", weeklyTime.Value, err)
+			}
+			anchored := time.Date(2000, 1, 1, t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
+			return &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
+				Weekly: &v1.KeyfactorCommonSchedulingModelsWeeklyModel{Days: days, Time: &anchored},
+			}, nil
+		}
+		// Both empty: the weekly clear sentinel. Contributes nothing, same as a
+		// fully-undeclared schedule.
 	}
 	return nil, nil
 }
@@ -898,27 +1081,27 @@ func buildCARequest(ctx context.Context, plan KeyfactorCertificateAuthority) (v1
 	setStringIfKnown(&req, plan.Audience, func(v string) { req.SetAudience(v) })
 
 	// Schedules. Each of FullScan/IncrementalScan/ThresholdCheck can be represented
-	// as either an Interval or a Daily schedule (mutually exclusive, enforced by
-	// ValidateConfig at plan time). buildSchedule returns nil for a pair that is
-	// entirely Null, which — per Command's full-replace PUT semantics — omits the
-	// field from the request and clears it server-side; preserveCAUpdateFields is
-	// what prevents that from happening on an Update() that simply didn't declare
-	// the attribute.
-	fullScan, err := buildSchedule(plan.FullScanIntervalMinutes, plan.FullScanDailyTime)
+	// as an Interval, a Daily, or a Weekly schedule (mutually exclusive, enforced by
+	// ValidateConfig at plan time). buildSchedule returns nil for a set that is
+	// entirely Null (or only sentinel-valued), which — per Command's full-replace PUT
+	// semantics — omits the field from the request and clears it server-side;
+	// preserveCAUpdateFields is what prevents that from happening on an Update() that
+	// simply didn't declare the attribute.
+	fullScan, err := buildSchedule(ctx, plan.FullScanIntervalMinutes, plan.FullScanDailyTime, plan.FullScanWeeklyDays, plan.FullScanWeeklyTime)
 	if err != nil {
-		diags.AddAttributeError(path.Root("full_scan_daily_time"), "Invalid full_scan schedule", err.Error())
+		diags.AddAttributeError(path.Root("full_scan_weekly_time"), "Invalid full_scan schedule", err.Error())
 	} else {
 		req.FullScan = fullScan
 	}
-	incrementalScan, err := buildSchedule(plan.IncrementalScanIntervalMinutes, plan.IncrementalScanDailyTime)
+	incrementalScan, err := buildSchedule(ctx, plan.IncrementalScanIntervalMinutes, plan.IncrementalScanDailyTime, plan.IncrementalScanWeeklyDays, plan.IncrementalScanWeeklyTime)
 	if err != nil {
-		diags.AddAttributeError(path.Root("incremental_scan_daily_time"), "Invalid incremental_scan schedule", err.Error())
+		diags.AddAttributeError(path.Root("incremental_scan_weekly_time"), "Invalid incremental_scan schedule", err.Error())
 	} else {
 		req.IncrementalScan = incrementalScan
 	}
-	thresholdCheck, err := buildSchedule(plan.ThresholdCheckIntervalMinutes, plan.ThresholdCheckDailyTime)
+	thresholdCheck, err := buildSchedule(ctx, plan.ThresholdCheckIntervalMinutes, plan.ThresholdCheckDailyTime, plan.ThresholdCheckWeeklyDays, plan.ThresholdCheckWeeklyTime)
 	if err != nil {
-		diags.AddAttributeError(path.Root("threshold_check_daily_time"), "Invalid threshold_check schedule", err.Error())
+		diags.AddAttributeError(path.Root("threshold_check_weekly_time"), "Invalid threshold_check schedule", err.Error())
 	} else {
 		req.ThresholdCheck = thresholdCheck
 	}
@@ -1037,15 +1220,27 @@ func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCert
 // omitted from the request, relying on Command to leave an omitted
 // AllowedRequesters unchanged.
 func preserveCAUpdateFields(ctx context.Context, plan *KeyfactorCertificateAuthority, config, state KeyfactorCertificateAuthority) {
-	preserveSchedule := func(name string, planInterval *types.Int64, planDaily *types.String, configInterval types.Int64, configDaily types.String, stateInterval types.Int64, stateDaily types.String) {
-		if declaredInConfig(configInterval) || declaredInConfig(configDaily) {
+	preserveSchedule := func(name string,
+		planInterval *types.Int64, planDaily *types.String, planWeeklyDays *types.List, planWeeklyTime *types.String,
+		configInterval types.Int64, configDaily types.String, configWeeklyDays types.List, configWeeklyTime types.String,
+		stateInterval types.Int64, stateDaily types.String, stateWeeklyDays types.List, stateWeeklyTime types.String,
+	) {
+		anyDeclared := declaredInConfig(configInterval) || declaredInConfig(configDaily) ||
+			declaredInConfig(configWeeklyDays) || declaredInConfig(configWeeklyTime)
+		if anyDeclared {
 			if !declaredInConfig(configInterval) {
 				*planInterval = types.Int64{Null: true}
 			}
 			if !declaredInConfig(configDaily) {
 				*planDaily = types.String{Null: true}
 			}
-			tflog.Debug(ctx, fmt.Sprintf("preserveCAUpdateFields: %s pair declared in config -- managed, enforcing config truth on plan", name))
+			if !declaredInConfig(configWeeklyDays) {
+				*planWeeklyDays = types.List{Null: true, ElemType: types.StringType}
+			}
+			if !declaredInConfig(configWeeklyTime) {
+				*planWeeklyTime = types.String{Null: true}
+			}
+			tflog.Debug(ctx, fmt.Sprintf("preserveCAUpdateFields: %s schedule declared in config -- managed, enforcing config truth on plan", name))
 			return
 		}
 		if !stateInterval.Null && !stateInterval.Unknown {
@@ -1054,11 +1249,26 @@ func preserveCAUpdateFields(ctx context.Context, plan *KeyfactorCertificateAutho
 		if !stateDaily.Null && !stateDaily.Unknown {
 			*planDaily = stateDaily
 		}
-		tflog.Debug(ctx, fmt.Sprintf("preserveCAUpdateFields: %s pair undeclared in config -- preserving prior state value on plan", name))
+		if !stateWeeklyDays.Null && !stateWeeklyDays.Unknown {
+			*planWeeklyDays = stateWeeklyDays
+		}
+		if !stateWeeklyTime.Null && !stateWeeklyTime.Unknown {
+			*planWeeklyTime = stateWeeklyTime
+		}
+		tflog.Debug(ctx, fmt.Sprintf("preserveCAUpdateFields: %s schedule undeclared in config -- preserving prior state value on plan", name))
 	}
-	preserveSchedule("full_scan", &plan.FullScanIntervalMinutes, &plan.FullScanDailyTime, config.FullScanIntervalMinutes, config.FullScanDailyTime, state.FullScanIntervalMinutes, state.FullScanDailyTime)
-	preserveSchedule("incremental_scan", &plan.IncrementalScanIntervalMinutes, &plan.IncrementalScanDailyTime, config.IncrementalScanIntervalMinutes, config.IncrementalScanDailyTime, state.IncrementalScanIntervalMinutes, state.IncrementalScanDailyTime)
-	preserveSchedule("threshold_check", &plan.ThresholdCheckIntervalMinutes, &plan.ThresholdCheckDailyTime, config.ThresholdCheckIntervalMinutes, config.ThresholdCheckDailyTime, state.ThresholdCheckIntervalMinutes, state.ThresholdCheckDailyTime)
+	preserveSchedule("full_scan",
+		&plan.FullScanIntervalMinutes, &plan.FullScanDailyTime, &plan.FullScanWeeklyDays, &plan.FullScanWeeklyTime,
+		config.FullScanIntervalMinutes, config.FullScanDailyTime, config.FullScanWeeklyDays, config.FullScanWeeklyTime,
+		state.FullScanIntervalMinutes, state.FullScanDailyTime, state.FullScanWeeklyDays, state.FullScanWeeklyTime)
+	preserveSchedule("incremental_scan",
+		&plan.IncrementalScanIntervalMinutes, &plan.IncrementalScanDailyTime, &plan.IncrementalScanWeeklyDays, &plan.IncrementalScanWeeklyTime,
+		config.IncrementalScanIntervalMinutes, config.IncrementalScanDailyTime, config.IncrementalScanWeeklyDays, config.IncrementalScanWeeklyTime,
+		state.IncrementalScanIntervalMinutes, state.IncrementalScanDailyTime, state.IncrementalScanWeeklyDays, state.IncrementalScanWeeklyTime)
+	preserveSchedule("threshold_check",
+		&plan.ThresholdCheckIntervalMinutes, &plan.ThresholdCheckDailyTime, &plan.ThresholdCheckWeeklyDays, &plan.ThresholdCheckWeeklyTime,
+		config.ThresholdCheckIntervalMinutes, config.ThresholdCheckDailyTime, config.ThresholdCheckWeeklyDays, config.ThresholdCheckWeeklyTime,
+		state.ThresholdCheckIntervalMinutes, state.ThresholdCheckDailyTime, state.ThresholdCheckWeeklyDays, state.ThresholdCheckWeeklyTime)
 
 	if !declaredInConfig(config.AllowedRequesters) && !state.AllowedRequesters.Null && !state.AllowedRequesters.Unknown {
 		plan.AllowedRequesters = state.AllowedRequesters
@@ -1067,64 +1277,71 @@ func preserveCAUpdateFields(ctx context.Context, plan *KeyfactorCertificateAutho
 }
 
 // applyUndeclaredScheduleFallback is the F182-3 read-modify-write guard: for
-// each of FullScan/IncrementalScan/ThresholdCheck, if config declares NEITHER
-// the Interval nor the Daily variant, overwrite whatever buildCARequest put on
-// updateReq with the server's CURRENT schedule from a fresh GET (getResp),
-// verbatim. This is what actually protects schedule variants this provider
-// does not model at all (Weekly/Monthly/ExactlyOnce/Immediate) -- unlike
+// each of FullScan/IncrementalScan/ThresholdCheck, if config declares NONE of
+// the Interval, Daily, or Weekly variants, overwrite whatever buildCARequest
+// put on updateReq with the server's CURRENT schedule from a fresh GET
+// (getResp), verbatim. This is what actually protects schedule variants this
+// provider does not model at all (Monthly/ExactlyOnce/Immediate) -- unlike
 // preserveCAUpdateFields, which can only fall back to a prior STATE value that
 // scheduleToState may have already collapsed to Null for exactly those
 // variants. request and response share the same
 // v1.KeyfactorCommonSchedulingKeyfactorSchedule type, so this is also a safe
-// no-op for a config-declared Interval/Daily pair's sibling schedules and for
-// a genuinely undeclared-and-never-configured schedule (getResp's field is
-// nil either way).
+// no-op for a config-declared Interval/Daily/Weekly pair's sibling schedules
+// and for a genuinely undeclared-and-never-configured schedule (getResp's
+// field is nil either way).
 func applyUndeclaredScheduleFallback(ctx context.Context, updateReq *v1.CertificateAuthoritiesCertificateAuthorityRequest, config KeyfactorCertificateAuthority, getResp *v1.CertificateAuthoritiesCertificateAuthorityResponse) {
 	if getResp == nil {
 		return
 	}
-	if !declaredInConfig(config.FullScanIntervalMinutes) && !declaredInConfig(config.FullScanDailyTime) {
+	if !declaredInConfig(config.FullScanIntervalMinutes) && !declaredInConfig(config.FullScanDailyTime) &&
+		!declaredInConfig(config.FullScanWeeklyDays) && !declaredInConfig(config.FullScanWeeklyTime) {
 		updateReq.FullScan = getResp.FullScan
 		tflog.Debug(ctx, "applyUndeclaredScheduleFallback: full_scan undeclared in config -- copying current server schedule verbatim onto the request")
 	}
-	if !declaredInConfig(config.IncrementalScanIntervalMinutes) && !declaredInConfig(config.IncrementalScanDailyTime) {
+	if !declaredInConfig(config.IncrementalScanIntervalMinutes) && !declaredInConfig(config.IncrementalScanDailyTime) &&
+		!declaredInConfig(config.IncrementalScanWeeklyDays) && !declaredInConfig(config.IncrementalScanWeeklyTime) {
 		updateReq.IncrementalScan = getResp.IncrementalScan
 		tflog.Debug(ctx, "applyUndeclaredScheduleFallback: incremental_scan undeclared in config -- copying current server schedule verbatim onto the request")
 	}
-	if !declaredInConfig(config.ThresholdCheckIntervalMinutes) && !declaredInConfig(config.ThresholdCheckDailyTime) {
+	if !declaredInConfig(config.ThresholdCheckIntervalMinutes) && !declaredInConfig(config.ThresholdCheckDailyTime) &&
+		!declaredInConfig(config.ThresholdCheckWeeklyDays) && !declaredInConfig(config.ThresholdCheckWeeklyTime) {
 		updateReq.ThresholdCheck = getResp.ThresholdCheck
 		tflog.Debug(ctx, "applyUndeclaredScheduleFallback: threshold_check undeclared in config -- copying current server schedule verbatim onto the request")
 	}
 }
 
 // keepScheduleSentinels implements sentinel stability (attribute contract
-// item 4, G2) for the three CA schedule pairs: 0 for *_interval_minutes and
-// "" for *_daily_time are declarative "clear this schedule" sentinels (see
-// buildSchedule). scheduleToState cannot tell "the user cleared this
-// schedule with a sentinel" apart from "the server genuinely has no schedule
-// here" or "the server holds a variant this provider does not model" -- all
-// three collapse to (Null, Null). Left alone, that would mean a declared
+// item 4, G2) for the three CA schedules: 0 for *_interval_minutes, "" for
+// *_daily_time, and the pair ([] + "") for *_weekly_days/*_weekly_time are
+// declarative "clear this schedule" sentinels (see buildSchedule).
+// scheduleToState cannot tell "the user cleared this schedule with a
+// sentinel" apart from "the server genuinely has no schedule here" or "the
+// server holds a variant this provider does not model" -- all collapse to
+// (Null, Null, Null, Null). Left alone, that would mean a declared
 // `full_scan_interval_minutes = 0` never actually settles: Read/Update would
 // write state back as Null, and the next plan would show a spurious
 // `0 -> null -> 0` diff forever, because Optional+Computed with
 // pairedVariantModifier plans the config-declared value (0) again every time
 // state disagrees with it.
 //
-// When newState reports no schedule at all for a pair (both Null) and the
-// caller's prior value (plan on Create/Update, prior state on Read) was
-// itself a sentinel, carry that same sentinel forward into newState instead
-// of leaving it Null -- this is the only case this function touches. If
-// newState reports a REAL value for the pair, it is left alone: that is
+// When newState reports no schedule at all (all four Null) and the caller's
+// prior value (plan on Create/Update, prior state on Read) was itself a
+// sentinel, carry that same sentinel forward into newState instead of
+// leaving it Null -- this is the only case this function touches. If
+// newState reports a REAL value for the schedule, it is left alone: that is
 // genuine drift (or the schedule the user just set), and must not be masked
 // by a stale sentinel from before.
 //
 // This is CA-specific (not a generic attribute_contract.go helper like
 // declaredInConfig/pairedVariantModifier) because it operates directly on the
-// three concrete KeyfactorCertificateAuthority schedule pairs rather than a
+// three concrete KeyfactorCertificateAuthority schedules rather than a
 // single generic attr.Value.
 func keepScheduleSentinels(ctx context.Context, newState *KeyfactorCertificateAuthority, prior KeyfactorCertificateAuthority) {
-	keep := func(name string, newInterval *types.Int64, newDaily *types.String, priorInterval types.Int64, priorDaily types.String) {
-		if !newInterval.Null || !newDaily.Null {
+	keep := func(name string,
+		newInterval *types.Int64, newDaily *types.String, newWeeklyDays *types.List, newWeeklyTime *types.String,
+		priorInterval types.Int64, priorDaily types.String, priorWeeklyDays types.List, priorWeeklyTime types.String,
+	) {
+		if !newInterval.Null || !newDaily.Null || !newWeeklyDays.Null || !newWeeklyTime.Null {
 			return
 		}
 		if !priorInterval.Null && !priorInterval.Unknown && priorInterval.Value == 0 {
@@ -1135,11 +1352,27 @@ func keepScheduleSentinels(ctx context.Context, newState *KeyfactorCertificateAu
 		if !priorDaily.Null && !priorDaily.Unknown && priorDaily.Value == "" {
 			*newDaily = types.String{Value: ""}
 			tflog.Debug(ctx, fmt.Sprintf("keepScheduleSentinels: %s reported no schedule -- carrying forward the declared daily=\"\" clear sentinel", name))
+			return
+		}
+		if !priorWeeklyDays.Null && !priorWeeklyDays.Unknown && !priorWeeklyTime.Null && !priorWeeklyTime.Unknown && priorWeeklyTime.Value == "" {
+			var days []string
+			priorWeeklyDays.ElementsAs(ctx, &days, false)
+			if len(days) == 0 {
+				*newWeeklyDays = stringSliceToTfList(nil)
+				*newWeeklyTime = types.String{Value: ""}
+				tflog.Debug(ctx, fmt.Sprintf("keepScheduleSentinels: %s reported no schedule -- carrying forward the declared weekly=([]+\"\") clear sentinel", name))
+			}
 		}
 	}
-	keep("full_scan", &newState.FullScanIntervalMinutes, &newState.FullScanDailyTime, prior.FullScanIntervalMinutes, prior.FullScanDailyTime)
-	keep("incremental_scan", &newState.IncrementalScanIntervalMinutes, &newState.IncrementalScanDailyTime, prior.IncrementalScanIntervalMinutes, prior.IncrementalScanDailyTime)
-	keep("threshold_check", &newState.ThresholdCheckIntervalMinutes, &newState.ThresholdCheckDailyTime, prior.ThresholdCheckIntervalMinutes, prior.ThresholdCheckDailyTime)
+	keep("full_scan",
+		&newState.FullScanIntervalMinutes, &newState.FullScanDailyTime, &newState.FullScanWeeklyDays, &newState.FullScanWeeklyTime,
+		prior.FullScanIntervalMinutes, prior.FullScanDailyTime, prior.FullScanWeeklyDays, prior.FullScanWeeklyTime)
+	keep("incremental_scan",
+		&newState.IncrementalScanIntervalMinutes, &newState.IncrementalScanDailyTime, &newState.IncrementalScanWeeklyDays, &newState.IncrementalScanWeeklyTime,
+		prior.IncrementalScanIntervalMinutes, prior.IncrementalScanDailyTime, prior.IncrementalScanWeeklyDays, prior.IncrementalScanWeeklyTime)
+	keep("threshold_check",
+		&newState.ThresholdCheckIntervalMinutes, &newState.ThresholdCheckDailyTime, &newState.ThresholdCheckWeeklyDays, &newState.ThresholdCheckWeeklyTime,
+		prior.ThresholdCheckIntervalMinutes, prior.ThresholdCheckDailyTime, prior.ThresholdCheckWeeklyDays, prior.ThresholdCheckWeeklyTime)
 }
 
 func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
@@ -1407,10 +1640,16 @@ func (r resourceCertificateAuthority) Delete(ctx context.Context, request tfsdk.
 			clearState := state
 			clearState.FullScanIntervalMinutes = types.Int64{Null: true}
 			clearState.FullScanDailyTime = types.String{Null: true}
+			clearState.FullScanWeeklyDays = types.List{Null: true, ElemType: types.StringType}
+			clearState.FullScanWeeklyTime = types.String{Null: true}
 			clearState.IncrementalScanIntervalMinutes = types.Int64{Null: true}
 			clearState.IncrementalScanDailyTime = types.String{Null: true}
+			clearState.IncrementalScanWeeklyDays = types.List{Null: true, ElemType: types.StringType}
+			clearState.IncrementalScanWeeklyTime = types.String{Null: true}
 			clearState.ThresholdCheckIntervalMinutes = types.Int64{Null: true}
 			clearState.ThresholdCheckDailyTime = types.String{Null: true}
+			clearState.ThresholdCheckWeeklyDays = types.List{Null: true, ElemType: types.StringType}
+			clearState.ThresholdCheckWeeklyTime = types.String{Null: true}
 			clearReq, buildDiags := buildCARequest(ctx, clearState)
 			response.Diagnostics.Append(buildDiags...)
 			if response.Diagnostics.HasError() {
@@ -1468,12 +1707,13 @@ func (r resourceCertificateAuthority) Delete(ctx context.Context, request tfsdk.
 }
 
 // ValidateConfig enforces that each of the three schedules (full_scan,
-// incremental_scan, threshold_check) is declared using at most one of its two
-// supported representations — Interval (*_interval_minutes) or Daily (*_daily_time) —
-// matching Command's own KeyfactorSchedule model, where these are mutually exclusive
-// variants of a single schedule, never both at once. It also validates that any
-// *_daily_time value is a parseable UTC time-of-day (caDailyTimeLayout), since
-// buildSchedule assumes that by the time it runs.
+// incremental_scan, threshold_check) is declared using at most one of its three
+// supported representations — Interval (*_interval_minutes), Daily (*_daily_time), or
+// Weekly (*_weekly_days + *_weekly_time) — matching Command's own KeyfactorSchedule
+// model, where these are mutually exclusive variants of a single schedule, never more
+// than one at once. It also validates that any *_daily_time/*_weekly_time value is a
+// parseable UTC time-of-day (caDailyTimeLayout), since buildSchedule assumes that by
+// the time it runs.
 func (r resourceCertificateAuthority) ValidateConfig(ctx context.Context, request tfsdk.ValidateResourceConfigRequest, response *tfsdk.ValidateResourceConfigResponse) {
 	var cfg KeyfactorCertificateAuthority
 	diags := request.Config.Get(ctx, &cfg)
@@ -1482,7 +1722,7 @@ func (r resourceCertificateAuthority) ValidateConfig(ctx context.Context, reques
 		return
 	}
 
-	scheduleDiags := validateCAScheduleAttributes(cfg)
+	scheduleDiags := validateCAScheduleAttributes(ctx, cfg)
 	for _, d := range scheduleDiags {
 		// tflog.Warn alongside every AddAttributeError this produces (mirrors
 		// the Delete path's tflog.Warn-before-AddError pattern above): the
@@ -1592,53 +1832,97 @@ func validateCAConfigConstraints(cfg KeyfactorCertificateAuthority) diag.Diagnos
 	return diags
 }
 
-// schedulePair names one of the three CA schedules (full_scan, incremental_scan,
-// threshold_check) and its two mutually exclusive attribute representations.
-type schedulePair struct {
-	name         string
-	intervalAttr string
-	dailyAttr    string
-	interval     types.Int64
-	daily        types.String
+// scheduleVariants names one of the three CA schedules (full_scan, incremental_scan,
+// threshold_check) and its three mutually exclusive attribute representations --
+// Interval, Daily, and Weekly (a co-required pair, weeklyDaysAttr/weeklyTimeAttr).
+type scheduleVariants struct {
+	name           string
+	intervalAttr   string
+	dailyAttr      string
+	weeklyDaysAttr string
+	weeklyTimeAttr string
+	interval       types.Int64
+	daily          types.String
+	weeklyDays     types.List
+	weeklyTime     types.String
 }
 
-func caSchedulePairs(cfg KeyfactorCertificateAuthority) []schedulePair {
-	return []schedulePair{
-		{"full_scan", "full_scan_interval_minutes", "full_scan_daily_time", cfg.FullScanIntervalMinutes, cfg.FullScanDailyTime},
-		{"incremental_scan", "incremental_scan_interval_minutes", "incremental_scan_daily_time", cfg.IncrementalScanIntervalMinutes, cfg.IncrementalScanDailyTime},
-		{"threshold_check", "threshold_check_interval_minutes", "threshold_check_daily_time", cfg.ThresholdCheckIntervalMinutes, cfg.ThresholdCheckDailyTime},
+func caScheduleVariants(cfg KeyfactorCertificateAuthority) []scheduleVariants {
+	return []scheduleVariants{
+		{
+			"full_scan", "full_scan_interval_minutes", "full_scan_daily_time", "full_scan_weekly_days", "full_scan_weekly_time",
+			cfg.FullScanIntervalMinutes, cfg.FullScanDailyTime, cfg.FullScanWeeklyDays, cfg.FullScanWeeklyTime,
+		},
+		{
+			"incremental_scan", "incremental_scan_interval_minutes", "incremental_scan_daily_time", "incremental_scan_weekly_days", "incremental_scan_weekly_time",
+			cfg.IncrementalScanIntervalMinutes, cfg.IncrementalScanDailyTime, cfg.IncrementalScanWeeklyDays, cfg.IncrementalScanWeeklyTime,
+		},
+		{
+			"threshold_check", "threshold_check_interval_minutes", "threshold_check_daily_time", "threshold_check_weekly_days", "threshold_check_weekly_time",
+			cfg.ThresholdCheckIntervalMinutes, cfg.ThresholdCheckDailyTime, cfg.ThresholdCheckWeeklyDays, cfg.ThresholdCheckWeeklyTime,
+		},
 	}
 }
 
 // validateCAScheduleAttributes enforces that each of the three schedules
 // (full_scan, incremental_scan, threshold_check) is declared using at most one of
-// its two supported representations — Interval (*_interval_minutes) or Daily
-// (*_daily_time) — matching Command's own KeyfactorSchedule model, where these are
-// mutually exclusive variants of a single schedule, never both at once. It also
-// validates that any *_daily_time value is a parseable UTC time-of-day
-// (caDailyTimeLayout, "HH:MM:SS"), since buildSchedule assumes that by the time it
-// runs. Factored out of ValidateConfig so it can be unit tested directly against a
+// its three supported representations — Interval (*_interval_minutes), Daily
+// (*_daily_time), or Weekly (*_weekly_days + *_weekly_time) — matching Command's own
+// KeyfactorSchedule model, where these are mutually exclusive variants of a single
+// schedule, never more than one at once. It also validates that any *_daily_time or
+// *_weekly_time value is a parseable UTC time-of-day (caDailyTimeLayout, "HH:MM:SS"),
+// that *_weekly_days names are exact, case-sensitive day names, and that the weekly
+// pair is co-required (declaring one without the other is an error) -- since
+// buildSchedule assumes all of this by the time it runs. Factored out of
+// ValidateConfig so it can be unit tested directly against a
 // KeyfactorCertificateAuthority value, without needing to construct the framework's
 // tfsdk.Config plumbing.
-func validateCAScheduleAttributes(cfg KeyfactorCertificateAuthority) diag.Diagnostics {
+func validateCAScheduleAttributes(ctx context.Context, cfg KeyfactorCertificateAuthority) diag.Diagnostics {
 	var diags diag.Diagnostics
 
-	for _, p := range caSchedulePairs(cfg) {
+	for _, p := range caScheduleVariants(cfg) {
 		intervalKnown := !p.interval.Null && !p.interval.Unknown
 		dailyKnown := !p.daily.Null && !p.daily.Unknown
+		weeklyDaysKnown := !p.weeklyDays.Null && !p.weeklyDays.Unknown
+		weeklyTimeKnown := !p.weeklyTime.Null && !p.weeklyTime.Unknown
+		weeklyKnown := weeklyDaysKnown && weeklyTimeKnown
 
-		// Both variants declared is still a conflict regardless of whether
-		// either side is the G2 clear sentinel (interval 0 / daily "") -- a
-		// sentinel is a real, declared value like any other, so declaring
-		// both a sentinel and a real value (or two sentinels) on the same
-		// pair is exactly as ambiguous as declaring two real values.
-		if intervalKnown && dailyKnown {
+		// Weekly's two attributes are co-required: declaring one without the
+		// other is ambiguous (is it a partial real schedule or a partial
+		// clear?) and rejected regardless of whether the declared half is a
+		// sentinel or a real value.
+		if weeklyDaysKnown != weeklyTimeKnown {
+			diags.AddAttributeError(
+				path.Root(p.weeklyTimeAttr),
+				fmt.Sprintf("Incomplete %s weekly schedule", p.name),
+				fmt.Sprintf("%s and %s must be set together (co-required); got only one of the pair.", p.weeklyDaysAttr, p.weeklyTimeAttr),
+			)
+		}
+
+		variantsDeclared := 0
+		if intervalKnown {
+			variantsDeclared++
+		}
+		if dailyKnown {
+			variantsDeclared++
+		}
+		if weeklyKnown {
+			variantsDeclared++
+		}
+
+		// More than one variant declared is still a conflict regardless of
+		// whether any side is the G2 clear sentinel (interval 0 / daily "" /
+		// weekly [] + "") -- a sentinel is a real, declared value like any
+		// other, so declaring a sentinel alongside a real value (or two
+		// sentinels) on the same schedule is exactly as ambiguous as
+		// declaring two real values.
+		if variantsDeclared > 1 {
 			diags.AddAttributeError(
 				path.Root(p.dailyAttr),
 				fmt.Sprintf("Conflicting %s schedule attributes", p.name),
 				fmt.Sprintf(
-					"%s and %s both represent the %s schedule and are mutually exclusive (Command models a schedule as either an interval or a daily time, never both). Set at most one.",
-					p.intervalAttr, p.dailyAttr, p.name,
+					"%s, %s, and %s/%s all represent the %s schedule and are mutually exclusive (Command models a schedule as an interval, a daily time, or a weekly days+time, never more than one). Set at most one representation.",
+					p.intervalAttr, p.dailyAttr, p.weeklyDaysAttr, p.weeklyTimeAttr, p.name,
 				),
 			)
 		}
@@ -1663,6 +1947,43 @@ func validateCAScheduleAttributes(cfg KeyfactorCertificateAuthority) diag.Diagno
 					path.Root(p.dailyAttr),
 					fmt.Sprintf("Invalid %s value", p.dailyAttr),
 					fmt.Sprintf("%s must be a UTC time-of-day formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), or \"\" to clear the schedule; got %q: %s", p.dailyAttr, p.daily.Value, err.Error()),
+				)
+			}
+		}
+
+		// Weekly: validate day names and time-of-day format. G2: [] + "" is
+		// the declarative "clear this schedule" sentinel for the weekly pair
+		// -- an empty days list skips the day-name validation below (there
+		// is nothing to validate), and an empty time skips the time-of-day
+		// parse, for the same reason the daily "" sentinel does.
+		if weeklyKnown {
+			var dayNames []string
+			diags.Append(p.weeklyDays.ElementsAs(ctx, &dayNames, false)...)
+			for _, n := range dayNames {
+				if _, err := caDayNamesToEnums([]string{n}); err != nil {
+					diags.AddAttributeError(
+						path.Root(p.weeklyDaysAttr),
+						fmt.Sprintf("Invalid %s value", p.weeklyDaysAttr),
+						err.Error(),
+					)
+				}
+			}
+			if p.weeklyTime.Value != "" {
+				if _, err := time.Parse(caDailyTimeLayout, p.weeklyTime.Value); err != nil {
+					diags.AddAttributeError(
+						path.Root(p.weeklyTimeAttr),
+						fmt.Sprintf("Invalid %s value", p.weeklyTimeAttr),
+						fmt.Sprintf("%s must be a UTC time-of-day formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), or \"\" to clear the schedule; got %q: %s", p.weeklyTimeAttr, p.weeklyTime.Value, err.Error()),
+					)
+				}
+			}
+			// A mismatched pair (one sentinel, one real) is ambiguous --
+			// same rationale as buildSchedule's defense-in-depth check.
+			if (len(dayNames) == 0) != (p.weeklyTime.Value == "") {
+				diags.AddAttributeError(
+					path.Root(p.weeklyTimeAttr),
+					fmt.Sprintf("Mismatched %s weekly schedule", p.name),
+					fmt.Sprintf("%s and %s must either both be set to real values or both be empty (to clear the schedule); got a mismatched pair.", p.weeklyDaysAttr, p.weeklyTimeAttr),
 				)
 			}
 		}

@@ -163,6 +163,68 @@ type resourceCertificateStore struct {
 	p provider
 }
 
+// resolveApprovedAgentID interprets the result of a GetAgent lookup (identifier,
+// the returned agents, and any lookup error) and returns the ID of the first
+// approved (Status == 2) agent, or diagnostics explaining why none could be
+// resolved. Shared by Create and Update so the two code paths can never diverge.
+func resolveApprovedAgentID(identifier string, agents []api.Agent, agentErr error) (string, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	agentId := ""
+	if agentErr != nil {
+		diags.AddError(
+			"Invalid agent identifier.",
+			fmt.Sprintf(
+				"Agent could not be found on Keyfactor Command using identifier '%s'. %s",
+				identifier,
+				agentErr.Error(),
+			),
+		)
+		return "", diags
+	} else if len(agents) == 0 {
+		diags.AddError(
+			"Agent Not Found.",
+			fmt.Sprintf(
+				"no agent found for identifier %q",
+				identifier,
+			),
+		)
+		return "", diags
+	} else {
+		if len(agents) > 1 {
+			diags.AddWarning(
+				"Agent Not Found.",
+				fmt.Sprintf(
+					"Multiple agents found with identifier '%s' returned from Keyfactor Command. Using first approved agent",
+					identifier,
+				),
+			)
+		}
+
+		//iterate over agents and find the first approved agent
+		for _, agent := range agents {
+			if agent.Status != 2 {
+				continue
+			}
+			agentId = agent.AgentId
+			break
+		}
+
+		if agentId == "" {
+			diags.AddError(
+				"Approved Agent Not Found.",
+				fmt.Sprintf(
+					"No approved agents with identifier '%s' were found on Keyfactor Command. Please review your agents on the Keyfactor Command Portal by going to Orchestrators > Management, and ensure the one you're looking for is approved.",
+					identifier,
+				),
+			)
+			return "", diags
+		}
+	}
+
+	return agentId, diags
+}
+
 func (r resourceCertificateStore) Create(
 	ctx context.Context,
 	request tfsdk.CreateResourceRequest,
@@ -207,8 +269,9 @@ func (r resourceCertificateStore) Create(
 	containerId := 0
 	effectiveName, nameIsNull := plan.effectiveContainerName()
 	if !nameIsNull {
-		storeContainer, containerErr := r.p.client.GetStoreContainer(effectiveName)
-		if containerErr != nil || storeContainer == nil {
+		var containerErr error
+		containerId, containerErr = r.resolveContainerIDByName(effectiveName)
+		if containerErr != nil {
 			response.Diagnostics.AddError(
 				"Invalid application/container name.",
 				fmt.Sprintf(
@@ -219,7 +282,6 @@ func (r resourceCertificateStore) Create(
 			)
 			return
 		}
-		containerId = *storeContainer.Id
 	}
 
 	var properties map[string]string
@@ -246,7 +308,7 @@ func (r resourceCertificateStore) Create(
 		properties["ServerUseSsl"] = strconv.FormatBool(plan.ServerUseSsl.Value)
 	}
 
-	schedule, err := createInventorySchedule(plan.InventorySchedule.Value) // TODO: Implement inventory schedule
+	schedule, err := inventoryScheduleForRequest(plan.InventorySchedule)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Invalid inventory schedule.",
@@ -264,61 +326,12 @@ func (r resourceCertificateStore) Create(
 
 	//Lookup agent by AgentIdentifier
 	agents, agentErr := kfClient.GetAgent(plan.AgentIdentifier.Value)
-	agentId := ""
-	//TODO: Make this a function
-	if agentErr != nil {
-		response.Diagnostics.AddError(
-			"Invalid agent identifier.",
-			fmt.Sprintf(
-				"Agent could not be found on Keyfactor Command using identifier '%s'. %s",
-				plan.AgentIdentifier.Value,
-				agentErr.Error(),
-			),
-		)
+	agentId, agentDiags := resolveApprovedAgentID(plan.AgentIdentifier.Value, agents, agentErr)
+	response.Diagnostics.Append(agentDiags...)
+	if response.Diagnostics.HasError() {
 		return
-	} else if len(agents) == 0 {
-		response.Diagnostics.AddError(
-			"Agent Not Found.",
-			fmt.Sprintf(
-				"Agent could not be found on Keyfactor Command using identifier '%s'. %s",
-				plan.AgentIdentifier.Value,
-				agentErr.Error(),
-			),
-		)
-		return
-	} else {
-		if len(agents) > 1 {
-			response.Diagnostics.AddWarning(
-				"Agent Not Found.",
-				fmt.Sprintf(
-					"Multiple agents found with identifier '%s' returned from Keyfactor Command. Using first approved agent",
-					plan.AgentIdentifier.Value,
-				),
-			)
-		}
-
-		//iterate over agents and find the first approved agent
-		for _, agent := range agents {
-			if agent.Status != 2 {
-				continue
-			}
-			agentId = agent.AgentId
-			break
-		}
-
-		if agentId == "" {
-			response.Diagnostics.AddError(
-				"Approved Agent Not Found.",
-				fmt.Sprintf(
-					"No approved agents with identifier '%s' were found on Keyfactor Command. Please review your agents on the Keyfactor Command Portal by going to Orchestrators > Management, and ensure the one you're looking for is approved.",
-					plan.AgentIdentifier.Value,
-				),
-			)
-			return
-		}
-
-		tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
 	}
+	tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
 
 	//if plan.CreateIfMissing.IsNull() {
 	//	plan.CreateIfMissing = types.Bool{Value: false}
@@ -339,7 +352,7 @@ func (r resourceCertificateStore) Create(
 		Properties:            propsInterface,
 		AgentId:               agentId,
 		AgentAssigned:         &plan.AgentAssigned.Value,
-		ContainerName:         &effectiveName,
+		ContainerName:         containerNameArgPointer(containerId, effectiveName),
 		InventorySchedule:     schedule,
 		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
 		Password:              storePassFormatted,
@@ -463,6 +476,171 @@ func (r resourceCertificateStore) Read(
 	}
 }
 
+// resolveContainerIDByName looks up a container/application by name and
+// returns its numeric ID. Shared by Create() and
+// resolveContainerAssignmentForUpdate so the lookup (and its error handling)
+// doesn't drift between the two call sites. Guards against a latent
+// nil-pointer dereference that existed in both call sites previously: the API
+// can return a nil container alongside a nil error (nothing found, no
+// explicit failure), and calling .Error() on a nil error panics.
+func (r resourceCertificateStore) resolveContainerIDByName(name string) (int, error) {
+	storeContainer, err := r.p.client.GetStoreContainer(name)
+	if err != nil {
+		return 0, err
+	}
+	if storeContainer == nil || storeContainer.Id == nil {
+		return 0, fmt.Errorf("container/application %q not found", name)
+	}
+	return *storeContainer.Id, nil
+}
+
+// containerNameArgPointer builds the ContainerName pointer for
+// Create/UpdateStoreFctArgs from a resolved containerId and name.
+//
+// When containerId is nonzero, an unresolved (empty) name is omitted from the
+// request (via stringToPointer, which maps "" to nil, omitted by the
+// `omitempty` tag) rather than sent as a literal empty string — pairing a
+// real, nonzero containerId with an explicit empty ContainerName is a
+// combination that never occurred before GH issue #175's fix and whose
+// handling on Command's UpdateStore endpoint is unverified; there's no reason
+// to introduce it when omitting the field entirely is both safe and
+// sufficient (containerId is what actually carries the assignment).
+//
+// When containerId is 0, the name is sent explicitly (even if empty) exactly
+// as before this fix — this is the long-standing, tested "no
+// assignment"/explicit-clear request shape and must not change.
+func containerNameArgPointer(containerId int, name string) *string {
+	if containerId != 0 {
+		return stringToPointer(name)
+	}
+	return &name
+}
+
+// resolveContainerAssignmentForUpdate determines the container/application ID
+// (and, best-effort, name) to send in the UpdateStoreFctArgs body during
+// Update().
+//
+// Background (GH issue #175): Command's UpdateStore endpoint treats an
+// omitted ContainerId as an explicit instruction to CLEAR the store's
+// container/application assignment — UpdateStoreFctArgs.ContainerId is
+// `json:"ContainerId,omitempty"`, and intToPointer(0) returns nil, so a
+// resolved containerId of 0 is dropped from the request body entirely rather
+// than sent as an explicit zero. Previously, whenever the plan gave no
+// explicit application_name/container_name (nameIsNull), containerId was
+// simply left at 0 with no regard for whether the store already had a real
+// assignment server-side. That silently deleted a live container/application
+// assignment on the very next Update() — including one that was only ever
+// made out-of-band (e.g. directly via the API) and never represented in
+// Terraform config — well before Terraform's own "inconsistent result after
+// apply" check had a chance to catch anything.
+//
+// effectiveContainerName() (models.go) only checks .Value != "", never
+// .IsNull(), so it collapses two very different signals into the same
+// nameIsNull=true result: "the attribute was never declared in config" and
+// "the attribute was explicitly set to \"\" to clear the assignment." Those
+// must be handled differently — the former should preserve a real existing
+// assignment, but the latter is an explicit user instruction to remove it and
+// must still resolve containerId to 0, exactly as before this fix. This
+// function re-checks plan.ApplicationName/ContainerName directly via
+// IsNull() to tell them apart: it only preserves the existing assignment
+// when BOTH attributes are genuinely null in the plan (truly undeclared). If
+// either was explicitly set (even to ""), that's treated as an explicit
+// clear signal.
+func (r resourceCertificateStore) resolveContainerAssignmentForUpdate(
+	ctx context.Context,
+	plan CertificateStore,
+	state CertificateStore,
+) (containerId int, effectiveName string, err error) {
+	effectiveName, nameIsNull := plan.effectiveContainerName()
+	if !nameIsNull {
+		id, containerErr := r.resolveContainerIDByName(effectiveName)
+		if containerErr != nil {
+			return 0, effectiveName, containerErr
+		}
+		return id, effectiveName, nil
+	}
+
+	// Terraform Core resolves all Unknown plan values to known values before
+	// invoking Update() during apply, so ApplicationName/ContainerName should
+	// never actually be Unknown here in production. Treat Unknown the same
+	// as Null defensively anyway (rather than falling through to
+	// containerId=0, which — per GH issue #175 — Command interprets as an
+	// explicit "clear the assignment" instruction): this function is also
+	// called directly from unit tests with hand-constructed CertificateStore
+	// values, and there's no safe reason to require callers to know that
+	// Unknown must be normalized to Null before calling in.
+	planTrulyUndeclared := (plan.ApplicationName.IsNull() || plan.ApplicationName.IsUnknown()) &&
+		(plan.ContainerName.IsNull() || plan.ContainerName.IsUnknown())
+	if planTrulyUndeclared && state.ContainerID.Value != 0 {
+		preservedId := int(state.ContainerID.Value)
+		preservedName, preservedNameIsNull := state.effectiveContainerName()
+		if preservedNameIsNull {
+			// The prior state never resolved a name either (e.g. the
+			// assignment was made out-of-band and this is the first Read()
+			// since). Best-effort re-resolve it directly so the request body
+			// stays internally consistent; an unresolved "" is handled
+			// safely by containerNameArgPointer (omitted, not sent as a
+			// literal empty string) since containerId is what actually
+			// preserves the assignment.
+			preservedName = lookupContainerNameByID(ctx, r.p.client, preservedId, "")
+			if preservedName == "" {
+				tflog.Warn(
+					ctx,
+					fmt.Sprintf(
+						"Update: preserving existing container_id (%d) because config declares no application_name/container_name, but could not resolve its name from state or the API; the request will omit ContainerName (see GH issue #175)",
+						preservedId,
+					),
+				)
+			} else {
+				tflog.Debug(
+					ctx,
+					fmt.Sprintf(
+						"Update: config declares no application_name/container_name; preserving existing container_id (%d), resolved name %q via the API (see GH issue #175)",
+						preservedId,
+						preservedName,
+					),
+				)
+			}
+		} else {
+			tflog.Debug(
+				ctx,
+				fmt.Sprintf(
+					"Update: config declares no application_name/container_name; preserving existing container_id (%d) and name %q from state (see GH issue #175)",
+					preservedId,
+					preservedName,
+				),
+			)
+		}
+		return preservedId, preservedName, nil
+	}
+
+	return 0, "", nil
+}
+
+// resolveContainerNameAfterUpdate determines the container/application name
+// to write into state once Update()'s UpdateStore call has succeeded.
+//
+// It always performs a fresh by-ID lookup via lookupContainerNameByID rather
+// than trusting updateEffectiveName (the value resolveContainerAssignmentForUpdate
+// computed *before* the update request was sent) as-is. A prior optimization
+// reused updateEffectiveName directly whenever the server-assigned
+// resolvedContainerId matched the requested containerId, on the assumption
+// that resolveContainerAssignmentForUpdate had already confidently resolved
+// it. That assumption doesn't hold in resolveContainerAssignmentForUpdate's
+// "preserve existing assignment" branch: when state already had a resolved
+// name, that name is carried over from state as-is, without querying Command
+// in this Update() call. If Command's canonical name has since changed
+// out-of-band (case/whitespace normalization, or a rename between the last
+// Read() and this Update() while the ID stayed stable), the optimization
+// would write the stale state value into the new state, diverging from what
+// an immediate Read() would independently produce — an "inconsistent result
+// after apply" risk. lookupContainerNameByID still accepts updateEffectiveName
+// as its fallback hint, so a lookup failure degrades to the previous
+// behavior instead of nulling the field.
+func (r resourceCertificateStore) resolveContainerNameAfterUpdate(ctx context.Context, resolvedContainerId int, updateEffectiveName string) string {
+	return lookupContainerNameByID(ctx, r.p.client, resolvedContainerId, updateEffectiveName)
+}
+
 func (r resourceCertificateStore) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -496,7 +674,7 @@ func (r resourceCertificateStore) Update(
 		)
 		return
 	}
-	schedule, err := createInventorySchedule(plan.InventorySchedule.Value) // TODO: Implement inventory schedule
+	schedule, err := inventoryScheduleForRequest(plan.InventorySchedule)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Invalid inventory schedule.",
@@ -505,22 +683,17 @@ func (r resourceCertificateStore) Update(
 		return
 	}
 
-	containerId := 0
-	updateEffectiveName, updateNameIsNull := plan.effectiveContainerName()
-	if !updateNameIsNull {
-		storeContainer, containerErr := r.p.client.GetStoreContainer(updateEffectiveName)
-		if containerErr != nil || storeContainer == nil {
-			response.Diagnostics.AddError(
-				"Invalid application/container name.",
-				fmt.Sprintf(
-					"Could not retrieve application/container '%s' from Keyfactor: %s",
-					updateEffectiveName,
-					containerErr.Error(),
-				),
-			)
-			return
-		}
-		containerId = *storeContainer.Id
+	containerId, updateEffectiveName, containerErr := r.resolveContainerAssignmentForUpdate(ctx, plan, state)
+	if containerErr != nil {
+		response.Diagnostics.AddError(
+			"Invalid application/container name.",
+			fmt.Sprintf(
+				"Could not retrieve application/container '%s' from Keyfactor: %s",
+				updateEffectiveName,
+				containerErr.Error(),
+			),
+		)
+		return
 	}
 
 	var storePassFormatted *api.UpdateStorePasswordConfig
@@ -531,61 +704,12 @@ func (r resourceCertificateStore) Update(
 	}
 
 	agents, agentErr := r.p.client.GetAgent(plan.AgentIdentifier.Value)
-	agentId := ""
-	//TODO: Make this a function
-	if agentErr != nil {
-		response.Diagnostics.AddError(
-			"Invalid agent identifier.",
-			fmt.Sprintf(
-				"Agent could not be found on Keyfactor Command using identifier '%s'. %s",
-				plan.AgentIdentifier.Value,
-				agentErr.Error(),
-			),
-		)
+	agentId, agentDiags := resolveApprovedAgentID(plan.AgentIdentifier.Value, agents, agentErr)
+	response.Diagnostics.Append(agentDiags...)
+	if response.Diagnostics.HasError() {
 		return
-	} else if len(agents) == 0 {
-		response.Diagnostics.AddError(
-			"Agent Not Found.",
-			fmt.Sprintf(
-				"Agent could not be found on Keyfactor Command using identifier '%s'. %s",
-				plan.AgentIdentifier.Value,
-				agentErr.Error(),
-			),
-		)
-		return
-	} else {
-		if len(agents) > 1 {
-			response.Diagnostics.AddWarning(
-				"Agent Not Found.",
-				fmt.Sprintf(
-					"Multiple agents found with identifier '%s' returned from Keyfactor Command. Using first approved agent",
-					plan.AgentIdentifier.Value,
-				),
-			)
-		}
-
-		//iterate over agents and find the first approved agent
-		for _, agent := range agents {
-			if agent.Status != 2 {
-				continue
-			}
-			agentId = agent.AgentId
-			break
-		}
-
-		if agentId == "" {
-			response.Diagnostics.AddError(
-				"Approved Agent Not Found.",
-				fmt.Sprintf(
-					"No approved agents with identifier '%s' were found on Keyfactor Command. Please review your agents on the Keyfactor Command Portal by going to Orchestrators > Management, and ensure the one you're looking for is approved.",
-					plan.AgentIdentifier.Value,
-				),
-			)
-			return
-		}
-
-		tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
 	}
+	tflog.Debug(ctx, fmt.Sprintf("Agent: %s", agentId))
 
 	properties := make(map[string]interface{})
 	var existingProperties map[string]string
@@ -653,7 +777,7 @@ func (r resourceCertificateStore) Update(
 		PropertiesString:      propertiesStr,
 		AgentId:               agentId,
 		AgentAssigned:         &agentAssignedVal,
-		ContainerName:         &updateEffectiveName,
+		ContainerName:         containerNameArgPointer(containerId, updateEffectiveName),
 		InventorySchedule:     schedule,
 		SetNewPasswordAllowed: &setNewPasswordAllowedVal,
 		Password:              storePassFormatted,
@@ -708,9 +832,7 @@ func (r resourceCertificateStore) Update(
 		ServerUseSsl:          plan.ServerUseSsl,
 	}
 	// Resolve container name from ContainerId (server never returns ContainerName).
-	// Resolve container name via the by-ID endpoint (list endpoint is paginated).
-	// Fall back to the plan-supplied name when the API lookup is unavailable.
-	result.syncApplicationAndContainerName(lookupContainerNameByID(ctx, r.p.client, updateResponse.ContainerId, updateEffectiveName))
+	result.syncApplicationAndContainerName(r.resolveContainerNameAfterUpdate(ctx, updateResponse.ContainerId, updateEffectiveName))
 
 	// Set state
 	diags = response.State.Set(ctx, &result)
@@ -993,6 +1115,23 @@ func createPasswordConfig(p string) *api.UpdateStorePasswordConfig {
 	}
 
 	return res
+}
+
+// inventoryScheduleForRequest builds the InventorySchedule for an
+// Update/Create request, returning nil when the plan does not declare a
+// schedule so the `omitempty` pointer field is omitted from the request body.
+//
+// createInventorySchedule always returns a non-nil &api.InventorySchedule{}
+// even for an empty/unresolved interval, and UpdateStoreFctArgs.InventorySchedule
+// is `omitempty` on the pointer — which never fires for a non-nil-but-zero-value
+// struct. So an undeclared inventory_schedule was being sent as an explicit
+// empty InventorySchedule{} object instead of being omitted. Gate on the plan
+// value: Null/Unknown/empty means "no schedule declared" and must omit the field.
+func inventoryScheduleForRequest(planVal types.String) (*api.InventorySchedule, error) {
+	if planVal.Null || planVal.Unknown || planVal.Value == "" {
+		return nil, nil
+	}
+	return createInventorySchedule(planVal.Value)
 }
 
 func createInventorySchedule(interval string) (*api.InventorySchedule, error) {

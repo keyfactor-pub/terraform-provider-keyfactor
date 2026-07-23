@@ -117,7 +117,7 @@ func pamProviderTypeResponseToState(resp *v1.PAMProviderTypeResponse) KeyfactorP
 			ID:            types.Int64{Value: int64(p.GetId())},
 			Name:          types.String{Value: p.GetName()},
 			DisplayName:   nullableStringToTfString(p.DisplayName),
-			DataType:      types.Int64{Value: int64(p.GetDataType())},
+			DataType:      pamParameterDataTypePtrToTfInt64(p.DataType),
 			InstanceLevel: boolPtrToTfBool(p.InstanceLevel),
 		})
 	}
@@ -126,6 +126,16 @@ func pamProviderTypeResponseToState(resp *v1.PAMProviderTypeResponse) KeyfactorP
 
 // nullableStringToTfString is defined in resource_keyfactor_certificate_authority.go and reused here.
 
+// pamParameterDataTypePtrToTfInt64 converts a *CSSCMSDataModelEnumsPamParameterDataType
+// pointer from the SDK response to a types.Int64. DataType is a pointer, same as the
+// sibling DisplayName (NullableString) and InstanceLevel (*bool) fields on this struct:
+// when the server omits the field, the raw GetDataType() getter returns the enum zero
+// value (0), which is itself a valid, meaningful data type value and must not be
+// conflated with "not set." Nil maps to Null instead of a spurious concrete 0.
+func pamParameterDataTypePtrToTfInt64(v *v1.CSSCMSDataModelEnumsPamParameterDataType) types.Int64 {
+	return enumPtrToTfInt64(v)
+}
+
 func readHTTPResponseBody(resp *http.Response) string {
 	if resp == nil {
 		return ""
@@ -133,6 +143,31 @@ func readHTTPResponseBody(resp *http.Response) string {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	return string(body)
+}
+
+// buildPAMProviderTypeCreateRequest builds the create request body from the
+// plan. Extracted from Create so the parameter mapping is unit-testable.
+func buildPAMProviderTypeCreateRequest(plan KeyfactorPAMProviderType) v1.PAMProviderTypeCreateRequest {
+	createReq := v1.PAMProviderTypeCreateRequest{Name: plan.Name.Value}
+	for _, p := range plan.Parameters {
+		param := v1.PAMProviderTypeParameterCreateRequest{Name: p.Name.Value}
+		// Send the display name whenever the plan declares it (not Null/Unknown),
+		// including an explicit empty string. The prior `!= ""` guard collapsed an
+		// explicit display_name = "" with "unset", so the user's explicit empty
+		// value was dropped and the server substituted its own default.
+		if !p.DisplayName.Null && !p.DisplayName.Unknown {
+			param.SetDisplayName(p.DisplayName.Value)
+		}
+		if !p.DataType.Null && !p.DataType.Unknown {
+			dt := v1.CSSCMSDataModelEnumsPamParameterDataType(int32(p.DataType.Value))
+			param.SetDataType(dt)
+		}
+		if !p.InstanceLevel.Null && !p.InstanceLevel.Unknown {
+			param.SetInstanceLevel(p.InstanceLevel.Value)
+		}
+		createReq.Parameters = append(createReq.Parameters, param)
+	}
+	return createReq
 }
 
 func (r resourcePAMProviderType) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
@@ -147,21 +182,7 @@ func (r resourcePAMProviderType) Create(ctx context.Context, request tfsdk.Creat
 
 	tflog.Info(ctx, fmt.Sprintf("Creating PAM provider type %q", plan.Name.Value))
 
-	createReq := v1.PAMProviderTypeCreateRequest{Name: plan.Name.Value}
-	for _, p := range plan.Parameters {
-		param := v1.PAMProviderTypeParameterCreateRequest{Name: p.Name.Value}
-		if !p.DisplayName.Null && !p.DisplayName.Unknown && p.DisplayName.Value != "" {
-			param.SetDisplayName(p.DisplayName.Value)
-		}
-		if !p.DataType.Null && !p.DataType.Unknown {
-			dt := v1.CSSCMSDataModelEnumsPamParameterDataType(int32(p.DataType.Value))
-			param.SetDataType(dt)
-		}
-		if !p.InstanceLevel.Null && !p.InstanceLevel.Unknown {
-			param.SetInstanceLevel(p.InstanceLevel.Value)
-		}
-		createReq.Parameters = append(createReq.Parameters, param)
-	}
+	createReq := buildPAMProviderTypeCreateRequest(plan)
 
 	pamAPI := r.p.sdkClient.V1.PAMProviderApi
 	req := pamAPI.NewCreatePamProvidersTypesRequest(ctx).PAMProviderTypeCreateRequest(createReq)

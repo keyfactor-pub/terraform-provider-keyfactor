@@ -21,6 +21,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -617,6 +618,59 @@ func (v *vcrAuthConfig) GetServerConfig() *auth_providers.Server {
 func (v *vcrAuthConfig) GetCommandVersion() string {
 	// VCR tests always target a v25+ lab; use the Applications endpoint.
 	return "25.1.0.0"
+}
+
+// mockAuthConfig implements the AuthConfig-shaped interfaces required by both
+// api.Client (keyfactor-go-client v3) and the keyfactor-go-client-sdk v24
+// v1/v2 API clients, backed by an httptest server. It replaces three
+// near-identical per-file mock AuthConfig types (certUpdateMockAuthConfig,
+// certDeployMockAuthConfig, oauthRoleClaimAssocMockAuthConfig) that
+// duplicated the same GetServerConfig/GetHttpClient/Authenticate/
+// GetCommandVersion bodies.
+//
+// apiPath and stripScheme cover the one real difference between the two
+// consumers: api.Client wants Host as a full URL (scheme included) plus an
+// explicit APIPath segment, while the SDK v24 clients' prepareRequest sets
+// url.Scheme = "https" itself and takes Host verbatim -- passing it a
+// scheme-prefixed URL would double up the scheme, so Host must be the bare
+// "host:port" form for that caller (see newSDKMockAuthConfig).
+type mockAuthConfig struct {
+	server      *httptest.Server
+	apiPath     string
+	stripScheme bool
+}
+
+func (m *mockAuthConfig) GetServerConfig() *auth_providers.Server {
+	host := m.server.URL
+	if m.stripScheme {
+		host = strings.TrimPrefix(host, "https://")
+	}
+	return &auth_providers.Server{
+		Host:          host,
+		APIPath:       m.apiPath,
+		SkipTLSVerify: true,
+	}
+}
+
+func (m *mockAuthConfig) GetHttpClient() (*http.Client, error) {
+	return m.server.Client(), nil
+}
+
+func (m *mockAuthConfig) Authenticate() error       { return nil }
+func (m *mockAuthConfig) GetCommandVersion() string { return "25.1.0.0" }
+
+// newCertAPIMockAuthConfig builds a mockAuthConfig suitable for api.Client
+// (keyfactor-go-client v3), which wants a scheme-prefixed Host plus an
+// explicit APIPath.
+func newCertAPIMockAuthConfig(server *httptest.Server) *mockAuthConfig {
+	return &mockAuthConfig{server: server, apiPath: "KeyfactorAPI"}
+}
+
+// newSDKMockAuthConfig builds a mockAuthConfig suitable for the
+// keyfactor-go-client-sdk v24 v1/v2 API clients, which want a bare
+// "host:port" Host with no scheme and no separate APIPath.
+func newSDKMockAuthConfig(server *httptest.Server) *mockAuthConfig {
+	return &mockAuthConfig{server: server, stripScheme: true}
 }
 
 // newVCRServer returns a fake *auth_providers.Server suitable for VCR replay.
@@ -1359,6 +1413,23 @@ func randomTestCN(prefix string) string {
 //	defer cleanup()
 //	resource.UnitTest(t, resource.TestCase{ProtoV6ProviderFactories: factories, ...})
 func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func() (tfprotov6.ProviderServer, error), func()) {
+	return newVCRProviderFactoriesOpts(t, cassetteName, false)
+}
+
+// newVCRProviderFactoriesReplayable is like newVCRProviderFactories but
+// configures the replay recorder with WithReplayableInteractions(true).
+// Use this ONLY for tests that issue purely idempotent read-only requests
+// (e.g. data-source lookups) where repeated identical URL calls always return
+// the same body. Do NOT use for polling/stateful tests (e.g. inventory polls
+// that expect different responses across sequential identical-URL calls) —
+// those rely on consume-once ordering and must use newVCRProviderFactories.
+func newVCRProviderFactoriesReplayable(t *testing.T, cassetteName string) (map[string]func() (tfprotov6.ProviderServer, error), func()) {
+	return newVCRProviderFactoriesOpts(t, cassetteName, true)
+}
+
+// newVCRProviderFactoriesOpts is the shared implementation backing
+// newVCRProviderFactories and newVCRProviderFactoriesReplayable.
+func newVCRProviderFactoriesOpts(t *testing.T, cassetteName string, replayable bool) (map[string]func() (tfprotov6.ProviderServer, error), func()) {
 	t.Helper()
 
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
@@ -1373,6 +1444,7 @@ func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func
 			recorder.WithMode(recorder.ModeReplayOnly),
 			recorder.WithMatcher(matcher),
 			recorder.WithSkipRequestLatency(true),
+			recorder.WithReplayableInteractions(replayable),
 		)
 		if err != nil {
 			t.Skipf("No cassette found for %q. Run with RECORD_CASSETTES=1 against a live lab to record.", cassetteName)
@@ -1649,9 +1721,13 @@ func skipOnKnownLabConstraint(t *testing.T, patterns ...string) func(error) erro
 		if err == nil {
 			return nil
 		}
-		msg := err.Error()
+		// Terraform wraps long error messages across multiple lines with
+		// indentation (e.g. "...Subject\n            Alternative Name"), so
+		// collapse all whitespace runs to single spaces before substring
+		// matching — otherwise a multi-word pattern never matches.
+		msg := strings.Join(strings.Fields(err.Error()), " ")
 		for _, p := range patterns {
-			if strings.Contains(msg, p) {
+			if strings.Contains(msg, strings.Join(strings.Fields(p), " ")) {
 				t.Skipf("[KNOWN LAB CONSTRAINT] skipping due to expected infrastructure limitation: %v", err)
 				return nil
 			}

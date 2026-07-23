@@ -8,6 +8,76 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestUnitApplicationBuildScheduleDisablePayload is a regression test for the
+// bug where buildApplicationSchedule returned a bare nil when the plan declared
+// no active schedule. Because UpdateApplication performs a full replacement and
+// ApplicationUpdateRequest.Schedule is `omitempty`, a nil Schedule was omitted
+// from the PUT body, letting the server preserve a real prior schedule and
+// triggering "inconsistent result after apply". The fix returns the
+// SDK-documented empty-object disable payload instead. Both an all-null plan and
+// an explicitly-zeroed ("disable") plan must resolve to that disable payload.
+func TestUnitApplicationBuildScheduleDisablePayload(t *testing.T) {
+	cases := []struct {
+		name string
+		plan KeyfactorApplication
+	}{
+		{
+			name: "all schedule fields unset/null",
+			plan: func() KeyfactorApplication {
+				imm, iv, dt, wd, wt, md, mt, eo := nullScheduleFields()
+				return KeyfactorApplication{
+					ScheduleImmediate:    imm,
+					ScheduleIntervalMins: iv,
+					ScheduleDailyTime:    dt,
+					ScheduleWeeklyDays:   wd,
+					ScheduleWeeklyTime:   wt,
+					ScheduleMonthlyDay:   md,
+					ScheduleMonthlyTime:  mt,
+					ScheduleExactlyOnce:  eo,
+				}
+			}(),
+		},
+		{
+			name: "explicit disable via zero/false values",
+			plan: KeyfactorApplication{
+				ScheduleImmediate:    types.Bool{Value: false},
+				ScheduleIntervalMins: types.Int64{Value: 0},
+				ScheduleDailyTime:    types.String{Value: ""},
+				ScheduleWeeklyTime:   types.String{Value: ""},
+				ScheduleMonthlyDay:   types.Int64{Value: 0},
+				ScheduleMonthlyTime:  types.String{Value: ""},
+				ScheduleExactlyOnce:  types.String{Value: ""},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildApplicationSchedule(tc.plan)
+			// Must be the non-nil empty-object disable payload, never bare nil.
+			assert.NotNil(t, got,
+				"buildApplicationSchedule must return the empty-object disable payload, not nil, so the full-replace PUT unambiguously disables the schedule")
+			if got != nil {
+				assert.Nil(t, got.Immediate, "disable payload must not set Immediate")
+				assert.Nil(t, got.Interval, "disable payload must not set Interval")
+				assert.Nil(t, got.Daily, "disable payload must not set Daily")
+				assert.Nil(t, got.Weekly, "disable payload must not set Weekly")
+				assert.Nil(t, got.Monthly, "disable payload must not set Monthly")
+				assert.Nil(t, got.ExactlyOnce, "disable payload must not set ExactlyOnce")
+			}
+		})
+	}
+
+	// Sanity: an active schedule still produces a populated payload (not the
+	// disable object), so the fix did not over-reach.
+	active := buildApplicationSchedule(KeyfactorApplication{
+		ScheduleIntervalMins: types.Int64{Value: 60},
+	})
+	assert.NotNil(t, active)
+	assert.NotNil(t, active.Interval, "an active interval schedule must still be sent")
+	assert.Equal(t, 60, active.Interval.Minutes)
+}
+
 // TestUnitApplicationUpdatePreservesScheduleImmediate exercises the Update→Read
 // round trip when the user planned schedule_immediate = true. Command queues the
 // job and persists it as ExactlyOnce, so the API response no longer carries

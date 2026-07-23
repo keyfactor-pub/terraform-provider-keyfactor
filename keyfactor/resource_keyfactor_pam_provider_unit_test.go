@@ -4,7 +4,45 @@ import (
 	"testing"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/stretchr/testify/assert"
 )
+
+// TestUnitBuildPAMParamValuesClearReachesRequest is a regression test for the
+// bug where clearing param_values (going from a real list to an explicit empty
+// list) collapsed to a nil Go slice. The SDK's ToMap omits a nil
+// ProviderTypeParamValues but serializes a non-nil empty slice as [] — so the
+// nil made the clear silently no-op server-side. The fix preserves the
+// nil-vs-empty distinction: an explicit empty input yields a non-nil empty
+// slice (clear), a nil input stays nil (omitted).
+func TestUnitBuildPAMParamValuesClearReachesRequest(t *testing.T) {
+	// Explicit clear: the user removed all param_values (real list -> []).
+	got := buildPAMParamValues([]KeyfactorPAMParamValue{})
+	assert.NotNil(t, got,
+		"an explicit empty param_values must produce a non-nil empty slice so the clear reaches the request")
+	assert.Len(t, got, 0)
+
+	// Verify it actually serializes as a present-but-empty field on the update
+	// request (the SDK gates on != nil).
+	updateReq := v1.PAMProviderUpdateRequestLegacy{}
+	updateReq.ProviderTypeParamValues = got
+	serialized, err := updateReq.ToMap()
+	assert.NoError(t, err)
+	_, present := serialized["ProviderTypeParamValues"]
+	assert.True(t, present,
+		"cleared param_values must be present in the request body as an empty list, not omitted")
+
+	// Never declared: nil input must stay nil/omitted.
+	gotNil := buildPAMParamValues(nil)
+	assert.Nil(t, gotNil, "undeclared param_values must stay nil/omitted")
+
+	// Populated input still maps through.
+	populated := buildPAMParamValues([]KeyfactorPAMParamValue{
+		{ParamID: types.Int64{Value: 3}, Name: types.String{Value: "Host"}, Value: types.String{Value: "h"}},
+	})
+	assert.Len(t, populated, 1)
+	assert.Equal(t, int32(3), populated[0].GetId())
+}
 
 // TestUnitPAMProviderResponseToMetadata_NilPointerFields verifies that when the server omits
 // Remote and Area in the response, the resulting Terraform state values are Null rather than

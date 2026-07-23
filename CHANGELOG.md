@@ -1,3 +1,62 @@
+# v2.9.1
+
+## Features
+
+_None — this release is fixes plus internal/dependency work._
+
+## Fixes
+
+- fix: `keyfactor_template_role_binding` no longer fails with `Error template name not found` when a template in `template_short_names` sorts beyond the first 50 templates. The template lookup now pages through the full template list instead of reading only Command's default first page of 50, so instances with more than 50 certificate templates can bind any template by short name.
+- fix: `keyfactor_certificate` no longer crashes the provider with a nil-pointer dereference (SIGSEGV) during an in-place update when the certificate-context `GET /Certificates/{id}` fails or returns an empty response. `Update` now fails closed with a clear diagnostic instead of panicking; previously this surfaced as a `Plugin did not respond` / plugin crash mid-`apply` (observed when flipping `certificate_format` to PFX).
+
+### Certificate Stores
+
+- fix: `keyfactor_certificate_store` `Update` no longer silently clears an existing container/application assignment when `application_name`/`container_name` is not declared in config — a resolved container ID of `0` was previously omitted from the update request entirely, which Command interprets as "unassign," destroying a real out-of-band assignment before Terraform's own consistency check could even flag it. The existing `container_id` is now preserved whenever prior state shows a real assignment and the plan gives no explicit name (an explicit empty-string name still clears it). Fixes [#175](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/175)
+- fix: `keyfactor_certificate_store` container/application name resolution (`lookupContainerNameByID`) now retries via the list endpoint before falling back to a hint, and that list-endpoint fallback is now paginated (previously silently truncated to Command's first page)
+- fix: `keyfactor_certificate_store` `Update` always re-resolves the container/application name by ID after a successful update instead of trusting a locally-resolved name, preventing a same-apply state mismatch if Command's canonical name differs (case/whitespace normalization, or an out-of-band rename)
+- fix: `keyfactor_certificate_store` no longer sends an explicit empty `InventorySchedule` object when the config doesn't declare one
+- fix: `keyfactor_certificate_store` `Create`/`Update` no longer crash the provider with a nil-pointer dereference when the agent identifier lookup returns no matching agent
+
+### Provider-wide inconsistent-state audit
+
+A provider-wide audit for the same bug class as #175 — an omitted attribute and an explicitly-cleared attribute being treated as the same thing, which could silently clear real server-side state or crash the provider — found and fixed issues across 12 resources:
+
+- fix: nil-pointer-dereference crashes eliminated in `keyfactor_certificate_deploy`, `keyfactor_oauth_security_role_claim_association`, and OAuth claim role-mapping, on certain error responses from Command
+- fix: `keyfactor_application` no longer silently drops an existing schedule on an unrelated update when `schedule_*` attributes are omitted from config
+- fix: `keyfactor_certificate_authority` no longer silently clears scan schedules or `allowed_requesters` on an unrelated update
+- fix: `keyfactor_certificate_authority` `preserveCAUpdateFields` now keys "was this declared" on the update request's `Config` instead of `Plan` — checking `plan.X.Null` only caught the narrow case where an undeclared attribute's resolved plan value was literally `Null`, not `Unknown` (a distinct state for `types.Int64`/`types.List`), and could miss future plan modifiers that resolve an undeclared attribute to something other than a bare null
+- fix: `keyfactor_certificate_authority` `Read` (and Create/Update's post-response reconciliation) now surfaces the server's real `allowed_requesters` list instead of always echoing back the prior plan/state value — per Command v25.5, `GET /CertificateAuthority` returns `UseAllowedRequesters`/`AllowedRequesters` with current values, so this is no longer a write-only field the provider must preserve on every read; a role added or removed from the allowed-requester list out-of-band now correctly surfaces as drift. Update's full-replace declare/omit/clear contract is unaffected: an explicit empty list (`[]`) is still sent through as a real clear
+- fix: `keyfactor_certificate_store_type` explicit `false`/empty values for `local_store`, `server_required`, `power_shell`, and `blueprint_allowed` are no longer dropped from requests or misread as `false`
+- fix: `keyfactor_certificate_template` explicit empty lists (`template_regexes`, `template_defaults`, `enrollment_fields`, `metadata_fields`) now actually clear server-side; 4 Command v25+ attributes no longer drift on refresh
+- fix: `keyfactor_pam_provider_type` explicit empty `display_name` is now preserved instead of falling back to a server default; a null `data_type` no longer reads as a misleading concrete value
+- fix: `keyfactor_pam_provider` an explicit `param_values` clear now reaches the update request instead of being silently ignored
+- fix: `keyfactor_security_identity` no longer strips existing role assignments on an unrelated update when `roles` is omitted from config; `Read` now detects role changes made outside Terraform instead of showing stale data. `roles` is now `Optional`+`Computed`, which also fixes a `Provider produced inconsistent result after apply` error on updates to identities that already have roles assigned
+- fix: `keyfactor_security_identity` `Read` no longer rewrites a practitioner's declared role spelling (case, or a numeric role ID) to Command's canonical role name on every refresh — this previously manufactured a diff that no `apply` could ever resolve. `Read` now compares the declared and server role sets case-insensitively (and ID-aware) before deciding whether to keep the declared form or surface real out-of-band drift. Filed [#183](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/183) for a separate, pre-existing role-name-lookup regex bug found during this work
+- fix: `keyfactor_security_role` no longer clears a role's `permissions` on an unrelated update when `permissions` is omitted from config — this previously happened two ways: an explicit clear being sent by mistake, and (even after that fix) Command's update endpoint treating a merely-missing field the same as an explicit clear. `Read` now detects permission/description changes made outside Terraform instead of showing stale data, and `permissions` is now `Optional`+`Computed`, fixing a `Provider produced inconsistent result after apply` error on updates to roles that already have permissions assigned
+- fix: `keyfactor_template_role_binding` role attach/detach no longer risks clearing unrelated template settings; `Read` now detects role changes made outside Terraform and surfaces an error instead of failing silently when template data can't be read
+- fix: `keyfactor_template_role_binding` role attach/detach no longer fails with `'Policies' cannot be empty` on templates linked to an enrollment pattern — Command's update endpoint is full-replace and was clearing the template's key-algorithm policy whenever it wasn't resent. Fixes [#180](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/180)
+- fix: `keyfactor_template_role_binding` role attach/detach no longer silently resets a template's `KeyUsage` bitmask to `0` on Command — `buildTemplateRoleBindingUpdateArg` never carried the template's existing `KeyUsage` onto the full-replace `UpdateTemplate` request, even though this resource does not manage `KeyUsage` at all. Requires `keyfactor-go-client/v3` `v3.6.0-rc.0`, which corrects `UpdateTemplateArg.KeyUsage` from `*bool` to `*int` to match Command v25.5's wire format (an int bitmask on both `GET` and `PUT`; a JSON boolean is rejected with `400`)
+- fix: `keyfactor_certificate` `owner_role_name` no longer causes a spurious ownership change (and drift) when left unset in config
+- fix: OAuth security claims missing a provider sub-object in Command's response now surface a warning instead of silently clearing the claim's provider association on the next update
+
+## Chore / Internal
+
+- chore(deps): bump `keyfactor-go-client/v3` to GA `v3.5.6` — adds nullable `*bool` store-type flags, `EntryPassword` `omitempty`, paginated `GetStoreContainers` and `GetTemplates`, and the `TemplatePolicy` model needed to fix #180 (Keyfactor/keyfactor-go-client#55, #56, #57).
+- chore(deps): pin `keyfactor-go-client/v3` to `v3.6.0-rc.0` — corrects `UpdateTemplateArg.KeyUsage` from `*bool` to `*int` to match Command v25.5's wire format (Keyfactor/keyfactor-go-client#58).
+- refactor: added `keyfactor/attribute_contract.go`, generalizing the ad hoc "server-managed unless declared in config" pattern already used by `template_role_binding`'s `KeyUsage`, `security_role`'s `Permissions`, and `security_identity`'s `Roles` into two shared primitives — `declaredInConfig` (always keyed on the update request's `Config`, never `Plan`, since Optional+Computed plan modifiers rewrite `Plan` to carry forward state on omission) and a `pairedVariantModifier` for mutually-exclusive attribute pairs (e.g. an interval-based vs. a daily-time-based schedule variant); no behavior change on its own.
+- test(template): re-recorded the five `GET /Templates` VCR cassettes for the paginated request (`?PageReturned&ReturnLimit`); added an opt-in `newVCRProviderFactoriesReplayable` variant used only by the read-only certificate-template data-source unit test.
+- test(integration): two lab-constraint-only failures (`TestIntKeyfactorCertificateResource_SANs`, `TestIntKeyfactorCertificateAuthorityResourceUpdate`) are now handled in-test (skip with warning) so unexpected failures still fail.
+- chore(release): add `# v2.9.1` CHANGELOG section; version set to `2.9.1-rc.1`.
+- chore(make): add `api-update-template`/`api-template-schema-diff` and `api-set-cert-owner`/`api-clear-cert-owner` verification-gate targets, mirroring the existing `api-update-ca`/`api-ca-schema-diff` pattern, used to live-verify Command v25.5 API wire behavior ahead of the CA schedule/owner work below.
+- refactor: deduped four near-identical `*enumType -> types.Int64` pointer converters (`enrollmentTypePtrToTfInt64`, `keyRetentionPtrToTfInt64`, `cleanupTimeUnitsPtrToTfInt64`, `pamParameterDataTypePtrToTfInt64`) into one generic `enumPtrToTfInt64` helper; no behavior change.
+- refactor: replaced the `getStringType(...).Value` idiom (7 call sites in `helpers.go` and `resource_keyfactor_oauth_security_role_claim_association.go`) with a plain `derefOrEmpty` helper; no behavior change.
+- test: extracted the shared `httptest`-backed mock `AuthConfig` helper (`mockAuthConfig` in `test_helpers_test.go`) that replaced three near-identical per-file mocks in the certificate, certificate-deploy, and OAuth security role claim association unit tests.
+
+## Pending (before GA v2.9.1)
+
+- **Deferred follow-ups (non-blocking):** optional structured-logging (SIEM-friendly fields) enhancements from the compliance audit.
+- **Known open gap (not yet fixed):** `keyfactor_certificate_authority` has many Optional+Computed pointer fields where server-side omission could still flip a value to zero — same bug class as the `keyfactor_security_identity`/`keyfactor_security_role` fixes above, unaudited.
+
 # v2.9.0
 
 ## Certificates

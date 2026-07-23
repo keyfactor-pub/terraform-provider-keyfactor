@@ -153,6 +153,10 @@ func (r resourceCertificateTemplateRoleBinding) Read(
 	diags = state.TemplateNames.ElementsAs(ctx, &templateNames, true)
 	kfTemplates, err := kfClient.GetTemplates()
 	if err != nil {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_TEMPLATE_READ,
+			"There was an error getting templates from Keyfactor Command: "+err.Error(),
+		)
 		return
 	}
 	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)
@@ -161,6 +165,16 @@ func (r resourceCertificateTemplateRoleBinding) Read(
 	if response.Diagnostics.HasError() {
 		return
 	}
+
+	// Re-check actual attachment against the fresh API response. Previously
+	// Read() only verified that each stored template name still EXISTED
+	// (verifyTemplateNames) and then wrote back the unchanged prior state, so a
+	// role detached from a template out-of-band (outside Terraform) was never
+	// detected -- Read() reported stale "still attached" success instead of
+	// drift. templateNamesStillAttached drops any name whose template no
+	// longer lists roleName as an allowed requester.
+	attachedNames := templateNamesStillAttached(kfTemplates, roleName, templateNames)
+	state.TemplateNames = types.List{ElemType: types.StringType, Elems: convertStringArrayToTerraform(attachedNames)}
 
 	hid := fmt.Sprintf("%v%v", roleName, templateNames)
 	ctx = tflog.SetField(ctx, "role_binding_id", hid)
@@ -171,6 +185,34 @@ func (r resourceCertificateTemplateRoleBinding) Read(
 	if response.Diagnostics.HasError() {
 		return
 	}
+}
+
+// templateNamesStillAttached filters templateNames down to the subset whose
+// template still lists roleName as an allowed requester in the
+// freshly-fetched kfTemplates (the same UseAllowedRequesters/AllowedRequesters
+// fields findTemplateRoleAttachments uses). A template that no longer has
+// UseAllowedRequesters enabled, or no longer lists roleName, is dropped --
+// that is real server-side drift (the role was detached out-of-band).
+func templateNamesStillAttached(kfTemplates []api.GetTemplateResponse, roleName string, templateNames []string) []string {
+	var attached []string
+	for _, name := range templateNames {
+		for _, template := range kfTemplates {
+			if !strings.EqualFold(template.CommonName, name) {
+				continue
+			}
+			if !template.UseAllowedRequesters {
+				break
+			}
+			for _, r := range template.AllowedRequesters {
+				if r == roleName {
+					attached = append(attached, name)
+					break
+				}
+			}
+			break
+		}
+	}
+	return attached
 }
 
 func (r resourceCertificateTemplateRoleBinding) Update(
@@ -527,6 +569,91 @@ func Contains(sl []int, val int) bool {
 /*
  * The resourceTemplateAttachRoleRead function is responsible for reading a Keyfactor security role.
  */
+// buildTemplateRoleBindingUpdateArg builds the UpdateTemplate request used by
+// both the attach and detach paths. Command's UpdateTemplate is a full
+// replacement, so every field omitted from the request is reset server-side.
+//
+// The previous inline construction only set a handful of fields and ran the
+// values it did copy through the zero-collapsing pointer helpers
+// (stringToPointer/intToPointer map "" and 0 to nil, which omitempty then
+// drops). The net effect was that on every role attach/detach this resource
+// silently reset template settings it does not even manage — RequiresApproval,
+// KeyRetentionDays, KeyArchival, EnrollmentFields, MetadataFields,
+// TemplateRegexes — plus any FriendlyName/KeyRetention/AllowedEnrollmentTypes
+// that happened to be empty/zero.
+//
+// This helper faithfully round-trips every field returned by GetTemplate,
+// changing only the allowed-requester list, using non-collapsing pointers so a
+// legitimate empty string or zero value (including a KeyUsage of 0) is
+// preserved rather than dropped.
+func buildTemplateRoleBindingUpdateArg(
+	template *api.GetTemplateResponse,
+	allowedRequesters []string,
+) *api.UpdateTemplateArg {
+	// Ensure a non-nil slice so an emptied requester list is sent as [] rather
+	// than being dropped by omitempty.
+	requesters := append([]string{}, allowedRequesters...)
+	useAllowedRequesters := len(requesters) > 0
+
+	keyType := template.KeyType
+	friendlyName := template.FriendlyName
+	keyRetention := template.KeyRetention
+	keyRetentionDays := template.KeyRetentionDays
+	keyArchival := template.KeyArchival
+	allowedEnrollmentTypes := template.AllowedEnrollmentTypes
+	rfcEnforcement := template.RFCEnforcement
+	requiresApproval := template.RequiresApproval
+	keyUsage := template.KeyUsage
+
+	arg := &api.UpdateTemplateArg{
+		Id:                     template.Id,
+		CommonName:             template.CommonName,
+		TemplateName:           template.TemplateName,
+		Oid:                    template.Oid,
+		KeySize:                template.KeySize,
+		ForestRoot:             template.ForestRoot,
+		KeyType:                &keyType,
+		FriendlyName:           &friendlyName,
+		KeyRetention:           &keyRetention,
+		KeyRetentionDays:       &keyRetentionDays,
+		KeyArchival:            &keyArchival,
+		AllowedEnrollmentTypes: &allowedEnrollmentTypes,
+		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
+		AllowedRequesters:      &requesters,
+		RFCEnforcement:         &rfcEnforcement,
+		RequiresApproval:       &requiresApproval,
+		KeyUsage:               &keyUsage,
+	}
+
+	// Preserve the collection-valued settings this resource does not manage.
+	if template.EnrollmentFields != nil {
+		ef := template.EnrollmentFields
+		arg.EnrollmentFields = &ef
+	}
+	if template.MetadataFields != nil {
+		mf := template.MetadataFields
+		arg.MetadataFields = &mf
+	}
+	if template.TemplateRegexes != nil {
+		rx := template.TemplateRegexes
+		arg.TemplateRegexes = &rx
+	}
+
+	// Preserve TemplatePolicy (PrimaryKeyAlgorithms/AlternativeKeyAlgorithms,
+	// AllowKeyReuse, AllowWildcards, etc). Command's PUT /Templates derives an
+	// internal "Policies" set from this object; for any template linked to an
+	// enrollment pattern, omitting it here collapses that set to empty and
+	// Command rejects the whole update with "'Policies' cannot be empty" —
+	// confirmed against a live Command 25.4.1 instance (issue #180). Templates
+	// with no policy configured return a nil TemplatePolicy, which is fine to
+	// leave unset here since there is nothing to lose by omitting it.
+	if template.TemplatePolicy != nil {
+		arg.TemplatePolicy = template.TemplatePolicy
+	}
+
+	return arg
+}
+
 func addAllowedRequesterToTemplate(
 	ctx context.Context,
 	kfClient *api.Client,
@@ -625,26 +752,9 @@ func addAllowedRequesterToTemplate(
 	// If it's not already added, create update context to add role to template.
 
 	newAllowedRequester = append(newAllowedRequester, roleName)
-	useAllowedRequesters := false
-	if len(newAllowedRequester) > 0 {
-		useAllowedRequesters = true
-	}
 	// Fill required fields with information retrieved from the get request above
 	tflog.Debug(ctx, "Creating update context to add role to template")
-	updateContext := &api.UpdateTemplateArg{
-		Id:                     template.Id,
-		CommonName:             template.CommonName,
-		TemplateName:           template.TemplateName,
-		Oid:                    template.Oid,
-		KeySize:                template.KeySize,
-		ForestRoot:             template.ForestRoot,
-		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
-		AllowedRequesters:      &newAllowedRequester,
-		FriendlyName:           stringToPointer(template.FriendlyName),
-		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
-		KeyRetention:           stringToPointer(template.KeyRetention),
-		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
-	}
+	updateContext := buildTemplateRoleBindingUpdateArg(template, newAllowedRequester)
 
 	tflog.Trace(
 		ctx, "Updating template in Keyfactor with context:", map[string]interface{}{
@@ -704,25 +814,8 @@ func removeRoleFromTemplate(
 		}
 	}
 
-	useAllowedRequesters := false
-	if len(newAllowedRequester) > 0 {
-		useAllowedRequesters = true
-	}
 	// Fill required fields with information retrieved from the get request above
-	updateContext := &api.UpdateTemplateArg{
-		Id:                     template.Id,
-		CommonName:             template.CommonName,
-		TemplateName:           template.TemplateName,
-		Oid:                    template.Oid,
-		KeySize:                template.KeySize,
-		ForestRoot:             template.ForestRoot,
-		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
-		AllowedRequesters:      &newAllowedRequester,
-		FriendlyName:           stringToPointer(template.FriendlyName),
-		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
-		KeyRetention:           stringToPointer(template.KeyRetention),
-		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
-	}
+	updateContext := buildTemplateRoleBindingUpdateArg(template, newAllowedRequester)
 
 	tflog.Trace(
 		ctx, "Updating template in Keyfactor with context:", map[string]interface{}{

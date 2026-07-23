@@ -7,7 +7,7 @@ interactions:
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: int25-4-1.kftestlab.com
         headers:
             Accept:
                 - application/json
@@ -17,7 +17,7 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Templates/5
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Templates/5
         method: GET
       response:
         proto: HTTP/1.1
@@ -33,25 +33,25 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 20:28:30 GMT
+                - Fri, 19 Jun 2026 22:06:43 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
-                - "41"
+                - "39"
             X-Keyfactor-Correlation-Id:
-                - fe74bd30-1d8c-4278-ae85-47a31b418623
+                - db01e254-cd46-4742-a0f2-3afab374acfa
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
         status: 200 OK
         code: 200
-        duration: 835.4577ms
+        duration: 899.9407ms
     - id: 1
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: int25-4-1.kftestlab.com
         headers:
             Accept:
                 - application/json
@@ -61,7 +61,7 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Templates/5
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Templates/5
         method: GET
       response:
         proto: HTTP/1.1
@@ -77,15 +77,15 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 20:28:31 GMT
+                - Fri, 19 Jun 2026 22:06:44 GMT
             Server:
                 - istio-envoy
             X-Envoy-Upstream-Service-Time:
                 - "37"
             X-Keyfactor-Correlation-Id:
-                - 79bc578c-8b56-4830-9910-a9e1ac03eda3
+                - 5c758c9c-7e8b-4908-9809-ae889e0a5744
             X-Keyfactor-Product-Version:
                 - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
         status: 200 OK
         code: 200
-        duration: 141.583339ms
+        duration: 142.085617ms

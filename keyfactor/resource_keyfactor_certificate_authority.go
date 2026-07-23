@@ -256,10 +256,12 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"allowed_requesters": {
-				Type:          types.ListType{ElemType: types.StringType},
-				Optional:      true,
-				Computed:      true,
-				Description:   "An array of strings indicating Keyfactor Command security roles that are allowed to enroll for certificates via Keyfactor Command for this CA. Applies to standalone CAs only. Write-only: not returned by the server GET; preserved from plan/state.",
+				Type:     types.ListType{ElemType: types.StringType},
+				Optional: true,
+				Computed: true,
+				Description: "An array of strings indicating Keyfactor Command security roles that are allowed to enroll for certificates via Keyfactor Command for this CA. Applies to standalone CAs only. " +
+					"Requires Keyfactor Command v25.5 or later for reads to reflect the server's actual list; on older Command versions this may read back empty even when configured server-side. " +
+					"Omit to leave unmanaged (preserved on update); set [] explicitly to clear.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 
@@ -637,19 +639,13 @@ func boolPtrToTfBool(v *bool) types.Bool {
 // enrollmentTypePtrToTfInt64 converts a *CSSCMSCoreEnumsEnrollmentType pointer to types.Int64.
 // Nil (server field absent) becomes Null so the value is not sent on PUT.
 func enrollmentTypePtrToTfInt64(v *v1.CSSCMSCoreEnumsEnrollmentType) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
+	return enumPtrToTfInt64(v)
 }
 
 // keyRetentionPtrToTfInt64 converts a *CSSCMSCoreEnumsKeyRetentionPolicy pointer to types.Int64.
 // Nil (server field absent) becomes Null so the value is not sent on PUT.
 func keyRetentionPtrToTfInt64(v *v1.CSSCMSCoreEnumsKeyRetentionPolicy) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
+	return enumPtrToTfInt64(v)
 }
 
 // nullableBoolToTfBool converts a NullableBool from the SDK response to a types.Bool.
@@ -664,10 +660,7 @@ func nullableBoolToTfBool(v v1.NullableBool) types.Bool {
 // cleanupTimeUnitsPtrToTfInt64 converts a *CSSCMSDataModelEnumsCertificateCleanupTimeUnits pointer to types.Int64.
 // Nil (server field absent) becomes Null so the value is not sent on PUT.
 func cleanupTimeUnitsPtrToTfInt64(v *v1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
+	return enumPtrToTfInt64(v)
 }
 
 func stringSliceToTfList(vals []string) types.List {
@@ -822,18 +815,69 @@ func setNullableInt32IfKnown(_ interface{}, v types.Int64, setter func(int32)) {
 	}
 }
 
-// preserveSecrets copies write-only secret fields from source (plan or prior state) into the target state.
+// preserveSecrets copies write-only secret fields from source (plan or prior
+// state) into the target state. These fields (explicit_password,
+// auth_certificate, auth_certificate_password, client_secret, force_save) are
+// never returned by the server in any form, so there is no server truth to
+// prefer over the previously-known value.
+//
+// allowed_requesters is NOT handled here (as of Command v25.5+, confirmed
+// live: GET /CertificateAuthority returns both UseAllowedRequesters and
+// AllowedRequesters with real values). caResponseToState already maps the
+// server's list into state, so echoing plan/state over it here would mask
+// genuine out-of-band drift (e.g. a role removed from the allowed-requester
+// list directly in Command) behind a silently "corrected" Read. See G3 in
+// the attribute contract: Read must surface server truth for any attribute
+// the server can actually report.
 func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCertificateAuthority) {
 	target.ExplicitPassword = source.ExplicitPassword
 	target.AuthCertificate = source.AuthCertificate
 	target.AuthCertificatePassword = source.AuthCertificatePassword
 	target.ClientSecret = source.ClientSecret
 	target.ForceSave = source.ForceSave
-	// AllowedRequesters is not returned by the server GET; preserve from plan/state.
-	// Only copy when the value is known (not null AND not unknown) to avoid
-	// propagating Unknown into state during Create where there is no prior state.
-	if !source.AllowedRequesters.Null && !source.AllowedRequesters.Unknown {
-		target.AllowedRequesters = source.AllowedRequesters
+}
+
+// preserveCAUpdateFields reconciles Update() plan values that Command's CA PUT
+// treats as full-replace (an omitted field is cleared server-side, not left
+// unchanged). For scan/threshold schedules and the allowed-requester list, an
+// UNDECLARED attribute means the attribute is simply absent from config, NOT
+// that the user wants it cleared — so preserve the prior state value rather
+// than letting buildCARequest omit it (which would clear it). This runs only
+// on the Update() path; Create() and the Delete() clear-schedule path
+// intentionally still let an undeclared value omit/clear.
+//
+// Declared-ness is keyed on declaredInConfig(config.X) — request.Config, NOT
+// plan.X.Null — per the attribute contract in attribute_contract.go: these
+// attributes are Optional+Computed with a UseStateForUnknown-family plan
+// modifier, so an undeclared attribute's Plan value is usually already
+// resolved to the prior state (not Null) by the time this function runs.
+// Checking plan.X.Null would therefore only catch the case where state was
+// ALSO already Null (nothing to preserve either way) and silently miss any
+// case where a plan modifier resolves an undeclared attribute to something
+// other than the literal prior state (e.g. the mutually-exclusive schedule
+// variant handling pairedVariantModifier introduces). Config is never
+// touched by plan modifiers, so it is the only signal that survives that
+// class of change.
+//
+// Note on allowed_requesters: on Command v25.5+ (confirmed live), GET
+// /CertificateAuthority reports the real list, so caResponseToState
+// (state, prior to this function running) generally already carries a real
+// value to preserve here — including after ImportState. On older Command
+// versions that do not return the list on GET, the prior state may itself be
+// Null and there is nothing to preserve; in that case the field remains
+// omitted from the request, relying on Command to leave an omitted
+// AllowedRequesters unchanged.
+func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, config, state KeyfactorCertificateAuthority) {
+	preserveInt := func(p *types.Int64, c types.Int64, s types.Int64) {
+		if !declaredInConfig(c) && !s.Null && !s.Unknown {
+			*p = s
+		}
+	}
+	preserveInt(&plan.FullScanIntervalMinutes, config.FullScanIntervalMinutes, state.FullScanIntervalMinutes)
+	preserveInt(&plan.IncrementalScanIntervalMinutes, config.IncrementalScanIntervalMinutes, state.IncrementalScanIntervalMinutes)
+	preserveInt(&plan.ThresholdCheckIntervalMinutes, config.ThresholdCheckIntervalMinutes, state.ThresholdCheckIntervalMinutes)
+	if !declaredInConfig(config.AllowedRequesters) && !state.AllowedRequesters.Null && !state.AllowedRequesters.Unknown {
+		plan.AllowedRequesters = state.AllowedRequesters
 	}
 }
 
@@ -930,6 +974,18 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 		return
 	}
 
+	// Get config values. The scan/threshold schedules and allowed_requesters
+	// are Optional+Computed, so request.Plan is no longer a reliable signal
+	// of whether the user actually declared them (see preserveCAUpdateFields'
+	// doc comment and declaredInConfig in attribute_contract.go) —
+	// request.Config is.
+	var config KeyfactorCertificateAuthority
+	diags = request.Config.Get(ctx, &config)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
 	var state KeyfactorCertificateAuthority
 	diags = request.State.Get(ctx, &state)
 	response.Diagnostics.Append(diags...)
@@ -947,6 +1003,18 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 	}
 
 	tflog.Info(ctx, fmt.Sprintf("Updating certificate authority ID %d", id))
+
+	// Command's CA PUT is a full replacement: any scan/threshold schedule or
+	// allowed-requester list omitted from the body is cleared server-side (the
+	// Delete path below deliberately exploits this to clear Windows Task
+	// Scheduler entries). buildCARequest omits FullScan/IncrementalScan/
+	// ThresholdCheck/AllowedRequesters whenever the plan value is Null. On an
+	// Update() that leaves those attributes undeclared this silently wipes a
+	// live schedule or the CA's real allowed-requester list. Mirror GH issue
+	// #175: preserve the prior state value when config simply does not
+	// declare the attribute, so an unrelated Update never clears state the
+	// user never asked to change.
+	preserveCAUpdateFields(&plan, config, state)
 
 	updateReq := buildCARequest(ctx, plan)
 	idInt32 := int32(id)

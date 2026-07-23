@@ -286,7 +286,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "An object indicating the password information to use for authentication with explicit_user. Write-only; cannot be read back from the server.",
+				Description: "An object indicating the password information to use for authentication with explicit_user. Write-only; cannot be read back from the server. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
 			},
 
 			// --- Auth Certificate (write-only) ---
@@ -294,13 +294,13 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only.",
+				Description: "An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
 			},
 			"auth_certificate_password": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only.",
+				Description: "An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
 			},
 
 			// --- Auth Certificate metadata (read-only from server) ---
@@ -342,7 +342,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "For HTTPS CAs, an object indicating the secret for the client used to authenticate. Write-only; cannot be read back from the server.",
+				Description: "For HTTPS CAs, an object indicating the secret for the client used to authenticate. Write-only; cannot be read back from the server. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
 			},
 			"scope": {
 				Type:          types.StringType,

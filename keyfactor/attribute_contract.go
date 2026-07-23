@@ -2,6 +2,7 @@ package keyfactor
 
 import (
 	"context"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -57,21 +58,28 @@ func declaredInConfig(v attr.Value) bool {
 	return v != nil && !v.IsNull()
 }
 
-// pairedVariantModifier is a plan modifier for a pair of mutually-exclusive
-// attributes ("variants") where declaring one is meant to implicitly clear
-// the other -- e.g. an interval-based schedule vs. a daily-time-based
-// schedule for the same underlying setting. It replaces tfsdk.UseStateForUnknown
-// on each half of such a pair.
+// pairedVariantModifier is a plan modifier for a group of mutually-exclusive
+// attributes ("variants") where declaring any ONE of them is meant to
+// implicitly clear all the others -- e.g. an interval-based schedule vs. a
+// daily-time-based schedule vs. a weekly-days-and-time-based schedule for the
+// same underlying setting. It replaces tfsdk.UseStateForUnknown on each
+// member of such a group.
+//
+// The group need not be a strict pair: a variant that is itself represented
+// by more than one attribute (e.g. weekly's days+time) lists every OTHER
+// variant's attribute name(s) as its siblings, but never its own co-attribute
+// -- see pairedWith's doc comment.
 //
 // Modify runs in this order:
 //  1. If the plan for THIS attribute is already known (not Unknown), the
 //     config declared it directly (including an explicit clear sentinel) --
 //     leave it alone.
-//  2. Otherwise, if the sibling variant is declared in CONFIG, this attribute
-//     is being superseded by the variant switch: plan it explicitly Null so
-//     the resulting diff (e.g. interval 60 -> null) is truthful, instead of
-//     resurrecting the prior value the way a bare UseStateForUnknown would.
-//  3. Otherwise (neither this attribute nor its sibling is declared), fall
+//  2. Otherwise, if ANY sibling variant attribute is declared in CONFIG, this
+//     attribute is being superseded by the variant switch: plan it explicitly
+//     Null so the resulting diff (e.g. interval 60 -> null) is truthful,
+//     instead of resurrecting the prior value the way a bare
+//     UseStateForUnknown would.
+//  3. Otherwise (neither this attribute nor any sibling is declared), fall
 //     back to useStateOrNullModifier semantics: copy the prior state forward
 //     (null stays null, a known value stays known), leaving Unknown only when
 //     there is no prior state to copy from (i.e. on Create).
@@ -81,21 +89,26 @@ func declaredInConfig(v attr.Value) bool {
 // precedents this generalizes: the former is exactly step 3 in isolation, the
 // latter is the same "does a sibling attribute's config value change the
 // outcome" shape that step 2 generalizes beyond a boolean/enum discriminator
-// to "is the sibling itself declared."
+// to "is any sibling itself declared."
 type pairedVariantModifier struct {
-	sibling string
+	siblings []string
 }
 
-// pairedWith constructs a pairedVariantModifier naming the sibling attribute
-// (by schema attribute name, at the same nesting level as the attribute this
-// modifier is attached to) that this attribute's variant is mutually
-// exclusive with.
-func pairedWith(sibling string) pairedVariantModifier {
-	return pairedVariantModifier{sibling: sibling}
+// pairedWith constructs a pairedVariantModifier naming the sibling
+// attribute(s) (by schema attribute name, at the same nesting level as the
+// attribute this modifier is attached to) that this attribute's variant is
+// mutually exclusive with. Pass every attribute belonging to every OTHER
+// variant in the group -- e.g. for a three-way interval/daily/weekly group,
+// the interval attribute's siblings are the daily attribute AND both weekly
+// attributes; a weekly attribute's siblings are the interval and daily
+// attributes only (never its own co-attribute, since the two halves of the
+// weekly variant are co-required, not mutually exclusive, with each other).
+func pairedWith(siblings ...string) pairedVariantModifier {
+	return pairedVariantModifier{siblings: siblings}
 }
 
 func (m pairedVariantModifier) Description(_ context.Context) string {
-	return "Preserves state for this attribute's variant unless its paired variant \"" + m.sibling + "\" is declared in config, in which case this attribute plans to null."
+	return "Preserves state for this attribute's variant unless one of its paired variant(s) \"" + strings.Join(m.siblings, "\", \"") + "\" is declared in config, in which case this attribute plans to null."
 }
 
 func (m pairedVariantModifier) MarkdownDescription(ctx context.Context) string {
@@ -113,30 +126,32 @@ func (m pairedVariantModifier) Modify(ctx context.Context, req tfsdk.ModifyAttri
 		return
 	}
 
-	// Step 2: if the sibling variant is declared in Config, this attribute is
+	// Step 2: if any sibling variant is declared in Config, this attribute is
 	// being superseded by the variant switch -- plan it Null rather than
 	// resurrecting the prior state value.
-	siblingPath := req.AttributePath.ParentPath().AtName(m.sibling)
-	siblingConfig, diags := getConfigAttributeValue(ctx, req.Config, siblingPath)
-	resp.Diagnostics.Append(diags...)
-	if diags.HasError() {
-		return
-	}
-	if declaredInConfig(siblingConfig) {
-		nullValue, err := nullValueOfType(ctx, resp.AttributePlan)
-		if err != nil {
-			resp.Diagnostics.AddAttributeError(
-				req.AttributePath,
-				"Error constructing paired-variant null plan value",
-				err.Error(),
-			)
+	for _, sibling := range m.siblings {
+		siblingPath := req.AttributePath.ParentPath().AtName(sibling)
+		siblingConfig, diags := getConfigAttributeValue(ctx, req.Config, siblingPath)
+		resp.Diagnostics.Append(diags...)
+		if diags.HasError() {
 			return
 		}
-		resp.AttributePlan = nullValue
-		return
+		if declaredInConfig(siblingConfig) {
+			nullValue, err := nullValueOfType(ctx, resp.AttributePlan)
+			if err != nil {
+				resp.Diagnostics.AddAttributeError(
+					req.AttributePath,
+					"Error constructing paired-variant null plan value",
+					err.Error(),
+				)
+				return
+			}
+			resp.AttributePlan = nullValue
+			return
+		}
 	}
 
-	// Step 3: neither this attribute nor its sibling is declared --
+	// Step 3: neither this attribute nor any sibling is declared --
 	// useStateOrNullModifier semantics: copy state forward (null stays null,
 	// known stays known), leaving Unknown when state itself is Unknown (no
 	// prior state to copy from, i.e. Create).

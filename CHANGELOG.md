@@ -2,7 +2,7 @@
 
 ## Features
 
-_None — this release is fixes plus internal/dependency work._
+- feat: `keyfactor_certificate_authority` `full_scan`/`incremental_scan`/`threshold_check` schedules now support a Daily variant (`full_scan_daily_time`, `incremental_scan_daily_time`, `threshold_check_daily_time`, UTC `"HH:MM:SS"`), mutually exclusive with the existing `*_interval_minutes` attribute, plus a declarative way to clear either variant — see "Certificate Authorities — schedule variants" below.
 
 ## Fixes
 
@@ -39,6 +39,16 @@ A provider-wide audit for the same bug class as #175 — an omitted attribute an
 - fix: `keyfactor_certificate` `owner_role_name` no longer causes a spurious ownership change (and drift) when left unset in config
 - fix: OAuth security claims missing a provider sub-object in Command's response now surface a warning instead of silently clearing the claim's provider association on the next update
 
+### Certificate Authorities — schedule variants
+
+Command represents each CA's `full_scan`/`incremental_scan`/`threshold_check` schedule as a tagged union (Interval, Daily, Weekly, Monthly, ExactlyOnce, Immediate) that this provider previously only modeled as Interval-shaped — a Daily-or-fancier schedule fell through to `Null` on Read, indistinguishable from "not configured," and was then silently wiped by the next apply since Command's schedule PUT is full-replace:
+
+- feat: adds `full_scan_daily_time`, `incremental_scan_daily_time`, `threshold_check_daily_time` (UTC `"HH:MM:SS"`), mutually exclusive with the corresponding `*_interval_minutes` attribute
+- fix: switching a schedule between its Interval and Daily variants no longer risks sending both to Command or drifting — a new pair-aware plan modifier explicitly nulls the undeclared half of the pair on a variant switch, instead of resurrecting its prior value the way a bare `UseStateForUnknown` did
+- fix: `Update` no longer clears a live Weekly/Monthly/ExactlyOnce/Immediate-shaped schedule (variants this provider has no dedicated attributes for) when a schedule pair is left entirely undeclared in config — it now does a read-modify-write, fetching the CA's current schedule immediately before the PUT and copying it through verbatim for any undeclared pair. Note: Weekly schedules currently can't be read back into Terraform state at all due to a separate SDK deserialization bug — filed as [#185](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/185)
+- feat: `full_scan_interval_minutes = 0` / `full_scan_daily_time = ""` (and the `incremental_scan`/`threshold_check` equivalents) now declaratively clear that schedule; omitting both halves of a pair still means "leave unmanaged"
+- fix: schedule decisions (declared-and-managed, preserved-from-state, sentinel-carried-forward) are now logged at debug/warn level, naming which of `full_scan`/`incremental_scan`/`threshold_check` was affected
+
 ## Chore / Internal
 
 - chore(deps): bump `keyfactor-go-client/v3` to GA `v3.5.6` — adds nullable `*bool` store-type flags, `EntryPassword` `omitempty`, paginated `GetStoreContainers` and `GetTemplates`, and the `TemplatePolicy` model needed to fix #180 (Keyfactor/keyfactor-go-client#55, #56, #57).
@@ -46,6 +56,7 @@ A provider-wide audit for the same bug class as #175 — an omitted attribute an
 - refactor: added `keyfactor/attribute_contract.go`, generalizing the ad hoc "server-managed unless declared in config" pattern already used by `template_role_binding`'s `KeyUsage`, `security_role`'s `Permissions`, and `security_identity`'s `Roles` into two shared primitives — `declaredInConfig` (always keyed on the update request's `Config`, never `Plan`, since Optional+Computed plan modifiers rewrite `Plan` to carry forward state on omission) and a `pairedVariantModifier` for mutually-exclusive attribute pairs (e.g. an interval-based vs. a daily-time-based schedule variant); no behavior change on its own.
 - test(template): re-recorded the five `GET /Templates` VCR cassettes for the paginated request (`?PageReturned&ReturnLimit`); added an opt-in `newVCRProviderFactoriesReplayable` variant used only by the read-only certificate-template data-source unit test.
 - test(integration): two lab-constraint-only failures (`TestIntKeyfactorCertificateResource_SANs`, `TestIntKeyfactorCertificateAuthorityResourceUpdate`) are now handled in-test (skip with warning) so unexpected failures still fail.
+- docs: regenerated `docs/resources/identity.md` (`roles` description) and `docs/resources/certificate_authority.md` (new schedule attributes) via `make tfdocs`.
 - chore(release): add `# v2.9.1` CHANGELOG section; version set to `2.9.1-rc.1`.
 - chore(make): add `api-update-template`/`api-template-schema-diff` and `api-set-cert-owner`/`api-clear-cert-owner` verification-gate targets, mirroring the existing `api-update-ca`/`api-ca-schema-diff` pattern, used to live-verify Command v25.5 API wire behavior ahead of the CA schedule/owner work below.
 - refactor: deduped four near-identical `*enumType -> types.Int64` pointer converters (`enrollmentTypePtrToTfInt64`, `keyRetentionPtrToTfInt64`, `cleanupTimeUnitsPtrToTfInt64`, `pamParameterDataTypePtrToTfInt64`) into one generic `enumPtrToTfInt64` helper; no behavior change.

@@ -1042,6 +1042,34 @@ func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, config, state K
 	}
 }
 
+// applyUndeclaredScheduleFallback is the F182-3 read-modify-write guard: for
+// each of FullScan/IncrementalScan/ThresholdCheck, if config declares NEITHER
+// the Interval nor the Daily variant, overwrite whatever buildCARequest put on
+// updateReq with the server's CURRENT schedule from a fresh GET (getResp),
+// verbatim. This is what actually protects schedule variants this provider
+// does not model at all (Weekly/Monthly/ExactlyOnce/Immediate) -- unlike
+// preserveCAUpdateFields, which can only fall back to a prior STATE value that
+// scheduleToState may have already collapsed to Null for exactly those
+// variants. request and response share the same
+// v1.KeyfactorCommonSchedulingKeyfactorSchedule type, so this is also a safe
+// no-op for a config-declared Interval/Daily pair's sibling schedules and for
+// a genuinely undeclared-and-never-configured schedule (getResp's field is
+// nil either way).
+func applyUndeclaredScheduleFallback(updateReq *v1.CertificateAuthoritiesCertificateAuthorityRequest, config KeyfactorCertificateAuthority, getResp *v1.CertificateAuthoritiesCertificateAuthorityResponse) {
+	if getResp == nil {
+		return
+	}
+	if !declaredInConfig(config.FullScanIntervalMinutes) && !declaredInConfig(config.FullScanDailyTime) {
+		updateReq.FullScan = getResp.FullScan
+	}
+	if !declaredInConfig(config.IncrementalScanIntervalMinutes) && !declaredInConfig(config.IncrementalScanDailyTime) {
+		updateReq.IncrementalScan = getResp.IncrementalScan
+	}
+	if !declaredInConfig(config.ThresholdCheckIntervalMinutes) && !declaredInConfig(config.ThresholdCheckDailyTime) {
+		updateReq.ThresholdCheck = getResp.ThresholdCheck
+	}
+}
+
 func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
 	LogFunctionEntry(ctx, "resourceCertificateAuthority.Create")
 
@@ -1169,6 +1197,43 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 
 	tflog.Info(ctx, fmt.Sprintf("Updating certificate authority ID %d", id))
 
+	caAPI := r.p.sdkClient.V1.CertificateAuthorityApi
+
+	// Read-modify-write guard for schedule variants this provider does not
+	// model (Weekly/Monthly/ExactlyOnce/Immediate): preserveCAUpdateFields and
+	// buildSchedule can only reconstruct the Interval/Daily variants they have
+	// attribute pairs for, and scheduleToState collapses any other variant to
+	// Null in state (see its doc comment) -- so a schedule pair left entirely
+	// undeclared in config has no state value to preserve either. GET the CA
+	// fresh right before the PUT and, for any schedule pair config does not
+	// declare, copy the server's CURRENT schedule verbatim into the request
+	// below (see applyUndeclaredScheduleFallback) -- the request and response
+	// share the same v1.KeyfactorCommonSchedulingKeyfactorSchedule type, so
+	// this transparently covers Weekly/Monthly/ExactlyOnce/Immediate as well
+	// as being a no-op for Interval/Daily (buildSchedule already reconstructed
+	// the same shape from plan/preserveCAUpdateFields there). A GET error here
+	// is treated as fatal rather than falling back to a blind PUT, since a
+	// blind PUT for an undeclared schedule pair risks silently clearing
+	// whatever variant the server currently holds.
+	//
+	// Known edge: this GET happens moments before the PUT, not at the start
+	// of the Terraform run, so `terraform apply -refresh=false` racing an
+	// out-of-band schedule change between the last Read and this Update can
+	// still see a one-time "Provider produced inconsistent result after
+	// apply" if the two disagree -- the next Read/plan reconciles it. This is
+	// an accepted, narrow window; the alternative (trusting in-memory state
+	// for a schedule variant this provider cannot represent at all) is
+	// strictly worse.
+	getResp, getHTTPResp, err := caAPI.NewGetCertificateAuthorityByIdRequest(ctx, int32(id)).Execute()
+	if err != nil {
+		body := readHTTPResponseBody(getHTTPResp)
+		response.Diagnostics.AddError(
+			"Error updating certificate authority.",
+			fmt.Sprintf("Could not read current state of certificate authority %d before update: %s. Details: %s", id, err.Error(), body),
+		)
+		return
+	}
+
 	// Command's CA PUT is a full replacement: any scan/threshold schedule or
 	// allowed-requester list omitted from the body is cleared server-side (the
 	// Delete path below deliberately exploits this to clear Windows Task
@@ -1188,8 +1253,8 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 	}
 	idInt32 := int32(id)
 	updateReq.Id = &idInt32
+	applyUndeclaredScheduleFallback(&updateReq, config, getResp)
 
-	caAPI := r.p.sdkClient.V1.CertificateAuthorityApi
 	updateAPIReq := caAPI.NewUpdateCertificateAuthorityRequest(ctx).CertificateAuthoritiesCertificateAuthorityRequest(updateReq)
 	if !plan.ForceSave.Null && !plan.ForceSave.Unknown && plan.ForceSave.Value {
 		updateAPIReq = updateAPIReq.ForceSave(true)

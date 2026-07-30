@@ -19,7 +19,9 @@ description: |-
   [!NOTE]
   "fail_on_job_failure" requires the Agent Management - Read permission (claim "/agents/management/read/") in Keyfactor
   Command. A job that is never picked up by an orchestrator (e.g. the agent is offline) reports no failure and will
-  still be waited on indefinitely.
+  still be waited on indefinitely. Orchestrator job-history messages surfaced in Terraform diagnostics and logs are
+  authored by the orchestrator extension and passed through verbatim, so they may contain infrastructure detail
+  (hostnames, paths, internal error text).
 ---
 
 # keyfactor_certificate_deployment (Resource)
@@ -44,7 +46,9 @@ The two opt-in attributes change what a successful apply means:
 > [!NOTE]
 > "fail_on_job_failure" requires the Agent Management - Read permission (claim "/agents/management/read/") in Keyfactor
 > Command. A job that is never picked up by an orchestrator (e.g. the agent is offline) reports no failure and will
-> still be waited on indefinitely.
+> still be waited on indefinitely. Orchestrator job-history messages surfaced in Terraform diagnostics and logs are
+> authored by the orchestrator extension and passed through verbatim, so they may contain infrastructure detail
+> (hostnames, paths, internal error text).
 
 ## Example Usage
 

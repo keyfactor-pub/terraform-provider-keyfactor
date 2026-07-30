@@ -10,6 +10,10 @@
 ### Fixes
 
 - fix: `keyfactor_certificate_deployment` Create's deployment-validation failure diagnostic reported the wrong error message (the initial pre-check result instead of the validation error)
+- fix: `keyfactor_certificate_deployment` Update and Delete now probe the destination store's inventory schedule before starting a `fail_on_job_failure` inventory-based wait, matching Create's behavior — previously a schedule-less store could never satisfy the inventory check, causing the wait to poll indefinitely instead of falling back to job-status-only validation
+- fix: `keyfactor_certificate_deployment` Create now persists resource state when a `fail_on_job_failure` job-status wait fails (e.g. a permission error or an orchestrator job failure) — the management job was already submitted to Keyfactor Command, so a subsequent apply now sees a tainted resource in state instead of blindly resubmitting a brand-new job every run
+- fix: `keyfactor_certificate_deployment` orchestrator job status Acknowledged (Status=4) is now treated as a terminal result, like Completed, when evaluating `fail_on_job_failure` job history — previously a job that settled on Acknowledged as its latest history entry would poll forever
+- fix: `keyfactor_certificate_deployment` the `fail_on_job_failure` orchestrator `JobHistory` lookup now sorts descending by `JobHistoryId` with an explicit return limit, instead of relying on the server's undocumented default page size/sort, so the "latest" job history entry is determined deterministically even for jobs with many retry attempts
 
 # v2.9.1
 
@@ -26,7 +30,7 @@
 
 ## Chores
 
-- chore(deps): bump `keyfactor-go-client/v3` to `v3.5.6` — `GetTemplates` now paginates automatically, with a max-page safety bound, per-iteration response-body close, and audit logging.
+- chore(deps): bump `keyfactor-go-client/v3` to `v3.5.6-rc.1` — `GetTemplates` now paginates automatically, with a max-page safety bound, per-iteration response-body close, and audit logging.
 
 # v2.9.0
 

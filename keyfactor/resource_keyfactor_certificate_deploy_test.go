@@ -628,3 +628,38 @@ func TestUnitKeyfactorCertificateDeployResource_JobWatchAcknowledged(t *testing.
 		},
 	})
 }
+
+// TestUnitKeyfactorCertificateDeployResource_JobWatchNoSchedule is a T1
+// regression test for the schedule-less-fallback branch: with
+// skip_inventory_validation=false and fail_on_job_failure=true, the
+// destination store's InventorySchedule has every member (Immediate,
+// Interval, Daily, ExactlyOnce) null. Create's storeHasInventorySchedule
+// probe must see hasInventorySchedule=false and, because fail_on_job_failure
+// is set, fall back to job-status-only validation instead of ever building an
+// inventory-based wait (which would poll a schedule-less store forever, per
+// T1's original bug). The apply succeeds on the deployment job's terminal
+// success, with no post-submit inventory poll -- unreachable in replay-only
+// mode, since any unexpected request would fail to match the cassette and
+// error the test. The implicit destroy exercises the same schedule probe in
+// Delete (also T1) and succeeds on the removal job's terminal success.
+func TestUnitKeyfactorCertificateDeployResource_JobWatchNoSchedule(t *testing.T) {
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("certificate_deploy_job_watch_no_schedule is a hand-crafted cassette — do not re-record")
+	}
+	factories, cleanup := newVCRProviderFactoriesReplayable(t, "certificate_deploy_job_watch_no_schedule")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: deployOptInConfig("tf-unit-noschedule", false, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "skip_inventory_validation", "false"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "fail_on_job_failure", "true"),
+				),
+			},
+		},
+	})
+}

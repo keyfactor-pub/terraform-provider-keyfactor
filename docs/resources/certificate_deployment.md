@@ -4,22 +4,47 @@ page_title: "keyfactor_certificate_deployment Resource - terraform-provider-keyf
 subcategory: ""
 description: |-
   Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
-  API to deploy certificates to "keyfactorcertificatestore" resources.
+  API to deploy certificates to "keyfactor_certificate_store" resources.
   [!IMPORTANT]
   Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules.
-  A "keyfactorcertificatedeployment" will not finish successfully until the destination certificate store's certificate
-  inventory has been updated to include the deployed certificate.
+  By default a "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's
+  certificate inventory has been updated to include the deployed certificate.
+  The two opt-in attributes change what a successful apply means:
+  | skip_inventory_validation | fail_on_job_failure | Behavior after the job is submitted |
+  |---|---|---|
+  | false (default) | false (default) | Poll the store inventory until the certificate appears (or warn and return if the store has no inventory schedule). |
+  | false | true | Poll the orchestrator job and the store inventory together: a failed job fails the run immediately; success still requires the certificate to appear in inventory. Stores with no inventory schedule are validated by job status alone. |
+  | true | false | Return as soon as Keyfactor Command accepts the job (fire-and-forget). A green apply does not confirm the certificate reached the store. |
+  | true | true | Poll the orchestrator job until it reaches a final result: success completes the resource, failure fails the run. The store inventory is not consulted. |
+  [!NOTE]
+  "fail_on_job_failure" requires the Agent Management - Read permission (claim "/agents/management/read/") in Keyfactor
+  Command. A job that is never picked up by an orchestrator (e.g. the agent is offline) reports no failure and will
+  still be waited on indefinitely.
 ---
 
 # keyfactor_certificate_deployment (Resource)
 
-Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom" 
+Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
 API to deploy certificates to "keyfactor_certificate_store" resources.
 
 > [!IMPORTANT]
 > Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules.
-> A "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's certificate 
-> inventory has been updated to include the deployed certificate.
+> By default a "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's
+> certificate inventory has been updated to include the deployed certificate.
+
+The two opt-in attributes change what a successful apply means:
+
+| skip_inventory_validation | fail_on_job_failure | Behavior after the job is submitted |
+|---|---|---|
+| false (default) | false (default) | Poll the store inventory until the certificate appears (or warn and return if the store has no inventory schedule). |
+| false | true | Poll the orchestrator job and the store inventory together: a failed job fails the run immediately; success still requires the certificate to appear in inventory. Stores with no inventory schedule are validated by job status alone. |
+| true | false | Return as soon as Keyfactor Command accepts the job (fire-and-forget). A green apply does not confirm the certificate reached the store. |
+| true | true | Poll the orchestrator job until it reaches a final result: success completes the resource, failure fails the run. The store inventory is not consulted. |
+
+> [!NOTE]
+> "fail_on_job_failure" requires the Agent Management - Read permission (claim "/agents/management/read/") in Keyfactor
+> Command. A job that is never picked up by an orchestrator (e.g. the agent is offline) reports no failure and will
+> still be waited on indefinitely.
 
 ## Example Usage
 
@@ -50,6 +75,22 @@ resource "keyfactor_certificate_deployment" "ca_cert_deployment" {
     "Arbitrary" = "Value"
   }
 }
+
+# Deploy without waiting for the store inventory to confirm the deployment.
+# The apply completes as soon as Keyfactor Command accepts the management job,
+# and fails early if the orchestrator reports that the job failed.
+# fail_on_job_failure requires the Agent Management - Read permission
+# (claim /agents/management/read/) in Keyfactor Command.
+resource "keyfactor_certificate_deployment" "fast_deployment" {
+  certificate_id       = data.keyfactor_certificate.ca_cert.certificate_id
+  certificate_store_id = data.keyfactor_certificate_store.my_cert_store.id
+  certificate_alias    = data.keyfactor_certificate.ca_cert.thumbprint
+
+  # Do not poll the store inventory after submitting the deployment/removal job.
+  skip_inventory_validation = true
+  # Fail the run if the orchestrator job reports a final failure result.
+  fail_on_job_failure = true
+}
 ```
 
 <!-- schema generated by tfplugindocs -->
@@ -63,14 +104,14 @@ resource "keyfactor_certificate_deployment" "ca_cert_deployment" {
 ### Optional
 
 - `certificate_alias` (String) A string providing an alias to be used for the certificate upon entry into the certificate store. The function of the alias varies depending on the certificate store type. Please ensure that the alias is lowercase, or problems can arise in Terraform Plan. If not provided deployment validation will be done by Command certificate ID.
+- `fail_on_job_failure` (Boolean) If set to `true`, the provider tracks the orchestrator job(s) scheduled by this resource (both deployment and removal) via the Keyfactor Command `/OrchestratorJobs/JobHistory` API and fails the Terraform run if a job completes with a failure result. Jobs that fail but will be retried by Command are waited on until a final result is reached. Requires the authenticated identity to hold the Agent Management - Read permission (claim `/agents/management/read/`) in Keyfactor Command. Defaults to `false`.
 - `job_parameters` (Map of String) A map of entry parameters to be passed to the deployment job. These will only be used if the orchestrator extension supports them.
 - `key_password` (String, Sensitive) Password that protects PFX certificate, if the certificate was enrolled using PFX enrollment, or is password protected in general. This value cannot change, and Terraform will throw an error if a change is attempted.
 - `overwrite` (Boolean) If set to `true`, updating the `certificate_id` to a different certificate will overwrite the existing certificate in the store. If set to `false` or not set, updating the `certificate_id` will cause the resource to be replaced, and the existing certificate will be removed from the store before the new certificate is added.
 - `redeploy` (Boolean) If true, the certificate will be redeployed to the store. If false, the certificate will be deployed only if it is not already deployed to the store.
+- `skip_inventory_validation` (Boolean) If set to `true`, the provider will not poll the certificate store inventory to confirm that a deployment (or removal on destroy) completed. The management job is still submitted to Keyfactor Command and the single-pass duplicate-deployment pre-check still runs, but the resource completes as soon as the job is scheduled. A successful apply therefore does NOT confirm the certificate reached the store — combine with `fail_on_job_failure` to still fail the run when the orchestrator reports a job failure. Defaults to `false`.
 - `skip_removal` (Boolean) If set to `true`, deleting the resource will not remove the certificate from the store. Defaults to `false`.
 
 ### Read-Only
 
 - `id` (String) A unique identifier for this certificate deployment.
-
-

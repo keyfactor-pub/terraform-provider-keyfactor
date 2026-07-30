@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -369,6 +370,126 @@ func TestIntKeyfactorCertificateDeployResource_BothPaths(t *testing.T) {
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_id"),
 					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_store_id"),
 				),
+			},
+		},
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests — skip_inventory_validation / fail_on_job_failure
+//
+// These tests replay HAND-CRAFTED cassettes (fixed certificate ID 2429, store
+// f0cc1ede-3173-44b3-8368-ba1251ddb32e, and synthetic orchestrator job GUIDs).
+// Do NOT re-record them: the job-failure responses cannot be reproduced on
+// demand against a live lab. The tests skip themselves when RECORD_CASSETTES=1.
+// ---------------------------------------------------------------------------
+
+// deployOptInConfig renders a keyfactor_certificate_deployment config with fixed
+// certificate/store identifiers matching the hand-crafted opt-in cassettes.
+func deployOptInConfig(alias string, skipInventoryValidation, failOnJobFailure bool) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_deployment" "test" {
+  certificate_id            = 2429
+  certificate_store_id      = "f0cc1ede-3173-44b3-8368-ba1251ddb32e"
+  certificate_alias         = "%s"
+  skip_inventory_validation = %t
+  fail_on_job_failure       = %t
+}
+`, alias, skipInventoryValidation, failOnJobFailure)
+}
+
+// TestUnitKeyfactorCertificateDeployResource_SkipInventoryValidation verifies the
+// fire-and-forget mode: with skip_inventory_validation=true the apply completes as
+// soon as the management job is submitted. The cassette contains NO store-schedule
+// read and NO post-submit inventory polls — in ModeReplayOnly any such request
+// would fail to match and error the test.
+func TestUnitKeyfactorCertificateDeployResource_SkipInventoryValidation(t *testing.T) {
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("certificate_deploy_skip_validation is a hand-crafted cassette — do not re-record")
+	}
+	factories, cleanup := newVCRProviderFactoriesReplayable(t, "certificate_deploy_skip_validation")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: deployOptInConfig("tf-unit-skipval", true, false),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "skip_inventory_validation", "true"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "fail_on_job_failure", "false"),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateDeployResource_FailOnJobFailure verifies that a
+// terminal orchestrator job failure (JobHistory Status=Completed, Result=Failure)
+// fails the apply with the orchestrator's message when fail_on_job_failure=true
+// and inventory validation is skipped (job-status-only wait).
+func TestUnitKeyfactorCertificateDeployResource_FailOnJobFailure(t *testing.T) {
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("certificate_deploy_fail_on_job_failure is a hand-crafted cassette — do not re-record")
+	}
+	factories, cleanup := newVCRProviderFactoriesReplayable(t, "certificate_deploy_fail_on_job_failure")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config:      deployOptInConfig("tf-unit-jobfail", true, true),
+				ExpectError: regexp.MustCompile(`Orchestrator job failed\.`),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateDeployResource_JobWatchSuccess verifies the
+// job-status-only success path: with both flags set, the apply succeeds once the
+// deployment job reports Completed/Success (no inventory polling), and the destroy
+// succeeds once the removal job reports Completed/Success.
+func TestUnitKeyfactorCertificateDeployResource_JobWatchSuccess(t *testing.T) {
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("certificate_deploy_job_watch_success is a hand-crafted cassette — do not re-record")
+	}
+	factories, cleanup := newVCRProviderFactoriesReplayable(t, "certificate_deploy_job_watch_success")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: deployOptInConfig("tf-unit-jobok", true, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "skip_inventory_validation", "true"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "fail_on_job_failure", "true"),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateDeployResource_FailOnJobFailureWithInventory verifies
+// the interleaved mode (fail_on_job_failure=true, inventory validation active): the
+// store-schedule read still happens, and a terminal job failure fails the apply
+// before inventory validation succeeds.
+func TestUnitKeyfactorCertificateDeployResource_FailOnJobFailureWithInventory(t *testing.T) {
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("certificate_deploy_fail_on_job_failure_inv is a hand-crafted cassette — do not re-record")
+	}
+	factories, cleanup := newVCRProviderFactoriesReplayable(t, "certificate_deploy_fail_on_job_failure_inv")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config:      deployOptInConfig("tf-unit-jobfail-inv", false, true),
+				ExpectError: regexp.MustCompile(`Orchestrator job failed\.`),
 			},
 		},
 	})

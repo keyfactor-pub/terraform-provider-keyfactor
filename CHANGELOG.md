@@ -1,3 +1,16 @@
+# v2.10.0
+
+## Certificate Deployments
+
+### Features
+
+- feat: `keyfactor_certificate_deployment` new optional `skip_inventory_validation` attribute — skips the post-submit store-inventory polling on both deploy and destroy (fire-and-forget). The single-pass duplicate-deployment pre-check and Update drift repair still run. Note that a green apply then no longer confirms the certificate reached the store; combine with `fail_on_job_failure` for job-level confirmation
+- feat: `keyfactor_certificate_deployment` new optional `fail_on_job_failure` attribute — tracks the orchestrator job(s) created by the add/remove operations via `GET /OrchestratorJobs/JobHistory` and fails the Terraform run with the orchestrator's message when a job reaches a final failure result. Jobs that fail but will be retried by Command (`CompletedWillRetry`) are waited on until a final result. Stores with no inventory schedule (previously submitted with zero validation) are validated by job status when this flag is set. Requires the Agent Management - Read permission (claim `/agents/management/read/`) in Keyfactor Command
+
+### Fixes
+
+- fix: `keyfactor_certificate_deployment` Create's deployment-validation failure diagnostic reported the wrong error message (the initial pre-check result instead of the validation error)
+
 # v2.9.1
 
 ## Template Role Bindings 

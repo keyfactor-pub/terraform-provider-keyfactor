@@ -494,3 +494,127 @@ func TestUnitKeyfactorCertificateDeployResource_FailOnJobFailureWithInventory(t 
 		},
 	})
 }
+
+// TestUnitKeyfactorCertificateDeployResource_JobWatchWillRetry verifies the
+// CompletedWillRetry (Status=5) -> Completed/Success (Status=3, Result=2)
+// transition: the first JobHistory poll reports a retry-pending attempt, and
+// waitForJobsAndInventory must keep polling (not treat willRetry as terminal
+// or as a failure) until the second poll reports success. Uses the
+// consume-once VCR factory (newVCRProviderFactories) because the two
+// sequential polls of the SAME job ID/query string must return DIFFERENT
+// responses in order -- a replayable cassette would return the first
+// (willRetry) response forever.
+func TestUnitKeyfactorCertificateDeployResource_JobWatchWillRetry(t *testing.T) {
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("certificate_deploy_job_watch_willretry is a hand-crafted cassette — do not re-record")
+	}
+	factories, cleanup := newVCRProviderFactories(t, "certificate_deploy_job_watch_willretry")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: deployOptInConfig("tf-unit-willretry", true, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "skip_inventory_validation", "true"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "fail_on_job_failure", "true"),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateDeployResource_JobWatchForbidden verifies that a
+// 403 (Forbidden) response from GET /OrchestratorJobs/JobHistory -- as happens
+// when the authenticated identity lacks the Agent Management - Read permission
+// -- surfaces as an actionable error naming the missing permission/claim,
+// rather than a generic HTTP error. The Add job is already submitted at this
+// point (T2), so Create persists tainted state and the subsequent implicit
+// destroy must run for real: the cassette carries honest Remove + JobHistory
+// success interactions for it (see pr-189 triage Q5 -- a cassette missing
+// those interactions would make the destroy vacuously "succeed" by tripping
+// Delete's not-found fallback instead of actually exercising removal).
+func TestUnitKeyfactorCertificateDeployResource_JobWatchForbidden(t *testing.T) {
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("certificate_deploy_job_watch_forbidden is a hand-crafted cassette — do not re-record")
+	}
+	factories, cleanup := newVCRProviderFactoriesReplayable(t, "certificate_deploy_job_watch_forbidden")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config:      deployOptInConfig("tf-unit-permerr", true, true),
+				ExpectError: regexp.MustCompile(`Agent Management - Read|/agents/management/read/`),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateDeployResource_JobWatchLag verifies the
+// not-yet-picked-up-by-an-orchestrator case: the first JobHistory poll
+// returns an empty array (no history yet -- getLatestJobHistoryEntry returns
+// a nil entry, evaluateJobHistoryEntry treats that as non-terminal), so
+// waitForJobsAndInventory must loop rather than treat the empty response as a
+// failure. The second poll reports Completed/Success and the apply succeeds.
+// Consume-once (newVCRProviderFactories) is required: the two polls hit the
+// identical URL/query string but must return different bodies in sequence.
+func TestUnitKeyfactorCertificateDeployResource_JobWatchLag(t *testing.T) {
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("certificate_deploy_job_watch_lag is a hand-crafted cassette — do not re-record")
+	}
+	factories, cleanup := newVCRProviderFactories(t, "certificate_deploy_job_watch_lag")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: deployOptInConfig("tf-unit-lag", true, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "skip_inventory_validation", "true"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "fail_on_job_failure", "true"),
+				),
+			},
+		},
+	})
+}
+
+// TestUnitKeyfactorCertificateDeployResource_JobWatchAcknowledged is a T3
+// regression test: the ONLY JobHistory response the cassette ever returns is
+// Status=4 (Acknowledged), Result=2 (Success). Post-T3, evaluateJobHistoryEntry
+// treats Acknowledged as terminal (same as Completed) so the apply must
+// succeed on the very first poll. Pre-T3, Acknowledged fell through to the
+// "not completed yet" branch: since the cassette is replayable and always
+// returns the same Acknowledged entry, a regression here does not fail fast --
+// it polls forever with the same exponential backoff as every other wait loop
+// in this resource, and the test hangs until `go test`'s own -timeout kills
+// the run. That is the deliberate, justified failure mode: there is no
+// resource-level or SDK-level deadline to hook from test code without
+// production-code changes (out of scope for this QA pass), and a hung/timed-
+// out run is an unambiguous, visible regression signal in CI.
+func TestUnitKeyfactorCertificateDeployResource_JobWatchAcknowledged(t *testing.T) {
+	if os.Getenv("RECORD_CASSETTES") == "1" {
+		t.Skip("certificate_deploy_job_watch_acknowledged is a hand-crafted cassette — do not re-record")
+	}
+	factories, cleanup := newVCRProviderFactoriesReplayable(t, "certificate_deploy_job_watch_acknowledged")
+	defer cleanup()
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				Config: deployOptInConfig("tf-unit-ack", true, true),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "skip_inventory_validation", "true"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "fail_on_job_failure", "true"),
+				),
+			},
+		},
+	})
+}

@@ -103,7 +103,7 @@ interactions:
         headers:
             Accept:
                 - application/json
-        url: https://int25-4-1.kftestlab.com/Keyfactor/API/OrchestratorJobs/JobHistory?QueryString=JobId+-eq+%22dddddddd-4444-4444-8444-000000000001%22
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/OrchestratorJobs/JobHistory?QueryString=JobId+-eq+%22dddddddd-4444-4444-8444-000000000001%22&ReturnLimit=100&SortAscending=1&SortField=JobHistoryId
         method: GET
       response:
         proto: HTTP/1.1

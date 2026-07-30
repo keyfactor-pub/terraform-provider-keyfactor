@@ -630,23 +630,42 @@ func TestUnitKeyfactorCertificateDeployResource_JobWatchAcknowledged(t *testing.
 }
 
 // TestUnitKeyfactorCertificateDeployResource_JobWatchNoSchedule is a T1
-// regression test for the schedule-less-fallback branch: with
-// skip_inventory_validation=false and fail_on_job_failure=true, the
-// destination store's InventorySchedule has every member (Immediate,
-// Interval, Daily, ExactlyOnce) null. Create's storeHasInventorySchedule
-// probe must see hasInventorySchedule=false and, because fail_on_job_failure
-// is set, fall back to job-status-only validation instead of ever building an
+// regression test for the schedule-less-fallback branch in BOTH Create and
+// Delete: with skip_inventory_validation=false and fail_on_job_failure=true,
+// the destination store's InventorySchedule has every member (Immediate,
+// Interval, Daily, ExactlyOnce) null. Each of Create's and Delete's own
+// storeHasInventorySchedule probe must independently see
+// hasInventorySchedule=false and, because fail_on_job_failure is set, fall
+// back to job-status-only validation instead of ever building an
 // inventory-based wait (which would poll a schedule-less store forever, per
-// T1's original bug). The apply succeeds on the deployment job's terminal
-// success, with no post-submit inventory poll -- unreachable in replay-only
-// mode, since any unexpected request would fail to match the cassette and
-// error the test. The implicit destroy exercises the same schedule probe in
-// Delete (also T1) and succeeds on the removal job's terminal success.
+// T1's original bug).
+//
+// Uses the consume-once VCR factory (newVCRProviderFactories), NOT the
+// replayable one: the cassette carries a separate, single-use interaction for
+// each occurrence of every repeated URL, including the extra cert-context GET
+// the terraform-plugin-testing framework issues for its post-apply "plan for
+// no changes" refresh (Create's cert read, that refresh read, and Delete's own
+// cert read are three distinct interactions in call order). A regression that
+// dropped EITHER probe's gate (making that phase's wait unconditionally
+// inventory-based, which never terminates against this schedule-less store)
+// makes the code issue an extra, un-cassetted inventory-poll request
+// (deploymentPresentInInventory/undeploymentStillPresent's GetCertStoreInventory
+// call) that has no un-replayed matching interaction -- go-vcr returns
+// ErrInteractionNotFound and the test fails (empirically verified for both the
+// Create-probe and Delete-probe gates by reverting each in turn). This guards
+// a regression of the Create probe OR the Delete probe; it does not by itself
+// distinguish which one regressed. It also, incidentally, guards against the
+// destroy phase silently no-op'ing via Delete's pre-existing "not found"
+// fallback (F1): if the cassette under-counts the cert-context GET
+// occurrences, that fallback swallows the resulting VCR error as "already
+// gone" and the test passes without ever reaching Remove/JobHistory --
+// exactly why this cassette carries three separate cert-context GET
+// interactions instead of two.
 func TestUnitKeyfactorCertificateDeployResource_JobWatchNoSchedule(t *testing.T) {
 	if os.Getenv("RECORD_CASSETTES") == "1" {
 		t.Skip("certificate_deploy_job_watch_no_schedule is a hand-crafted cassette — do not re-record")
 	}
-	factories, cleanup := newVCRProviderFactoriesReplayable(t, "certificate_deploy_job_watch_no_schedule")
+	factories, cleanup := newVCRProviderFactories(t, "certificate_deploy_job_watch_no_schedule")
 	defer cleanup()
 
 	resource.UnitTest(t, resource.TestCase{

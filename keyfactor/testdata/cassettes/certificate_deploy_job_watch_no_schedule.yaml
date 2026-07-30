@@ -74,9 +74,6 @@ interactions:
     # member is null): Create's storeHasInventorySchedule probe (T1) sees
     # hasInventorySchedule=false and, with fail_on_job_failure=true, falls back
     # to job-status-only validation instead of ever consulting inventory again.
-    # This same store GET is replayed a second time during the implicit test
-    # destroy, when Delete runs its own T1 probe before its wait (replayable
-    # cassette — see newVCRProviderFactoriesReplayable below).
     - id: 3
       request:
         proto: HTTP/1.1
@@ -123,7 +120,70 @@ interactions:
         status: 200 OK
         code: 200
         duration: 1ms
+    # The terraform-plugin-testing framework performs a post-apply "plan for no
+    # changes" check after this TestStep, which calls Read (GetCertificateContext)
+    # once more before the implicit destroy begins -- a THIRD occurrence of this
+    # same URL, distinct from both Create's initial read (id 0) and Delete's own
+    # read below (id 6). Omitting this interaction is exactly the R1''-adjacent
+    # trap: without it, Delete's real GetCertificateContext call (id 6) finds no
+    # un-replayed match, errors with go-vcr's "requested interaction not found",
+    # and Delete's pre-existing strings.Contains(err.Error(), "not found")
+    # fallback (F1) swallows that as a benign "already gone" and calls
+    # RemoveResource WITHOUT ever reaching the Remove POST, the T1 store probe,
+    # or the JobHistory wait -- i.e. exactly the kind of vacuous destroy this
+    # test exists to rule out.
     - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/2429?includeLocations=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '{"Id":2429,"Thumbprint":"D25F423760A047052E0B064B4B756E00B800C476","IssuedCN":"tf-unit-deploy.example.com","IssuedDN":"CN=tf-unit-deploy.example.com","Locations":[],"LocationsCount":[],"SSLLocations":[],"Metadata":{}}'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    # Destroy phase begins here. certificate_alias is set explicitly in the test
+    # config, so Delete's alias-lookup-from-inventory block is never entered --
+    # the first destroy-phase request is removeCertificateAliasFromStore's own
+    # GetCertificateContext read (same URL as ids 0 and 5, but a distinct,
+    # separately consumed interaction under the consume-once VCR factory).
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/2429?includeLocations=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '{"Id":2429,"Thumbprint":"D25F423760A047052E0B064B4B756E00B800C476","IssuedCN":"tf-unit-deploy.example.com","IssuedDN":"CN=tf-unit-deploy.example.com","Locations":[],"LocationsCount":[],"SSLLocations":[],"Metadata":{}}'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 7
       request:
         proto: HTTP/1.1
         proto_major: 1
@@ -146,7 +206,38 @@ interactions:
         status: 200 OK
         code: 200
         duration: 1ms
-    - id: 6
+    # Delete's own T1 probe (storeHasInventorySchedule), run after the Remove job
+    # is submitted and before waitForJobsAndInventory. Same all-null-schedule
+    # store body as id 3: a regression that made this probe unconditional
+    # (skipping the gate) would still hit this interaction, but a regression
+    # that DROPPED the probe (or the destroy-phase job wait) would leave this
+    # interaction un-replayed and the subsequent JobHistory GET (id 9) would not
+    # be reached in the expected order -- either way a missing/duplicated
+    # request here surfaces as an unmatched-interaction error under consume-once.
+    - id: 8
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/f0cc1ede-3173-44b3-8368-ba1251ddb32e
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '{"Id":"f0cc1ede-3173-44b3-8368-ba1251ddb32e","ContainerId":null,"DisplayName":"container_uo-25-4 - default/tf-unit-deploy","ClientMachine":"container_uo-25-4","Storepath":"default/tf-unit-deploy","CertStoreType":154,"Approved":true,"CreateIfMissing":false,"AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","AgentAssigned":true,"ContainerName":null,"InventorySchedule":{"Immediate":null,"Interval":null,"Daily":null,"ExactlyOnce":null}}'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 9
       request:
         proto: HTTP/1.1
         proto_major: 1

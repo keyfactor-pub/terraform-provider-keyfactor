@@ -673,6 +673,9 @@ func (r resourceCommandCertificateDeployment) Update(
 				// schedule is present, matching Create's behavior.
 				hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
 				if storeReadErr != nil {
+					tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
+				}
+				if storeReadErr != nil {
 					tflog.Info(ctx, fmt.Sprintf("Store read failed (%s); falling back to job-status-only validation.", storeReadErr.Error()))
 				} else if !hasInventorySchedule {
 					tflog.Info(ctx, "Store has no inventory schedule; falling back to job-status-only validation.")
@@ -859,6 +862,9 @@ func (r resourceCommandCertificateDeployment) Delete(
 			// inventory-based wait (T1): the diff store is always the single
 			// element built from storeId above.
 			hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
+			if storeReadErr != nil {
+				tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
+			}
 			if storeReadErr != nil {
 				tflog.Info(ctx, fmt.Sprintf("Store read failed (%s); falling back to job-status-only validation.", storeReadErr.Error()))
 			} else if !hasInventorySchedule {

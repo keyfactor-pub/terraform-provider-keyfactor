@@ -504,6 +504,16 @@ func TestUnitKeyfactorCertificateDeployResource_FailOnJobFailureWithInventory(t 
 // sequential polls of the SAME job ID/query string must return DIFFERENT
 // responses in order -- a replayable cassette would return the first
 // (willRetry) response forever.
+//
+// Known blind spot (R2', accepted): this test only proves that Status=5 is
+// not (mis)treated as a terminal failure -- it cannot distinguish
+// evaluateJobHistoryEntry's willRetry branch from its default
+// (non-terminal/"not completed yet") branch, since both cause
+// waitForJobsAndInventory to loop identically to the next poll. A regression
+// that dropped the willRetry case entirely (falling through to default)
+// would still pass this test. Closing that gap would require asserting on
+// the tflog output of the willRetry-specific warning log line, which is out
+// of scope for a replay-only cassette test; accepted as-is.
 func TestUnitKeyfactorCertificateDeployResource_JobWatchWillRetry(t *testing.T) {
 	if os.Getenv("RECORD_CASSETTES") == "1" {
 		t.Skip("certificate_deploy_job_watch_willretry is a hand-crafted cassette — do not re-record")

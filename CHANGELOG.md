@@ -15,6 +15,10 @@
 - fix: `keyfactor_certificate_deployment` orchestrator job status Acknowledged (Status=4) is now treated as a terminal result, like Completed, when evaluating `fail_on_job_failure` job history — previously a job that settled on Acknowledged as its latest history entry would poll forever
 - fix: `keyfactor_certificate_deployment` the `fail_on_job_failure` orchestrator `JobHistory` lookup now sorts descending by `JobHistoryId` with an explicit return limit, instead of relying on the server's undocumented default page size/sort, so the "latest" job history entry is determined deterministically even for jobs with many retry attempts
 
+## Chores
+
+- chore(deps): security bumps resolving all 15 open Dependabot alerts (7 critical, 3 high, 5 moderate): `golang.org/x/crypto` v0.47.0 → v0.52.0 (SSH auth-bypass/DoS advisories incl. GHSA-vgwf-h737-ff37, GHSA-jppx-rxg9-jmrx), `google.golang.org/grpc` v1.79.3 → v1.82.1 (GHSA-hrxh-6v49-42gf xDS RBAC/HTTP2), `golang.org/x/net` v0.49.0 → v0.55.0 (HTML parser DoS), plus transitive `x/sys`/`x/text`/`x/tools`/`protobuf` updates. All indirect dependencies; no Terraform plugin framework or Keyfactor client changes. Minimum Go toolchain moves 1.24 → 1.25 (required by the updated dependencies)
+
 # v2.9.1
 
 ## Template Role Bindings 

@@ -93,6 +93,16 @@ interactions:
         status: 403 Forbidden
         code: 403
         duration: 1ms
+    # Interactions 4-5 are the test framework's implicit destroy of the tainted
+    # resource left behind by the 403 above. This is a test-harness necessity:
+    # resource.UnitTest requires cleanup destroy to complete so the test itself
+    # doesn't leak state, so interaction 5's JobHistory poll below is hand-crafted
+    # to return a terminal 200/success rather than the honest 403 the same
+    # under-permissioned identity would actually receive. A real destroy of this
+    # tainted resource with the same identity would 403 exactly like interaction 3
+    # did on Create (see U1/pr-189 CHANGELOG note + resource schema [!NOTE]) --
+    # the permission must be granted, or the resource removed from state manually,
+    # before a real destroy can succeed.
     - id: 4
       request:
         proto: HTTP/1.1

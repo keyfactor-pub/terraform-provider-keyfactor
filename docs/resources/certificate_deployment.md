@@ -22,6 +22,11 @@ description: |-
   still be waited on indefinitely. Orchestrator job-history messages surfaced in Terraform diagnostics and logs are
   authored by the orchestrator extension and passed through verbatim, so they may contain infrastructure detail
   (hostnames, paths, internal error text).
+  A resource whose apply failed under "fail_on_job_failure" (for example, a permission error while watching the job)
+  still persists tainted state so the deployment is not lost. Destroying that resource still requires the same
+  Agent Management - Read permission: destroy submits its own removal job and polls its status the same way Create
+  does. Grant the permission before destroying, or remove the resource from state manually
+  ("terraform state rm") if the removal job itself is not needed.
 ---
 
 # keyfactor_certificate_deployment (Resource)
@@ -49,6 +54,11 @@ The two opt-in attributes change what a successful apply means:
 > still be waited on indefinitely. Orchestrator job-history messages surfaced in Terraform diagnostics and logs are
 > authored by the orchestrator extension and passed through verbatim, so they may contain infrastructure detail
 > (hostnames, paths, internal error text).
+> A resource whose apply failed under "fail_on_job_failure" (for example, a permission error while watching the job)
+> still persists tainted state so the deployment is not lost. Destroying that resource still requires the same
+> Agent Management - Read permission: destroy submits its own removal job and polls its status the same way Create
+> does. Grant the permission before destroying, or remove the resource from state manually
+> ("terraform state rm") if the removal job itself is not needed.
 
 ## Example Usage
 

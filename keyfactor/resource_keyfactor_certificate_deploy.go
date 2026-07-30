@@ -215,7 +215,8 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 			" `keyfactor_certificate_store` resources. " +
 			"*NOTE:* The jobs are run asynchronously, and depend on orchestrator agent check in schedules. By default the provider will wait for the job to complete successfully and may run for a long time. " +
 			"Use `skip_inventory_validation` and/or `fail_on_job_failure` to change what a successful apply means: by default success requires the certificate to appear in the store inventory; with `fail_on_job_failure` a failed orchestrator job fails the run early; with `skip_inventory_validation` the resource completes once the job is scheduled (or, combined with `fail_on_job_failure`, once the job itself reports success). " +
-			"With `fail_on_job_failure` set, orchestrator job-history messages are surfaced verbatim into Terraform diagnostics and may contain infrastructure detail.",
+			"With `fail_on_job_failure` set, orchestrator job-history messages are surfaced verbatim into Terraform diagnostics and may contain infrastructure detail. " +
+			"A resource whose apply failed under `fail_on_job_failure` (e.g. a permission error) still persists tainted state; destroying that resource still requires the same Agent Management - Read permission, since destroy submits its own removal job and polls its status the same way — grant the permission, or remove the resource from state manually (`terraform state rm`) if the removal job is not needed.",
 		MarkdownDescription: `
 Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
 API to deploy certificates to "keyfactor_certificate_store" resources.
@@ -240,6 +241,11 @@ The two opt-in attributes change what a successful apply means:
 > still be waited on indefinitely. Orchestrator job-history messages surfaced in Terraform diagnostics and logs are
 > authored by the orchestrator extension and passed through verbatim, so they may contain infrastructure detail
 > (hostnames, paths, internal error text).
+> A resource whose apply failed under "fail_on_job_failure" (for example, a permission error while watching the job)
+> still persists tainted state so the deployment is not lost. Destroying that resource still requires the same
+> Agent Management - Read permission: destroy submits its own removal job and polls its status the same way Create
+> does. Grant the permission before destroying, or remove the resource from state manually
+> ("terraform state rm") if the removal job itself is not needed.
 `,
 	}, nil
 }

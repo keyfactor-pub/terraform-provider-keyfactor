@@ -30,13 +30,35 @@ const (
 	orchJobResultFailure int32 = 4
 
 	orchJobStatusCompleted          int32 = 3
+	orchJobStatusAcknowledged       int32 = 4
 	orchJobStatusCompletedWillRetry int32 = 5
+
+	// jobHistoryReturnLimit bounds the /OrchestratorJobs/JobHistory response for a
+	// single job ID. Combined with the descending JobHistoryId sort below, the
+	// first page reliably contains the latest attempt even for a job that has
+	// been retried many times, without relying on the server's undocumented
+	// default page size/sort (T4).
+	jobHistoryReturnLimit int32 = 100
 )
 
 // tfBoolValue returns the value of an optional framework bool attribute,
 // treating null/unknown as false.
 func tfBoolValue(b types.Bool) bool {
 	return !b.Null && !b.Unknown && b.Value
+}
+
+// storeHasInventorySchedule reports whether the certificate store storeId has any
+// inventory schedule configured (Immediate, Interval, Daily, or ExactlyOnce). When
+// the store read itself fails, readErr is returned and hasSchedule is always false —
+// callers must distinguish "store read failed" from "store genuinely has no
+// schedule" in their own logging/diagnostics rather than conflating the two.
+func storeHasInventorySchedule(conn *api.Client, storeId string) (hasSchedule bool, readErr error) {
+	storeResp, err := conn.GetCertificateStoreByID(storeId)
+	if err != nil {
+		return false, err
+	}
+	sched := storeResp.InventorySchedule
+	return sched.Immediate != nil || sched.Interval != nil || sched.Daily != nil || sched.ExactlyOnce != nil, nil
 }
 
 // deploymentOverwriteOnCertIDChange is a plan modifier used by the certificate
@@ -192,7 +214,8 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 			"/management) job on Keyfactor Command using the `/OrchestratorJobs/Custom` API to deploy certificates to" +
 			" `keyfactor_certificate_store` resources. " +
 			"*NOTE:* The jobs are run asynchronously, and depend on orchestrator agent check in schedules. By default the provider will wait for the job to complete successfully and may run for a long time. " +
-			"Use `skip_inventory_validation` and/or `fail_on_job_failure` to change what a successful apply means: by default success requires the certificate to appear in the store inventory; with `fail_on_job_failure` a failed orchestrator job fails the run early; with `skip_inventory_validation` the resource completes once the job is scheduled (or, combined with `fail_on_job_failure`, once the job itself reports success).",
+			"Use `skip_inventory_validation` and/or `fail_on_job_failure` to change what a successful apply means: by default success requires the certificate to appear in the store inventory; with `fail_on_job_failure` a failed orchestrator job fails the run early; with `skip_inventory_validation` the resource completes once the job is scheduled (or, combined with `fail_on_job_failure`, once the job itself reports success). " +
+			"With `fail_on_job_failure` set, orchestrator job-history messages are surfaced verbatim into Terraform diagnostics and may contain infrastructure detail.",
 		MarkdownDescription: `
 Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
 API to deploy certificates to "keyfactor_certificate_store" resources.
@@ -214,7 +237,9 @@ The two opt-in attributes change what a successful apply means:
 > [!NOTE]
 > "fail_on_job_failure" requires the Agent Management - Read permission (claim "/agents/management/read/") in Keyfactor
 > Command. A job that is never picked up by an orchestrator (e.g. the agent is offline) reports no failure and will
-> still be waited on indefinitely.
+> still be waited on indefinitely. Orchestrator job-history messages surfaced in Terraform diagnostics and logs are
+> authored by the orchestrator extension and passed through verbatim, so they may contain infrastructure detail
+> (hostnames, paths, internal error text).
 `,
 	}, nil
 }
@@ -347,19 +372,19 @@ func (r resourceCommandCertificateDeployment) Create(
 		// validation when fail_on_job_failure is set.
 		doInventoryValidation := false
 		if !skipInventoryValidation {
-			storeResp, storeReadErr := kfClient.GetCertificateStoreByID(storeId)
-			hasInventorySchedule := false
-			if storeReadErr == nil {
-				sched := storeResp.InventorySchedule
-				hasInventorySchedule = sched.Immediate != nil || sched.Interval != nil || sched.Daily != nil || sched.ExactlyOnce != nil
-			} else {
+			hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
+			if storeReadErr != nil {
 				tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
 			}
 
 			if hasInventorySchedule {
 				doInventoryValidation = true
 			} else if failOnJobFailure {
-				tflog.Info(ctx, "Store has no inventory schedule; deployment will be validated via orchestrator job status only.")
+				if storeReadErr != nil {
+					tflog.Info(ctx, fmt.Sprintf("Store read failed (%s); falling back to job-status-only validation.", storeReadErr.Error()))
+				} else {
+					tflog.Info(ctx, "Store has no inventory schedule; falling back to job-status-only validation.")
+				}
 			} else {
 				response.Diagnostics.AddWarning(
 					"Deployment submitted without inventory schedule.",
@@ -389,6 +414,32 @@ func (r resourceCommandCertificateDeployment) Create(
 				operation:      fmt.Sprintf("deployment of certificate '%v' to store '%s (%s)'", certificateId, storeId, certificateAlias),
 			})
 			response.Diagnostics.Append(waitDiags...)
+			if response.Diagnostics.HasError() {
+				// The Add job was already submitted to Keyfactor Command before this
+				// wait began (T2): persist state now so a failed wait (an
+				// orchestrator job failure, or e.g. the permission error from
+				// getLatestJobHistoryEntry) leaves a tainted resource in state
+				// instead of nothing at all. Without this, a mis-permissioned
+				// identity resubmits a brand new management job on every
+				// subsequent apply with nothing ever recorded in state.
+				result := CommandCertificateDeployment{
+					ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
+					CertificateId:    plan.CertificateId,
+					StoreId:          plan.StoreId,
+					CertificateAlias: plan.CertificateAlias,
+					KeyPassword:      plan.KeyPassword,
+					JobParameters:    plan.JobParameters,
+					Redeploy:         plan.Redeploy,
+					Overwrite:        plan.Overwrite,
+					SkipRemoval:      plan.SkipRemoval,
+
+					SkipInventoryValidation: plan.SkipInventoryValidation,
+					FailOnJobFailure:        plan.FailOnJobFailure,
+				}
+				stateDiags := response.State.Set(ctx, result)
+				response.Diagnostics.Append(stateDiags...)
+				return
+			}
 		} else if doInventoryValidation {
 			//vErr2 := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 100000)
 			vErr2 := validateDeployment(
@@ -615,8 +666,20 @@ func (r resourceCommandCertificateDeployment) Update(
 		if failOnJobFailure {
 			var inventoryCheck func() (bool, error)
 			if !skipInventoryValidation {
-				inventoryCheck = func() (bool, error) {
-					return deploymentPresentInInventory(ctx, kfClient, storeId, certificateAlias, certificateData)
+				// Probe the store's inventory schedule before committing to an
+				// inventory-based wait: a schedule-less store never satisfies
+				// deploymentPresentInInventory, which would otherwise poll
+				// forever (T1). Fall back to job-status-only validation when no
+				// schedule is present, matching Create's behavior.
+				hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
+				if storeReadErr != nil {
+					tflog.Info(ctx, fmt.Sprintf("Store read failed (%s); falling back to job-status-only validation.", storeReadErr.Error()))
+				} else if !hasInventorySchedule {
+					tflog.Info(ctx, "Store has no inventory schedule; falling back to job-status-only validation.")
+				} else {
+					inventoryCheck = func() (bool, error) {
+						return deploymentPresentInInventory(ctx, kfClient, storeId, certificateAlias, certificateData)
+					}
 				}
 			}
 			waitDiags := waitForJobsAndInventory(ctx, r.p.sdkClient, deploymentJobWatch{
@@ -792,17 +855,27 @@ func (r resourceCommandCertificateDeployment) Delete(
 	if failOnJobFailure {
 		var inventoryCheck func() (bool, error)
 		if !skipInventoryValidation {
-			inventoryCheck = func() (bool, error) {
-				for _, store := range diff {
-					stillPresent, invErr := undeploymentStillPresent(ctx, kfClient, store.CertificateStoreId, certificateAlias, certificateData)
-					if invErr != nil {
-						return false, invErr
+			// Probe the store's inventory schedule before committing to an
+			// inventory-based wait (T1): the diff store is always the single
+			// element built from storeId above.
+			hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
+			if storeReadErr != nil {
+				tflog.Info(ctx, fmt.Sprintf("Store read failed (%s); falling back to job-status-only validation.", storeReadErr.Error()))
+			} else if !hasInventorySchedule {
+				tflog.Info(ctx, "Store has no inventory schedule; falling back to job-status-only validation.")
+			} else {
+				inventoryCheck = func() (bool, error) {
+					for _, store := range diff {
+						stillPresent, invErr := undeploymentStillPresent(ctx, kfClient, store.CertificateStoreId, certificateAlias, certificateData)
+						if invErr != nil {
+							return false, invErr
+						}
+						if stillPresent {
+							return false, nil
+						}
 					}
-					if stillPresent {
-						return false, nil
-					}
+					return true, nil
 				}
-				return true, nil
 			}
 		}
 		waitDiags := waitForJobsAndInventory(ctx, r.p.sdkClient, deploymentJobWatch{
@@ -1051,6 +1124,10 @@ func deploymentPresentInInventory(
 	if invErr != nil {
 		return false, invErr
 	}
+	// check if inv is empty or nil
+	if inv == nil || len(*inv) == 0 {
+		return false, nil
+	}
 	for _, cert := range *inv {
 		if cert.Name == certAlias {
 			// Iterate through Certificates in the store and check if the certificate we're looking for is there
@@ -1230,7 +1307,10 @@ type jobWatchOutcome struct {
 
 // getLatestJobHistoryEntry queries GET /OrchestratorJobs/JobHistory for the given job ID
 // and returns the entry with the highest JobHistoryId (the latest attempt), or nil when
-// the job has not produced any history yet (not picked up by an orchestrator).
+// the job has not produced any history yet (not picked up by an orchestrator). The
+// request sorts descending by JobHistoryId and caps the page at jobHistoryReturnLimit
+// so the latest attempt is deterministically on the first (only) page returned; the
+// client-side max-JobHistoryId scan below is kept as a belt-and-suspenders check (T4).
 func getLatestJobHistoryEntry(
 	ctx context.Context,
 	sdkClient *keyfactor.APIClient,
@@ -1241,6 +1321,9 @@ func getLatestJobHistoryEntry(
 	}
 	entries, httpResp, err := sdkClient.V1.OrchestratorJobApi.NewGetOrchestratorJobsJobHistoryRequest(ctx).
 		QueryString(fmt.Sprintf(`JobId -eq "%s"`, jobID)).
+		SortField("JobHistoryId").
+		SortAscending(v1.KEYFACTORCOMMONQUERYABLEEXTENSIONSSORTORDER__1). // 1 = descending
+		ReturnLimit(jobHistoryReturnLimit).
 		Execute()
 	if err != nil {
 		if httpResp != nil && (httpResp.StatusCode == http.StatusUnauthorized || httpResp.StatusCode == http.StatusForbidden) {
@@ -1264,7 +1347,8 @@ func getLatestJobHistoryEntry(
 }
 
 // evaluateJobHistoryEntry interprets a job history entry per the Result/Status code
-// mappings documented on the orchJob* constants. A Completed status with an Unknown
+// mappings documented on the orchJob* constants. Completed and Acknowledged are both
+// terminal statuses (the job will not run again); a terminal status with an Unknown
 // result is treated as terminal-without-failure. CompletedWillRetry is not terminal:
 // Keyfactor Command will run the job again.
 func evaluateJobHistoryEntry(entry *v1.CertificateStoresJobHistoryResponse) jobWatchOutcome {
@@ -1279,7 +1363,7 @@ func evaluateJobHistoryEntry(entry *v1.CertificateStoresJobHistoryResponse) jobW
 		return outcome
 	}
 	switch int32(*entry.Status) {
-	case orchJobStatusCompleted:
+	case orchJobStatusCompleted, orchJobStatusAcknowledged:
 		outcome.terminal = true
 		if entry.Result != nil {
 			switch int32(*entry.Result) {
@@ -1287,6 +1371,9 @@ func evaluateJobHistoryEntry(entry *v1.CertificateStoresJobHistoryResponse) jobW
 				outcome.failed = true
 			case orchJobResultWarning:
 				outcome.warning = true
+			case orchJobResultSuccess:
+				// Explicit no-op: success is the terminal state absent a
+				// failure or warning result above.
 			}
 		}
 	case orchJobStatusCompletedWillRetry:

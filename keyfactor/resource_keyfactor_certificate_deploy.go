@@ -300,6 +300,25 @@ func (r resourceCommandCertificateDeployment) Create(
 	_ = plan.JobParameters.ElementsAs(ctx, &jobParams, false)
 	hid := fmt.Sprintf("%v-%s-%s", certificateId, storeId, certificateAlias)
 
+	// Built once here since every input (hid, plan.*) is available before the
+	// duplicate-deployment/job-wait branching below, and reused both for the
+	// T2 tainted-state early return and the normal end-of-Create state set —
+	// the two call sites were previously identical struct literals (U2).
+	result := CommandCertificateDeployment{
+		ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
+		CertificateId:    plan.CertificateId,
+		StoreId:          plan.StoreId,
+		CertificateAlias: plan.CertificateAlias,
+		KeyPassword:      plan.KeyPassword,
+		JobParameters:    plan.JobParameters,
+		Redeploy:         plan.Redeploy,
+		Overwrite:        plan.Overwrite,
+		SkipRemoval:      plan.SkipRemoval,
+
+		SkipInventoryValidation: plan.SkipInventoryValidation,
+		FailOnJobFailure:        plan.FailOnJobFailure,
+	}
+
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
 	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
 	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
@@ -427,21 +446,11 @@ func (r resourceCommandCertificateDeployment) Create(
 				// getLatestJobHistoryEntry) leaves a tainted resource in state
 				// instead of nothing at all. Without this, a mis-permissioned
 				// identity resubmits a brand new management job on every
-				// subsequent apply with nothing ever recorded in state.
-				result := CommandCertificateDeployment{
-					ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
-					CertificateId:    plan.CertificateId,
-					StoreId:          plan.StoreId,
-					CertificateAlias: plan.CertificateAlias,
-					KeyPassword:      plan.KeyPassword,
-					JobParameters:    plan.JobParameters,
-					Redeploy:         plan.Redeploy,
-					Overwrite:        plan.Overwrite,
-					SkipRemoval:      plan.SkipRemoval,
-
-					SkipInventoryValidation: plan.SkipInventoryValidation,
-					FailOnJobFailure:        plan.FailOnJobFailure,
-				}
+				// subsequent apply with nothing ever recorded in state. Note
+				// this does not fully resolve the permission case: destroying
+				// this tainted resource still requires the same Agent
+				// Management - Read permission, since Delete submits its own
+				// Remove job and polls its status the same way.
 				stateDiags := response.State.Set(ctx, result)
 				response.Diagnostics.Append(stateDiags...)
 				return
@@ -474,21 +483,6 @@ func (r resourceCommandCertificateDeployment) Create(
 	}
 
 	// Set state
-	var result = CommandCertificateDeployment{
-		ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
-		CertificateId:    plan.CertificateId,
-		StoreId:          plan.StoreId,
-		CertificateAlias: plan.CertificateAlias,
-		KeyPassword:      plan.KeyPassword,
-		JobParameters:    plan.JobParameters,
-		Redeploy:         plan.Redeploy,
-		Overwrite:        plan.Overwrite,
-		SkipRemoval:      plan.SkipRemoval,
-
-		SkipInventoryValidation: plan.SkipInventoryValidation,
-		FailOnJobFailure:        plan.FailOnJobFailure,
-	}
-
 	diags = response.State.Set(ctx, result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {

@@ -17,6 +17,7 @@ const (
 	ERR_SUMMARY_INVALID_CERTIFICATE_RESOURCE  = "Invalid certificate resource definition."
 	ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE   = "Unable to create Keyfactor Command certificate."
 	ERR_SUMMARY_CERTIFICATE_RESOURCE_READ     = "Unable to read Keyfactor Command certificate."
+	ERR_SUMMARY_CERTIFICATE_RESOURCE_UPDATE   = "Unable to update Keyfactor Command certificate."
 	ERR_SUMMARY_CERT_STORE_READ               = "Unable to read Keyfactor Command certificate store."
 	ERR_SUMMARY_AGENT_READ                    = "Unable to read Keyfactor Command agent."
 	ERR_SUMMARY_TEMPLATE_READ                 = "Unable to read Keyfactor Command template."

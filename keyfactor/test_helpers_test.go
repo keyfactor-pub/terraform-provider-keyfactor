@@ -1359,6 +1359,23 @@ func randomTestCN(prefix string) string {
 //	defer cleanup()
 //	resource.UnitTest(t, resource.TestCase{ProtoV6ProviderFactories: factories, ...})
 func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func() (tfprotov6.ProviderServer, error), func()) {
+	return newVCRProviderFactoriesOpts(t, cassetteName, false)
+}
+
+// newVCRProviderFactoriesReplayable is like newVCRProviderFactories but
+// configures the replay recorder with WithReplayableInteractions(true).
+// Use this ONLY for tests that issue purely idempotent read-only requests
+// (e.g. data-source lookups) where repeated identical URL calls always return
+// the same body. Do NOT use for polling/stateful tests (e.g. inventory polls
+// that expect different responses across sequential identical-URL calls) —
+// those rely on consume-once ordering and must use newVCRProviderFactories.
+func newVCRProviderFactoriesReplayable(t *testing.T, cassetteName string) (map[string]func() (tfprotov6.ProviderServer, error), func()) {
+	return newVCRProviderFactoriesOpts(t, cassetteName, true)
+}
+
+// newVCRProviderFactoriesOpts is the shared implementation backing
+// newVCRProviderFactories and newVCRProviderFactoriesReplayable.
+func newVCRProviderFactoriesOpts(t *testing.T, cassetteName string, replayable bool) (map[string]func() (tfprotov6.ProviderServer, error), func()) {
 	t.Helper()
 
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
@@ -1373,6 +1390,7 @@ func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func
 			recorder.WithMode(recorder.ModeReplayOnly),
 			recorder.WithMatcher(matcher),
 			recorder.WithSkipRequestLatency(true),
+			recorder.WithReplayableInteractions(replayable),
 		)
 		if err != nil {
 			t.Skipf("No cassette found for %q. Run with RECORD_CASSETTES=1 against a live lab to record.", cassetteName)
@@ -1649,9 +1667,13 @@ func skipOnKnownLabConstraint(t *testing.T, patterns ...string) func(error) erro
 		if err == nil {
 			return nil
 		}
-		msg := err.Error()
+		// Terraform wraps long error messages across multiple lines with
+		// indentation (e.g. "...Subject\n            Alternative Name"), so
+		// collapse all whitespace runs to single spaces before substring
+		// matching — otherwise a multi-word pattern never matches.
+		msg := strings.Join(strings.Fields(err.Error()), " ")
 		for _, p := range patterns {
-			if strings.Contains(msg, p) {
+			if strings.Contains(msg, strings.Join(strings.Fields(p), " ")) {
 				t.Skipf("[KNOWN LAB CONSTRAINT] skipping due to expected infrastructure limitation: %v", err)
 				return nil
 			}

@@ -884,7 +884,84 @@ func buildCARequest(ctx context.Context, plan KeyfactorCertificateAuthority) (v1
 		req.ThresholdCheck = thresholdCheck
 	}
 
+	// Command rejects a request that carries populated fields for both CA auth
+	// variants (OAuth vs. client-certificate) at once. Since buildCARequest is
+	// the single payload constructor shared by Create, Update, and Delete's
+	// clear-schedules-before-delete fallback, deriving and stripping the unused
+	// variant here -- rather than in each caller -- guarantees all three agree
+	// on which variant is active. See clearAuthVariant.
+	clearAuthVariant(&req, plan)
+
 	return req, diags
+}
+
+// isKnownNonEmptyString reports whether a types.String plan/state value is
+// both known (not Null/Unknown) and non-empty. Used by clearAuthVariant to
+// distinguish a genuinely configured credential from a zero-value string.
+func isKnownNonEmptyString(v types.String) bool {
+	return !v.Null && !v.Unknown && v.Value != ""
+}
+
+// clearAuthVariant strips whichever CA authentication variant -- OAuth or
+// client-certificate -- is NOT actually in use from an already-built request,
+// so the payload never carries populated fields for both at once. Command
+// rejects such a request outright: "Fields for OAuth and Client Certificate
+// Authentication cannot both be provided for the same CA."
+//
+// token_url, client_id, scope, and audience are Optional+Computed with a
+// UseStateForUnknown plan modifier (see the schema above). Once a
+// client-certificate-auth CA's first Read populates them with the server's
+// non-OAuth zero value -- an empty string, not a null pointer; see
+// caResponseToState's use of nullableStringToTfString -- that empty string is
+// carried forward into every later plan/state and, without this function,
+// would be echoed back into every subsequent write via
+// req.SetTokenURL("")/req.SetClientId(""). Those setters mark the underlying
+// NullableString as explicitly "set," which is indistinguishable on the wire
+// from a genuinely configured empty value -- Command's server-side check does
+// not require the value to be non-empty, only present. auth_certificate and
+// auth_certificate_password, by contrast, are Optional but NOT Computed, so
+// they directly reflect config and are only genuinely populated when the user
+// has configured client-certificate auth.
+//
+// Called from buildCARequest itself -- the single payload constructor shared
+// by Create, Update, and Delete's clear-schedules-before-delete fallback --
+// so all three derive the active auth variant identically; there is no
+// separate per-caller copy of this logic that could drift out of sync.
+// Fixes #194.
+func clearAuthVariant(req *v1.CertificateAuthoritiesCertificateAuthorityRequest, plan KeyfactorCertificateAuthority) {
+	hasCertAuth := isKnownNonEmptyString(plan.AuthCertificate)
+	hasOAuth := isKnownNonEmptyString(plan.ClientID) || isKnownNonEmptyString(plan.TokenURL)
+
+	clearOAuthFields := func() {
+		req.UnsetTokenURL()
+		req.UnsetClientId()
+		req.ClientSecret = nil
+		req.UnsetScope()
+		req.UnsetAudience()
+	}
+	clearCertAuthFields := func() {
+		req.AuthCertificate = nil
+		req.AuthCertificatePassword = nil
+	}
+
+	switch {
+	case hasCertAuth:
+		// Client-certificate auth is in use: never echo OAuth fields, even a
+		// stale empty-string value carried forward from a prior Computed read.
+		clearOAuthFields()
+	case hasOAuth:
+		// OAuth is in use: never send client-certificate auth fields. These are
+		// normally already nil here since auth_certificate is not Computed, but
+		// clearing them keeps this function symmetric and defensive against
+		// future schema changes.
+		clearCertAuthFields()
+	default:
+		// Neither variant is genuinely configured (e.g. a DCOM CA, or an HTTPS
+		// CA authenticating via explicit/agent credentials): don't echo stale
+		// empty-string OAuth fields either.
+		clearOAuthFields()
+		clearCertAuthFields()
+	}
 }
 
 // setBoolIfKnown calls the setter only if the value is not null/unknown.

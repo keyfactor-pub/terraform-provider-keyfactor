@@ -16,6 +16,7 @@
 ### Fixes
 
 - fix: `keyfactor_certificate_authority` no longer silently clears a CA's scan schedule on every apply when that schedule is configured as a Daily (time-of-day) schedule in Command rather than an Interval schedule. The provider previously only understood the Interval representation, so a Daily-shaped schedule read back as null — indistinguishable from "no schedule" — and the next full-replace update omitted it entirely, clearing it server-side.
+- fix: `keyfactor_certificate_authority` `key_retention` configured as a numeric string (e.g. `"2"`) no longer produces "Provider produced inconsistent result after apply". Command accepts either a numeric string or a symbolic name on write but always returns the symbolic name (e.g. `"AfterExpiration"`) on read; the provider now preserves whichever representation was originally configured when it denotes the same value. Fixes [#191](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/191)
 
 # v2.9.1
 

@@ -1083,6 +1083,7 @@ func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.
 
 	state := caResponseToState(resp)
 	preserveSecrets(&state, plan)
+	preserveKeyRetentionRepresentation(&state, plan)
 
 	diags = response.State.Set(ctx, &state)
 	response.Diagnostics.Append(diags...)
@@ -1129,6 +1130,7 @@ func (r resourceCertificateAuthority) Read(ctx context.Context, request tfsdk.Re
 
 	newState := caResponseToState(resp)
 	preserveSecrets(&newState, state)
+	preserveKeyRetentionRepresentation(&newState, state)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -1203,6 +1205,7 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 
 	newState := caResponseToState(resp)
 	preserveSecrets(&newState, plan)
+	preserveKeyRetentionRepresentation(&newState, plan)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -1375,6 +1378,37 @@ func keyRetentionIntToTfString(v *v1.CSSCMSCoreEnumsKeyRetentionPolicy) types.St
 	}
 	// Fallback: stringify the raw integer
 	return types.String{Value: strconv.Itoa(int(*v))}
+}
+
+// preserveKeyRetentionRepresentation normalizes target.KeyRetention back to
+// the representation the user configured (e.g. "2") when the server's
+// response denotes the same underlying enum value but always returns the
+// symbolic name (e.g. "AfterExpiration"). Command accepts either numeric
+// strings or symbolic names on write but only ever returns the symbolic
+// name on read, so without this the Read/Create/Update response would
+// permanently disagree with a numeric-string config, producing "Provider
+// produced inconsistent result after apply". This mirrors the
+// certificate_authority-name normalization pattern used for the
+// certificate resource's certificate_authority attribute: prefer the
+// user-supplied representation whenever it denotes the same value as what
+// the server returned.
+func preserveKeyRetentionRepresentation(target *KeyfactorCertificateAuthority, source KeyfactorCertificateAuthority) {
+	if target.KeyRetention.Null || target.KeyRetention.Unknown {
+		return
+	}
+	if source.KeyRetention.Null || source.KeyRetention.Unknown {
+		return
+	}
+	if target.KeyRetention.Value == source.KeyRetention.Value {
+		return
+	}
+	targetInt, targetOk := keyRetentionNameToInt[target.KeyRetention.Value]
+	sourceInt, sourceOk := keyRetentionNameToInt[source.KeyRetention.Value]
+	if targetOk && sourceOk && targetInt == sourceInt {
+		// Same enum value, different representation (e.g. "2" vs
+		// "AfterExpiration") -- keep the user's originally configured form.
+		target.KeyRetention = source.KeyRetention
+	}
 }
 
 // ---------------------------------------------------------------------------

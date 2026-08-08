@@ -1,0 +1,14 @@
+# Shared, neutral Terraform CLI config for PROVIDER_MODE=registry.
+#
+# Every demo's GNUmakefile points TF_CLI_CONFIG_FILE at this file in registry
+# mode. This is NOT optional: without it, `terraform init` falls back to the
+# user's own $HOME/.terraformrc, which on a provider-development machine
+# almost always has dev_overrides for keyfactor-pub/keyfactor pointing at a
+# local build -- silently defeating "registry mode" and testing against
+# uncommitted local code instead of the real published provider. Explicitly
+# pointing at this empty config (direct {} -- no dev_overrides, no explicit
+# mirrors) guarantees `terraform init` always resolves from the public
+# registry, regardless of what's in the invoking user's home directory.
+provider_installation {
+  direct {}
+}

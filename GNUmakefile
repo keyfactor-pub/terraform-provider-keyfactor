@@ -25,83 +25,15 @@ tfdocs:
 	@if [ -d "$(SCREENSHOTS_TMP)/screenshots" ]; then cp -r "$(SCREENSHOTS_TMP)/screenshots" docs/; fi
 	@rm -rf "$(SCREENSHOTS_TMP)"
 
-## gen-store-types: Regenerate terraform/data_store_types/store_types.tf from live state.
-##   Requires: terraform apply has been run in terraform/data_store_types/ so that
-##   terraform show -json produces data.keyfactor_certificate_store_types.all.
-##   Usage: make gen-store-types [STORE_TYPE_SUFFIX=_TF]
-STORE_TYPE_SUFFIX ?= _TF
-STORE_TYPE_DIR    := $(PROVIDER_DIR)/terraform/data_store_types
-gen-store-types:
-	cd $(STORE_TYPE_DIR) && \
-	  TF_CLI_CONFIG_FILE=.terraformrc terraform show -json > tf_state.json && \
-	  python3 gen_store_types.py --suffix "$(STORE_TYPE_SUFFIX)"
+## release-harness: Run the full terraform/ release-test harness against the
+##   registry provider (keyfactor-pub/keyfactor). See terraform/GNUmakefile.
+release-harness:
+	$(MAKE) -C $(PROVIDER_DIR)/terraform harness-registry
 
-## store-type-demo: Run full lifecycle demo in terraform/store_type_demo/
-##   (build, init, validate, apply, import, drift-check, destroy)
-##   Usage: make store-type-demo [SUFFIX=_TF]
-SUFFIX ?= _TF
-store-type-demo:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/store_type_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
-
-## application-demo: Run full lifecycle demo in terraform/application_demo/
-##   (build, init, validate, plan, apply, import, reconcile, drift-check, destroy)
-##   Usage: make application-demo [SUFFIX=_TF]
-application-demo:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/application_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
-
-
-## oauth-security-demo: Run full lifecycle demo in terraform/oauth_security_demo/
-##   (build, init, validate, plan, apply, import, reconcile, drift-check, destroy)
-##   Usage: make oauth-security-demo [SUFFIX=_TF]
-oauth-security-demo:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/oauth_security_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
-
-## oauth-security-demo-apply: Build and apply OAuth security demo (leave running for portal review)
-oauth-security-demo-apply:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/oauth_security_demo && $(MAKE) build init validate plan apply SUFFIX="$(SUFFIX)"
-
-## oauth-security-demo-destroy: Destroy OAuth security demo resources
-oauth-security-demo-destroy:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/oauth_security_demo && $(MAKE) destroy SUFFIX="$(SUFFIX)"
-
-
-## k8s-orchestrator-demo: Run full lifecycle demo in terraform/k8s_orchestrator_demo/
-##   (build, init, validate, plan, apply, import, drift-check, destroy)
-##   Usage: make k8s-orchestrator-demo
-k8s-orchestrator-demo:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/k8s_orchestrator_demo && $(MAKE) all
-
-## k8s-orchestrator-demo-apply: Build and apply K8S orchestrator demo (leave running for portal review)
-k8s-orchestrator-demo-apply:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/k8s_orchestrator_demo && $(MAKE) build init validate plan apply
-
-## k8s-orchestrator-demo-destroy: Destroy K8S orchestrator demo resources
-k8s-orchestrator-demo-destroy:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/k8s_orchestrator_demo && $(MAKE) destroy
-
-# ---------------------------------------------------------------------------
-# ECC PFX debug demo (terraform/ecc_pfx_debug)
-# Iteratively debug ECC PFX enrollment by testing different KeyType/Curve combos.
-# Usage:
-#   make ecc-pfx-debug-build    — build provider + terraform init
-#   make ecc-pfx-debug-plan     — plan the enrollment
-#   make ecc-pfx-debug-apply    — enroll the cert
-#   make ecc-pfx-debug-destroy  — revoke/delete the cert
-# ---------------------------------------------------------------------------
-ECC_PFX_DEBUG_DIR := $(PROVIDER_DIR)/terraform/ecc_pfx_debug
-
-ecc-pfx-debug-build:
-	$(MAKE) build
-	cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) init
-
-ecc-pfx-debug-plan:
-	. $(KEYFACTOR_ENV_FILE) && cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) plan
-
-ecc-pfx-debug-apply:
-	. $(KEYFACTOR_ENV_FILE) && cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) apply
-
-ecc-pfx-debug-destroy:
-	. $(KEYFACTOR_ENV_FILE) && cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) destroy
+## release-harness-dev: Run the full terraform/ release-test harness against
+##   a locally-built dev provider binary. See terraform/GNUmakefile.
+release-harness-dev:
+	$(MAKE) -C $(PROVIDER_DIR)/terraform harness-dev
 
 release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64
@@ -599,7 +531,8 @@ api-options-application:
 #   make api-create-store-raw AGENT_ID=<guid> STORE_TYPE_ID=104 CONTAINER_NAME=tf-int-app-test
 #   make api-delete-store-raw STORE_ID=<guid>
 # ---------------------------------------------------------------------------
-AGENT_ID     ?= 275bcd31-9e7b-4c4a-bce9-1719e0c2168d
+AGENT_ID     ?=
+CLIENT_MACHINE ?= tf-harness-debug
 CONTAINER_NAME ?= tf-int-app-test
 
 api-create-store-raw:
@@ -612,7 +545,7 @@ api-create-store-raw:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Content-Type: application/json" \
 		-H "Authorization: Bearer $$TOKEN" \
-		-d "{\"ClientMachine\":\"container_uo-25-4\",\"Storepath\":\"default/curl-raw-test\",\"CertStoreType\":$(STORE_TYPE_ID),\"ContainerName\":\"$(CONTAINER_NAME)\",\"AgentId\":\"$(AGENT_ID)\",\"Properties\":\"{\\\"KubeSecretType\\\":\\\"tls\\\",\\\"ServerUseSsl\\\":\\\"true\\\"}\",\"ServerUsername\":\"kubeconfig\"}" | jq .
+		-d "{\"ClientMachine\":\"$(CLIENT_MACHINE)\",\"Storepath\":\"default/curl-raw-test\",\"CertStoreType\":$(STORE_TYPE_ID),\"ContainerName\":\"$(CONTAINER_NAME)\",\"AgentId\":\"$(AGENT_ID)\",\"Properties\":\"{\\\"KubeSecretType\\\":\\\"tls\\\",\\\"ServerUseSsl\\\":\\\"true\\\"}\",\"ServerUsername\":\"kubeconfig\"}" | jq .
 
 api-delete-store-raw:
 	@if [ -z "$(STORE_ID)" ]; then echo "Usage: make api-delete-store-raw STORE_ID=<guid>"; exit 1; fi
@@ -1253,4 +1186,4 @@ api-get-cert-store:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
-.PHONY: store-type-demo application-demo oauth-security-demo oauth-security-demo-apply oauth-security-demo-destroy k8s-orchestrator-demo k8s-orchestrator-demo-apply k8s-orchestrator-demo-destroy ecc-pfx-debug-build ecc-pfx-debug-plan ecc-pfx-debug-apply ecc-pfx-debug-destroy build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-cert-import testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-template-role-binding-import testunit-record-cert-store-import testunit-record-oauth-role-import testunit-record-oauth-role-claim-assoc-import testunit-record-oauth-role-claim-assoc-multi testunit-record-oauth-role-nil testunit-record-oauth-claim-nil testunit-record-all testunit-check testunit-ca testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testint-oauth-access-token testint-ca-snapshot testint-ca-diff testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-update-ca api-ca-schema-diff api-ca-gap-fields api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key api-list-agents
+.PHONY: release-harness release-harness-dev build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-cert-import testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-template-role-binding-import testunit-record-cert-store-import testunit-record-oauth-role-import testunit-record-oauth-role-claim-assoc-import testunit-record-oauth-role-claim-assoc-multi testunit-record-oauth-role-nil testunit-record-oauth-claim-nil testunit-record-all testunit-check testunit-ca testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testint-oauth-access-token testint-ca-snapshot testint-ca-diff testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-update-ca api-ca-schema-diff api-ca-gap-fields api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key api-list-agents

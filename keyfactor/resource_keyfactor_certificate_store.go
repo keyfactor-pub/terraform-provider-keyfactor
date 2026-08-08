@@ -1052,6 +1052,19 @@ func (r resourceCertificateStore) ImportState(
 		)
 		return
 	}
+	// Resolve the numeric store type ID to its SHORT name (e.g. "K8SCluster"),
+	// not csType.Name (the human-readable DISPLAY name, e.g. "Kubernetes
+	// Cluster"). store_type is Required+RequiresReplace, so importing a store
+	// with the display name in state made every subsequent plan show a
+	// spurious destroy+recreate the moment it was compared against a config
+	// declaring the short name -- the value Command actually accepts on
+	// create/update. See GH issue #196. Mirrors the identical resolution
+	// already done correctly in the certificate_store data source
+	// (data_source_keyfactor_certificate_store.go).
+	storeTypeShortName := fmt.Sprintf("%d", readResponse.CertStoreType) // fallback: numeric string
+	if csType != nil && csType.ShortName != "" {
+		storeTypeShortName = csType.ShortName
+	}
 	// Build properties map from server response, excluding special credential properties.
 	specialProps := map[string]bool{"ServerUsername": true, "ServerPassword": true, "ServerUseSsl": true}
 	importedProps := map[string]attr.Value{}
@@ -1078,7 +1091,7 @@ func (r resourceCertificateStore) ImportState(
 		ContainerID:           types.Int64{Value: int64(readResponse.ContainerId)},
 		ClientMachine:         types.String{Value: readResponse.ClientMachine},
 		StorePath:             types.String{Value: readResponse.StorePath},
-		StoreType:             types.String{Value: csType.Name},
+		StoreType:             types.String{Value: storeTypeShortName},
 		Approved:              types.Bool{Value: readResponse.Approved},
 		CreateIfMissing:       types.Bool{Value: readResponse.CreateIfMissing},
 		Properties:            importedPropsMap,

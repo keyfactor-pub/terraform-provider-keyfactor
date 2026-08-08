@@ -42,7 +42,14 @@ resource "keyfactor_certificate_authority" "demo" {
   monitor_thresholds                  = var.monitor_thresholds
   new_end_entity_on_renew_and_reissue = true
 
-  allowed_enrollment_types          = 3
+  # allowed_enrollment_types / use_allowed_requesters / allowed_requesters
+  # apply to standalone CAs only -- ValidateConfig now rejects any of them
+  # declared alongside standalone=false ("allowed_enrollment_types requires
+  # standalone=true", confirmed live against kfclab 2026-08-08, part of the
+  # #186 config-constraint validation). This CA delegates enrollment to the
+  # AnyCA REST Gateway (standalone=false), so none of those attributes are
+  # declared here.
+
   issuance_min                      = var.issuance_min
   issuance_max                      = var.issuance_max
   failure_max                       = var.failure_max

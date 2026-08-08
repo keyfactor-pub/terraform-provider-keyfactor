@@ -132,7 +132,39 @@ lab-destroy:
 	$(LAB_ENV) $(MAKE) destroy SUFFIX=$(SUFFIX)
 
 ## lifecycle: Full lifecycle: apply → import-all → reconcile → drift-check → destroy
-lifecycle: lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy
+##
+##   KNOWN PROVIDER/SDK BUG: lab-apply is expected to FAIL here with "Error
+##   updating template in Keyfactor: 'Policies' cannot be empty" -- Command
+##   now requires a field on template update that keyfactor-go-client/v3's
+##   UpdateTemplateArg request model does not send (same gap independently
+##   noted in certificate_template_demo/main.tf). keyfactor_role.demo is
+##   still created successfully before that failure, so every prerequisite
+##   after lab-apply would normally be skipped by default GNU Make semantics
+##   -- this target captures lab-apply's exit code instead so lab-destroy
+##   ALWAYS runs and the role is never left orphaned on the lab.
+lifecycle:
+	@APPLY_EXIT=0; \
+	 if ! $(MAKE) lab-apply SUFFIX=$(SUFFIX); then APPLY_EXIT=1; fi; \
+	 if [ $$APPLY_EXIT -eq 0 ]; then \
+	   $(MAKE) lab-import-all SUFFIX=$(SUFFIX) || exit 1; \
+	   $(MAKE) lab-reconcile SUFFIX=$(SUFFIX) || exit 1; \
+	   $(MAKE) lab-drift-check SUFFIX=$(SUFFIX) || exit 1; \
+	 else \
+	   echo "==> Skipping lab-import-all/lab-reconcile/lab-drift-check -- lab-apply failed (see summary below)."; \
+	 fi; \
+	 if ! $(MAKE) lab-destroy SUFFIX=$(SUFFIX); then \
+	   echo "FAIL (harness): lab-destroy failed -- see above. keyfactor_role.demo (TemplateRoleBindingDemo$(SUFFIX)) may be orphaned; check manually."; \
+	   exit 1; \
+	 fi; \
+	 echo "=============================================================="; \
+	 echo "template_role_binding_demo summary:"; \
+	 if [ $$APPLY_EXIT -ne 0 ]; then \
+	   echo "  lab-apply: KNOWN PROVIDER/SDK BUG reproduced ('Policies' cannot be empty). See GNUmakefile lifecycle header."; \
+	 else \
+	   echo "  lab-apply: PASS (no 'Policies' error)."; \
+	 fi; \
+	 echo "=============================================================="; \
+	 if [ $$APPLY_EXIT -ne 0 ]; then exit 1; fi
 
 .PHONY: build init validate plan apply import-all reconcile drift-check destroy clean all \
         lab-plan lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy lifecycle

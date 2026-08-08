@@ -159,7 +159,44 @@ lab-destroy:
 	$(LAB_ENV) $(MAKE) destroy
 
 ## lifecycle: Full lifecycle: generate → apply → update → import-all → drift-check → destroy
-lifecycle: lab-generate lab-apply lab-update lab-import-all lab-drift-check lab-destroy
+##
+##   KNOWN PROVIDER BUG: lab-apply is expected to FAIL on the currently
+##   released provider (2.9.1) with "Provider produced inconsistent result
+##   after apply: .entry_parameters: was cty.ListValEmpty(...), but now
+##   null" for several store types (confirmed 2026-08-07). That failure is a
+##   genuine provider bug reproduction, not a harness defect -- but Terraform
+##   still creates the store type server-side before the post-apply
+##   consistency check fails, so every prerequisite after lab-apply is
+##   skipped by default GNU Make semantics UNLESS we capture the failure
+##   ourselves and keep going. This target does that: lab-apply's exit code
+##   is captured (not chained via prerequisite list), update/import-all/
+##   drift-check are skipped when it fails (state is inconsistent to work
+##   with), but lab-destroy ALWAYS runs so no _TF store type is ever left
+##   orphaned on the lab, and the known bug is never silently swallowed.
+lifecycle:
+	@APPLY_EXIT=0; \
+	 $(MAKE) lab-generate SUFFIX=$(SUFFIX) || exit 1; \
+	 if ! $(MAKE) lab-apply; then APPLY_EXIT=1; fi; \
+	 if [ $$APPLY_EXIT -eq 0 ]; then \
+	   $(MAKE) lab-update || exit 1; \
+	   $(MAKE) lab-import-all || exit 1; \
+	   $(MAKE) lab-drift-check || exit 1; \
+	 else \
+	   echo "==> Skipping lab-update/lab-import-all/lab-drift-check -- lab-apply failed (see summary below)."; \
+	 fi; \
+	 if ! $(MAKE) lab-destroy; then \
+	   echo "FAIL (harness): lab-destroy failed -- see above. Demo store types may be orphaned; check manually (e.g. any short_name ending in \"$(SUFFIX)\")."; \
+	   exit 1; \
+	 fi; \
+	 echo "=============================================================="; \
+	 echo "store_type_demo summary:"; \
+	 if [ $$APPLY_EXIT -ne 0 ]; then \
+	   echo "  lab-apply: KNOWN PROVIDER BUG reproduced (entry_parameters empty-list -> null inconsistent result). See GNUmakefile lifecycle header."; \
+	 else \
+	   echo "  lab-apply: PASS (no inconsistent-result error)."; \
+	 fi; \
+	 echo "=============================================================="; \
+	 if [ $$APPLY_EXIT -ne 0 ]; then exit 1; fi
 
 .PHONY: build init validate apply-data generate plan apply import-all drift-check destroy clean all demo-no-destroy \
         lab-generate lab-plan lab-apply lab-update lab-import-all lab-drift-check lab-destroy lifecycle

@@ -2,8 +2,8 @@
 # OAuth Security Role — read-only certificate permissions
 # ---------------------------------------------------------------------------
 resource "keyfactor_oauth_security_role" "demo" {
-  name            = "OAuthDemo${var.suffix}"
-  description     = var.role_description
+  name              = "OAuthDemo${var.suffix}"
+  description       = var.role_description
   permission_set_id = data.keyfactor_permission_set.global.id
   permissions = [
     "/certificates/collections/read/",

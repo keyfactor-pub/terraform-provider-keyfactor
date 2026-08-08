@@ -1,10 +1,10 @@
-## oauth_security_demo/GNUmakefile
+## application_demo/GNUmakefile
 ##
-## Demonstrates end-to-end lifecycle of OAuth security resources:
+## Demonstrates end-to-end lifecycle of keyfactor_application resources:
 ##   build → init → validate → plan → apply → import → reconcile → drift-check → destroy
 ##
 ## Usage:
-##   cd terraform/oauth_security_demo
+##   cd terraform/application_demo
 ##   make build              # compile + install the provider locally
 ##   make init               # terraform init
 ##   make all                # run the full workflow
@@ -62,30 +62,32 @@ validate:
 plan:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
-## apply: Create all OAuth security resources
+## apply: Create all application resources
 apply:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
-## import-all: Remove all managed resources from state then re-import by their real IDs
+## import-all: Remove all managed resources from state then re-import by numeric ID
 import-all:
 	@echo "==> Capturing state..."
 	$(UNSET_BASIC) $(TF) show -json > tf_state.json
-	@echo "==> Extracting IDs from state..."
-	@# Role: import by name
-	@ROLE_NAME=$$($(UNSET_BASIC) $(TF) output -raw role_name 2>/dev/null) && \
-	 CLAIM_ID=$$($(UNSET_BASIC) $(TF) output -raw claim_id 2>/dev/null) && \
-	 ROLE_ID=$$($(UNSET_BASIC) $(TF) output -raw role_id 2>/dev/null) && \
-	 echo "Role Name=$$ROLE_NAME  Claim ID=$$CLAIM_ID  Role ID=$$ROLE_ID" && \
-	 echo "==> Removing from state..." && \
-	 $(UNSET_BASIC) $(TF) state rm keyfactor_oauth_security_role_claim_association.demo 2>&1 | grep -E "Removed|Successfully" || true && \
-	 $(UNSET_BASIC) $(TF) state rm keyfactor_oauth_security_claim.demo 2>&1 | grep -E "Removed|Successfully" || true && \
-	 $(UNSET_BASIC) $(TF) state rm keyfactor_oauth_security_role.demo 2>&1 | grep -E "Removed|Successfully" || true && \
-	 echo "==> Re-importing by real IDs..." && \
-	 $(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" keyfactor_oauth_security_role.demo "$$ROLE_NAME" && \
-	 $(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" keyfactor_oauth_security_claim.demo "$$CLAIM_ID" && \
-	 $(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" keyfactor_oauth_security_role_claim_association.demo "$$ROLE_ID/$$CLAIM_ID"
+	python3 _export_ids.py
+	@echo "==> Removing from state..."
+	@while IFS=' ' read -r name id; do \
+	  $(UNSET_BASIC) $(TF) state rm "keyfactor_application.$$name" 2>&1 | grep Removed; \
+	done < _import_pairs.txt
+	@echo "==> Re-importing by numeric ID..."
+	@while IFS=' ' read -r name id; do \
+	  result=$$($(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" "keyfactor_application.$$name" "$$id" 2>&1); \
+	  if echo "$$result" | grep -q "Import successful"; then \
+	    echo "OK: $$name (ID=$$id)"; \
+	  else \
+	    echo "FAIL: $$name (ID=$$id)"; \
+	    echo "$$result" | tail -3; \
+	  fi; \
+	done < _import_pairs.txt
 
 ## reconcile: Apply after import to reconcile fields not returned by the API
+## (e.g. schedule_daily_time date normalization). Should produce no further changes.
 reconcile:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
@@ -93,13 +95,13 @@ reconcile:
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
-## destroy: Destroy all managed OAuth security resources
+## destroy: Destroy all managed application resources
 destroy:
 	$(UNSET_BASIC) $(TF) destroy -auto-approve -var="suffix=$(SUFFIX)"
 
 ## clean: Remove generated files
 clean:
-	rm -f tf_state.json terraform.tfstate terraform.tfstate.backup terraform.tfstate.*.backup
+	rm -f tf_state.json _import_pairs.txt terraform.tfstate terraform.tfstate.backup
 
 # ---------------------------------------------------------------------------
 # Combined workflows
@@ -123,24 +125,33 @@ lab-plan:
 lab-apply:
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 
-## lab-update: Apply with updated description fields to verify in-place update path.
+## lab-update: Apply with updated schedule fields to verify in-place update path.
+## Changes all variable schedule fields; plan after each apply should show "No changes".
 lab-update:
-	@echo "==> Step 1: update descriptions (in-place update path)..."
-	$(LAB_ENV) TF_VAR_role_description="Updated Terraform role description" \
-	           TF_VAR_claim_description="Updated Terraform claim description" \
+	@echo "==> Step 1: update all schedule fields (in-place update path)..."
+	$(LAB_ENV) TF_VAR_interval_minutes=30 \
+	           TF_VAR_daily_time="2025-01-01T08:00:00Z" \
+	           TF_VAR_weekly_days='["Wednesday","Friday"]' \
+	           TF_VAR_weekly_time="2025-01-01T06:00:00Z" \
+	           TF_VAR_monthly_day=15 \
+	           TF_VAR_monthly_time="2025-01-01T10:00:00Z" \
 	           $(MAKE) apply SUFFIX=$(SUFFIX)
-	$(LAB_ENV) TF_VAR_role_description="Updated Terraform role description" \
-	           TF_VAR_claim_description="Updated Terraform claim description" \
+	$(LAB_ENV) TF_VAR_interval_minutes=30 \
+	           TF_VAR_daily_time="2025-01-01T08:00:00Z" \
+	           TF_VAR_weekly_days='["Wednesday","Friday"]' \
+	           TF_VAR_weekly_time="2025-01-01T06:00:00Z" \
+	           TF_VAR_monthly_day=15 \
+	           TF_VAR_monthly_time="2025-01-01T10:00:00Z" \
 	           $(MAKE) plan SUFFIX=$(SUFFIX)
 	@echo "==> Step 2: revert to defaults — verify no forced replacement..."
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 	$(LAB_ENV) $(MAKE) plan SUFFIX=$(SUFFIX)
 
-## lab-import-all: Import all resources using lab credentials
+## lab-import-all: Import all applications using lab credentials
 lab-import-all:
 	$(LAB_ENV) $(MAKE) import-all SUFFIX=$(SUFFIX)
 
-## lab-reconcile: Reconcile after import
+## lab-reconcile: Reconcile after import (re-apply to settle immediate/exactly-once drift)
 lab-reconcile:
 	$(LAB_ENV) $(MAKE) reconcile SUFFIX=$(SUFFIX)
 
@@ -148,7 +159,7 @@ lab-reconcile:
 lab-drift-check:
 	$(LAB_ENV) $(MAKE) drift-check SUFFIX=$(SUFFIX)
 
-## lab-destroy: Destroy all managed resources using lab credentials
+## lab-destroy: Destroy all managed applications using lab credentials
 lab-destroy:
 	$(LAB_ENV) $(MAKE) destroy SUFFIX=$(SUFFIX)
 

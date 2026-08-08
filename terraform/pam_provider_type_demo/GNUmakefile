@@ -1,14 +1,18 @@
-## oauth_security_demo/GNUmakefile
+## pam_provider_type_demo/GNUmakefile
 ##
-## Demonstrates end-to-end lifecycle of OAuth security resources:
+## Full-lifecycle smoke test for keyfactor_pam_provider_type, covering PR
+## #179's enumPtrToTfInt64 refactor (pamParameterDataTypePtrToTfInt64 now
+## delegates to the shared generic helper instead of duplicating its body).
+## No behavior change was intended by that refactor; this demo proves the
+## real create/read/import round-trip for parameters[].data_type still works:
 ##   build → init → validate → plan → apply → import → reconcile → drift-check → destroy
 ##
 ## Usage:
-##   cd terraform/oauth_security_demo
+##   cd terraform/pam_provider_type_demo
 ##   make build              # compile + install the provider locally
 ##   make init               # terraform init
-##   make all                # run the full workflow
-##   make SUFFIX=_MYORG all  # run with a custom name suffix
+##   make lifecycle           # run the full lab lifecycle
+##   make SUFFIX=_MYORG lifecycle
 
 PROVIDER_ROOT  := $(abspath ../..)
 PROVIDER_BIN   := $(HOME)/go/bin
@@ -25,8 +29,6 @@ UNSET_BASIC   := unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN;
 
 # ---------------------------------------------------------------------------
 # Lab environment helpers
-# Source KEYFACTOR_ENV_FILE for OAuth credentials.
-# Override via: make KEYFACTOR_ENV_FILE=~/.env_other lifecycle
 # ---------------------------------------------------------------------------
 SHELL         := /bin/bash
 KEYFACTOR_ENV_FILE ?= $(HOME)/.env_kfclab
@@ -62,28 +64,21 @@ validate:
 plan:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
-## apply: Create all OAuth security resources
+## apply: Create the PAM provider type resource
 apply:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
-## import-all: Remove all managed resources from state then re-import by their real IDs
+## import-all: Remove the managed resource from state then re-import by its real ID
 import-all:
 	@echo "==> Capturing state..."
 	$(UNSET_BASIC) $(TF) show -json > tf_state.json
-	@echo "==> Extracting IDs from state..."
-	@# Role: import by name
-	@ROLE_NAME=$$($(UNSET_BASIC) $(TF) output -raw role_name 2>/dev/null) && \
-	 CLAIM_ID=$$($(UNSET_BASIC) $(TF) output -raw claim_id 2>/dev/null) && \
-	 ROLE_ID=$$($(UNSET_BASIC) $(TF) output -raw role_id 2>/dev/null) && \
-	 echo "Role Name=$$ROLE_NAME  Claim ID=$$CLAIM_ID  Role ID=$$ROLE_ID" && \
+	@echo "==> Extracting ID from state..."
+	@PROVIDER_TYPE_ID=$$($(UNSET_BASIC) $(TF) output -raw pam_provider_type_id 2>/dev/null) && \
+	 echo "PAM Provider Type ID=$$PROVIDER_TYPE_ID" && \
 	 echo "==> Removing from state..." && \
-	 $(UNSET_BASIC) $(TF) state rm keyfactor_oauth_security_role_claim_association.demo 2>&1 | grep -E "Removed|Successfully" || true && \
-	 $(UNSET_BASIC) $(TF) state rm keyfactor_oauth_security_claim.demo 2>&1 | grep -E "Removed|Successfully" || true && \
-	 $(UNSET_BASIC) $(TF) state rm keyfactor_oauth_security_role.demo 2>&1 | grep -E "Removed|Successfully" || true && \
-	 echo "==> Re-importing by real IDs..." && \
-	 $(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" keyfactor_oauth_security_role.demo "$$ROLE_NAME" && \
-	 $(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" keyfactor_oauth_security_claim.demo "$$CLAIM_ID" && \
-	 $(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" keyfactor_oauth_security_role_claim_association.demo "$$ROLE_ID/$$CLAIM_ID"
+	 $(UNSET_BASIC) $(TF) state rm keyfactor_pam_provider_type.demo 2>&1 | grep -E "Removed|Successfully" || true && \
+	 echo "==> Re-importing by real ID..." && \
+	 $(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" keyfactor_pam_provider_type.demo "$$PROVIDER_TYPE_ID"
 
 ## reconcile: Apply after import to reconcile fields not returned by the API
 reconcile:
@@ -93,7 +88,7 @@ reconcile:
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
-## destroy: Destroy all managed OAuth security resources
+## destroy: Destroy the managed PAM provider type resource
 destroy:
 	$(UNSET_BASIC) $(TF) destroy -auto-approve -var="suffix=$(SUFFIX)"
 
@@ -108,9 +103,6 @@ clean:
 ## all: Full workflow — build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
 all: build init validate plan apply import-all reconcile drift-check destroy
 
-## demo-no-destroy: Run workflow without final destroy (leaves resources on server)
-demo-no-destroy: build init validate plan apply import-all reconcile drift-check
-
 # ---------------------------------------------------------------------------
 # Lab convenience targets (source KEYFACTOR_ENV_FILE automatically)
 # ---------------------------------------------------------------------------
@@ -122,19 +114,6 @@ lab-plan:
 ## lab-apply: Apply using lab credentials
 lab-apply:
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
-
-## lab-update: Apply with updated description fields to verify in-place update path.
-lab-update:
-	@echo "==> Step 1: update descriptions (in-place update path)..."
-	$(LAB_ENV) TF_VAR_role_description="Updated Terraform role description" \
-	           TF_VAR_claim_description="Updated Terraform claim description" \
-	           $(MAKE) apply SUFFIX=$(SUFFIX)
-	$(LAB_ENV) TF_VAR_role_description="Updated Terraform role description" \
-	           TF_VAR_claim_description="Updated Terraform claim description" \
-	           $(MAKE) plan SUFFIX=$(SUFFIX)
-	@echo "==> Step 2: revert to defaults — verify no forced replacement..."
-	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
-	$(LAB_ENV) $(MAKE) plan SUFFIX=$(SUFFIX)
 
 ## lab-import-all: Import all resources using lab credentials
 lab-import-all:
@@ -152,8 +131,8 @@ lab-drift-check:
 lab-destroy:
 	$(LAB_ENV) $(MAKE) destroy SUFFIX=$(SUFFIX)
 
-## lifecycle: Full lifecycle: apply → update → import-all → reconcile → drift-check → destroy
-lifecycle: lab-apply lab-update lab-import-all lab-reconcile lab-drift-check lab-destroy
+## lifecycle: Full lifecycle: apply → import-all → reconcile → drift-check → destroy
+lifecycle: lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy
 
-.PHONY: build init validate plan apply import-all reconcile drift-check destroy clean all demo-no-destroy \
-        lab-plan lab-apply lab-update lab-import-all lab-reconcile lab-drift-check lab-destroy lifecycle
+.PHONY: build init validate plan apply import-all reconcile drift-check destroy clean all \
+        lab-plan lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy lifecycle

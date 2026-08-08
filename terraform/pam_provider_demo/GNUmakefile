@@ -105,9 +105,9 @@ lab-destroy:
 lifecycle:
 	@if [ -z "$$TF_VAR_vault_token" ]; then \
 	  echo "SKIPPED: pam_provider_demo requires TF_VAR_vault_token for the lab's Vault/OpenBao instance (no default -- see variables.tf)."; \
-	  exit 0; \
+	else \
+	  $(MAKE) lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy; \
 	fi
-	$(MAKE) lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy
 
 .PHONY: build init validate plan apply import-all reconcile drift-check destroy clean all \
         lab-plan lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy lifecycle

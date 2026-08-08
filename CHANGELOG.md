@@ -1,5 +1,11 @@
 # Unreleased
 
+## Template Role Bindings
+
+### Fixes
+
+- fix: `keyfactor_template_role_binding` no longer fails with `'Policies' cannot be empty` when updating a role binding on Command 25.x. Command's `PUT /Templates` is a full-replace endpoint and derives its internal policy set from the template's key-algorithm policy; the provider now round-trips that policy from the template it just fetched instead of omitting it, so binding changes no longer silently clear unrelated policy content. Requires a keyfactor-go-client release carrying the corresponding SDK model field. Fixes [#190](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/190)
+
 ## Certificate Stores
 
 ### Fixes

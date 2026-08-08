@@ -644,6 +644,15 @@ func addAllowedRequesterToTemplate(
 		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
 		KeyRetention:           stringToPointer(template.KeyRetention),
 		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
+		// Carry the template's existing TemplatePolicy through unchanged.
+		// PUT /Templates is a full-replace endpoint: omitting TemplatePolicy
+		// here would silently clear it, and for a template linked to an
+		// enrollment pattern Command 25.x then rejects the request with
+		// "'Policies' cannot be empty" because its internal policy set
+		// derives from TemplatePolicy's key-algorithm lists. This binding
+		// resource only manages allowed_requesters, so it must never alter
+		// unrelated policy content. See issue #190.
+		TemplatePolicy: template.TemplatePolicy,
 	}
 
 	tflog.Trace(
@@ -722,6 +731,9 @@ func removeRoleFromTemplate(
 		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
 		KeyRetention:           stringToPointer(template.KeyRetention),
 		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
+		// Carry the template's existing TemplatePolicy through unchanged --
+		// see the identical comment in addAllowedRequesterToTemplate. Issue #190.
+		TemplatePolicy: template.TemplatePolicy,
 	}
 
 	tflog.Trace(

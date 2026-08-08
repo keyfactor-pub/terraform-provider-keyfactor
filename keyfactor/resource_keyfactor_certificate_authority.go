@@ -374,7 +374,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "RFC3339 timestamp (e.g. \"2026-07-17T15:46:00Z\") whose time-of-day component sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes.",
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"incremental_scan_interval_minutes": {
@@ -388,7 +388,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "RFC3339 timestamp (e.g. \"2026-07-17T15:46:00Z\") whose time-of-day component sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes.",
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"threshold_check_interval_minutes": {
@@ -402,7 +402,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "RFC3339 timestamp (e.g. \"2026-07-17T15:46:00Z\") whose time-of-day component sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes.",
+				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 
@@ -639,6 +639,18 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 	return state
 }
 
+// caDailyTimeLayout is the Go reference-time layout for the *_daily_time
+// attributes: a bare UTC time-of-day, "HH:MM:SS" (e.g. "07:00:00"). Command's
+// GET echoes back the exact time-of-day it was given but rewrites the date
+// component to the current date (confirmed live against the Command API), so
+// any date/offset information in the wire format would be pure noise that
+// can never round-trip -- only the time-of-day is meaningful. A full RFC3339
+// timestamp (the original, pre-fix wire format) can therefore never survive
+// a Read/Create/Update response comparison intact: every apply would see a
+// "changed" date component even though nothing about the schedule actually
+// changed. See GH issue #193 / dev-harness Gap A.
+const caDailyTimeLayout = "15:04:05"
+
 // scheduleToState converts a Command KeyfactorSchedule (as returned for FullScan,
 // IncrementalScan, or ThresholdCheck) into the pair of Terraform attribute values used
 // to represent it: an Interval-shaped *_interval_minutes value and a Daily-shaped
@@ -663,7 +675,7 @@ func scheduleToState(sched *v1.KeyfactorCommonSchedulingKeyfactorSchedule) (type
 		interval = types.Int64{Value: int64(sched.Interval.GetMinutes())}
 	}
 	if sched.Daily != nil && sched.Daily.Time != nil {
-		daily = types.String{Value: sched.Daily.Time.UTC().Format(time.RFC3339)}
+		daily = types.String{Value: sched.Daily.Time.UTC().Format(caDailyTimeLayout)}
 	}
 	return interval, daily
 }
@@ -674,6 +686,10 @@ func scheduleToState(sched *v1.KeyfactorCommonSchedulingKeyfactorSchedule) (type
 // of intervalMinutes/dailyTime is expected to be known; if both are somehow known,
 // intervalMinutes takes precedence. Returns (nil, nil) when neither is known, matching
 // the "omit the field from the request" semantics buildCARequest relies on elsewhere.
+// dailyTime is parsed as a bare UTC time-of-day (caDailyTimeLayout) and anchored to a
+// fixed, arbitrary date -- Command rewrites the date component to the current date
+// server-side regardless of what is sent (confirmed live), so a fixed anchor keeps
+// this function deterministic without affecting the schedule actually applied.
 func buildSchedule(intervalMinutes types.Int64, dailyTime types.String) (*v1.KeyfactorCommonSchedulingKeyfactorSchedule, error) {
 	if !intervalMinutes.Null && !intervalMinutes.Unknown {
 		minutes := int32(intervalMinutes.Value)
@@ -682,12 +698,13 @@ func buildSchedule(intervalMinutes types.Int64, dailyTime types.String) (*v1.Key
 		}, nil
 	}
 	if !dailyTime.Null && !dailyTime.Unknown {
-		t, err := time.Parse(time.RFC3339, dailyTime.Value)
+		t, err := time.Parse(caDailyTimeLayout, dailyTime.Value)
 		if err != nil {
 			return nil, fmt.Errorf("invalid daily time %q: %w", dailyTime.Value, err)
 		}
+		anchored := time.Date(2000, 1, 1, t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
 		return &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
-			Daily: &v1.KeyfactorCommonSchedulingModelsTimeModel{Time: &t},
+			Daily: &v1.KeyfactorCommonSchedulingModelsTimeModel{Time: &anchored},
 		}, nil
 	}
 	return nil, nil
@@ -1112,11 +1129,11 @@ func (r resourceCertificateAuthority) ValidateConfig(ctx context.Context, reques
 			)
 		}
 		if dailyDeclared && !p.daily.Unknown {
-			if _, err := time.Parse(time.RFC3339, p.daily.Value); err != nil {
+			if _, err := time.Parse(caDailyTimeLayout, p.daily.Value); err != nil {
 				response.Diagnostics.AddAttributeError(
 					path.Root(p.dailyPath),
 					"Invalid daily schedule time",
-					fmt.Sprintf("%s must be an RFC3339 timestamp (e.g. \"2026-07-17T15:46:00Z\"): %s", p.dailyPath, err.Error()),
+					fmt.Sprintf("%s must be a UTC time-of-day formatted \"HH:MM:SS\" (e.g. \"07:00:00\"); got %q: %s", p.dailyPath, p.daily.Value, err.Error()),
 				)
 			}
 		}

@@ -145,7 +145,7 @@ func TestUnitCAReadPreservesDailySchedule(t *testing.T) {
 				"full-replace update omits it and Command clears the real, live schedule server-side",
 		)
 	}
-	wantTime := dailyTime.Format(time.RFC3339)
+	wantTime := dailyTime.Format(caDailyTimeLayout)
 	if state.FullScanDailyTime.Value != wantTime {
 		t.Errorf("FullScanDailyTime: want %q, got %q", wantTime, state.FullScanDailyTime.Value)
 	}
@@ -194,7 +194,7 @@ func TestUnitCAReadPreservesDailySchedule(t *testing.T) {
 func TestUnitCAUpdatePreservesDailySchedule(t *testing.T) {
 	t.Parallel()
 
-	priorDaily := "2026-07-18T15:46:00Z"
+	priorDaily := "15:46:00"
 
 	// Simulates what the framework hands preserveCAUpdateFields: plan already
 	// carries the prior state's Daily value forward via UseStateForUnknown,
@@ -237,7 +237,7 @@ func TestUnitCAUpdatePreservesDailySchedule(t *testing.T) {
 func TestUnitCAUpdateScheduleVariantSwitchDoesNotResurrectOther(t *testing.T) {
 	t.Parallel()
 
-	newDaily := "2026-08-01T03:00:00Z"
+	newDaily := "03:00:00"
 
 	// Plan as the framework would hand it to preserveCAUpdateFields: the newly
 	// declared Daily value from config, PLUS the stale Interval value
@@ -269,7 +269,7 @@ func TestUnitCAUpdateScheduleVariantSwitchDoesNotResurrectOther(t *testing.T) {
 	// Daily value instead of leaving it to be resurrected.
 	plan2 := blankCAConfig()
 	plan2.IncrementalScanIntervalMinutes = types.Int64{Value: 30}
-	plan2.IncrementalScanDailyTime = types.String{Value: "2026-01-01T00:00:00Z"} // stale, from prior state
+	plan2.IncrementalScanDailyTime = types.String{Value: "00:00:00"} // stale, from prior state
 
 	config2 := blankCAConfig()
 	config2.IncrementalScanIntervalMinutes = types.Int64{Value: 30} // only this is actually declared
@@ -313,7 +313,7 @@ func TestUnitCAValidateConfigRejectsConflictingScheduleAttributes(t *testing.T) 
 
 	config := blankCAConfig()
 	config.FullScanIntervalMinutes = types.Int64{Value: 60}
-	config.FullScanDailyTime = types.String{Value: "2026-07-18T15:46:00Z"}
+	config.FullScanDailyTime = types.String{Value: "15:46:00"}
 
 	r := resourceCertificateAuthority{}
 	req := tfsdk.ValidateResourceConfigRequest{Config: asConfig(t, ctx, schema, config)}
@@ -374,7 +374,7 @@ func TestUnitCAValidateConfigAllowsEitherVariantAlone(t *testing.T) {
 	t.Run("daily only", func(t *testing.T) {
 		t.Parallel()
 		config := blankCAConfig()
-		config.IncrementalScanDailyTime = types.String{Value: "2026-07-18T15:46:00Z"}
+		config.IncrementalScanDailyTime = types.String{Value: "15:46:00"}
 
 		req := tfsdk.ValidateResourceConfigRequest{Config: asConfig(t, ctx, schema, config)}
 		resp := &tfsdk.ValidateResourceConfigResponse{}
@@ -395,4 +395,102 @@ func TestUnitCAValidateConfigAllowsEitherVariantAlone(t *testing.T) {
 			t.Errorf("expected no error when no schedule variant is declared for any pair, got: %+v", resp.Diagnostics)
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests for GH issue #193 follow-up (dev-harness Gap A):
+//
+// Command normalizes a Daily schedule's Time field to the server's current
+// date on every read while echoing back the exact UTC time-of-day it was
+// given (confirmed live: PUT an explicit anchor date, re-GET). A full
+// RFC3339 timestamp wire format can therefore never round-trip -- every
+// Read would see a "changed" date component even though nothing about the
+// schedule actually changed, and the RFC3339 offset was pure noise Command
+// ignores entirely. This produced "Provider produced inconsistent result
+// after apply" on every single apply once threshold_check_daily_time (etc)
+// was declared with any date other than "today".
+//
+// The fix switches the wire format to a bare UTC time-of-day, "HH:MM:SS"
+// (caDailyTimeLayout): scheduleToState formats with it, buildSchedule parses
+// it and anchors the result to a fixed, arbitrary date (Command rewrites the
+// date server-side regardless of what is sent), and ValidateConfig validates
+// against the same layout -- rejecting the old RFC3339 format instead of
+// silently accepting it.
+// ---------------------------------------------------------------------------
+
+// TestUnitCAValidateConfigRejectsRFC3339DailyTime guards against the old wire
+// format regressing back in: a full RFC3339 timestamp (the pre-fix format)
+// is NOT a valid caDailyTimeLayout ("HH:MM:SS") value and must be rejected,
+// not silently accepted via a lenient parse.
+func TestUnitCAValidateConfigRejectsRFC3339DailyTime(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	schema := caSchema(t, ctx)
+
+	config := blankCAConfig()
+	config.FullScanDailyTime = types.String{Value: "2026-07-17T15:46:00Z"}
+
+	r := resourceCertificateAuthority{}
+	req := tfsdk.ValidateResourceConfigRequest{Config: asConfig(t, ctx, schema, config)}
+	resp := &tfsdk.ValidateResourceConfigResponse{}
+	r.ValidateConfig(ctx, req, resp)
+
+	if !resp.Diagnostics.HasError() {
+		t.Fatalf(
+			"expected ValidateConfig to reject a full RFC3339 timestamp for full_scan_daily_time (the old, " +
+				"pre-fix wire format is no longer accepted -- only a bare \"HH:MM:SS\" UTC time-of-day is), got no error",
+		)
+	}
+}
+
+// TestUnitCAScheduleDailyTimeRoundTrip is the round-trip regression test:
+// buildSchedule must accept the bare "HH:MM:SS" UTC time-of-day format and
+// scheduleToState must produce that exact same string back out, with no
+// date component or timezone offset surviving anywhere in the round trip
+// (Command's GET echoes the UTC time-of-day exactly but rewrites the anchor
+// date to the current date, so any date information the provider sent or
+// stored would be pure noise that could never round-trip cleanly).
+func TestUnitCAScheduleDailyTimeRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	sched, err := buildSchedule(types.Int64{Null: true}, types.String{Value: "07:00:00"})
+	if err != nil {
+		t.Fatalf("buildSchedule returned an error: %v", err)
+	}
+	if sched == nil || sched.Daily == nil {
+		t.Fatalf("buildSchedule(\"07:00:00\") did not produce a Daily-shaped schedule: %+v", sched)
+	}
+
+	_, daily := scheduleToState(sched)
+	if daily.Value != "07:00:00" {
+		t.Errorf(
+			"buildSchedule(\"07:00:00\") -> scheduleToState round-trip = %q, want \"07:00:00\" unchanged",
+			daily.Value,
+		)
+	}
+}
+
+// TestUnitCAScheduleDailyTimeNormalizesNonUTCOffset verifies that a server
+// response whose Daily.Time carries a non-UTC offset (e.g. if the SDK ever
+// deserializes a "+02:00" wire value instead of normalizing to "Z" itself)
+// is still normalized to the correct UTC time-of-day by scheduleToState,
+// since scheduleToState explicitly calls .UTC() before formatting.
+func TestUnitCAScheduleDailyTimeNormalizesNonUTCOffset(t *testing.T) {
+	t.Parallel()
+
+	loc := time.FixedZone("+02:00", 2*60*60)
+	// 09:00 in +02:00 is 07:00 UTC.
+	nonUTC := time.Date(2026, 7, 17, 9, 0, 0, 0, loc)
+	sched := &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
+		Daily: &v1.KeyfactorCommonSchedulingModelsTimeModel{Time: &nonUTC},
+	}
+
+	_, daily := scheduleToState(sched)
+
+	if daily.Value != "07:00:00" {
+		t.Errorf(
+			"a Daily.Time carrying a non-UTC offset must normalize to the correct UTC time-of-day: got %q, want \"07:00:00\"",
+			daily.Value,
+		)
+	}
 }

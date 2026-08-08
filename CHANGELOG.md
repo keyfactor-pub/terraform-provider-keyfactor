@@ -30,7 +30,7 @@
 
 ### Features
 
-- feat: `keyfactor_certificate_authority` now supports the Daily schedule variant for `full_scan`, `incremental_scan`, and `threshold_check` via new `full_scan_daily_time`, `incremental_scan_daily_time`, and `threshold_check_daily_time` attributes (RFC3339 timestamps), mutually exclusive with the existing `*_interval_minutes` attribute per schedule.
+- feat: `keyfactor_certificate_authority` now supports the Daily schedule variant for `full_scan`, `incremental_scan`, and `threshold_check` via new `full_scan_daily_time`, `incremental_scan_daily_time`, and `threshold_check_daily_time` attributes, mutually exclusive with the existing `*_interval_minutes` attribute per schedule. These attributes take a bare UTC time-of-day formatted `"HH:MM:SS"` (e.g. `"07:00:00"`), not a full timestamp — live verification against Command shows it echoes back the exact time-of-day it was given but silently rewrites the date component to the current date on every read, so a full RFC3339 timestamp (the format this feature originally shipped with) could never round-trip: every apply would see a "changed" date even though nothing about the schedule had actually changed, producing "Provider produced inconsistent result after apply" the first time a declared value's date wasn't "today". A full RFC3339 timestamp is now rejected at plan time with a message pointing at the `"HH:MM:SS"` format.
 
 ### Fixes
 

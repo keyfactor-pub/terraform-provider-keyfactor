@@ -418,13 +418,13 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 		Name:               types.String{Value: resp.Name},
 		ShortName:          types.String{Value: resp.ShortName},
 		Capability:         types.String{Value: resp.Capability},
-		LocalStore:         types.Bool{Value: resp.LocalStore},
+		LocalStore:         boolPtrToTfBool(resp.LocalStore),
 		StorePathType:      types.String{Value: resp.StorePathType},
 		StorePathValue:     types.String{Value: resp.StorePathValue},
 		PrivateKeyAllowed:  types.String{Value: resp.PrivateKeyAllowed},
-		ServerRequired:     types.Bool{Value: resp.ServerRequired},
-		PowerShell:         types.Bool{Value: resp.PowerShell},
-		BlueprintAllowed:   types.Bool{Value: resp.BlueprintAllowed},
+		ServerRequired:     boolPtrToTfBool(resp.ServerRequired),
+		PowerShell:         boolPtrToTfBool(resp.PowerShell),
+		BlueprintAllowed:   boolPtrToTfBool(resp.BlueprintAllowed),
 		CustomAliasAllowed: types.String{Value: resp.CustomAliasAllowed},
 		ImportType:         types.Int64{Value: int64(resp.ImportType)},
 		ServerRegistration: types.Int64{Value: int64(resp.ServerRegistration)},
@@ -533,18 +533,32 @@ func preserveListEmptyVsNull[T any](target *[]T, reference []T) {
 	}
 }
 
+// tfBoolToBoolPtr converts a types.Bool from plan/config into a *bool for the
+// SDK request. Null or Unknown becomes nil so an unset/undetermined attribute
+// is omitted from the request (the CertificateStoreType JSON tags carry
+// omitempty) rather than coercing it to an explicit false the user never
+// asked for; a known value -- including explicit false -- is sent as-is,
+// since a non-nil *bool is not subject to Go's zero-value omitempty elision.
+func tfBoolToBoolPtr(v types.Bool) *bool {
+	if v.Null || v.Unknown {
+		return nil
+	}
+	val := v.Value
+	return &val
+}
+
 func certStoreTypeDefToAPIRequest(plan KeyfactorCertStoreTypeDef) api.CertificateStoreType {
 	req := api.CertificateStoreType{
 		Name:               plan.Name.Value,
 		ShortName:          plan.ShortName.Value,
 		Capability:         plan.Capability.Value,
-		LocalStore:         plan.LocalStore.Value,
+		LocalStore:         tfBoolToBoolPtr(plan.LocalStore),
 		StorePathType:      plan.StorePathType.Value,
 		StorePathValue:     plan.StorePathValue.Value,
 		PrivateKeyAllowed:  plan.PrivateKeyAllowed.Value,
-		ServerRequired:     plan.ServerRequired.Value,
-		PowerShell:         plan.PowerShell.Value,
-		BlueprintAllowed:   plan.BlueprintAllowed.Value,
+		ServerRequired:     tfBoolToBoolPtr(plan.ServerRequired),
+		PowerShell:         tfBoolToBoolPtr(plan.PowerShell),
+		BlueprintAllowed:   tfBoolToBoolPtr(plan.BlueprintAllowed),
 		CustomAliasAllowed: plan.CustomAliasAllowed.Value,
 		SupportedOperations: &api.StoreTypeSupportedOperations{
 			Add:        plan.SupportsAdd.Value,

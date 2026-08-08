@@ -8,6 +8,7 @@ import (
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -49,6 +50,73 @@ func (m useStateOrNullModifier) Modify(_ context.Context, req tfsdk.ModifyAttrib
 	}
 	// Whether state is null or has a value, use the state (null → null, known → known).
 	resp.AttributePlan = req.AttributeState
+}
+
+// displayNameFollowsFriendlyNameModifier resolves display_name's plan the way
+// tfsdk.UseStateForUnknown would (prior state value carried forward) EXCEPT
+// when friendly_name is itself changing this apply. display_name is a
+// Computed, read-only field that Command derives from friendly_name (the
+// server mirrors a configured friendly_name back as display_name once one is
+// set) -- pinning display_name to the prior state's value with a plain
+// UseStateForUnknown modifier is only safe when friendly_name is NOT
+// changing. When friendly_name IS changing, display_name must be left
+// Unknown so Update()'s response can populate the new server-derived value
+// without the framework rejecting it as "Provider produced inconsistent
+// result after apply" (the stale prior value would otherwise be pinned as
+// the "planned" value, which the real post-apply value legitimately no
+// longer matches). See dev-harness Gap B / GH issue #195 follow-up.
+type displayNameFollowsFriendlyNameModifier struct{}
+
+func (m displayNameFollowsFriendlyNameModifier) Description(_ context.Context) string {
+	return "Uses the prior state value unless friendly_name is changing this apply, in which case display_name is left unknown so it can be recomputed from the server's response."
+}
+
+func (m displayNameFollowsFriendlyNameModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m displayNameFollowsFriendlyNameModifier) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+	if req.AttributeState.IsNull() {
+		return
+	}
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() {
+		return
+	}
+
+	var friendlyConfig, friendlyState types.String
+	if diags := req.Config.GetAttribute(ctx, path.Root("friendly_name"), &friendlyConfig); diags.HasError() {
+		return
+	}
+	if diags := req.State.GetAttribute(ctx, path.Root("friendly_name"), &friendlyState); diags.HasError() {
+		return
+	}
+
+	switch {
+	case friendlyConfig.Unknown:
+		// Cannot yet tell whether friendly_name is changing (it depends on
+		// another not-yet-known value) -- be conservative and leave
+		// display_name unknown.
+		return
+	case friendlyConfig.Null:
+		// friendly_name undeclared: it will resolve to the prior state value
+		// via its own UseStateForUnknown modifier, so it is NOT changing.
+		resp.AttributePlan = req.AttributeState
+	case !friendlyState.Null && friendlyConfig.Value == friendlyState.Value:
+		// friendly_name explicitly re-declared with its current value: not
+		// changing.
+		resp.AttributePlan = req.AttributeState
+	default:
+		// friendly_name is changing (newly declared, or declared with a
+		// value different from current state) -- leave display_name Unknown
+		// so the server's post-update response is free to set the new
+		// mirrored value.
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -241,8 +309,8 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 			"display_name": {
 				Type:          types.StringType,
 				Computed:      true,
-				Description:   "Display name field from the server. Read-only.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Display name field from the server. Read-only. Mirrors friendly_name once one is configured, so it may legitimately change whenever friendly_name changes.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{displayNameFollowsFriendlyNameModifier{}},
 			},
 			"oid": {
 				Type:          types.StringType,
@@ -324,9 +392,11 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"allowed_requesters": {
-				Type:        types.ListType{ElemType: types.StringType},
-				Optional:    true,
-				Description: "List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead).",
+				Type:          types.ListType{ElemType: types.StringType},
+				Optional:      true,
+				Computed:      true,
+				Description:   "List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead). Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveAllowedRequesters) -- an undeclared value is not necessarily null.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"requires_approval": {
 				Type:          types.BoolType,

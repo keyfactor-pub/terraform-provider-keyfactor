@@ -67,7 +67,7 @@ resource "keyfactor_certificate_template" "webserver_with_cleanup" {
 
 - `allow_one_click_renewals` (Boolean) Whether one-click renewals are allowed.
 - `allowed_enrollment_types` (Number) Bitmask of allowed enrollment types: 0=none (disabled), 1=PFX, 2=CSR, 3=both. Setting to 0 effectively disables the template. Deprecated in Command v25+ (use enrollment patterns).
-- `allowed_requesters` (List of String) List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead).
+- `allowed_requesters` (List of String) List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead). Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveAllowedRequesters) -- an undeclared value is not necessarily null.
 - `certificate_cleanup_enabled` (Boolean) Whether expired certificate cleanup is enabled (Command v25+).
 - `delete_with_archived_key` (Boolean) Whether to delete certificates with archived keys during cleanup (Command v25+).
 - `enrollment_fields` (Attributes List) Custom enrollment fields for CSR/PFX enrollment. Deprecated in Command v25+. (see [below for nested schema](#nestedatt--enrollment_fields))
@@ -88,7 +88,7 @@ resource "keyfactor_certificate_template" "webserver_with_cleanup" {
 
 - `common_name` (String) Short name (common name) of the template as defined in the CA. Read-only.
 - `configuration_tenant` (String) Configuration tenant. Read-only.
-- `display_name` (String) Display name field from the server. Read-only.
+- `display_name` (String) Display name field from the server. Read-only. Mirrors friendly_name once one is configured, so it may legitimately change whenever friendly_name changes.
 - `extended_key_usages` (Attributes List) Extended key usages defined on the template (read-only). (see [below for nested schema](#nestedatt--extended_key_usages))
 - `forest_root` (String) Forest root the template belongs to. Read-only.
 - `id` (Number) Integer ID of the certificate template.

@@ -136,22 +136,18 @@ lab-apply:
 ## Also verifies full→minimal: re-applies with no metadata/renewal to confirm they are cleared.
 lab-update:
 	@echo "==> Step 1: update metadata and renew_days (in-place update path)..."
-	$(LAB_ENV) TF_VAR_metadata_owner="terraform-demo-updated" \
-	           TF_VAR_metadata_email="ops@example.com" \
+	$(LAB_ENV) TF_VAR_metadata_email="ops@example.com" \
 	           TF_VAR_renew_days=60 \
 	           $(MAKE) apply
-	$(LAB_ENV) TF_VAR_metadata_owner="terraform-demo-updated" \
-	           TF_VAR_metadata_email="ops@example.com" \
+	$(LAB_ENV) TF_VAR_metadata_email="ops@example.com" \
 	           TF_VAR_renew_days=60 \
 	           $(MAKE) plan
 	@echo "==> Step 2: full→minimal — remove metadata and renewal_config from config..."
 	@echo "==>   Expect: 1 in-place change (metadata + renewal cleared), 0 to destroy"
-	$(LAB_ENV) TF_VAR_metadata_owner="" \
-	           TF_VAR_metadata_email="" \
+	$(LAB_ENV) TF_VAR_metadata_email="" \
 	           TF_VAR_renew_days=0 \
 	           $(MAKE) apply
-	$(LAB_ENV) TF_VAR_metadata_owner="" \
-	           TF_VAR_metadata_email="" \
+	$(LAB_ENV) TF_VAR_metadata_email="" \
 	           TF_VAR_renew_days=0 \
 	           $(MAKE) plan
 

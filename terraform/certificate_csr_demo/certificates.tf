@@ -3,6 +3,17 @@ locals {
   # Set the unused one to null so the provider's XOR validation is satisfied.
   tmpl    = var.certificate_template != "" ? var.certificate_template : null
   pattern = var.certificate_enrollment_pattern != "" ? var.certificate_enrollment_pattern : null
+
+  # var.suffix defaults to "_TF" for non-DNS resource naming, but an
+  # underscore embedded in a certificate common name / SAN makes this lab's
+  # EJBCA/OpenBao backend reject the enrollment outright with a generic
+  # "invalid custom extension or certificate policy OIDs" error (confirmed
+  # 2026-08-08: identical CSR requests succeed with a hyphen in the hostname
+  # and fail only with an underscore -- this is CA-side hostname/RFC policy
+  # enforcement, not a provider bug). dns_suffix swaps underscores for
+  # hyphens so hostnames (used in keys.tf) stay DNS-valid regardless of what
+  # var.suffix is set to.
+  dns_suffix = replace(var.suffix, "_", "-")
 }
 
 # -------------------------------------------------------------------------
@@ -36,10 +47,12 @@ resource "keyfactor_certificate" "full_csr" {
   certificate_enrollment_pattern = local.pattern
   csr                            = tls_cert_request.full_csr.cert_request_pem
 
-  # Custom metadata tracked in Command (in-place updatable; cleared on server when omitted)
-  # Setting metadata_owner="" omits this block — same as removing it from config.
-  metadata = var.metadata_owner != "" ? {
-    "Owner"         = var.metadata_owner
+  # Custom metadata tracked in Command (in-place updatable; cleared on server when omitted).
+  # Only "Email-Contact" is set -- kfclab defines no "Owner" metadata field, and Command
+  # rejects unknown metadata field names with "Invalid Metadata Name: 'Owner'" (confirmed
+  # 2026-08-07). Setting metadata_email="" omits this block entirely, same as removing it
+  # from config.
+  metadata = var.metadata_email != "" ? {
     "Email-Contact" = var.metadata_email
   } : null
 

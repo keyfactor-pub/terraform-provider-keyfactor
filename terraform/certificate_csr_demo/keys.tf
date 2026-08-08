@@ -16,7 +16,7 @@ resource "tls_private_key" "minimal_csr" {
 resource "tls_cert_request" "minimal_csr" {
   private_key_pem = tls_private_key.minimal_csr.private_key_pem
   subject {
-    common_name = "tf-demo-minimal-csr${var.suffix}.example.com"
+    common_name = "tf-demo-minimal-csr${local.dns_suffix}.example.com"
   }
 }
 
@@ -31,9 +31,9 @@ resource "tls_private_key" "full_csr" {
 resource "tls_cert_request" "full_csr" {
   private_key_pem = tls_private_key.full_csr.private_key_pem
   subject {
-    common_name = "tf-demo-full-csr${var.suffix}.example.com"
+    common_name = "tf-demo-full-csr${local.dns_suffix}.example.com"
   }
-  dns_names    = ["tf-demo-full-csr${var.suffix}.example.com", "alt.tf-demo-full-csr${var.suffix}.example.com"]
+  dns_names    = ["tf-demo-full-csr${local.dns_suffix}.example.com", "alt.tf-demo-full-csr${local.dns_suffix}.example.com"]
   ip_addresses = ["10.0.0.1"]
 }
 
@@ -48,7 +48,7 @@ resource "tls_private_key" "rsa_2048" {
 resource "tls_cert_request" "rsa_2048" {
   private_key_pem = tls_private_key.rsa_2048.private_key_pem
   subject {
-    common_name = "tf-demo-csr-rsa2048${var.suffix}.example.com"
+    common_name = "tf-demo-csr-rsa2048${local.dns_suffix}.example.com"
   }
 }
 
@@ -63,7 +63,7 @@ resource "tls_private_key" "rsa_3072" {
 resource "tls_cert_request" "rsa_3072" {
   private_key_pem = tls_private_key.rsa_3072.private_key_pem
   subject {
-    common_name = "tf-demo-csr-rsa3072${var.suffix}.example.com"
+    common_name = "tf-demo-csr-rsa3072${local.dns_suffix}.example.com"
   }
 }
 
@@ -78,7 +78,7 @@ resource "tls_private_key" "rsa_4096" {
 resource "tls_cert_request" "rsa_4096" {
   private_key_pem = tls_private_key.rsa_4096.private_key_pem
   subject {
-    common_name = "tf-demo-csr-rsa4096${var.suffix}.example.com"
+    common_name = "tf-demo-csr-rsa4096${local.dns_suffix}.example.com"
   }
 }
 
@@ -93,7 +93,7 @@ resource "tls_private_key" "rsa_8192" {
 resource "tls_cert_request" "rsa_8192" {
   private_key_pem = tls_private_key.rsa_8192.private_key_pem
   subject {
-    common_name = "tf-demo-csr-rsa8192${var.suffix}.example.com"
+    common_name = "tf-demo-csr-rsa8192${local.dns_suffix}.example.com"
   }
 }
 
@@ -108,7 +108,7 @@ resource "tls_private_key" "ecc_p256" {
 resource "tls_cert_request" "ecc_p256" {
   private_key_pem = tls_private_key.ecc_p256.private_key_pem
   subject {
-    common_name = "tf-demo-csr-ecc256${var.suffix}.example.com"
+    common_name = "tf-demo-csr-ecc256${local.dns_suffix}.example.com"
   }
 }
 
@@ -123,7 +123,7 @@ resource "tls_private_key" "ecc_p384" {
 resource "tls_cert_request" "ecc_p384" {
   private_key_pem = tls_private_key.ecc_p384.private_key_pem
   subject {
-    common_name = "tf-demo-csr-ecc384${var.suffix}.example.com"
+    common_name = "tf-demo-csr-ecc384${local.dns_suffix}.example.com"
   }
 }
 
@@ -138,7 +138,7 @@ resource "tls_private_key" "ecc_p521" {
 resource "tls_cert_request" "ecc_p521" {
   private_key_pem = tls_private_key.ecc_p521.private_key_pem
   subject {
-    common_name = "tf-demo-csr-ecc521${var.suffix}.example.com"
+    common_name = "tf-demo-csr-ecc521${local.dns_suffix}.example.com"
   }
 }
 
@@ -154,7 +154,7 @@ resource "tls_private_key" "ed25519" {
 resource "tls_cert_request" "ed25519" {
   private_key_pem = tls_private_key.ed25519.private_key_pem
   subject {
-    common_name = "tf-demo-csr-ed25519${var.suffix}.example.com"
+    common_name = "tf-demo-csr-ed25519${local.dns_suffix}.example.com"
   }
 }
 
@@ -171,6 +171,6 @@ resource "tls_cert_request" "ed25519" {
 data "external" "ed448_csr" {
   program = ["bash", "${path.module}/gen_ed448_csr.sh"]
   query = {
-    suffix = var.suffix
+    suffix = local.dns_suffix
   }
 }

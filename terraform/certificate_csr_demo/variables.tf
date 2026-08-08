@@ -22,16 +22,10 @@ variable "certificate_enrollment_pattern" {
   description = "Name of the enrollment pattern to use (Command v25+ / EJBCA). Mutually exclusive with certificate_template. Defaults to the kfclab lab's pattern; set to \"\" and certificate_template instead for labs without enrollment patterns (pre-v25)."
 }
 
-variable "metadata_owner" {
-  type        = string
-  default     = "terraform-demo"
-  description = "Value for the Owner metadata field on the full_csr certificate."
-}
-
 variable "metadata_email" {
   type        = string
   default     = "infosec@example.com"
-  description = "Value for the Email-Contact metadata field on the full_csr certificate."
+  description = "Value for the Email-Contact metadata field on the full_csr certificate. kfclab only defines the Email-Contact metadata field (see lab inventory) -- there is no \"Owner\" field on this lab, so this demo no longer sets one (a previous version did, and Command rejected it with \"Invalid Metadata Name: 'Owner'\"). Set to \"\" to omit the metadata block entirely."
 }
 
 variable "renew_days" {

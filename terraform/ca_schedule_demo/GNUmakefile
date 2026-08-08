@@ -1,15 +1,15 @@
 ## ca_schedule_demo/GNUmakefile
 ##
-## keyfactor_certificate_authority CA schedule lifecycle validation, using
-## the flat interval-minutes schedule fields that actually exist in the
-## released schema (full_scan_interval_minutes, incremental_scan_interval_minutes,
-## threshold_check_interval_minutes) -- see main.tf's header for why this demo
-## no longer DECLARES a Daily/Weekly/Monthly variant model (there is no such
-## Terraform attribute in the shipped schema). Steps 4 and 5 below still
-## exercise the Daily/Weekly server-side schedule variants, but only via
-## direct out-of-band API calls (api-get-ca/api-update-ca), specifically to
-## demonstrate two confirmed provider/SDK bugs around them -- see their
-## headers further down in this file.
+## keyfactor_certificate_authority CA schedule lifecycle validation, covering
+## both the flat interval-minutes schedule fields (full_scan_interval_minutes,
+## incremental_scan_interval_minutes, threshold_check_interval_minutes) and
+## the Daily time-of-day variant restored by fix #193
+## (full_scan_daily_time/incremental_scan_daily_time/threshold_check_daily_time)
+## -- see main.tf's header for schema history. Step 4 exercises the Daily
+## variant out-of-band (seeded via api-get-ca/api-update-ca, bypassing
+## Terraform) and step6 exercises it declaratively (set directly via
+## Terraform config); step5 exercises the still-open Weekly variant, which
+## remains a known SDK-level gap (#185) unrelated to #193/#194.
 ##
 ## Creates a brand-new, deliberately unreachable CA (force_save=true) instead
 ## of touching any of the lab's real CA connections -- see main.tf header.
@@ -27,14 +27,23 @@
 ##   make step3-verify    # re-GET: threshold_check_interval_minutes must survive verbatim
 ##   make step4-seed-daily  # out-of-band: seed a Daily ThresholdCheck schedule
 ##   make step4-apply       # unrelated update (monitor_thresholds toggle back)
-##   make step4-verify       # KNOWN BUG: Daily schedule is expected to be wiped to null
+##   make step4-verify       # fix #193: Daily schedule must survive, not wipe to null
 ##   make step5-seed-weekly  # out-of-band: seed a Weekly ThresholdCheck schedule
 ##   make step5-verify       # KNOWN BUG #185: terraform plan is expected to crash (JSON unmarshal)
 ##   make step5-cleanup      # reset ThresholdCheck to null so terraform can read the CA again
+##   make step6-apply-daily  # declare threshold_check_daily_time directly via Terraform config --
+##                            # KNOWN GAP (confirmed 2026-08-08): expected to FAIL with "Provider
+##                            # produced inconsistent result after apply" -- Command normalizes the
+##                            # Daily schedule's date to "today" server-side; see main.tf's resource
+##                            # block for the full writeup. This is a genuine, separate gap from the
+##                            # OOB-preservation fix step4 exercises (which works correctly).
+##   make step6-plan         # only reachable if step6-apply-daily unexpectedly succeeds
+##   make step6-revert       # undeclare it again (back to the step1-5 shape); always run this
+##                            # regardless of step6-apply-daily's outcome
 ##   make import-test     # import round-trip + drift-check
 ##   make destroy
 ##   make lifecycle        # runs all of the above in order; see the lifecycle target
-##                          # itself for how step4/step5's expected failures are handled
+##                          # itself for how step5's expected failure is handled
 
 PROVIDER_ROOT  := $(abspath ../..)
 PROVIDER_BIN   := $(HOME)/go/bin
@@ -236,6 +245,50 @@ step5-cleanup:
 	  $(MAKE) --no-print-directory -C $(PROVIDER_ROOT) api-update-ca KEYFACTOR_ENV_FILE=$(KEYFACTOR_ENV_FILE)
 
 # ---------------------------------------------------------------------------
+# Step 6: threshold_check_daily_time declared DIRECTLY in Terraform config
+# (fix #193). Unlike step4 (which proves an out-of-band Daily schedule
+# survives an unrelated update), this proves the new Daily variant round-
+# trips with zero drift when Terraform itself is the one managing it.
+#
+# Runs after step5-cleanup, when ThresholdCheck is null both server-side and
+# (once step6-apply-daily's own refresh runs) in state -- inserting this
+# step any earlier would fight step3/step4/step5's out-of-band ThresholdCheck
+# seeding on the same field; inserting it after import-test would break
+# import-drift-check's "only force_save differs" contract. step6-revert
+# undeclares the attribute again (var back to its null default) so
+# import-test/import-drift-check below see the same all-undeclared shape
+# step1-5 left behind.
+# ---------------------------------------------------------------------------
+## step6-apply-daily: Declare threshold_check_daily_time via Terraform config
+##   for the first time (no out-of-band seeding involved).
+##   KNOWN GAP (confirmed 2026-08-08 against kfclab, Command 25.5): this is
+##   expected to FAIL with "Provider produced inconsistent result after
+##   apply: .threshold_check_daily_time: was cty.StringVal(\"<declared
+##   date>\"), but now cty.StringVal(\"<today's date>\")". Command normalizes
+##   a Daily schedule's Time to today's date server-side while preserving
+##   only the time-of-day; the provider echoes back that server-normalized
+##   value, which can never match a user-declared non-today date. Separate,
+##   not-yet-fixed gap from the OOB-preservation fix step4 exercises.
+step6-apply-daily:
+	$(LAB_ENV) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)" -var="full_scan_interval_minutes=120" -var="incremental_scan_interval_minutes=15" -var="monitor_thresholds=false" -var="threshold_check_daily_time=2026-01-01T04:15:00Z"
+
+## step6-plan: Re-plan with the same value -- only reachable if
+##   step6-apply-daily unexpectedly succeeds (see its header). Expect "No
+##   changes" if it does.
+step6-plan:
+	$(LAB_ENV) $(TF) plan -var="suffix=$(SUFFIX)" -var="full_scan_interval_minutes=120" -var="incremental_scan_interval_minutes=15" -var="monitor_thresholds=false" -var="threshold_check_daily_time=2026-01-01T04:15:00Z"
+
+## step6-revert: Undeclare threshold_check_daily_time again (var back to its
+##   null default) so the rest of the lifecycle (import-test/
+##   import-drift-check) sees the same all-undeclared shape step1-5 left
+##   behind. Also re-exercises fix #194: this Update() call transitions the
+##   CA away from a Daily-shaped ThresholdCheck without ever touching
+##   auth_certificate, which is exactly the path that used to crash with the
+##   OAuth/Client-Certificate mixing error on the FOLLOWING destroy.
+step6-revert:
+	$(LAB_ENV) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)" -var="full_scan_interval_minutes=120" -var="incremental_scan_interval_minutes=15" -var="monitor_thresholds=false"
+
+# ---------------------------------------------------------------------------
 # Import round-trip + destroy
 # ---------------------------------------------------------------------------
 ## import-test: Remove the demo CA from state and re-import it by id.
@@ -282,20 +335,20 @@ drift-check: import-drift-check
 ## lifecycle: Full walk -- step1 (declare both intervals) -> step2 (in-place
 ##   update) -> step3 (out-of-band threshold_check preservation across an
 ##   unrelated update, Interval variant) -> step4 (out-of-band Daily
-##   schedule wipe check -- KNOWN PROVIDER BUG, expected FAIL) -> step5
-##   (out-of-band Weekly schedule deserialization check -- KNOWN BUG #185,
-##   expected FAIL) -> import round-trip -> destroy.
+##   schedule wipe check -- fix #193) -> step5 (out-of-band Weekly schedule
+##   deserialization check -- KNOWN BUG #185, expected FAIL, unrelated SDK
+##   gap) -> step6 (threshold_check_daily_time declared directly in
+##   Terraform config -- fix #193) -> import round-trip -> destroy.
 ##
-##   step4/step5's own verify targets are EXPECTED to fail on the currently
-##   released provider (2.9.1) -- that failure is the genuine provider-bug
-##   reproduction this demo exists to surface, not a harness defect. Their
-##   exit codes are captured (not chained with &&/||) so a real provider
-##   bug never skips cleanup/destroy and never gets confused with an actual
+##   step4/step6's own verify targets are expected to PASS now that fixes
+##   #193/#194 are present; step5 is expected to keep FAILing (SDK issue
+##   #185, a separate, not-yet-fixed gap). Every step's exit code is
+##   captured (not chained with &&/||) so an unexpected failure anywhere
+##   never skips cleanup/destroy and never gets confused with an actual
 ##   harness-mechanics failure in import-test/import-drift-check/destroy.
-##   `make lifecycle` exits non-zero overall if either known bug reproduces,
-##   after cleanup has fully run -- read the printed summary to tell a
-##   genuine harness regression (destroy/import failing) apart from an
-##   expected provider-bug repro.
+##   `make lifecycle` exits non-zero overall if step4/step6 fail OR if step5
+##   unexpectedly starts passing/fails differently -- read the printed
+##   summary to tell a genuine regression apart from the expected #185 gap.
 lifecycle:
 	$(MAKE) step1-apply SUFFIX=$(SUFFIX)
 	$(MAKE) step1-plan SUFFIX=$(SUFFIX)
@@ -303,7 +356,7 @@ lifecycle:
 	$(MAKE) step2-plan SUFFIX=$(SUFFIX)
 	@CA_ID=$$($(LAB_ENV) $(TF) output -raw ca_id); \
 	 echo "==> demo CA id: $$CA_ID"; \
-	 HARNESS_FAIL=0; STEP4_EXIT=0; STEP4_RAN=0; STEP5_EXIT=0; STEP5_RAN=0; \
+	 HARNESS_FAIL=0; STEP4_EXIT=0; STEP4_RAN=0; STEP5_EXIT=0; STEP5_RAN=0; STEP6_EXIT=0; STEP6_RAN=0; \
 	 if ! $(MAKE) step3-seed CA_ID=$$CA_ID; then echo "FAIL (harness): step3-seed failed -- see above."; HARNESS_FAIL=1; fi; \
 	 if [ $$HARNESS_FAIL -eq 0 ] && ! $(MAKE) step3-apply SUFFIX=$(SUFFIX); then echo "FAIL (harness): step3-apply failed -- see above."; HARNESS_FAIL=1; fi; \
 	 if [ $$HARNESS_FAIL -eq 0 ] && ! $(MAKE) step3-verify CA_ID=$$CA_ID; then echo "FAIL (harness): step3-verify failed -- see above."; HARNESS_FAIL=1; fi; \
@@ -313,6 +366,12 @@ lifecycle:
 	 if [ $$HARNESS_FAIL -eq 0 ] && ! $(MAKE) step5-seed-weekly CA_ID=$$CA_ID; then echo "FAIL (harness): step5-seed-weekly failed -- see above."; HARNESS_FAIL=1; fi; \
 	 if [ $$HARNESS_FAIL -eq 0 ]; then STEP5_RAN=1; if ! $(MAKE) step5-verify SUFFIX=$(SUFFIX); then STEP5_EXIT=1; fi; fi; \
 	 if [ $$STEP5_RAN -eq 1 ] && ! $(MAKE) step5-cleanup CA_ID=$$CA_ID; then echo "FAIL (harness): step5-cleanup failed -- see above. CA may be unreadable by terraform until manually reset."; HARNESS_FAIL=1; fi; \
+	 if [ $$HARNESS_FAIL -eq 0 ]; then STEP6_RAN=1; \
+	   if ! $(MAKE) step6-apply-daily SUFFIX=$(SUFFIX); then STEP6_EXIT=1; \
+	   elif ! $(MAKE) step6-plan SUFFIX=$(SUFFIX); then STEP6_EXIT=1; \
+	   fi; \
+	   if ! $(MAKE) step6-revert SUFFIX=$(SUFFIX); then echo "FAIL (harness): step6-revert failed -- see above. threshold_check_daily_time may still be declared; import-test below may show unexpected drift."; HARNESS_FAIL=1; fi; \
+	 fi; \
 	 if ! $(MAKE) import-test CA_ID=$$CA_ID SUFFIX=$(SUFFIX); then \
 	   echo "FAIL (harness): import-test failed -- see above."; HARNESS_FAIL=1; \
 	 elif ! $(MAKE) import-drift-check SUFFIX=$(SUFFIX); then \
@@ -325,25 +384,33 @@ lifecycle:
 	 echo "ca_schedule_demo summary:"; \
 	 if [ $$HARNESS_FAIL -ne 0 ]; then echo "  HARNESS FAILURE occurred -- see FAIL (harness) lines above; this is a real regression, not a known-bug repro."; fi; \
 	 if [ $$STEP4_RAN -ne 1 ]; then \
-	   echo "  step4 (Daily-schedule wipe check):        SKIPPED (an earlier step failed -- see HARNESS FAILURE above)."; \
+	   echo "  step4 (Daily-schedule wipe check, fix #193):         SKIPPED (an earlier step failed -- see HARNESS FAILURE above)."; \
 	 elif [ $$STEP4_EXIT -ne 0 ]; then \
-	   echo "  step4 (Daily-schedule wipe check):        KNOWN PROVIDER BUG reproduced."; \
+	   echo "  step4 (Daily-schedule wipe check, fix #193):         FAIL -- schedule was wiped; #193 did not fix this."; \
 	 else \
-	   echo "  step4 (Daily-schedule wipe check):        PASS (no wipe observed)."; \
+	   echo "  step4 (Daily-schedule wipe check, fix #193):         PASS (no wipe observed)."; \
 	 fi; \
 	 if [ $$STEP5_RAN -ne 1 ]; then \
-	   echo "  step5 (Weekly-schedule deserialization):  SKIPPED (an earlier step failed -- see HARNESS FAILURE above)."; \
+	   echo "  step5 (Weekly-schedule deserialization, SDK #185):   SKIPPED (an earlier step failed -- see HARNESS FAILURE above)."; \
 	 elif [ $$STEP5_EXIT -ne 0 ]; then \
-	   echo "  step5 (Weekly-schedule deserialization):  KNOWN PROVIDER BUG #185 reproduced."; \
+	   echo "  step5 (Weekly-schedule deserialization, SDK #185):   KNOWN BUG #185 reproduced (expected -- separate SDK-level fix, not part of this pass)."; \
 	 else \
-	   echo "  step5 (Weekly-schedule deserialization):  PASS (no crash observed)."; \
+	   echo "  step5 (Weekly-schedule deserialization, SDK #185):   PASS (unexpected -- #185 appears fixed too)."; \
+	 fi; \
+	 if [ $$STEP6_RAN -ne 1 ]; then \
+	   echo "  step6 (threshold_check_daily_time declarative, #193): SKIPPED (an earlier step failed -- see HARNESS FAILURE above)."; \
+	 elif [ $$STEP6_EXIT -ne 0 ]; then \
+	   echo "  step6 (threshold_check_daily_time declarative, #193): FAIL -- see above."; \
+	 else \
+	   echo "  step6 (threshold_check_daily_time declarative, #193): PASS (applied with zero drift on replan)."; \
 	 fi; \
 	 echo "=============================================================="; \
-	 if [ $$HARNESS_FAIL -ne 0 ] || [ $$STEP4_EXIT -ne 0 ] || [ $$STEP5_EXIT -ne 0 ]; then exit 1; fi
+	 if [ $$HARNESS_FAIL -ne 0 ] || [ $$STEP4_EXIT -ne 0 ] || [ $$STEP6_EXIT -ne 0 ]; then exit 1; fi
 
 .PHONY: build authcert init validate step1-apply step1-plan step2-apply step2-plan \
         step3-seed step3-apply step3-verify \
         step4-seed-daily step4-apply step4-verify \
         step5-seed-weekly step5-verify step5-cleanup \
+        step6-apply-daily step6-plan step6-revert \
         import-test import-drift-check destroy show clean \
         plan apply import-all drift-check lifecycle

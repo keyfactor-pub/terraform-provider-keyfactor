@@ -23,6 +23,7 @@ terraform/**/.env
 terraform/**/sa-context.json
 terraform/**/*.pfx
 terraform/**/harness-results.txt
+terraform/harness-results*.txt
 terraform/**/tf_state.json
 terraform/**/_import_pairs.txt
 terraform/**/store_types.tf

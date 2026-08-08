@@ -193,7 +193,12 @@ lab-destroy:
 ##   reproduces, after destroy has fully run -- read the printed summary to
 ##   tell a genuine harness regression (destroy failing) apart from the
 ##   expected #175 repro.
-lifecycle: lab-apply lab-update lab-import-all lab-apply lab-drift-check
+lifecycle:
+	$(MAKE) lab-apply
+	$(MAKE) lab-update
+	$(MAKE) lab-import-all
+	$(MAKE) lab-apply
+	$(MAKE) lab-drift-check
 	@HARNESS_FAIL=0; REPRO175_EXIT=0; \
 	 if ! $(MAKE) repro175-apply; then echo "FAIL (harness): repro175-apply failed -- see above."; HARNESS_FAIL=1; fi; \
 	 if [ $$HARNESS_FAIL -eq 0 ] && ! $(MAKE) repro175-seed; then echo "FAIL (harness): repro175-seed failed -- see above (this is the OOB setup step, not the bug check itself)."; HARNESS_FAIL=1; fi; \

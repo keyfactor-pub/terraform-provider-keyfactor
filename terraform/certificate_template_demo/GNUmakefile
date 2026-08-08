@@ -4,8 +4,12 @@
 ## be created via the Command API -- this resource must be imported by
 ## integer ID before any update is possible.
 ##
-## KNOWN LAB CONSTRAINT: some Command instances reject ANY template update
-## with "'Policies' cannot be empty" (see main.tf header). `lab-update`
+## KNOWN GAP (see main.tf header for full detail, incl. issue #195 status):
+## `lab-update` fails with "Provider produced inconsistent result after
+## apply" on display_name/allowed_requesters/key_retention whenever
+## allowed_requesters is left undeclared -- allowed_requesters is Optional
+## but not Computed, so the framework rejects the corrected (non-null) value
+## fix #195's preserveAllowedRequesters now legitimately returns. `lab-update`
 ## reports this as a clear FAIL, not a harness crash -- that failure IS the
 ## point of this demo on labs with the gap.
 ##
@@ -117,8 +121,8 @@ lab-destroy:
 
 ## lab-update: Apply a safe friendly_name change to exercise Update().
 ##   Reports a clear PASS/FAIL -- a FAIL here on labs with the known
-##   "'Policies' cannot be empty" gap is expected and IS the point of this
-##   demo, not a harness crash.
+##   inconsistent-result-after-apply gap (see main.tf header, issue #195) is
+##   expected and IS the point of this demo, not a harness crash.
 lab-update:
 	@echo "==> [1/3] import (if not already in state)..."
 	@if $(LAB_ENV) $(TF) state list 2>/dev/null | grep -qx "keyfactor_certificate_template.demo"; then \
@@ -134,7 +138,7 @@ lab-update:
 	 if [ $$APPLY_EXIT -eq 0 ]; then \
 	   echo "PASS: template update succeeded."; \
 	 else \
-	   echo "FAIL: template update failed -- likely the known \"'Policies' cannot be empty\" lab/SDK gap (see main.tf header). This is a documented constraint, not a crash."; \
+	   echo "FAIL: template update failed -- likely the known inconsistent-result-after-apply gap on display_name/allowed_requesters/key_retention (see main.tf header, issue #195). This is a documented constraint, not a crash."; \
 	   exit 1; \
 	 fi
 	@echo "==> [3/3] revert friendly_name..."

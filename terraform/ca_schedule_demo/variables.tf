@@ -22,6 +22,12 @@ variable "incremental_scan_interval_minutes" {
   description = "incremental_scan_interval_minutes to declare in config. Same allowed-value set as full_scan_interval_minutes."
 }
 
+variable "threshold_check_daily_time" {
+  type        = string
+  default     = null
+  description = "RFC3339 timestamp (e.g. \"2026-01-01T04:15:00Z\") for a declarative once-daily threshold_check schedule. Defaults to null, which -- because a `var.x = null` reference produces the same null config value as omitting the attribute entirely -- leaves threshold_check_daily_time genuinely undeclared/unmanaged, same as threshold_check_interval_minutes. Set via TF_VAR_threshold_check_daily_time to exercise the Daily variant declaratively (see GNUmakefile step6-*)."
+}
+
 variable "monitor_thresholds" {
   type        = bool
   default     = false

@@ -113,12 +113,26 @@ lab-destroy:
 
 ## lifecycle: Full lifecycle: apply → update → import-all → apply (reconcile) → drift-check → destroy
 ##   REQUIRES TF_VAR_ca_client_id/ca_client_secret/ca_token_url to be set.
+## NOTE: the reconcile step below deliberately invokes lab-apply as its own
+##   $(MAKE) call, separate from the earlier lab-apply -- GNU Make treats a
+##   .PHONY target as already "up to date" for the rest of a single make
+##   process once it has run once, so `$(MAKE) lab-apply lab-update ...
+##   lab-apply ...` (multiple goals in ONE make invocation) silently skips
+##   the second lab-apply ("Nothing to be done for lab-apply"), and so would
+##   a prerequisite list with a repeated name. Each `$(MAKE) target` line
+##   below is a separate make PROCESS, which has no such memory, so the
+##   reconcile actually runs. Confirmed empirically 2026-08-08.
 lifecycle:
 	@if [ -z "$$TF_VAR_ca_client_id" ] || [ -z "$$TF_VAR_ca_client_secret" ] || [ -z "$$TF_VAR_ca_token_url" ]; then \
 	  echo "SKIPPED: ca_ejbca_demo requires TF_VAR_ca_client_id / TF_VAR_ca_client_secret / TF_VAR_ca_token_url for the target gateway (no defaults -- see variables.tf)."; \
-	else \
-	  $(MAKE) lab-apply lab-update lab-import-all lab-apply lab-drift-check lab-destroy; \
-	fi
+	  exit 0; \
+	fi; \
+	$(MAKE) lab-apply && \
+	$(MAKE) lab-update && \
+	$(MAKE) lab-import-all && \
+	$(MAKE) lab-apply && \
+	$(MAKE) lab-drift-check && \
+	$(MAKE) lab-destroy
 
 .PHONY: build init validate plan apply import-all drift-check destroy clean all \
         lab-plan lab-apply lab-update lab-import-all lab-drift-check lab-destroy lifecycle

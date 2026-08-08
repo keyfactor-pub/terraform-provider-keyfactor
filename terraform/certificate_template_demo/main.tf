@@ -26,29 +26,35 @@ provider "keyfactor" {}
 # mistake in this demo. See terraform/template_role_binding_demo/main.tf for
 # the same constraint noted independently.
 #
-# ADDITIONAL PROVIDER BUG confirmed against kfclab (Command 25.5, 2026-08-07):
-# `make lab-update` here instead fails with a DIFFERENT 400 --
-# "0xA011000F: Enrollment Pattern needs to have at least one associated
-# role." Root cause: this resource's Update() (buildTemplateUpdateRequest in
-# resource_keyfactor_certificate_template.go) only sets AllowedRequesters on
-# the PUT request if `allowed_requesters` is explicitly declared in config;
-# since this demo (like most real-world usage) only sets `friendly_name`,
-# AllowedRequesters is omitted -- and unlike keyfactor_certificate_authority's
-# schedule fields, this attribute has no UseStateForUnknown plan modifier, so
-# it plans as null rather than carrying forward the prior state value. The
-# resulting PUT clears AllowedRequesters server-side, which then fails
-# Command's validation for any template whose enrollment pattern requires an
-# associated role (as this lab's "Lab - AnyCA (lab-role)" pattern does).
-# Confirmed via a raw API PUT that preserves AllowedRequesters verbatim: the
-# SAME friendly_name-only change succeeds when AllowedRequesters isn't
-# dropped, isolating the bug to the omission rather than to friendly_name
-# itself. This is a second, independent provider bug from the "'Policies'
-# cannot be empty" one above -- both currently make `make lab-update` FAIL
-# on this lab.
+# ISSUE #195 STATUS (verified live against kfclab, 2026-08-08, with a locally
+# built fix/harness-bugs provider -- fix commit 24fb266): the "0xA011000F:
+# Enrollment Pattern needs to have at least one associated role" 400 this
+# section used to describe is FIXED -- Update() now does a fresh GET and
+# preserves the template's real AllowedRequesters whenever allowed_requesters
+# is left undeclared in config (preserveAllowedRequesters,
+# resource_keyfactor_certificate_template.go), so the PUT itself no longer
+# clears it. Confirmed server-side (raw GET after apply): the template's real
+# AllowedRequesters/KeyRetention/FriendlyName all land correctly.
+#
+# NEW GAP found by that same verification: `make lab-update` still FAILS --
+# now with "Provider produced inconsistent result after apply" on THREE
+# attributes (display_name, allowed_requesters, key_retention) whenever
+# allowed_requesters is left undeclared. Root cause: allowed_requesters is
+# Optional but NOT Computed (no UseStateForUnknown), so the framework's
+# plan/apply consistency check requires the post-apply value to exactly equal
+# the planned value (null, since it's undeclared) for this attribute --
+# preserveAllowedRequesters intentionally returns the REAL non-null value
+# instead, which the framework correctly flags as invalid for a non-Computed
+# attribute. The fix corrected the underlying data-loss bug but did not
+# change allowed_requesters (or the fields it seems to drag along,
+# display_name/key_retention) to Computed+UseStateForUnknown, which is what
+# the framework requires to let a provider return a value other than what
+# was planned. Filed for follow-up; not yet fixed as of fix/harness-bugs
+# commit 2ffd63c.
 #
 # This demo exists specifically to SURFACE these failures clearly (a FAIL on
 # `make lab-update`, not a crash) rather than to guarantee updates work here.
-# If the lab's Command instance does NOT have either gap, `make lab-update`
+# If the lab's Command instance does NOT have the gap above, `make lab-update`
 # passes normally.
 # ---------------------------------------------------------------------------
 data "keyfactor_certificate_template" "demo" {

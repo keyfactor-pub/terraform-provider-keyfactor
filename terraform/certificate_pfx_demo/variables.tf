@@ -29,20 +29,20 @@ variable "key_password" {
   description = "Password used to protect the PKCS#12/PFX output. Required for private key recovery."
 }
 
-variable "metadata_owner" {
-  type        = string
-  default     = "terraform-demo"
-  description = "Value for the Owner metadata field on the full_pfx certificate."
-}
-
 variable "metadata_email" {
   type        = string
   default     = "infosec@example.com"
-  description = "Value for the Email-Contact metadata field on the full_pfx certificate."
+  description = "Value for the Email-Contact metadata field on the full_pfx certificate. kfclab only defines the Email-Contact metadata field (see lab inventory) -- there is no \"Owner\" field on this lab, so this demo no longer sets one (a previous version did, and Command rejected it with \"Invalid Metadata Name: 'Owner'\"). Set to \"\" to omit the metadata block entirely."
 }
 
 variable "renew_days" {
   type        = number
   default     = 30
   description = "Trigger automatic renewal when fewer than this many days remain before expiry (full_pfx only)."
+}
+
+variable "use_cn_as_friendly_name" {
+  type        = bool
+  default     = false
+  description = "PFX friendly_name behavior. Command 25.5 on kfclab rejects PFX enrollment with \"Friendly Name is not allowed\" when this defaults to true (the provider's own default) -- confirmed 2026-08-07. Defaults to false here so PFX enrollment succeeds on this lab; see keyfactor_certificate's use_cn_as_friendly_name description for the \"allow custom friendly name\" Application Setting this otherwise depends on."
 }

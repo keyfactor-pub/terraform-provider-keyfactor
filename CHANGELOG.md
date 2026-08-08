@@ -1,3 +1,22 @@
+# Unreleased
+
+## Certificate Stores
+
+### Fixes
+
+- fix: `keyfactor_certificate_store` `Update` no longer silently clears an existing container/application assignment when `application_name`/`container_name` is not declared in config — a resolved container ID of `0` was previously omitted from the update request entirely, which Command interprets as "unassign," destroying a real out-of-band assignment before Terraform's own consistency check could even flag it. The existing `container_id` is now preserved whenever prior state shows a real assignment and the plan gives no explicit name. Fixes [#175](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/175)
+- fix: `keyfactor_certificate_store` container/application name resolution (`lookupContainerNameByID`) now retries via the list endpoint before falling back to a hint, reducing spurious `container_name`/`application_name` nulling on a single transient/permission-scoped lookup failure
+
+## Certificate Authorities
+
+### Features
+
+- feat: `keyfactor_certificate_authority` now supports the Daily schedule variant for `full_scan`, `incremental_scan`, and `threshold_check` via new `full_scan_daily_time`, `incremental_scan_daily_time`, and `threshold_check_daily_time` attributes (RFC3339 timestamps), mutually exclusive with the existing `*_interval_minutes` attribute per schedule.
+
+### Fixes
+
+- fix: `keyfactor_certificate_authority` no longer silently clears a CA's scan schedule on every apply when that schedule is configured as a Daily (time-of-day) schedule in Command rather than an Interval schedule. The provider previously only understood the Interval representation, so a Daily-shaped schedule read back as null — indistinguishable from "no schedule" — and the next full-replace update omitted it entirely, clearing it server-side.
+
 # v2.9.1
 
 ## Template Role Bindings 

@@ -207,8 +207,9 @@ func (r resourceCertificateStore) Create(
 	containerId := 0
 	effectiveName, nameIsNull := plan.effectiveContainerName()
 	if !nameIsNull {
-		storeContainer, containerErr := r.p.client.GetStoreContainer(effectiveName)
-		if containerErr != nil || storeContainer == nil {
+		var containerErr error
+		containerId, containerErr = r.resolveContainerIDByName(effectiveName)
+		if containerErr != nil {
 			response.Diagnostics.AddError(
 				"Invalid application/container name.",
 				fmt.Sprintf(
@@ -219,7 +220,6 @@ func (r resourceCertificateStore) Create(
 			)
 			return
 		}
-		containerId = *storeContainer.Id
 	}
 
 	var properties map[string]string
@@ -339,7 +339,7 @@ func (r resourceCertificateStore) Create(
 		Properties:            propsInterface,
 		AgentId:               agentId,
 		AgentAssigned:         &plan.AgentAssigned.Value,
-		ContainerName:         &effectiveName,
+		ContainerName:         containerNameArgPointer(containerId, effectiveName),
 		InventorySchedule:     schedule,
 		SetNewPasswordAllowed: &plan.SetNewPasswordAllowed.Value,
 		Password:              storePassFormatted,
@@ -463,6 +463,137 @@ func (r resourceCertificateStore) Read(
 	}
 }
 
+// resolveContainerIDByName looks up a container/application by name and
+// returns its numeric ID. Shared by Create() and
+// resolveContainerAssignmentForUpdate so the lookup (and its error handling)
+// doesn't drift between the two call sites. Guards against a latent
+// nil-pointer dereference that existed in both call sites previously: the API
+// can return a nil container alongside a nil error (nothing found, no
+// explicit failure), and calling .Error() on a nil error panics.
+func (r resourceCertificateStore) resolveContainerIDByName(name string) (int, error) {
+	storeContainer, err := r.p.client.GetStoreContainer(name)
+	if err != nil {
+		return 0, err
+	}
+	if storeContainer == nil || storeContainer.Id == nil {
+		return 0, fmt.Errorf("container/application %q not found", name)
+	}
+	return *storeContainer.Id, nil
+}
+
+// containerNameArgPointer builds the ContainerName pointer for
+// Create/UpdateStoreFctArgs from a resolved containerId and name.
+//
+// When containerId is nonzero, an unresolved (empty) name is omitted from the
+// request (via stringToPointer, which maps "" to nil, omitted by the
+// `omitempty` tag) rather than sent as a literal empty string — pairing a
+// real, nonzero containerId with an explicit empty ContainerName is a
+// combination that never occurred before GH issue #175's fix and whose
+// handling on Command's UpdateStore endpoint is unverified; there's no reason
+// to introduce it when omitting the field entirely is both safe and
+// sufficient (containerId is what actually carries the assignment).
+//
+// When containerId is 0, the name is sent explicitly (even if empty) exactly
+// as before this fix — this is the long-standing, tested "no
+// assignment"/explicit-clear request shape and must not change.
+func containerNameArgPointer(containerId int, name string) *string {
+	if containerId != 0 {
+		return stringToPointer(name)
+	}
+	return &name
+}
+
+// resolveContainerAssignmentForUpdate determines the container/application ID
+// (and, best-effort, name) to send in the UpdateStoreFctArgs body during
+// Update().
+//
+// Background (GH issue #175): Command's UpdateStore endpoint treats an
+// omitted ContainerId as an explicit instruction to CLEAR the store's
+// container/application assignment — UpdateStoreFctArgs.ContainerId is
+// `json:"ContainerId,omitempty"`, and intToPointer(0) returns nil, so a
+// resolved containerId of 0 is dropped from the request body entirely rather
+// than sent as an explicit zero. Previously, whenever the plan gave no
+// explicit application_name/container_name (nameIsNull), containerId was
+// simply left at 0 with no regard for whether the store already had a real
+// assignment server-side. That silently deleted a live container/application
+// assignment on the very next Update() — including one that was only ever
+// made out-of-band (e.g. directly via the API) and never represented in
+// Terraform config — well before Terraform's own "inconsistent result after
+// apply" check had a chance to catch anything.
+//
+// effectiveContainerName() (models.go) only checks .Value != "", never
+// .IsNull(), so it collapses two very different signals into the same
+// nameIsNull=true result: "the attribute was never declared in config" and
+// "the attribute was explicitly set to \"\" to clear the assignment." Those
+// must be handled differently — the former should preserve a real existing
+// assignment, but the latter is an explicit user instruction to remove it and
+// must still resolve containerId to 0, exactly as before this fix. This
+// function re-checks plan.ApplicationName/ContainerName directly via
+// IsNull() to tell them apart: it only preserves the existing assignment
+// when BOTH attributes are genuinely null in the plan (truly undeclared). If
+// either was explicitly set (even to ""), that's treated as an explicit
+// clear signal.
+func (r resourceCertificateStore) resolveContainerAssignmentForUpdate(
+	ctx context.Context,
+	plan CertificateStore,
+	state CertificateStore,
+) (containerId int, effectiveName string, err error) {
+	effectiveName, nameIsNull := plan.effectiveContainerName()
+	if !nameIsNull {
+		id, containerErr := r.resolveContainerIDByName(effectiveName)
+		if containerErr != nil {
+			return 0, effectiveName, containerErr
+		}
+		return id, effectiveName, nil
+	}
+
+	planTrulyUndeclared := plan.ApplicationName.IsNull() && plan.ContainerName.IsNull()
+	if planTrulyUndeclared && state.ContainerID.Value != 0 {
+		preservedId := int(state.ContainerID.Value)
+		preservedName, preservedNameIsNull := state.effectiveContainerName()
+		if preservedNameIsNull {
+			// The prior state never resolved a name either (e.g. the
+			// assignment was made out-of-band and this is the first Read()
+			// since). Best-effort re-resolve it directly so the request body
+			// stays internally consistent; an unresolved "" is handled
+			// safely by containerNameArgPointer (omitted, not sent as a
+			// literal empty string) since containerId is what actually
+			// preserves the assignment.
+			preservedName = lookupContainerNameByID(ctx, r.p.client, preservedId, "")
+			if preservedName == "" {
+				tflog.Warn(
+					ctx,
+					fmt.Sprintf(
+						"Update: preserving existing container_id (%d) because config declares no application_name/container_name, but could not resolve its name from state or the API; the request will omit ContainerName (see GH issue #175)",
+						preservedId,
+					),
+				)
+			} else {
+				tflog.Debug(
+					ctx,
+					fmt.Sprintf(
+						"Update: config declares no application_name/container_name; preserving existing container_id (%d), resolved name %q via the API (see GH issue #175)",
+						preservedId,
+						preservedName,
+					),
+				)
+			}
+		} else {
+			tflog.Debug(
+				ctx,
+				fmt.Sprintf(
+					"Update: config declares no application_name/container_name; preserving existing container_id (%d) and name %q from state (see GH issue #175)",
+					preservedId,
+					preservedName,
+				),
+			)
+		}
+		return preservedId, preservedName, nil
+	}
+
+	return 0, "", nil
+}
+
 func (r resourceCertificateStore) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -505,22 +636,17 @@ func (r resourceCertificateStore) Update(
 		return
 	}
 
-	containerId := 0
-	updateEffectiveName, updateNameIsNull := plan.effectiveContainerName()
-	if !updateNameIsNull {
-		storeContainer, containerErr := r.p.client.GetStoreContainer(updateEffectiveName)
-		if containerErr != nil || storeContainer == nil {
-			response.Diagnostics.AddError(
-				"Invalid application/container name.",
-				fmt.Sprintf(
-					"Could not retrieve application/container '%s' from Keyfactor: %s",
-					updateEffectiveName,
-					containerErr.Error(),
-				),
-			)
-			return
-		}
-		containerId = *storeContainer.Id
+	containerId, updateEffectiveName, containerErr := r.resolveContainerAssignmentForUpdate(ctx, plan, state)
+	if containerErr != nil {
+		response.Diagnostics.AddError(
+			"Invalid application/container name.",
+			fmt.Sprintf(
+				"Could not retrieve application/container '%s' from Keyfactor: %s",
+				updateEffectiveName,
+				containerErr.Error(),
+			),
+		)
+		return
 	}
 
 	var storePassFormatted *api.UpdateStorePasswordConfig
@@ -653,7 +779,7 @@ func (r resourceCertificateStore) Update(
 		PropertiesString:      propertiesStr,
 		AgentId:               agentId,
 		AgentAssigned:         &agentAssignedVal,
-		ContainerName:         &updateEffectiveName,
+		ContainerName:         containerNameArgPointer(containerId, updateEffectiveName),
 		InventorySchedule:     schedule,
 		SetNewPasswordAllowed: &setNewPasswordAllowedVal,
 		Password:              storePassFormatted,
@@ -708,9 +834,21 @@ func (r resourceCertificateStore) Update(
 		ServerUseSsl:          plan.ServerUseSsl,
 	}
 	// Resolve container name from ContainerId (server never returns ContainerName).
-	// Resolve container name via the by-ID endpoint (list endpoint is paginated).
-	// Fall back to the plan-supplied name when the API lookup is unavailable.
-	result.syncApplicationAndContainerName(lookupContainerNameByID(ctx, r.p.client, updateResponse.ContainerId, updateEffectiveName))
+	//
+	// resolveContainerAssignmentForUpdate already confidently resolved
+	// updateEffectiveName above (either from an explicit plan value, or by
+	// preserving/re-resolving it from state) whenever it's non-empty. As long
+	// as the container/application actually assigned server-side
+	// (updateResponse.ContainerId) matches what we asked for, reuse that name
+	// instead of spending up to 2 more HTTP round trips re-resolving
+	// something we already know. Only fall back to a fresh lookup when we
+	// don't already have a confident answer (updateEffectiveName is empty) or
+	// the server assigned something other than what we requested.
+	if updateResponse.ContainerId == containerId && updateEffectiveName != "" {
+		result.syncApplicationAndContainerName(updateEffectiveName)
+	} else {
+		result.syncApplicationAndContainerName(lookupContainerNameByID(ctx, r.p.client, updateResponse.ContainerId, updateEffectiveName))
+	}
 
 	// Set state
 	diags = response.State.Set(ctx, &result)

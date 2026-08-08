@@ -93,10 +93,3 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-// TEMPORARY: points at a local worktree carrying the TemplatePolicy field
-// needed to fix issue #190 ("'Policies' cannot be empty" on Command 25.x
-// template updates). Drop this replace directive once a go-client release
-// containing that field is cut and bump the require above to it instead.
-// See the dedicated go.mod-replace commit for details.
-replace github.com/Keyfactor/keyfactor-go-client/v3 => /private/tmp/goclient-template-policies/v3

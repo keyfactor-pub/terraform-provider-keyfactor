@@ -1095,6 +1095,31 @@ func buildTemplateUpdateRequest(
 	return req
 }
 
+// preserveAllowedRequesters copies a freshly-fetched server template's
+// current AllowedRequesters/UseAllowedRequesters onto plan, for use when
+// config doesn't declare allowed_requesters. allowed_requesters is Optional
+// but not Computed, so an omitted config value plans to Null; buildTemplateUpdateRequest
+// skips Null attributes entirely, and PUT /Templates is a full-replace
+// endpoint, so sending that Null through would silently clear a real
+// requester list -- one that may not even have been set by this resource in
+// the first place, since keyfactor_template_role_binding manages the same
+// field out-of-band. current is expected to come from a GET performed
+// immediately before this update, not this resource's own (possibly stale)
+// prior state. See resourceCertificateTemplate.Update. Fixes #195.
+func preserveAllowedRequesters(plan *KeyfactorCertificateTemplateState, current *v1.TemplatesTemplateRetrievalResponse) {
+	if current == nil {
+		return
+	}
+	if len(current.AllowedRequesters) > 0 {
+		plan.AllowedRequesters = stringSliceToTfList(current.AllowedRequesters)
+	} else {
+		plan.AllowedRequesters = types.List{Null: true, ElemType: types.StringType}
+	}
+	if plan.UseAllowedRequesters.Null || plan.UseAllowedRequesters.Unknown {
+		plan.UseAllowedRequesters = types.Bool{Value: current.GetUseAllowedRequesters()}
+	}
+}
+
 func buildKeyInfoRequest(ki *TemplateKeyInfo) *v1.CSSCMSDataModelModelsTemplatesAlgorithmsKeyInfo {
 	result := &v1.CSSCMSDataModelModelsTemplatesAlgorithmsKeyInfo{}
 	result.RSA = buildAlgorithmDataRequest(ki.RSA)
@@ -1205,8 +1230,43 @@ func (r resourceCertificateTemplate) Update(
 
 	tflog.Info(ctx, fmt.Sprintf("Updating certificate template ID %d", plan.ID.Value))
 
-	updateReq := buildTemplateUpdateRequest(ctx, plan)
 	templateAPI := r.p.sdkClient.V1.TemplateApi
+
+	// allowed_requesters is Optional but NOT Computed (no UseStateForUnknown),
+	// so a config that simply doesn't declare it plans to Null -- not "leave
+	// unchanged." PUT /Templates is a full-replace endpoint, and
+	// buildTemplateUpdateRequest skips Null attributes entirely, so an
+	// undeclared allowed_requesters silently cleared the template's requester
+	// list server-side on every such update. On Command 25.x this then
+	// surfaces as a confusing downstream validation error ("Enrollment Pattern
+	// needs to have at least one associated role") once the list is empty.
+	//
+	// This resource's own prior Terraform state is not a safe source of "the
+	// current value" either: keyfactor_template_role_binding manages the same
+	// server-side field out-of-band via its own PUT calls, so state here can
+	// already be stale. Read-modify-write against a fresh GET immediately
+	// before this update -- the same "fetch current, then carry forward what
+	// this apply doesn't intend to change" pattern used by
+	// addAllowedRequesterToTemplate/removeRoleFromTemplate for TemplatePolicy
+	// (#190) -- is what actually reflects the current server value. Fixes #195.
+	if plan.AllowedRequesters.Null || plan.AllowedRequesters.Unknown {
+		getReq := templateAPI.NewGetTemplatesByIdRequest(ctx, int32(plan.ID.Value))
+		current, httpResp, err := getReq.Execute()
+		if err != nil {
+			body := readHTTPResponseBody(httpResp)
+			response.Diagnostics.AddError(
+				"Error reading certificate template before update.",
+				fmt.Sprintf(
+					"Could not read template %d to preserve its current allowed_requesters: %s. Details: %s",
+					plan.ID.Value, err.Error(), body,
+				),
+			)
+			return
+		}
+		preserveAllowedRequesters(&plan, current)
+	}
+
+	updateReq := buildTemplateUpdateRequest(ctx, plan)
 	req := templateAPI.NewUpdateTemplatesRequest(ctx).TemplatesTemplateUpdateRequest(updateReq)
 	resp, httpResp, err := req.Execute()
 	if err != nil {

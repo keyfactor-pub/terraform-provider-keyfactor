@@ -6,6 +6,12 @@
 
 - fix: `keyfactor_template_role_binding` no longer fails with `'Policies' cannot be empty` when updating a role binding on Command 25.x. Command's `PUT /Templates` is a full-replace endpoint and derives its internal policy set from the template's key-algorithm policy; the provider now round-trips that policy from the template it just fetched instead of omitting it, so binding changes no longer silently clear unrelated policy content. Requires a keyfactor-go-client release carrying the corresponding SDK model field. Fixes [#190](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/190)
 
+## Certificate Templates
+
+### Fixes
+
+- fix: `keyfactor_certificate_template` `Update` no longer clears the template's `allowed_requesters` on Command 25.x when the config simply doesn't declare that attribute. `allowed_requesters` is Optional but not Computed, so an undeclared value plans to null, and `PUT /Templates` is a full-replace endpoint that previously omitted the field outright; this could surface downstream as "Enrollment Pattern needs to have at least one associated role" once the requester list was emptied out. `Update` now fetches the template's current requesters fresh immediately before building the request and carries them forward whenever config doesn't declare the attribute, since `keyfactor_template_role_binding` can also change that same field out-of-band between applies. Fixes [#195](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/195)
+
 ## Certificate Stores
 
 ### Fixes

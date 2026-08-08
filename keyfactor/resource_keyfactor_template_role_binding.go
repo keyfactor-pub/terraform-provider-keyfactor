@@ -401,6 +401,20 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 // template, the number of days to retain after expiration must be defined."
 // See dev-harness Gap C (extends GH issue #190).
 //
+// A second, related defect existed even after that fix: KeyType, FriendlyName,
+// AllowedEnrollmentTypes, KeyRetention, and KeyRetentionDays were carried
+// forward via intToPointer/stringToPointer, which collapse a genuinely-zero
+// int (0) or empty string ("") to nil. Those helpers are correct for a
+// user-supplied Optional plan value (0/"" there really does mean "not set"),
+// but wrong for these carry-forward fields, whose value always comes from a
+// fresh GetTemplate immediately before this call -- it is never "unset,"
+// even when it happens to be the zero value. This dropped a real
+// KeyRetentionDays==0 (a valid combination alongside e.g.
+// KeyRetention=="FromIssuance") from the PUT while KeyRetention itself was
+// still sent, and Command rejected the whole request. Fixed by taking the
+// address of the fetched value directly via the generic ptr() helper
+// instead. See dev-harness Gap C live-verification follow-up.
+//
 // Not every field GetTemplateResponse returns can be represented here:
 //   - CertificateCleanupEnabled, TimeAfterExpiration, TimeAfterExpirationUnits,
 //     DeleteWithArchivedKey, AllowOneClickRenewals, and TemplateDefaults (the
@@ -423,19 +437,35 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 //     rather than risk sending a wrong value.
 func buildTemplateRoleBindingUpdateArg(template *api.GetTemplateResponse, allowedRequesters []string, useAllowedRequesters bool) *api.UpdateTemplateArg {
 	return &api.UpdateTemplateArg{
-		Id:                     template.Id,
-		CommonName:             template.CommonName,
-		TemplateName:           template.TemplateName,
-		Oid:                    template.Oid,
-		KeySize:                template.KeySize,
-		KeyType:                stringToPointer(template.KeyType),
+		Id:           template.Id,
+		CommonName:   template.CommonName,
+		TemplateName: template.TemplateName,
+		Oid:          template.Oid,
+		KeySize:      template.KeySize,
+		// KeyType/FriendlyName/AllowedEnrollmentTypes/KeyRetention/
+		// KeyRetentionDays are carry-forward values read fresh from
+		// GetTemplate immediately above -- they came from the server, so
+		// they are always "set," even when the real current value is the
+		// zero value (0/""). Take their address directly via the generic
+		// ptr() helper rather than routing through intToPointer/
+		// stringToPointer: those helpers intentionally collapse 0/"" to nil,
+		// which is correct for a genuinely-optional user-supplied plan value
+		// but wrong here -- it silently drops a legitimately-zero/empty
+		// current value from the PUT. Observed live: a template with
+		// KeyRetention="FromIssuance" and KeyRetentionDays==0 (a real,
+		// valid combination) got KeyRetentionDays collapsed to nil while
+		// KeyRetention was still sent, and Command 25.x rejected the
+		// request outright with "In order to enable a retention policy on a
+		// template, the number of days to retain after expiration must be
+		// defined." (0xA011000F). See dev-harness Gap C, completes #190.
+		KeyType:                ptr(template.KeyType),
 		ForestRoot:             template.ForestRoot,
 		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
 		AllowedRequesters:      &allowedRequesters,
-		FriendlyName:           stringToPointer(template.FriendlyName),
-		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
-		KeyRetention:           stringToPointer(template.KeyRetention),
-		KeyRetentionDays:       intToPointer(template.KeyRetentionDays),
+		FriendlyName:           ptr(template.FriendlyName),
+		AllowedEnrollmentTypes: ptr(template.AllowedEnrollmentTypes),
+		KeyRetention:           ptr(template.KeyRetention),
+		KeyRetentionDays:       ptr(template.KeyRetentionDays),
 		KeyArchival:            boolToPointer(template.KeyArchival),
 		EnrollmentFields:       &template.EnrollmentFields,
 		MetadataFields:         &template.MetadataFields,

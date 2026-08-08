@@ -301,3 +301,159 @@ func TestUnitRemoveRoleFromTemplatePreservesTemplatePolicy(t *testing.T) {
 	assertPUTBodyCarriesExistingPolicy(t, putBody)
 	assertPUTBodyCarriesFullFieldSweep(t, putBody)
 }
+
+// ---------------------------------------------------------------------------
+// Regression tests for the dev-harness live-verification follow-up to Gap C
+// / issue #190 (template_role_binding_demo finding):
+//
+// buildTemplateRoleBindingUpdateArg carried KeyType/FriendlyName/
+// AllowedEnrollmentTypes/KeyRetention/KeyRetentionDays forward via
+// intToPointer/stringToPointer, which intentionally collapse a genuinely
+// zero int (0) or empty string ("") to nil -- correct for a user-supplied
+// Optional plan value, but wrong for these fields, whose value always comes
+// from a fresh GetTemplate read immediately before the PUT (see
+// buildTemplateRoleBindingUpdateArg's own doc comment). Live repro against
+// template 7 (AnyCA_lab-root-role, KeyRetention="FromIssuance",
+// KeyRetentionDays==0 -- both legitimate real values): attaching a role
+// failed with "In order to enable a retention policy on a template, the
+// number of days to retain after expiration must be defined" (HTTP 400,
+// 0xA011000F) because KeyRetentionDays was collapsed to nil and omitted from
+// the PUT while KeyRetention (non-empty) was still sent.
+//
+// Fixed by taking the address of the fetched value directly (via the
+// generic ptr() helper) instead of routing through intToPointer/
+// stringToPointer -- the value read from GetTemplate is always "set," even
+// when it happens to be the zero value.
+// ---------------------------------------------------------------------------
+
+// zeroValueTemplateFieldSweep returns an api.GetTemplateResponse identical to
+// existingTemplateFieldSweep but with KeyRetentionDays, KeyType,
+// FriendlyName, and AllowedEnrollmentTypes all at their real, legitimate
+// zero/empty values -- template 7's exact live shape.
+func zeroValueTemplateFieldSweep() api.GetTemplateResponse {
+	sweep := existingTemplateFieldSweep()
+	sweep.KeyRetention = "FromIssuance"
+	sweep.KeyRetentionDays = 0
+	sweep.KeyType = ""
+	sweep.FriendlyName = ""
+	sweep.AllowedEnrollmentTypes = 0
+	return sweep
+}
+
+// newZeroValueTemplateRoleBindingTestServer is newTemplateRoleBindingTestServer's
+// counterpart seeded with zeroValueTemplateFieldSweep instead.
+func newZeroValueTemplateRoleBindingTestServer(t *testing.T, capturedPUTBody *[]byte) *httptest.Server {
+	t.Helper()
+	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			resp := zeroValueTemplateFieldSweep()
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				t.Fatalf("failed to encode GET response: %v", err)
+			}
+		case http.MethodPut:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("failed to read PUT request body: %v", err)
+			}
+			*capturedPUTBody = body
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(api.UpdateTemplateResponse{
+				GetTemplateResponse: api.GetTemplateResponse{Id: 4},
+			}); err != nil {
+				t.Fatalf("failed to encode PUT response: %v", err)
+			}
+		default:
+			t.Fatalf("unexpected request method %s %s", r.Method, r.URL.Path)
+		}
+	}))
+}
+
+// assertPUTBodyCarriesZeroValueFields decodes the captured PUT body and fails
+// the test if any legitimately-zero/empty current value was collapsed to nil
+// and dropped from the wire instead of being sent explicitly.
+func assertPUTBodyCarriesZeroValueFields(t *testing.T, body []byte) {
+	t.Helper()
+
+	if len(body) == 0 {
+		t.Fatal("no PUT request was captured")
+	}
+
+	var onWire map[string]interface{}
+	if err := json.Unmarshal(body, &onWire); err != nil {
+		t.Fatalf("failed to decode PUT request body: %v", err)
+	}
+
+	// The root regression: KeyRetentionDays==0 must still be sent on the
+	// wire (not omitted) -- Command rejects a request with KeyRetention set
+	// but KeyRetentionDays missing.
+	daysRaw, present := onWire["KeyRetentionDays"]
+	if !present || daysRaw == nil {
+		t.Fatalf(
+			"PUT /Templates payload has no KeyRetentionDays -- this reproduces the live defect: a template "+
+				"with a real KeyRetentionDays==0 got that value collapsed to nil by intToPointer and dropped "+
+				"from the request while KeyRetention (%v) was still sent, which Command rejects outright "+
+				"(\"In order to enable a retention policy on a template, the number of days to retain after "+
+				"expiration must be defined\"). Full payload: %s", onWire["KeyRetention"], body,
+		)
+	}
+	if days, ok := daysRaw.(float64); !ok || days != 0 {
+		t.Errorf("PUT /Templates payload KeyRetentionDays = %v, want 0", daysRaw)
+	}
+
+	if got, ok := onWire["KeyRetention"].(string); !ok || got != "FromIssuance" {
+		t.Errorf("PUT /Templates payload KeyRetention = %v, want \"FromIssuance\"", onWire["KeyRetention"])
+	}
+
+	// KeyType/FriendlyName: legitimately empty strings must also survive,
+	// not be collapsed to nil by stringToPointer.
+	for _, field := range []string{"KeyType", "FriendlyName"} {
+		raw, present := onWire[field]
+		if !present || raw == nil {
+			t.Errorf("PUT /Templates payload has no %s -- want empty string \"\" carried forward, not omitted", field)
+			continue
+		}
+		if s, ok := raw.(string); !ok || s != "" {
+			t.Errorf("PUT /Templates payload %s = %v, want \"\"", field, raw)
+		}
+	}
+
+	// AllowedEnrollmentTypes==0 must also survive.
+	typesRaw, present := onWire["AllowedEnrollmentTypes"]
+	if !present || typesRaw == nil {
+		t.Errorf("PUT /Templates payload has no AllowedEnrollmentTypes -- want 0 carried forward, not omitted")
+	} else if n, ok := typesRaw.(float64); !ok || n != 0 {
+		t.Errorf("PUT /Templates payload AllowedEnrollmentTypes = %v, want 0", typesRaw)
+	}
+}
+
+func TestUnitAddAllowedRequesterToTemplatePreservesZeroValueFields(t *testing.T) {
+	var putBody []byte
+	srv := newZeroValueTemplateRoleBindingTestServer(t, &putBody)
+	defer srv.Close()
+
+	client := newTemplateTestClient(srv)
+
+	diags := addAllowedRequesterToTemplate(context.Background(), client, "NewRole", "4")
+	if diags.HasError() {
+		t.Fatalf("addAllowedRequesterToTemplate returned diagnostics: %v", diags)
+	}
+
+	assertPUTBodyCarriesZeroValueFields(t, putBody)
+}
+
+func TestUnitRemoveRoleFromTemplatePreservesZeroValueFields(t *testing.T) {
+	var putBody []byte
+	srv := newZeroValueTemplateRoleBindingTestServer(t, &putBody)
+	defer srv.Close()
+
+	client := newTemplateTestClient(srv)
+
+	diags := removeRoleFromTemplate(context.Background(), client, "ExistingRole", 4)
+	if diags.HasError() {
+		t.Fatalf("removeRoleFromTemplate returned diagnostics: %v", diags)
+	}
+
+	assertPUTBodyCarriesZeroValueFields(t, putBody)
+}

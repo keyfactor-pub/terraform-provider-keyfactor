@@ -181,8 +181,39 @@ lab-destroy:
 	           TF_VAR_create_if_missing=true \
 	           $(MAKE) destroy
 
-## lifecycle: Full lifecycle: apply → update → import-all → apply (reconcile) → drift-check → destroy
-lifecycle: lab-apply lab-update lab-import-all lab-apply lab-drift-check lab-destroy
+## lifecycle: Full lifecycle: apply → update → import-all → apply (reconcile) → drift-check
+##   → repro175 (issue #175 OOB-container-clearing repro) → destroy.
+##
+##   repro175's own verify step is EXPECTED to FAIL on the currently released
+##   provider (2.9.1) -- that failure is the genuine issue #175 reproduction
+##   this demo exists to surface, not a harness defect. Its exit code is
+##   captured (not chained with &&/||) so a real bug reproduction never skips
+##   destroy and never gets confused with an actual harness-mechanics failure
+##   in destroy itself. `make lifecycle` exits non-zero overall if #175
+##   reproduces, after destroy has fully run -- read the printed summary to
+##   tell a genuine harness regression (destroy failing) apart from the
+##   expected #175 repro.
+lifecycle: lab-apply lab-update lab-import-all lab-apply lab-drift-check
+	@HARNESS_FAIL=0; REPRO175_EXIT=0; \
+	 if ! $(MAKE) repro175-apply; then echo "FAIL (harness): repro175-apply failed -- see above."; HARNESS_FAIL=1; fi; \
+	 if [ $$HARNESS_FAIL -eq 0 ] && ! $(MAKE) repro175-seed; then echo "FAIL (harness): repro175-seed failed -- see above (this is the OOB setup step, not the bug check itself)."; HARNESS_FAIL=1; fi; \
+	 if [ $$HARNESS_FAIL -eq 0 ] && ! $(MAKE) repro175-verify-apply; then REPRO175_EXIT=1; fi; \
+	 if [ $$HARNESS_FAIL -eq 0 ]; then $(MAKE) repro175-verify-server || true; fi; \
+	 if ! $(MAKE) lab-destroy; then \
+	   echo "FAIL (harness): lab-destroy failed after repro175 -- see above. Demo resources may be orphaned; check manually."; \
+	   HARNESS_FAIL=1; \
+	 fi; \
+	 echo "=============================================================="; \
+	 echo "store_container_demo summary:"; \
+	 if [ $$HARNESS_FAIL -ne 0 ]; then \
+	   echo "  HARNESS FAILURE occurred -- see FAIL (harness) lines above; this is a real regression, not a known-bug repro."; \
+	 elif [ $$REPRO175_EXIT -ne 0 ]; then \
+	   echo "  repro175 (issue #175 OOB-container-clearing check): KNOWN BUG #175 reproduced."; \
+	 else \
+	   echo "  repro175 (issue #175 OOB-container-clearing check): PASS (assignment survived)."; \
+	 fi; \
+	 echo "=============================================================="; \
+	 if [ $$HARNESS_FAIL -ne 0 ] || [ $$REPRO175_EXIT -ne 0 ]; then exit 1; fi
 
 # ---------------------------------------------------------------------------
 # Issue #175 reproduction — see repro175.tf for the full writeup.
@@ -214,6 +245,19 @@ repro175-apply:
 
 ## repro175-seed: Out-of-band PUT that assigns the repro175 store to the
 ##   application's container ID directly via the Command REST API.
+##
+## NOTE: GET /CertificateStores/{id} masks secret-typed custom properties
+## (e.g. ServerUsername/ServerPassword on K8S store types) as an obfuscated
+## placeholder object (Value: "********", SecretTypeGuid: ..., ...) --
+## crucially, for THIS store type those live INSIDE the "Properties" field,
+## which is itself a JSON-encoded STRING, not top-level keys. Blindly
+## PUTting the placeholder back (whether top-level or still embedded in
+## Properties) is rejected by Command with "0xA011000F: The 'Server
+## Username' property with value '{...}' is invalid." (confirmed
+## 2026-08-08, in both places) -- this is a harness/GET-PUT-asymmetry issue
+## in this recipe, not part of the #175 repro itself, so strip those masked
+## secret fields (top-level AND inside the parsed Properties string) before
+## PUTting; omitting them lets Command preserve the existing values.
 repro175-seed:
 	@$(LAB_ENV) \
 	 STORE_ID=$$($(TF) output -raw repro175_store_id) && \
@@ -224,7 +268,7 @@ repro175-seed:
 	   | jq -r '.access_token') && \
 	 STORE_JSON=$$(curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores/$$STORE_ID" \
 	   -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 1" -H "Authorization: Bearer $$TOKEN") && \
-	 UPDATED=$$(echo "$$STORE_JSON" | jq --argjson cid "$$APP_ID" '.ContainerId = $$cid') && \
+	 UPDATED=$$(echo "$$STORE_JSON" | jq --argjson cid "$$APP_ID" '.ContainerId = $$cid | del(.ServerUsername) | del(.ServerPassword) | .Properties = ((.Properties | fromjson) | del(.ServerUsername) | del(.ServerPassword) | tojson)') && \
 	 HTTP_STATUS=$$(curl -sk -o /tmp/store_container_demo_repro175_seed.json -w "%{http_code}" -X PUT \
 	   "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores" \
 	   -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 1" \
@@ -256,7 +300,7 @@ repro175-verify-apply:
 	@CID=$$($(LAB_ENV) $(TF) output -raw repro175_container_id 2>/dev/null); \
 	 echo "    container_id in state after unrelated update: $$CID"; \
 	 if [ -z "$$CID" ] || [ "$$CID" = "0" ]; then \
-	   echo "FAIL: container_id was cleared by the unrelated update -- issue #175 reproduced."; \
+	   echo "FAIL (KNOWN BUG #175 reproduced): container_id was cleared by an unrelated update that never touched application_name/container_name. This is a genuine provider bug reproduction, not a harness failure."; \
 	   exit 1; \
 	 else \
 	   echo "PASS: container_id survived the unrelated update (issue #175 fix confirmed)."; \

@@ -7,6 +7,12 @@
 - fix: `keyfactor_certificate_store` `Update` no longer silently clears an existing container/application assignment when `application_name`/`container_name` is not declared in config — a resolved container ID of `0` was previously omitted from the update request entirely, which Command interprets as "unassign," destroying a real out-of-band assignment before Terraform's own consistency check could even flag it. The existing `container_id` is now preserved whenever prior state shows a real assignment and the plan gives no explicit name. Fixes [#175](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/175)
 - fix: `keyfactor_certificate_store` container/application name resolution (`lookupContainerNameByID`) now retries via the list endpoint before falling back to a hint, reducing spurious `container_name`/`application_name` nulling on a single transient/permission-scoped lookup failure
 
+## Certificate Store Types
+
+### Fixes
+
+- fix: `keyfactor_certificate_store_type` `entry_parameters = []` (and `properties = []`) no longer reads back as `null` after create, which previously produced "Provider produced inconsistent result after apply". Command's API always represents an empty parameter/property collection as `[]`, never `null`, so the provider could not previously tell a config-declared empty list apart from an unset one; a declared empty list now reads back as `[]` and an unset attribute still reads back as `null`. Fixes [#192](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/192)
+
 ## Certificate Authorities
 
 ### Features

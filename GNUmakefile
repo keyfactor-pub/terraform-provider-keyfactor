@@ -644,18 +644,31 @@ api-ca-gap-fields:
 # api-update-ca: PUT /CertificateAuthority?forceSave=true using the CA JSON snapshot
 # piped via stdin.  Useful for verifying the correct PUT URL (no ID in path).
 # Usage: make api-get-ca CA_ID=1 | make api-update-ca
+#
+# NOTE: the HTTP status is written to STDERR, not interleaved with the
+# response body on stdout. A prior version used `curl -w "\nHTTP_STATUS:
+# %{http_code}\n" | jq .`, which appends non-JSON trailing text to stdout --
+# jq then tries to parse it as a second JSON document and fails with "parse
+# error: Invalid numeric literal" and exit code 5, even when the PUT itself
+# succeeded (confirmed 2026-08-08: this silently broke every caller that
+# checks api-update-ca's exit code or pipes its output onward, e.g.
+# ca_schedule_demo's step3/4/5-seed targets).
 api-update-ca:
 	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
 		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
 		| jq -r '.access_token') && \
 	BODY=$$(cat) && \
-	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X PUT \
+	RESPFILE=$$(mktemp) && \
+	HTTP_STATUS=$$(curl -sk -o "$$RESPFILE" -w "%{http_code}" -X PUT \
 		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority?forceSave=true" \
 		-H "x-keyfactor-requested-with: APIClient" \
 		-H "x-keyfactor-api-version: 1" \
 		-H "Content-Type: application/json" \
 		-H "Authorization: Bearer $$TOKEN" \
-		-d "$$BODY" | jq .
+		-d "$$BODY") && \
+	echo "HTTP_STATUS: $$HTTP_STATUS" >&2 && \
+	jq . "$$RESPFILE"; \
+	RC=$$?; rm -f "$$RESPFILE"; exit $$RC
 
 ## testint-ca-snapshot: Capture current CA state to /tmp/ca_snapshot_<CA_ID>.json.
 ##   Usage: make testint-ca-snapshot [CA_ID=1]

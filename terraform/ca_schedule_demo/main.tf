@@ -35,6 +35,25 @@ provider "keyfactor" {}
 # bypasses Command's connectivity test on create/update) instead of touching
 # any of the lab's real CA connections (e.g. id 2, "OpenBao PKI", which has
 # a live schedule and associated certificates).
+#
+# ADDITIONAL PROVIDER BUG confirmed against kfclab (Command 25.5,
+# 2026-08-08): `make destroy` reliably fails after step4/step5 run, with
+# "Error clearing CA scan schedules before delete. ... 0xA011000F: Fields
+# for OAuth and Client Certificate Authentication cannot both be provided
+# for the same CA." Root cause: Delete()'s "clear scan schedules, then
+# retry delete" fallback (resource_keyfactor_certificate_authority.go,
+# triggered whenever Command reports the CA has an associated periodic
+# task) rebuilds the PUT request from prior STATE via buildCARequest(), but
+# that state carries residual empty-but-non-null OAuth fields (token_url/
+# client_id/scope/etc, all Computed) alongside the real Client Certificate
+# auth this demo actually uses -- Command rejects a PUT that sets both.
+# The lifecycle target works around this by always attempting `destroy`
+# regardless of step3/4/5 outcomes (so it never masks the step4/step5
+# results) but does NOT itself work around the Delete() bug; if it
+# reproduces, clean up the orphaned CA manually via a raw API PUT (clear
+# FullScan/IncrementalScan/ThresholdCheck to null, resupply
+# AuthCertificate/AuthCertificatePassword) followed by DELETE
+# /CertificateAuthority/{id}.
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_authority" "demo" {
   logical_name = "TFScheduleDemo${var.suffix}"

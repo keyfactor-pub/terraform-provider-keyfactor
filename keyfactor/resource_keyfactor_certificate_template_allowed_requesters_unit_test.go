@@ -283,9 +283,14 @@ func TestUnitCertificateTemplateUpdatePreservesAllowedRequesters(t *testing.T) {
 }
 
 // TestUnitCertificateTemplateUpdateDeclaredAllowedRequestersNotOverridden is
-// the negative-space companion test: when the plan DOES declare
-// allowed_requesters, Update() must send exactly that declared value and
-// must NOT perform (or be influenced by) the preservation GET.
+// the negative-space companion test: when the plan explicitly declares
+// EVERY writable field (allowed_requesters included), Update() must send
+// exactly the declared values and must NOT perform any preservation GET at
+// all -- templateUpdateNeedsPreservationFetch's "fully declared config costs
+// zero extra API calls" optimization, generalized from allowed_requesters
+// alone (its original, narrower scope before the certificate_template_demo
+// finding that completed #195) to every field
+// preserveUndeclaredTemplateFields can now preserve.
 func TestUnitCertificateTemplateUpdateDeclaredAllowedRequestersNotOverridden(t *testing.T) {
 	ctx := context.Background()
 
@@ -326,6 +331,41 @@ func TestUnitCertificateTemplateUpdateDeclaredAllowedRequestersNotOverridden(t *
 	plan.ID = types.Int64{Value: 4}
 	plan.UseAllowedRequesters = types.Bool{Value: true}
 	plan.AllowedRequesters = stringSliceToTfList([]string{"DeclaredRole"})
+	// Every other writable field must also be explicitly declared for this
+	// test to actually exercise the "no preservation GET" fast path -- see
+	// templateUpdateNeedsPreservationFetch, which now checks all of these,
+	// not just allowed_requesters.
+	plan.FriendlyName = types.String{Value: "DeclaredFriendlyName"}
+	plan.KeyRetention = types.Int64{Value: 1}
+	plan.KeyRetentionDays = types.Int64{Value: 30}
+	plan.AllowedEnrollmentTypes = types.Int64{Value: 2}
+	plan.RequiresApproval = types.Bool{Value: false}
+	plan.AllowOneClickRenewals = types.Bool{Value: true}
+	plan.KeyUsage = types.Int64{Value: 5}
+	plan.CertificateCleanupEnabled = types.Bool{Value: true}
+	plan.TimeAfterExpiration = types.Int64{Value: 7}
+	plan.TimeAfterExpirationUnits = types.Int64{Value: 0}
+	plan.DeleteWithArchivedKey = types.Bool{Value: false}
+	plan.TemplatePolicy = &TemplatePolicyState{
+		AllowKeyReuse:                   types.Bool{Value: false},
+		AllowWildcards:                  types.Bool{Value: false},
+		RFCEnforcement:                  types.Bool{Value: true},
+		CertificateOwnerRole:            types.Int64{Value: 0},
+		DefaultCertificateOwnerRoleID:   types.Int64{Null: true},
+		DefaultCertificateOwnerRoleName: types.String{Null: true},
+	}
+	plan.TemplateRegexes = []TemplateRegexEntry{
+		{SubjectPart: types.String{Value: "CN"}, Regex: types.String{Value: ".*"}},
+	}
+	plan.TemplateDefaults = []TemplateDefaultEntry{
+		{SubjectPart: types.String{Value: "O"}, Value: types.String{Value: "Keyfactor"}},
+	}
+	plan.EnrollmentFields = []TemplateEnrollmentFieldEntry{
+		{Name: types.String{Value: "field1"}, Options: types.List{Null: true, ElemType: types.StringType}},
+	}
+	plan.MetadataFields = []TemplateMetadataFieldEntry{
+		{MetadataID: types.Int64{Value: 1}},
+	}
 
 	planObj := tfsdk.Plan{Schema: schema}
 	if d := planObj.Set(ctx, &plan); d.HasError() {
@@ -346,7 +386,7 @@ func TestUnitCertificateTemplateUpdateDeclaredAllowedRequestersNotOverridden(t *
 	}
 
 	if getHits != 0 {
-		t.Errorf("expected no preservation GET when allowed_requesters is declared, got %d GET(s)", getHits)
+		t.Errorf("expected no preservation GET when every writable field is declared, got %d GET(s)", getHits)
 	}
 
 	var onWire map[string]interface{}

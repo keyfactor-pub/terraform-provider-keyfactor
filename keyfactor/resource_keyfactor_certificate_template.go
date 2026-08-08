@@ -1190,6 +1190,148 @@ func preserveAllowedRequesters(plan *KeyfactorCertificateTemplateState, current 
 	}
 }
 
+// preserveUndeclaredTemplateFields extends the #195 read-modify-write
+// pattern -- previously scoped to AllowedRequesters/UseAllowedRequesters
+// only, see preserveAllowedRequesters above -- to every other writable field
+// TemplatesTemplateUpdateRequest can represent. PUT /Templates is a
+// full-replace endpoint: buildTemplateUpdateRequest skips any plan field
+// left Null/Unknown (or, for the native-Go-slice/pointer nested fields,
+// nil/empty), and Command then clears that field server-side rather than
+// leaving it unchanged. Before this fix, an update that only declared (say)
+// friendly_name silently reset every OTHER undeclared Optional field on the
+// template -- observed live: key_retention "FromIssuance" -> "None" and
+// allow_one_click_renewals true -> false (dev-harness
+// certificate_template_demo finding, completes #195). This mirrors the same
+// systematic sweep already applied to keyfactor_template_role_binding's
+// buildTemplateRoleBindingUpdateArg (#190).
+//
+// current must come from a GET performed immediately before this update
+// (see Update()), not this resource's own prior Terraform state, for the
+// same staleness reason documented on preserveAllowedRequesters -- state can
+// be stale because keyfactor_template_role_binding mutates some of these
+// same server-side fields (TemplatePolicy) out-of-band. current may be nil
+// if Update() decided no preservation GET was needed; that is a no-op here.
+//
+// TemplatePolicy and the TemplateRegexes/TemplateDefaults/EnrollmentFields/
+// MetadataFields collections are native Go pointer/slice types rather than
+// types.List/types.Object, so "declared empty" and "undeclared" cannot be
+// distinguished -- nil/empty is conservatively treated as "undeclared" and
+// filled from the server's current value, the same modeling limitation
+// already documented on buildTemplateRoleBindingUpdateArg for the older
+// client's equivalent fields.
+//
+// Every field TemplatesTemplateUpdateRequest can represent is covered here.
+// KeyType is the one further field GetTemplateResponse (the OLDER client
+// used by keyfactor_template_role_binding) can represent that this resource
+// cannot preserve -- but that's immaterial here: this resource's own schema
+// has no key_type write path (key_type is Computed/read-only, sourced from
+// the CA, and TemplatesTemplateUpdateRequest has no matching writable
+// field), so there is nothing for this function to omit.
+func preserveUndeclaredTemplateFields(plan *KeyfactorCertificateTemplateState, current *v1.TemplatesTemplateRetrievalResponse) {
+	if current == nil {
+		return
+	}
+	c := templateResponseToState(current)
+
+	if plan.FriendlyName.Null || plan.FriendlyName.Unknown {
+		plan.FriendlyName = c.FriendlyName
+	}
+	if plan.KeyRetention.Null || plan.KeyRetention.Unknown {
+		plan.KeyRetention = c.KeyRetention
+	}
+	if plan.KeyRetentionDays.Null || plan.KeyRetentionDays.Unknown {
+		plan.KeyRetentionDays = c.KeyRetentionDays
+	}
+	if plan.AllowedEnrollmentTypes.Null || plan.AllowedEnrollmentTypes.Unknown {
+		plan.AllowedEnrollmentTypes = c.AllowedEnrollmentTypes
+	}
+	if plan.RequiresApproval.Null || plan.RequiresApproval.Unknown {
+		plan.RequiresApproval = c.RequiresApproval
+	}
+	if plan.AllowOneClickRenewals.Null || plan.AllowOneClickRenewals.Unknown {
+		plan.AllowOneClickRenewals = c.AllowOneClickRenewals
+	}
+	if plan.KeyUsage.Null || plan.KeyUsage.Unknown {
+		plan.KeyUsage = c.KeyUsage
+	}
+	if plan.CertificateCleanupEnabled.Null || plan.CertificateCleanupEnabled.Unknown {
+		plan.CertificateCleanupEnabled = c.CertificateCleanupEnabled
+	}
+	if plan.TimeAfterExpiration.Null || plan.TimeAfterExpiration.Unknown {
+		plan.TimeAfterExpiration = c.TimeAfterExpiration
+	}
+	if plan.TimeAfterExpirationUnits.Null || plan.TimeAfterExpirationUnits.Unknown {
+		plan.TimeAfterExpirationUnits = c.TimeAfterExpirationUnits
+	}
+	if plan.DeleteWithArchivedKey.Null || plan.DeleteWithArchivedKey.Unknown {
+		plan.DeleteWithArchivedKey = c.DeleteWithArchivedKey
+	}
+
+	if plan.TemplatePolicy == nil {
+		plan.TemplatePolicy = c.TemplatePolicy
+	} else if c.TemplatePolicy != nil {
+		pp, cp := plan.TemplatePolicy, c.TemplatePolicy
+		if pp.AllowKeyReuse.Null || pp.AllowKeyReuse.Unknown {
+			pp.AllowKeyReuse = cp.AllowKeyReuse
+		}
+		if pp.AllowWildcards.Null || pp.AllowWildcards.Unknown {
+			pp.AllowWildcards = cp.AllowWildcards
+		}
+		if pp.RFCEnforcement.Null || pp.RFCEnforcement.Unknown {
+			pp.RFCEnforcement = cp.RFCEnforcement
+		}
+		if pp.CertificateOwnerRole.Null || pp.CertificateOwnerRole.Unknown {
+			pp.CertificateOwnerRole = cp.CertificateOwnerRole
+		}
+		if pp.DefaultCertificateOwnerRoleID.Null || pp.DefaultCertificateOwnerRoleID.Unknown {
+			pp.DefaultCertificateOwnerRoleID = cp.DefaultCertificateOwnerRoleID
+		}
+		if pp.KeyInfo == nil {
+			pp.KeyInfo = cp.KeyInfo
+		}
+	}
+
+	if len(plan.TemplateRegexes) == 0 {
+		plan.TemplateRegexes = c.TemplateRegexes
+	}
+	if len(plan.TemplateDefaults) == 0 {
+		plan.TemplateDefaults = c.TemplateDefaults
+	}
+	if len(plan.EnrollmentFields) == 0 {
+		plan.EnrollmentFields = c.EnrollmentFields
+	}
+	if len(plan.MetadataFields) == 0 {
+		plan.MetadataFields = c.MetadataFields
+	}
+}
+
+// templateUpdateNeedsPreservationFetch reports whether any writable field
+// TemplatesTemplateUpdateRequest can represent is left undeclared on plan --
+// i.e. whether Update() needs a preservation GET at all before its PUT. When
+// every field is explicitly declared, the fetch (and preserveAllowedRequesters
+// / preserveUndeclaredTemplateFields, which are then no-ops) is skipped
+// entirely so a fully-specified config incurs no extra API call.
+func templateUpdateNeedsPreservationFetch(plan *KeyfactorCertificateTemplateState) bool {
+	return plan.AllowedRequesters.Null || plan.AllowedRequesters.Unknown ||
+		plan.UseAllowedRequesters.Null || plan.UseAllowedRequesters.Unknown ||
+		plan.FriendlyName.Null || plan.FriendlyName.Unknown ||
+		plan.KeyRetention.Null || plan.KeyRetention.Unknown ||
+		plan.KeyRetentionDays.Null || plan.KeyRetentionDays.Unknown ||
+		plan.AllowedEnrollmentTypes.Null || plan.AllowedEnrollmentTypes.Unknown ||
+		plan.RequiresApproval.Null || plan.RequiresApproval.Unknown ||
+		plan.AllowOneClickRenewals.Null || plan.AllowOneClickRenewals.Unknown ||
+		plan.KeyUsage.Null || plan.KeyUsage.Unknown ||
+		plan.CertificateCleanupEnabled.Null || plan.CertificateCleanupEnabled.Unknown ||
+		plan.TimeAfterExpiration.Null || plan.TimeAfterExpiration.Unknown ||
+		plan.TimeAfterExpirationUnits.Null || plan.TimeAfterExpirationUnits.Unknown ||
+		plan.DeleteWithArchivedKey.Null || plan.DeleteWithArchivedKey.Unknown ||
+		plan.TemplatePolicy == nil ||
+		len(plan.TemplateRegexes) == 0 ||
+		len(plan.TemplateDefaults) == 0 ||
+		len(plan.EnrollmentFields) == 0 ||
+		len(plan.MetadataFields) == 0
+}
+
 func buildKeyInfoRequest(ki *TemplateKeyInfo) *v1.CSSCMSDataModelModelsTemplatesAlgorithmsKeyInfo {
 	result := &v1.CSSCMSDataModelModelsTemplatesAlgorithmsKeyInfo{}
 	result.RSA = buildAlgorithmDataRequest(ki.RSA)
@@ -1312,29 +1454,36 @@ func (r resourceCertificateTemplate) Update(
 	// needs to have at least one associated role") once the list is empty.
 	//
 	// This resource's own prior Terraform state is not a safe source of "the
-	// current value" either: keyfactor_template_role_binding manages the same
-	// server-side field out-of-band via its own PUT calls, so state here can
-	// already be stale. Read-modify-write against a fresh GET immediately
-	// before this update -- the same "fetch current, then carry forward what
-	// this apply doesn't intend to change" pattern used by
+	// current value" either: keyfactor_template_role_binding manages some of
+	// these same server-side fields out-of-band via its own PUT calls, so
+	// state here can already be stale. Read-modify-write against a fresh GET
+	// immediately before this update -- the same "fetch current, then carry
+	// forward what this apply doesn't intend to change" pattern used by
 	// addAllowedRequesterToTemplate/removeRoleFromTemplate for TemplatePolicy
-	// (#190) -- is what actually reflects the current server value. Fixes #195.
-	if plan.AllowedRequesters.Null || plan.AllowedRequesters.Unknown {
+	// (#190) -- is what actually reflects the current server value. Fixes
+	// #195; extended by preserveUndeclaredTemplateFields (see its doc
+	// comment) to every other writable field, not just allowed_requesters.
+	var current *v1.TemplatesTemplateRetrievalResponse
+	if templateUpdateNeedsPreservationFetch(&plan) {
 		getReq := templateAPI.NewGetTemplatesByIdRequest(ctx, int32(plan.ID.Value))
-		current, httpResp, err := getReq.Execute()
+		fetched, httpResp, err := getReq.Execute()
 		if err != nil {
 			body := readHTTPResponseBody(httpResp)
 			response.Diagnostics.AddError(
 				"Error reading certificate template before update.",
 				fmt.Sprintf(
-					"Could not read template %d to preserve its current allowed_requesters: %s. Details: %s",
+					"Could not read template %d to preserve its current field values: %s. Details: %s",
 					plan.ID.Value, err.Error(), body,
 				),
 			)
 			return
 		}
+		current = fetched
+	}
+	if plan.AllowedRequesters.Null || plan.AllowedRequesters.Unknown {
 		preserveAllowedRequesters(&plan, current)
 	}
+	preserveUndeclaredTemplateFields(&plan, current)
 
 	updateReq := buildTemplateUpdateRequest(ctx, plan)
 	req := templateAPI.NewUpdateTemplatesRequest(ctx).TemplatesTemplateUpdateRequest(updateReq)

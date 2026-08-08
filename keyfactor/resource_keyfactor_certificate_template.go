@@ -8,6 +8,7 @@ import (
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -49,6 +50,73 @@ func (m useStateOrNullModifier) Modify(_ context.Context, req tfsdk.ModifyAttrib
 	}
 	// Whether state is null or has a value, use the state (null → null, known → known).
 	resp.AttributePlan = req.AttributeState
+}
+
+// displayNameFollowsFriendlyNameModifier resolves display_name's plan the way
+// tfsdk.UseStateForUnknown would (prior state value carried forward) EXCEPT
+// when friendly_name is itself changing this apply. display_name is a
+// Computed, read-only field that Command derives from friendly_name (the
+// server mirrors a configured friendly_name back as display_name once one is
+// set) -- pinning display_name to the prior state's value with a plain
+// UseStateForUnknown modifier is only safe when friendly_name is NOT
+// changing. When friendly_name IS changing, display_name must be left
+// Unknown so Update()'s response can populate the new server-derived value
+// without the framework rejecting it as "Provider produced inconsistent
+// result after apply" (the stale prior value would otherwise be pinned as
+// the "planned" value, which the real post-apply value legitimately no
+// longer matches). See dev-harness Gap B / GH issue #195 follow-up.
+type displayNameFollowsFriendlyNameModifier struct{}
+
+func (m displayNameFollowsFriendlyNameModifier) Description(_ context.Context) string {
+	return "Uses the prior state value unless friendly_name is changing this apply, in which case display_name is left unknown so it can be recomputed from the server's response."
+}
+
+func (m displayNameFollowsFriendlyNameModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m displayNameFollowsFriendlyNameModifier) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+	if req.AttributeState.IsNull() {
+		return
+	}
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() {
+		return
+	}
+
+	var friendlyConfig, friendlyState types.String
+	if diags := req.Config.GetAttribute(ctx, path.Root("friendly_name"), &friendlyConfig); diags.HasError() {
+		return
+	}
+	if diags := req.State.GetAttribute(ctx, path.Root("friendly_name"), &friendlyState); diags.HasError() {
+		return
+	}
+
+	switch {
+	case friendlyConfig.Unknown:
+		// Cannot yet tell whether friendly_name is changing (it depends on
+		// another not-yet-known value) -- be conservative and leave
+		// display_name unknown.
+		return
+	case friendlyConfig.Null:
+		// friendly_name undeclared: it will resolve to the prior state value
+		// via its own UseStateForUnknown modifier, so it is NOT changing.
+		resp.AttributePlan = req.AttributeState
+	case !friendlyState.Null && friendlyConfig.Value == friendlyState.Value:
+		// friendly_name explicitly re-declared with its current value: not
+		// changing.
+		resp.AttributePlan = req.AttributeState
+	default:
+		// friendly_name is changing (newly declared, or declared with a
+		// value different from current state) -- leave display_name Unknown
+		// so the server's post-update response is free to set the new
+		// mirrored value.
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -241,8 +309,8 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 			"display_name": {
 				Type:          types.StringType,
 				Computed:      true,
-				Description:   "Display name field from the server. Read-only.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Description:   "Display name field from the server. Read-only. Mirrors friendly_name once one is configured, so it may legitimately change whenever friendly_name changes.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{displayNameFollowsFriendlyNameModifier{}},
 			},
 			"oid": {
 				Type:          types.StringType,
@@ -324,9 +392,11 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"allowed_requesters": {
-				Type:        types.ListType{ElemType: types.StringType},
-				Optional:    true,
-				Description: "List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead).",
+				Type:          types.ListType{ElemType: types.StringType},
+				Optional:      true,
+				Computed:      true,
+				Description:   "List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead). Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveAllowedRequesters) -- an undeclared value is not necessarily null.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"requires_approval": {
 				Type:          types.BoolType,
@@ -1095,6 +1165,173 @@ func buildTemplateUpdateRequest(
 	return req
 }
 
+// preserveAllowedRequesters copies a freshly-fetched server template's
+// current AllowedRequesters/UseAllowedRequesters onto plan, for use when
+// config doesn't declare allowed_requesters. allowed_requesters is Optional
+// but not Computed, so an omitted config value plans to Null; buildTemplateUpdateRequest
+// skips Null attributes entirely, and PUT /Templates is a full-replace
+// endpoint, so sending that Null through would silently clear a real
+// requester list -- one that may not even have been set by this resource in
+// the first place, since keyfactor_template_role_binding manages the same
+// field out-of-band. current is expected to come from a GET performed
+// immediately before this update, not this resource's own (possibly stale)
+// prior state. See resourceCertificateTemplate.Update. Fixes #195.
+func preserveAllowedRequesters(plan *KeyfactorCertificateTemplateState, current *v1.TemplatesTemplateRetrievalResponse) {
+	if current == nil {
+		return
+	}
+	if len(current.AllowedRequesters) > 0 {
+		plan.AllowedRequesters = stringSliceToTfList(current.AllowedRequesters)
+	} else {
+		plan.AllowedRequesters = types.List{Null: true, ElemType: types.StringType}
+	}
+	if plan.UseAllowedRequesters.Null || plan.UseAllowedRequesters.Unknown {
+		plan.UseAllowedRequesters = types.Bool{Value: current.GetUseAllowedRequesters()}
+	}
+}
+
+// preserveUndeclaredTemplateFields extends the #195 read-modify-write
+// pattern -- previously scoped to AllowedRequesters/UseAllowedRequesters
+// only, see preserveAllowedRequesters above -- to every other writable field
+// TemplatesTemplateUpdateRequest can represent. PUT /Templates is a
+// full-replace endpoint: buildTemplateUpdateRequest skips any plan field
+// left Null/Unknown (or, for the native-Go-slice/pointer nested fields,
+// nil/empty), and Command then clears that field server-side rather than
+// leaving it unchanged. Before this fix, an update that only declared (say)
+// friendly_name silently reset every OTHER undeclared Optional field on the
+// template -- observed live: key_retention "FromIssuance" -> "None" and
+// allow_one_click_renewals true -> false (dev-harness
+// certificate_template_demo finding, completes #195). This mirrors the same
+// systematic sweep already applied to keyfactor_template_role_binding's
+// buildTemplateRoleBindingUpdateArg (#190).
+//
+// current must come from a GET performed immediately before this update
+// (see Update()), not this resource's own prior Terraform state, for the
+// same staleness reason documented on preserveAllowedRequesters -- state can
+// be stale because keyfactor_template_role_binding mutates some of these
+// same server-side fields (TemplatePolicy) out-of-band. current may be nil
+// if Update() decided no preservation GET was needed; that is a no-op here.
+//
+// TemplatePolicy and the TemplateRegexes/TemplateDefaults/EnrollmentFields/
+// MetadataFields collections are native Go pointer/slice types rather than
+// types.List/types.Object, so "declared empty" and "undeclared" cannot be
+// distinguished -- nil/empty is conservatively treated as "undeclared" and
+// filled from the server's current value, the same modeling limitation
+// already documented on buildTemplateRoleBindingUpdateArg for the older
+// client's equivalent fields.
+//
+// Every field TemplatesTemplateUpdateRequest can represent is covered here.
+// KeyType is the one further field GetTemplateResponse (the OLDER client
+// used by keyfactor_template_role_binding) can represent that this resource
+// cannot preserve -- but that's immaterial here: this resource's own schema
+// has no key_type write path (key_type is Computed/read-only, sourced from
+// the CA, and TemplatesTemplateUpdateRequest has no matching writable
+// field), so there is nothing for this function to omit.
+func preserveUndeclaredTemplateFields(plan *KeyfactorCertificateTemplateState, current *v1.TemplatesTemplateRetrievalResponse) {
+	if current == nil {
+		return
+	}
+	c := templateResponseToState(current)
+
+	if plan.FriendlyName.Null || plan.FriendlyName.Unknown {
+		plan.FriendlyName = c.FriendlyName
+	}
+	if plan.KeyRetention.Null || plan.KeyRetention.Unknown {
+		plan.KeyRetention = c.KeyRetention
+	}
+	if plan.KeyRetentionDays.Null || plan.KeyRetentionDays.Unknown {
+		plan.KeyRetentionDays = c.KeyRetentionDays
+	}
+	if plan.AllowedEnrollmentTypes.Null || plan.AllowedEnrollmentTypes.Unknown {
+		plan.AllowedEnrollmentTypes = c.AllowedEnrollmentTypes
+	}
+	if plan.RequiresApproval.Null || plan.RequiresApproval.Unknown {
+		plan.RequiresApproval = c.RequiresApproval
+	}
+	if plan.AllowOneClickRenewals.Null || plan.AllowOneClickRenewals.Unknown {
+		plan.AllowOneClickRenewals = c.AllowOneClickRenewals
+	}
+	if plan.KeyUsage.Null || plan.KeyUsage.Unknown {
+		plan.KeyUsage = c.KeyUsage
+	}
+	if plan.CertificateCleanupEnabled.Null || plan.CertificateCleanupEnabled.Unknown {
+		plan.CertificateCleanupEnabled = c.CertificateCleanupEnabled
+	}
+	if plan.TimeAfterExpiration.Null || plan.TimeAfterExpiration.Unknown {
+		plan.TimeAfterExpiration = c.TimeAfterExpiration
+	}
+	if plan.TimeAfterExpirationUnits.Null || plan.TimeAfterExpirationUnits.Unknown {
+		plan.TimeAfterExpirationUnits = c.TimeAfterExpirationUnits
+	}
+	if plan.DeleteWithArchivedKey.Null || plan.DeleteWithArchivedKey.Unknown {
+		plan.DeleteWithArchivedKey = c.DeleteWithArchivedKey
+	}
+
+	if plan.TemplatePolicy == nil {
+		plan.TemplatePolicy = c.TemplatePolicy
+	} else if c.TemplatePolicy != nil {
+		pp, cp := plan.TemplatePolicy, c.TemplatePolicy
+		if pp.AllowKeyReuse.Null || pp.AllowKeyReuse.Unknown {
+			pp.AllowKeyReuse = cp.AllowKeyReuse
+		}
+		if pp.AllowWildcards.Null || pp.AllowWildcards.Unknown {
+			pp.AllowWildcards = cp.AllowWildcards
+		}
+		if pp.RFCEnforcement.Null || pp.RFCEnforcement.Unknown {
+			pp.RFCEnforcement = cp.RFCEnforcement
+		}
+		if pp.CertificateOwnerRole.Null || pp.CertificateOwnerRole.Unknown {
+			pp.CertificateOwnerRole = cp.CertificateOwnerRole
+		}
+		if pp.DefaultCertificateOwnerRoleID.Null || pp.DefaultCertificateOwnerRoleID.Unknown {
+			pp.DefaultCertificateOwnerRoleID = cp.DefaultCertificateOwnerRoleID
+		}
+		if pp.KeyInfo == nil {
+			pp.KeyInfo = cp.KeyInfo
+		}
+	}
+
+	if len(plan.TemplateRegexes) == 0 {
+		plan.TemplateRegexes = c.TemplateRegexes
+	}
+	if len(plan.TemplateDefaults) == 0 {
+		plan.TemplateDefaults = c.TemplateDefaults
+	}
+	if len(plan.EnrollmentFields) == 0 {
+		plan.EnrollmentFields = c.EnrollmentFields
+	}
+	if len(plan.MetadataFields) == 0 {
+		plan.MetadataFields = c.MetadataFields
+	}
+}
+
+// templateUpdateNeedsPreservationFetch reports whether any writable field
+// TemplatesTemplateUpdateRequest can represent is left undeclared on plan --
+// i.e. whether Update() needs a preservation GET at all before its PUT. When
+// every field is explicitly declared, the fetch (and preserveAllowedRequesters
+// / preserveUndeclaredTemplateFields, which are then no-ops) is skipped
+// entirely so a fully-specified config incurs no extra API call.
+func templateUpdateNeedsPreservationFetch(plan *KeyfactorCertificateTemplateState) bool {
+	return plan.AllowedRequesters.Null || plan.AllowedRequesters.Unknown ||
+		plan.UseAllowedRequesters.Null || plan.UseAllowedRequesters.Unknown ||
+		plan.FriendlyName.Null || plan.FriendlyName.Unknown ||
+		plan.KeyRetention.Null || plan.KeyRetention.Unknown ||
+		plan.KeyRetentionDays.Null || plan.KeyRetentionDays.Unknown ||
+		plan.AllowedEnrollmentTypes.Null || plan.AllowedEnrollmentTypes.Unknown ||
+		plan.RequiresApproval.Null || plan.RequiresApproval.Unknown ||
+		plan.AllowOneClickRenewals.Null || plan.AllowOneClickRenewals.Unknown ||
+		plan.KeyUsage.Null || plan.KeyUsage.Unknown ||
+		plan.CertificateCleanupEnabled.Null || plan.CertificateCleanupEnabled.Unknown ||
+		plan.TimeAfterExpiration.Null || plan.TimeAfterExpiration.Unknown ||
+		plan.TimeAfterExpirationUnits.Null || plan.TimeAfterExpirationUnits.Unknown ||
+		plan.DeleteWithArchivedKey.Null || plan.DeleteWithArchivedKey.Unknown ||
+		plan.TemplatePolicy == nil ||
+		len(plan.TemplateRegexes) == 0 ||
+		len(plan.TemplateDefaults) == 0 ||
+		len(plan.EnrollmentFields) == 0 ||
+		len(plan.MetadataFields) == 0
+}
+
 func buildKeyInfoRequest(ki *TemplateKeyInfo) *v1.CSSCMSDataModelModelsTemplatesAlgorithmsKeyInfo {
 	result := &v1.CSSCMSDataModelModelsTemplatesAlgorithmsKeyInfo{}
 	result.RSA = buildAlgorithmDataRequest(ki.RSA)
@@ -1205,8 +1442,50 @@ func (r resourceCertificateTemplate) Update(
 
 	tflog.Info(ctx, fmt.Sprintf("Updating certificate template ID %d", plan.ID.Value))
 
-	updateReq := buildTemplateUpdateRequest(ctx, plan)
 	templateAPI := r.p.sdkClient.V1.TemplateApi
+
+	// allowed_requesters is Optional but NOT Computed (no UseStateForUnknown),
+	// so a config that simply doesn't declare it plans to Null -- not "leave
+	// unchanged." PUT /Templates is a full-replace endpoint, and
+	// buildTemplateUpdateRequest skips Null attributes entirely, so an
+	// undeclared allowed_requesters silently cleared the template's requester
+	// list server-side on every such update. On Command 25.x this then
+	// surfaces as a confusing downstream validation error ("Enrollment Pattern
+	// needs to have at least one associated role") once the list is empty.
+	//
+	// This resource's own prior Terraform state is not a safe source of "the
+	// current value" either: keyfactor_template_role_binding manages some of
+	// these same server-side fields out-of-band via its own PUT calls, so
+	// state here can already be stale. Read-modify-write against a fresh GET
+	// immediately before this update -- the same "fetch current, then carry
+	// forward what this apply doesn't intend to change" pattern used by
+	// addAllowedRequesterToTemplate/removeRoleFromTemplate for TemplatePolicy
+	// (#190) -- is what actually reflects the current server value. Fixes
+	// #195; extended by preserveUndeclaredTemplateFields (see its doc
+	// comment) to every other writable field, not just allowed_requesters.
+	var current *v1.TemplatesTemplateRetrievalResponse
+	if templateUpdateNeedsPreservationFetch(&plan) {
+		getReq := templateAPI.NewGetTemplatesByIdRequest(ctx, int32(plan.ID.Value))
+		fetched, httpResp, err := getReq.Execute()
+		if err != nil {
+			body := readHTTPResponseBody(httpResp)
+			response.Diagnostics.AddError(
+				"Error reading certificate template before update.",
+				fmt.Sprintf(
+					"Could not read template %d to preserve its current field values: %s. Details: %s",
+					plan.ID.Value, err.Error(), body,
+				),
+			)
+			return
+		}
+		current = fetched
+	}
+	if plan.AllowedRequesters.Null || plan.AllowedRequesters.Unknown {
+		preserveAllowedRequesters(&plan, current)
+	}
+	preserveUndeclaredTemplateFields(&plan, current)
+
+	updateReq := buildTemplateUpdateRequest(ctx, plan)
 	req := templateAPI.NewUpdateTemplatesRequest(ctx).TemplatesTemplateUpdateRequest(updateReq)
 	resp, httpResp, err := req.Execute()
 	if err != nil {

@@ -146,10 +146,23 @@ resource "keyfactor_template_role_binding" "import_test" {
 // ---------------------------------------------------------------------------
 
 // TestUnitKeyfactorTemplateRoleBindingResource exercises the template role
-// binding resource. Because the keyfactor-go-client UpdateTemplateArg struct
-// is missing the Policies field required by Command v25+, the apply step is
-// expected to fail with an error.  The cassette captures the role Create and
-// the attempted template update that yields the server error.
+// binding resource against a cassette recorded before issue #190 was fixed:
+// the vendored keyfactor-go-client's UpdateTemplateArg had no TemplatePolicy
+// field, so Command v25+ rejected the update with "'Policies' cannot be
+// empty", and this cassette captures that exact recorded server response.
+// VCR here matches on method/path/query only (never request body), so this
+// cassette keeps replaying the same recorded error regardless of what the
+// provider actually sends on the wire -- it cannot demonstrate that #190 is
+// fixed, only preserve historical evidence of the original bug.
+//
+// The actual fix (UpdateTemplateArg.TemplatePolicy now exists upstream, see
+// the go.mod replace directive, and addAllowedRequesterToTemplate /
+// removeRoleFromTemplate now carry the fetched template's TemplatePolicy
+// through unchanged) is regression-tested at the wire level by
+// TestUnitAddAllowedRequesterToTemplatePreservesTemplatePolicy and
+// TestUnitRemoveRoleFromTemplatePreservesTemplatePolicy instead, since
+// re-recording this cassette against a fixed lab would require a mutating
+// PUT against a live Command instance.
 func TestUnitKeyfactorTemplateRoleBindingResource(t *testing.T) {
 	cassetteName := "template_role_binding_resource"
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)

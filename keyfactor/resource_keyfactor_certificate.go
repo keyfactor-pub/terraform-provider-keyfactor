@@ -300,22 +300,30 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			"dns_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 				Description: "List of DNS names to use as subjects of the certificate. " +
 					"NOTE: This field **does not work with CSR enrollments**, " +
 					"all SANs should be included in the CSR. " +
 					"Additional SANs added by the CA during enrollment **will" +
-					" not** be reflected in this field",
+					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
+					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
+					"certificate's real SAN list shows no drift; declaring a different list still forces " +
+					"replacement (see GH issue #197).",
 			},
 			"uri_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 				Description: "List of URIs to use as subjects of the certificate. " +
 					"NOTE: This field **does not work with CSR enrollments**, " +
 					"all SANs should be included in the CSR. " +
 					"Additional SANs added by the CA during enrollment **will" +
-					" not** be reflected in this field",
+					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
+					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
+					"certificate's real SAN list shows no drift; declaring a different list still forces " +
+					"replacement (see GH issue #197).",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -325,12 +333,16 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			"ip_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 				Description: "List of DNS names to use as subjects of the certificate. " +
 					"NOTE: This field **does not work with CSR enrollments**, " +
 					"all SANs should be included in the CSR. " +
 					"Additional SANs added by the CA during enrollment **will" +
-					" not** be reflected in this field",
+					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
+					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
+					"certificate's real SAN list shows no drift; declaring a different list still forces " +
+					"replacement (see GH issue #197).",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -1636,9 +1648,9 @@ func (r resourceCommandCertificate) Update(
 			Country:              plan.Country,
 			Organization:         plan.Organization,
 			OrganizationalUnit:   plan.OrganizationalUnit,
-			DNSSANs:              plan.DNSSANs,
-			IPSANs:               plan.IPSANs,
-			URISANs:              plan.URISANs,
+			DNSSANs:              knownListFromPlan(plan.DNSSANs),
+			IPSANs:               knownListFromPlan(plan.IPSANs),
+			URISANs:              knownListFromPlan(plan.URISANs),
 			SerialNumber:         state.SerialNumber,
 			IssuerDN:             state.IssuerDN,
 			Thumbprint:           state.Thumbprint,
@@ -2989,9 +3001,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		Locality:           plan.Locality,
 		State:              plan.State,
 		Country:            plan.Country,
-		DNSSANs:            plan.DNSSANs,
-		IPSANs:             plan.IPSANs,
-		URISANs:            plan.URISANs,
+		DNSSANs:            knownListFromPlan(plan.DNSSANs),
+		IPSANs:             knownListFromPlan(plan.IPSANs),
+		URISANs:            knownListFromPlan(plan.URISANs),
 		SerialNumber:       types.String{Value: normalizeSerialNumber(enrolledSerialNumber)},
 		IssuerDN:           types.String{Value: enrolledIssuerDN},
 		Thumbprint:         types.String{Value: normalizeThumbprint(enrolledThumbprint)},
@@ -3398,6 +3410,21 @@ func knownInt64FromPlan(i types.Int64) types.Int64 {
 	return i
 }
 
+// knownListFromPlan returns the plan value if known, otherwise a null list
+// with the same element type. Prevents storing Unknown in state for Computed
+// list fields such as dns_sans/ip_sans/uri_sans -- those attributes became
+// Optional+Computed (with UseStateForUnknown) as part of the fix for GH
+// issue #197 (dns_sans not populated on import forced replacement); a fresh
+// Create() whose config doesn't declare them plans them Unknown (no prior
+// state exists yet for UseStateForUnknown to carry forward), and the final
+// state Create() returns must never contain an Unknown value.
+func knownListFromPlan(l types.List) types.List {
+	if l.Unknown {
+		return types.List{Null: true, ElemType: l.ElemType}
+	}
+	return l
+}
+
 func (r resourceCommandCertificate) parseMetadata(
 	ctx context.Context,
 	plan *CommandCertificate,
@@ -3625,9 +3652,9 @@ func (r resourceCommandCertificate) enrollCSR(
 		Locality:           plan.Locality,
 		State:              plan.State,
 		Country:            plan.Country,
-		DNSSANs:            plan.DNSSANs,
-		IPSANs:             plan.IPSANs,
-		URISANs:            plan.URISANs,
+		DNSSANs:            knownListFromPlan(plan.DNSSANs),
+		IPSANs:             knownListFromPlan(plan.IPSANs),
+		URISANs:            knownListFromPlan(plan.URISANs),
 		SerialNumber:       types.String{Value: normalizeSerialNumber(enrollResponse.CertificateInformation.SerialNumber)},
 		IssuerDN:           types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
 		Thumbprint:         types.String{Value: normalizeThumbprint(enrollResponse.CertificateInformation.Thumbprint)},

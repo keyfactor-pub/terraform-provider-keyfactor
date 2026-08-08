@@ -18,7 +18,7 @@ resource "keyfactor_oauth_security_claim" "demo" {
   claim_type                     = "OAuthClientId"
   claim_value                    = var.claim_value
   description                    = var.claim_description
-  provider_authentication_scheme = "System"
+  provider_authentication_scheme = var.provider_authentication_scheme
 }
 
 # ---------------------------------------------------------------------------

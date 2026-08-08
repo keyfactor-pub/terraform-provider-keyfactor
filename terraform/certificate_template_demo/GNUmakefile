@@ -59,9 +59,25 @@ plan:
 apply:
 	@echo "SKIPPED: certificate_template_demo cannot create templates (Command API limitation); use 'make import-all TEMPLATE_ID=<id>' instead."
 
-## import-existing / import-all: Import the existing template by ID
+## import-existing / import-all: Import the existing template by ID (idempotent --
+##   skips the import if the resource is already in state, e.g. from a prior
+##   partial run, instead of failing with "Resource already managed by Terraform").
+## NOTE: the check and the fallback import are deliberately wrapped in an
+##   explicit if/then/else/fi, NOT spliced together with a bare `||`.
+##   $(UNSET_BASIC)/$(LAB_ENV) each expand to a MULTI-STATEMENT `&&`/`;`
+##   chain, not a single atomic command -- `A && B && CHECK || C && D && E`
+##   parses left-to-right at equal precedence as `(((A&&B&&CHECK)||C)&&D)&&E`,
+##   so only the FIRST command after `||` is actually gated; every command
+##   after that runs unconditionally regardless of CHECK's result. This
+##   silently defeated an earlier "skip import if already in state" guard
+##   here (confirmed 2026-08-07: it still tried to re-import every time and
+##   crashed with "Resource already managed by Terraform").
 import-existing:
-	$(UNSET_BASIC) $(TF) import keyfactor_certificate_template.demo $(TEMPLATE_ID)
+	@if $(UNSET_BASIC) $(TF) state list 2>/dev/null | grep -qx "keyfactor_certificate_template.demo"; then \
+	  echo "keyfactor_certificate_template.demo already in state; skipping import."; \
+	else \
+	  $(UNSET_BASIC) $(TF) import keyfactor_certificate_template.demo $(TEMPLATE_ID); \
+	fi
 
 import-all: import-existing
 
@@ -105,8 +121,11 @@ lab-destroy:
 ##   demo, not a harness crash.
 lab-update:
 	@echo "==> [1/3] import (if not already in state)..."
-	@$(LAB_ENV) $(TF) state show keyfactor_certificate_template.demo >/dev/null 2>&1 || \
-	  $(LAB_ENV) $(TF) import keyfactor_certificate_template.demo $(TEMPLATE_ID)
+	@if $(LAB_ENV) $(TF) state list 2>/dev/null | grep -qx "keyfactor_certificate_template.demo"; then \
+	  echo "keyfactor_certificate_template.demo already in state; skipping import."; \
+	else \
+	  $(LAB_ENV) $(TF) import keyfactor_certificate_template.demo $(TEMPLATE_ID); \
+	fi
 	@echo "==> [2/3] apply friendly_name change..."
 	@$(LAB_ENV) TF_VAR_friendly_name_override="Terraform Harness Demo ($(TEMPLATE_ID))" \
 	  $(TF) apply -auto-approve -no-color > /tmp/certificate_template_demo_update.txt 2>&1; \
@@ -123,7 +142,23 @@ lab-update:
 
 ## lifecycle: Full lifecycle for this demo: import-all -> lab-update -> drift-check
 ##   (no apply/destroy -- see header)
-lifecycle: lab-import-all lab-update lab-drift-check
+## lifecycle: import-all -> lab-update (KNOWN PROVIDER BUGS: see main.tf
+##   header -- expected to FAIL on labs with either gap) -> lab-drift-check
+##   ALWAYS runs (even after a known lab-update failure) since it's
+##   informational-only here and never mutates anything.
+lifecycle:
+	@$(MAKE) lab-import-all || exit 1; \
+	 UPDATE_EXIT=0; \
+	 if ! $(MAKE) lab-update; then UPDATE_EXIT=1; fi; \
+	 $(MAKE) lab-drift-check || exit 1; \
+	 echo "=============================================================="; \
+	 if [ $$UPDATE_EXIT -ne 0 ]; then \
+	   echo "certificate_template_demo summary: lab-update KNOWN PROVIDER BUG reproduced (see main.tf header)."; \
+	 else \
+	   echo "certificate_template_demo summary: lab-update PASS."; \
+	 fi; \
+	 echo "=============================================================="; \
+	 if [ $$UPDATE_EXIT -ne 0 ]; then exit 1; fi
 
 .PHONY: build init validate plan apply import-existing import-all drift-check destroy clean all \
         lab-import-existing lab-import-all lab-drift-check lab-plan lab-apply lab-destroy lab-update lifecycle

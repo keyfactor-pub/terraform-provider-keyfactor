@@ -26,9 +26,29 @@ provider "keyfactor" {}
 # mistake in this demo. See terraform/template_role_binding_demo/main.tf for
 # the same constraint noted independently.
 #
-# This demo exists specifically to SURFACE that failure clearly (a FAIL on
+# ADDITIONAL PROVIDER BUG confirmed against kfclab (Command 25.5, 2026-08-07):
+# `make lab-update` here instead fails with a DIFFERENT 400 --
+# "0xA011000F: Enrollment Pattern needs to have at least one associated
+# role." Root cause: this resource's Update() (buildTemplateUpdateRequest in
+# resource_keyfactor_certificate_template.go) only sets AllowedRequesters on
+# the PUT request if `allowed_requesters` is explicitly declared in config;
+# since this demo (like most real-world usage) only sets `friendly_name`,
+# AllowedRequesters is omitted -- and unlike keyfactor_certificate_authority's
+# schedule fields, this attribute has no UseStateForUnknown plan modifier, so
+# it plans as null rather than carrying forward the prior state value. The
+# resulting PUT clears AllowedRequesters server-side, which then fails
+# Command's validation for any template whose enrollment pattern requires an
+# associated role (as this lab's "Lab - AnyCA (lab-role)" pattern does).
+# Confirmed via a raw API PUT that preserves AllowedRequesters verbatim: the
+# SAME friendly_name-only change succeeds when AllowedRequesters isn't
+# dropped, isolating the bug to the omission rather than to friendly_name
+# itself. This is a second, independent provider bug from the "'Policies'
+# cannot be empty" one above -- both currently make `make lab-update` FAIL
+# on this lab.
+#
+# This demo exists specifically to SURFACE these failures clearly (a FAIL on
 # `make lab-update`, not a crash) rather than to guarantee updates work here.
-# If the lab's Command instance does NOT have this gap, `make lab-update`
+# If the lab's Command instance does NOT have either gap, `make lab-update`
 # passes normally.
 # ---------------------------------------------------------------------------
 data "keyfactor_certificate_template" "demo" {

@@ -35,17 +35,26 @@ locals {
   # kfclab auth note: in-cluster pod-identity ("Option 3") -- no server_password
   # needed when server_username="kubeconfig". See k8s_orchestrator_demo/stores.tf.
   kubeconfig = var.k8s_server_password_file != "" ? file(var.k8s_server_password_file) : null
+
+  # var.suffix defaults to "_TF" for non-DNS resource naming, but an
+  # underscore embedded in a certificate common name makes this lab's
+  # EJBCA/OpenBao backend reject enrollment with a generic "invalid custom
+  # extension or certificate policy OIDs" error (confirmed 2026-08-08 --
+  # CA-side hostname/RFC policy enforcement, not a provider bug). dns_suffix
+  # swaps underscores for hyphens so hostnames stay DNS-valid.
+  dns_suffix = replace(var.suffix, "_", "-")
 }
 
 # ---------------------------------------------------------------------------
 # Certificates: 1 PFX + 1 CSR
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate" "pfx" {
-  common_name                    = "tf-release-pfx${var.suffix}.example.com"
+  common_name                    = "tf-release-pfx${local.dns_suffix}.example.com"
   certificate_authority          = var.certificate_authority
   certificate_template           = local.tmpl
   certificate_enrollment_pattern = local.pattern
   key_password                   = var.key_password
+  use_cn_as_friendly_name        = var.use_cn_as_friendly_name
 }
 
 resource "tls_private_key" "csr" {
@@ -56,7 +65,7 @@ resource "tls_private_key" "csr" {
 resource "tls_cert_request" "csr" {
   private_key_pem = tls_private_key.csr.private_key_pem
   subject {
-    common_name = "tf-release-csr${var.suffix}.example.com"
+    common_name = "tf-release-csr${local.dns_suffix}.example.com"
   }
 }
 
@@ -102,6 +111,14 @@ resource "keyfactor_certificate_store" "k8s_opaque_secret" {
   }
 }
 
+# PasswordIsK8SSecret is deliberately NOT set below (even as "false"). This
+# lab's k8s-orchestrator extension version does not define that property at
+# all on K8SJKS/K8SPKCS12 (GET /CertificateStoreTypes/107, /108, confirmed
+# 2026-08-07) -- Command rejected it outright with "The Certificate Store
+# Property, 'PasswordIsK8SSecret', is not a valid property for Certificate
+# Store Type: '107'" (same for '108'). See k8s_orchestrator_demo/stores.tf
+# for the same fix and the companion-K8S-secret ("buddy") variant, which
+# this trimmed release-gate demo does not cover.
 resource "keyfactor_certificate_store" "k8s_jks" {
   client_machine     = local.client_machine
   store_path         = "${var.namespace}/tf-release-jks"
@@ -116,7 +133,6 @@ resource "keyfactor_certificate_store" "k8s_jks" {
   properties = {
     KubeSecretType           = "jks"
     CertificateDataFieldName = "jks"
-    PasswordIsK8SSecret      = "false"
   }
 }
 
@@ -134,7 +150,6 @@ resource "keyfactor_certificate_store" "k8s_pkcs12" {
   properties = {
     KubeSecretType           = "pkcs12"
     CertificateDataFieldName = ".p12"
-    PasswordIsK8SSecret      = "false"
   }
 }
 

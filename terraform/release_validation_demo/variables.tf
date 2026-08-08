@@ -35,6 +35,12 @@ variable "key_password" {
   description = "Password used to protect the PFX output. Required for private key recovery."
 }
 
+variable "use_cn_as_friendly_name" {
+  type        = bool
+  default     = false
+  description = "PFX friendly_name behavior. Command 25.5 on kfclab rejects PFX enrollment with \"Friendly Name is not allowed\" when this defaults to true (the provider's own default) -- confirmed 2026-08-07. Defaults to false here so PFX enrollment succeeds on this lab."
+}
+
 variable "namespace" {
   type        = string
   default     = "default"

@@ -12,6 +12,7 @@ resource "keyfactor_certificate" "demo" {
   certificate_template           = local.tmpl
   certificate_enrollment_pattern = local.pattern
   key_password                   = var.key_password
+  use_cn_as_friendly_name        = var.use_cn_as_friendly_name
 }
 
 # ---------------------------------------------------------------------------

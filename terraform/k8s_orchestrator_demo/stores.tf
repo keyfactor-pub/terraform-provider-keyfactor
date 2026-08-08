@@ -70,6 +70,15 @@ resource "keyfactor_certificate_store" "k8s_opaque_secret" {
 
 # ---------------------------------------------------------------------------
 # K8SCert — Certificate-only secrets (public cert, no private key)
+#
+# K8SCert's actual property set (GET /CertificateStoreTypes/102, confirmed
+# 2026-08-07) is ServerUsername/ServerPassword/ServerUseSsl/KubeSecretName --
+# there is NO KubeSecretType property on this store type (Command rejected it
+# with "The Certificate Store Property, 'KubeSecretType', is not a valid
+# property for Certificate Store Type: '102'"). This also matches
+# SupportedOperations for 102 (Add/Create/Enrollment/Remove all false,
+# Discovery only) -- K8SCert is a discovery-only store, hence no deployment
+# resource targets it in deployments.tf.
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_store" "k8s_cert" {
   client_machine     = local.client_machine
@@ -81,14 +90,20 @@ resource "keyfactor_certificate_store" "k8s_cert" {
   server_use_ssl     = true
   inventory_schedule = var.inventory_schedule
   create_if_missing  = false # K8SCert has no Create management job; override to false
-  properties = {
-    KubeSecretType = "tls"
-  }
 }
 
 # ---------------------------------------------------------------------------
 # K8SJKS — Java KeyStore secrets
-# Variation A: inline password (PasswordIsK8SSecret=false, default)
+#
+# PasswordIsK8SSecret/StorePasswordPath are DELIBERATELY NOT SET below.
+# This lab's k8s-orchestrator extension version does not define either
+# property on K8SJKS/K8SPKCS12 at all (GET /CertificateStoreTypes/107 and
+# /108, confirmed 2026-08-07) -- Command rejected them outright with "The
+# Certificate Store Property, 'PasswordIsK8SSecret', is not a valid property
+# for Certificate Store Type: '107'" (same for '108'), even when set to
+# "false". So the "buddy" companion-K8S-secret password variant (Variation
+# B) cannot be wired into Command's store config on this lab version; both
+# variants below use inline store_password instead.
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_store" "k8s_jks" {
   client_machine     = local.client_machine
@@ -104,12 +119,15 @@ resource "keyfactor_certificate_store" "k8s_jks" {
   properties = {
     KubeSecretType           = "jks"
     CertificateDataFieldName = "jks"
-    PasswordIsK8SSecret      = "false"
   }
 }
 
-# Companion K8S secret for the JKS buddy store — holds the keystore password.
-# PasswordFieldName default is "password", so the secret key must match.
+# Companion K8S secret -- created to exercise the kubernetes_secret resource
+# and kubeconfig-based auth (~/.kube/kfc-lab.yaml via var.k8s_credentials_file),
+# but NOT actually consumed by keyfactor_certificate_store.k8s_jks_buddy below:
+# this lab's K8SJKS store type has no StorePasswordPath property to point at
+# it (see header comment above). PasswordFieldName default is "password", so
+# the secret key still matches what a lab WITH that property would expect.
 resource "kubernetes_secret" "jks_buddy_pwd" {
   metadata {
     name      = "tf-demo-jks-buddy-pwd"
@@ -120,8 +138,10 @@ resource "kubernetes_secret" "jks_buddy_pwd" {
   }
 }
 
-# K8SJKS — Variation B: password stored as a companion K8S secret (PasswordIsK8SSecret=true)
-# StorePasswordPath points to the K8S secret that holds the keystore password.
+# K8SJKS — "buddy" store at a distinct path. See header comment: this lab's
+# K8SJKS store type does not support PasswordIsK8SSecret/StorePasswordPath,
+# so this uses the same inline-password config as k8s_jks above rather than
+# actually referencing kubernetes_secret.jks_buddy_pwd.
 resource "keyfactor_certificate_store" "k8s_jks_buddy" {
   depends_on         = [kubernetes_secret.jks_buddy_pwd]
   client_machine     = local.client_machine
@@ -137,15 +157,13 @@ resource "keyfactor_certificate_store" "k8s_jks_buddy" {
   properties = {
     KubeSecretType           = "jks"
     CertificateDataFieldName = "jks"
-    PasswordIsK8SSecret      = "true"
-    StorePasswordPath        = "${local.namespace}/tf-demo-jks-buddy-pwd"
   }
 }
 
 # ---------------------------------------------------------------------------
 # K8SPKCS12 — PKCS12 secrets
-# Variation A: inline password (PasswordIsK8SSecret=false, default)
 # CertificateDataFieldName is required by Command (default ".p12" must be explicit).
+# PasswordIsK8SSecret/StorePasswordPath omitted for the same reason as K8SJKS above.
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_store" "k8s_pkcs12" {
   client_machine     = local.client_machine
@@ -161,11 +179,10 @@ resource "keyfactor_certificate_store" "k8s_pkcs12" {
   properties = {
     KubeSecretType           = "pkcs12"
     CertificateDataFieldName = ".p12"
-    PasswordIsK8SSecret      = "false"
   }
 }
 
-# Companion K8S secret for the PKCS12 buddy store — holds the keystore password.
+# Companion K8S secret -- see jks_buddy_pwd comment above; same caveat applies.
 resource "kubernetes_secret" "pkcs12_buddy_pwd" {
   metadata {
     name      = "tf-demo-pkcs12-buddy-pwd"
@@ -176,7 +193,7 @@ resource "kubernetes_secret" "pkcs12_buddy_pwd" {
   }
 }
 
-# K8SPKCS12 — Variation B: password stored as a companion K8S secret (PasswordIsK8SSecret=true)
+# K8SPKCS12 — "buddy" store at a distinct path; see k8s_jks_buddy comment above.
 resource "keyfactor_certificate_store" "k8s_pkcs12_buddy" {
   depends_on         = [kubernetes_secret.pkcs12_buddy_pwd]
   client_machine     = local.client_machine
@@ -192,8 +209,6 @@ resource "keyfactor_certificate_store" "k8s_pkcs12_buddy" {
   properties = {
     KubeSecretType           = "pkcs12"
     CertificateDataFieldName = ".p12"
-    PasswordIsK8SSecret      = "true"
-    StorePasswordPath        = "${local.namespace}/tf-demo-pkcs12-buddy-pwd"
   }
 }
 

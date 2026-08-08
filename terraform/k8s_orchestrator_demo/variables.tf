@@ -1,7 +1,7 @@
 variable "k8s_credentials_file" {
   type        = string
-  description = "Path to the standard kubeconfig file used by the kubernetes provider. Must be set via TF_VAR_k8s_credentials_file or passed explicitly."
-  default     = null
+  description = "Path to the standard kubeconfig file used by the kubernetes provider (for the kubernetes_secret buddy-password resources only -- Keyfactor's own K8S stores use in-cluster pod identity, see k8s_server_password_file below). Defaults to kfclab's kubeconfig (~/.kube/kfc-lab.yaml); override via TF_VAR_k8s_credentials_file for other environments."
+  default     = "~/.kube/kfc-lab.yaml"
 }
 
 variable "k8s_server_password_file" {
@@ -76,4 +76,10 @@ variable "key_password" {
   default     = "Tftest123456"
   sensitive   = true
   description = "Password used to protect the PKCS#12/PFX output. Required for private key recovery."
+}
+
+variable "use_cn_as_friendly_name" {
+  type        = bool
+  default     = false
+  description = "PFX friendly_name behavior. Command 25.5 on kfclab rejects PFX enrollment with \"Friendly Name is not allowed\" when this defaults to true (the provider's own default) -- confirmed 2026-08-07. Defaults to false here so PFX enrollment succeeds on this lab."
 }

@@ -34,8 +34,9 @@ provider "keyfactor" {}
 #   3. threshold_check_daily_time declared directly via Terraform config
 #      (step6) -- testing whether the new Daily variant round-trips when
 #      actually managed declaratively, not just preserved when set
-#      out-of-band. It currently does NOT (see the resource block below and
-#      step6-apply-daily's header for the date-normalization gap found here)
+#      out-of-band. It now takes a bare UTC time-of-day, "HH:MM:SS", instead
+#      of a full RFC3339 timestamp -- see the resource block below and
+#      step6-apply-daily's header for the date-normalization fix.
 #   4. import round-trip + drift-check
 #
 # Creates a brand-new, deliberately unreachable CA record (force_save=true
@@ -90,24 +91,22 @@ resource "keyfactor_certificate_authority" "demo" {
   # from a fully-absent attribute in the raw config the provider sees (both
   # produce a null config value), so this does not disturb the
   # undeclared/unmanaged behavior above at all when the var is left at its
-  # default. Setting TF_VAR_threshold_check_daily_time to a real RFC3339
-  # timestamp (see step6-* in GNUmakefile) is what exercises the new
-  # full_scan_daily_time/incremental_scan_daily_time/threshold_check_daily_time
-  # attribute pair declaratively.
+  # default. Setting TF_VAR_threshold_check_daily_time to a bare UTC
+  # time-of-day, "HH:MM:SS" (see step6-* in GNUmakefile), is what exercises
+  # the new full_scan_daily_time/incremental_scan_daily_time/
+  # threshold_check_daily_time attribute pair declaratively.
   #
-  # RESULT (verified live against kfclab, 2026-08-08, locally built
-  # fix/harness-bugs provider): this does NOT round-trip on first apply.
-  # Command normalizes a Daily schedule's Time to a server-side DATE (the
-  # date the schedule was written) while preserving only the user-supplied
-  # time-of-day; buildSchedule/scheduleToState send and echo back a full
-  # RFC3339 timestamp, so a value with any other date than "today" always
-  # comes back changed -- e.g. declaring "2026-01-01T04:15:00Z" comes back
-  # as "2026-08-08T04:15:00Z" (today's date, same time-of-day), which
-  # Terraform correctly flags as "Provider produced inconsistent result
-  # after apply" since this attribute is Optional but not Computed. This is
-  # a genuine gap in the new declarative *_daily_time path specifically --
-  # separate from (and not fixed by) the out-of-band-preservation fix step4
-  # exercises, which DOES work correctly. See step6-apply-daily.
+  # HISTORY: the attribute originally round-tripped a full RFC3339
+  # timestamp, which never worked -- Command normalizes a Daily schedule's
+  # Time to a server-side DATE (the date the schedule was written) while
+  # preserving only the user-supplied time-of-day, so any declared date
+  # other than "today" always came back changed and Terraform correctly
+  # flagged "Provider produced inconsistent result after apply" (confirmed
+  # live against kfclab, 2026-08-08). The fix changes the attribute's wire
+  # format to a bare "HH:MM:SS" time-of-day (caDailyTimeLayout in
+  # resource_keyfactor_certificate_authority.go): the date component is
+  # dropped entirely rather than round-tripped, so Command's server-side
+  # date rewrite is no longer observable as drift. See step6-apply-daily.
   threshold_check_daily_time = var.threshold_check_daily_time
 }
 

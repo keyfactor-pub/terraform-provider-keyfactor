@@ -32,12 +32,12 @@
 ##   make step5-verify       # KNOWN BUG #185: terraform plan is expected to crash (JSON unmarshal)
 ##   make step5-cleanup      # reset ThresholdCheck to null so terraform can read the CA again
 ##   make step6-apply-daily  # declare threshold_check_daily_time directly via Terraform config --
-##                            # KNOWN GAP (confirmed 2026-08-08): expected to FAIL with "Provider
-##                            # produced inconsistent result after apply" -- Command normalizes the
-##                            # Daily schedule's date to "today" server-side; see main.tf's resource
-##                            # block for the full writeup. This is a genuine, separate gap from the
-##                            # OOB-preservation fix step4 exercises (which works correctly).
-##   make step6-plan         # only reachable if step6-apply-daily unexpectedly succeeds
+##                            # takes a bare UTC time-of-day, "HH:MM:SS" (e.g. "04:15:00"), NOT a full
+##                            # RFC3339 timestamp -- Command normalizes the Daily schedule's date to
+##                            # "today" server-side, so the provider drops the date entirely and only
+##                            # round-trips the time-of-day; see main.tf's resource block for the full
+##                            # writeup.
+##   make step6-plan         # re-plan with the same value; expect "No changes"
 ##   make step6-revert       # undeclare it again (back to the step1-5 shape); always run this
 ##                            # regardless of step6-apply-daily's outcome
 ##   make import-test     # import round-trip + drift-check
@@ -260,23 +260,20 @@ step5-cleanup:
 # step1-5 left behind.
 # ---------------------------------------------------------------------------
 ## step6-apply-daily: Declare threshold_check_daily_time via Terraform config
-##   for the first time (no out-of-band seeding involved).
-##   KNOWN GAP (confirmed 2026-08-08 against kfclab, Command 25.5): this is
-##   expected to FAIL with "Provider produced inconsistent result after
-##   apply: .threshold_check_daily_time: was cty.StringVal(\"<declared
-##   date>\"), but now cty.StringVal(\"<today's date>\")". Command normalizes
-##   a Daily schedule's Time to today's date server-side while preserving
-##   only the time-of-day; the provider echoes back that server-normalized
-##   value, which can never match a user-declared non-today date. Separate,
-##   not-yet-fixed gap from the OOB-preservation fix step4 exercises.
+##   for the first time (no out-of-band seeding involved). Value is a bare
+##   UTC time-of-day, "HH:MM:SS" -- NOT a full RFC3339 timestamp (the
+##   pre-fix wire format, which never round-tripped: Command normalizes a
+##   Daily schedule's Time to today's date server-side while preserving
+##   only the time-of-day, so any declared non-today date always came back
+##   changed as "Provider produced inconsistent result after apply"). The
+##   fix drops the date component entirely so only the time-of-day is ever
+##   compared.
 step6-apply-daily:
-	$(LAB_ENV) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)" -var="full_scan_interval_minutes=120" -var="incremental_scan_interval_minutes=15" -var="monitor_thresholds=false" -var="threshold_check_daily_time=2026-01-01T04:15:00Z"
+	$(LAB_ENV) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)" -var="full_scan_interval_minutes=120" -var="incremental_scan_interval_minutes=15" -var="monitor_thresholds=false" -var="threshold_check_daily_time=04:15:00"
 
-## step6-plan: Re-plan with the same value -- only reachable if
-##   step6-apply-daily unexpectedly succeeds (see its header). Expect "No
-##   changes" if it does.
+## step6-plan: Re-plan with the same value -- expect "No changes".
 step6-plan:
-	$(LAB_ENV) $(TF) plan -var="suffix=$(SUFFIX)" -var="full_scan_interval_minutes=120" -var="incremental_scan_interval_minutes=15" -var="monitor_thresholds=false" -var="threshold_check_daily_time=2026-01-01T04:15:00Z"
+	$(LAB_ENV) $(TF) plan -var="suffix=$(SUFFIX)" -var="full_scan_interval_minutes=120" -var="incremental_scan_interval_minutes=15" -var="monitor_thresholds=false" -var="threshold_check_daily_time=04:15:00"
 
 ## step6-revert: Undeclare threshold_check_daily_time again (var back to its
 ##   null default) so the rest of the lifecycle (import-test/

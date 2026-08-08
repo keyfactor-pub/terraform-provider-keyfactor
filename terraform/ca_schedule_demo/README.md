@@ -16,22 +16,19 @@ the exact step-by-step variant walk.
 
 - `keyfactor_certificate_authority`: Interval schedule in-place update,
   out-of-band Interval/Daily schedule preservation across an unrelated
-  update (fix #193 — confirmed working), import round-trip, CA deletion when
-  the CA carries an active schedule (fix #194 — confirmed working, no more
-  OAuth/Client-Certificate auth field mixing on the clear-schedules-before-
-  delete fallback).
-- Known gaps, not part of this demo's overall pass/fail signal but each
-  clearly labeled when they reproduce:
+  update (fix #193 — confirmed working), the Daily variant declared directly
+  via Terraform config as a bare UTC time-of-day, `"HH:MM:SS"` (also fix
+  #193 — the attribute's wire format drops the date component entirely
+  since Command rewrites it to "today" server-side regardless of what is
+  sent, so only the time-of-day is ever compared), import round-trip, CA
+  deletion when the CA carries an active schedule (fix #194 — confirmed
+  working, no more OAuth/Client-Certificate auth field mixing on the
+  clear-schedules-before-delete fallback).
+- Known gap, not part of this demo's overall pass/fail signal but clearly
+  labeled when it reproduces:
   - A Weekly-shaped schedule still crashes every `terraform` command that
     reads the CA (SDK issue #185, unrelated to #193/#194) — step5 exists
     specifically to keep surfacing this.
-  - Declaring `threshold_check_daily_time` directly via Terraform config
-    (step6) currently fails with "Provider produced inconsistent result
-    after apply" — Command normalizes a Daily schedule's date to "today"
-    server-side while keeping only the user's time-of-day, which the
-    provider cannot echo back exactly. Confirmed 2026-08-08; a genuine gap
-    in the new declarative *_daily_time path, separate from the
-    out-of-band-preservation half of fix #193 (which does work).
 
 ## Known lab constraint
 

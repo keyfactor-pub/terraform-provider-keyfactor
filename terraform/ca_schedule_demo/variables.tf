@@ -25,7 +25,7 @@ variable "incremental_scan_interval_minutes" {
 variable "threshold_check_daily_time" {
   type        = string
   default     = null
-  description = "RFC3339 timestamp (e.g. \"2026-01-01T04:15:00Z\") for a declarative once-daily threshold_check schedule. Defaults to null, which -- because a `var.x = null` reference produces the same null config value as omitting the attribute entirely -- leaves threshold_check_daily_time genuinely undeclared/unmanaged, same as threshold_check_interval_minutes. Set via TF_VAR_threshold_check_daily_time to exercise the Daily variant declaratively (see GNUmakefile step6-*)."
+  description = "Bare UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"04:15:00\"), for a declarative once-daily threshold_check schedule. Defaults to null, which -- because a `var.x = null` reference produces the same null config value as omitting the attribute entirely -- leaves threshold_check_daily_time genuinely undeclared/unmanaged, same as threshold_check_interval_minutes. Set via TF_VAR_threshold_check_daily_time to exercise the Daily variant declaratively (see GNUmakefile step6-*). A full RFC3339 timestamp is rejected -- Command only preserves the time-of-day component and rewrites the date anchor server-side, so a full timestamp could never round-trip."
 }
 
 variable "monitor_thresholds" {

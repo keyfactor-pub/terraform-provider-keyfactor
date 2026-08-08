@@ -116,9 +116,9 @@ lab-destroy:
 lifecycle:
 	@if [ -z "$$TF_VAR_ca_client_id" ] || [ -z "$$TF_VAR_ca_client_secret" ] || [ -z "$$TF_VAR_ca_token_url" ]; then \
 	  echo "SKIPPED: ca_ejbca_demo requires TF_VAR_ca_client_id / TF_VAR_ca_client_secret / TF_VAR_ca_token_url for the target gateway (no defaults -- see variables.tf)."; \
-	  exit 0; \
+	else \
+	  $(MAKE) lab-apply lab-update lab-import-all lab-apply lab-drift-check lab-destroy; \
 	fi
-	$(MAKE) lab-apply lab-update lab-import-all lab-apply lab-drift-check lab-destroy
 
 .PHONY: build init validate plan apply import-all drift-check destroy clean all \
         lab-plan lab-apply lab-update lab-import-all lab-drift-check lab-destroy lifecycle

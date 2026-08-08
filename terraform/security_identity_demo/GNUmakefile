@@ -163,9 +163,9 @@ lab-destroy:
 lifecycle:
 	@if [ "$(SKIP_LAB_AD)" = "1" ]; then \
 	  echo "SKIPPED: security_identity_demo requires an AD-backed lab (kfclab is OAuth-only). Set SKIP_LAB_AD=0 and ACCOUNT_NAME to run."; \
-	  exit 0; \
+	else \
+	  $(MAKE) lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy; \
 	fi
-	$(MAKE) lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy
 
 # ---------------------------------------------------------------------------
 # PR #179 regression proof — roles omitted on an Update

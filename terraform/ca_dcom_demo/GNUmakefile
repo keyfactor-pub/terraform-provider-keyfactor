@@ -25,9 +25,12 @@ plan:
 ## apply: Create the DCOM CA record. Prints SKIPPED (exit 0) instead of
 ##   failing if Command rejects the record outright -- see header.
 apply:
-	@$(UNSET_BASIC) $(TF) apply -auto-approve -no-color -var="suffix=$(SUFFIX)" > /tmp/ca_dcom_demo_apply.txt 2>&1; \
+	@APPLYFILE=$$(mktemp) && \
+	 echo "    scratch apply-log file: $$APPLYFILE" && \
+	 $(UNSET_BASIC) $(TF) apply -auto-approve -no-color -var="suffix=$(SUFFIX)" > "$$APPLYFILE" 2>&1; \
 	 APPLY_EXIT=$$?; \
-	 cat /tmp/ca_dcom_demo_apply.txt; \
+	 cat "$$APPLYFILE"; \
+	 rm -f "$$APPLYFILE"; \
 	 if [ $$APPLY_EXIT -ne 0 ]; then \
 	   echo "SKIPPED: ca_dcom_demo -- this Command instance rejected the DCOM (ca_type=0) CA record (no real AD/DCOM backend in this lab). See main.tf header."; \
 	   exit 0; \

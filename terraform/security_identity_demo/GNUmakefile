@@ -153,12 +153,15 @@ lab-omit-roles-update:
 	  -var="account_name=$(ACCOUNT_NAME)" \
 	  -var="roles_declared=true"
 	@echo "==> [2/4] apply again with roles OMITTED from config..."
-	@$(LAB_ENV) $(TF) apply -auto-approve -no-color \
+	@APPLYFILE=$$(mktemp) && \
+	 echo "    scratch apply-log file: $$APPLYFILE" && \
+	 $(LAB_ENV) $(TF) apply -auto-approve -no-color \
 	  -var="suffix=$(SUFFIX)" \
 	  -var="account_name=$(ACCOUNT_NAME)" \
-	  -var="roles_declared=false" > /tmp/security_identity_demo_apply2.txt 2>&1; \
+	  -var="roles_declared=false" > "$$APPLYFILE" 2>&1; \
 	 APPLY_EXIT=$$?; \
-	 cat /tmp/security_identity_demo_apply2.txt; \
+	 cat "$$APPLYFILE"; \
+	 rm -f "$$APPLYFILE"; \
 	 if [ $$APPLY_EXIT -eq 0 ]; then \
 	   echo "PASS: apply succeeded with roles omitted on Update (PR179 fix confirmed)."; \
 	 else \
@@ -170,15 +173,19 @@ lab-omit-roles-update:
 	 ACCT=$$($(TF) output -raw identity_account_name) && \
 	 echo "    target identity: $$ACCT" && \
 	 $(KF_CURL_AUTH) \
+	 RESPFILE=$$(mktemp) && \
+	 echo "    scratch response file: $$RESPFILE" && \
 	 curl -s $$CURL_TLS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Security/Identities" \
 	   -H "x-keyfactor-requested-with: APIClient" \
 	   -H "x-keyfactor-api-version: 1" \
-	   -K "$$KFCFG" > /tmp/security_identity_demo_verify.json && \
+	   -K "$$KFCFG" > "$$RESPFILE" && \
 	 rm -f "$$KFCFG" && \
-	 jq --arg acct "$$ACCT" '.[] | select(.AccountName == $$acct)' /tmp/security_identity_demo_verify.json && \
-	 if jq -e --arg acct "$$ACCT" '.[] | select(.AccountName == $$acct) | .Roles | length > 0' /tmp/security_identity_demo_verify.json > /dev/null; then \
+	 jq --arg acct "$$ACCT" '.[] | select(.AccountName == $$acct)' "$$RESPFILE" && \
+	 if jq -e --arg acct "$$ACCT" '.[] | select(.AccountName == $$acct) | .Roles | length > 0' "$$RESPFILE" > /dev/null; then \
+	   rm -f "$$RESPFILE"; \
 	   echo "PASS: server-side roles are still present -- preserved, not cleared."; \
 	 else \
+	   rm -f "$$RESPFILE"; \
 	   echo "FAIL: server-side roles are empty -- roles were cleared."; \
 	   exit 1; \
 	 fi

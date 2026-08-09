@@ -125,7 +125,9 @@ lab-oob-drift:
 	 ROLE_NAME=$$($(TF) output -raw role_name) && \
 	 echo "    target role: $$ROLE_NAME (id $$ROLE_ID)" && \
 	 $(KF_CURL_AUTH) \
-	 HTTP_STATUS=$$(curl -s $$CURL_TLS -o /tmp/security_role_demo_oob_response.json -w "%{http_code}" -X PUT \
+	 RESPFILE=$$(mktemp) && \
+	 echo "    scratch response file: $$RESPFILE" && \
+	 HTTP_STATUS=$$(curl -s $$CURL_TLS -o "$$RESPFILE" -w "%{http_code}" -X PUT \
 	   "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Security/Roles" \
 	   -H "x-keyfactor-requested-with: APIClient" \
 	   -H "x-keyfactor-api-version: 1" \
@@ -134,15 +136,19 @@ lab-oob-drift:
 	   -d "{\"Id\":$$ROLE_ID,\"Name\":\"$$ROLE_NAME\",\"Description\":\"Mutated out-of-band by lab-oob-drift ($(SUFFIX))\",\"Permissions\":[\"Certificates:Read\",\"Certificates:EditMetadata\"]}") && \
 	 rm -f "$$KFCFG" && \
 	 echo "    PUT /Security/Roles HTTP status: $$HTTP_STATUS" && \
-	 cat /tmp/security_role_demo_oob_response.json && echo && \
+	 cat "$$RESPFILE" && echo && \
+	 rm -f "$$RESPFILE" && \
 	 if [ "$$HTTP_STATUS" -lt 200 ] || [ "$$HTTP_STATUS" -ge 300 ]; then \
 	   echo "FAIL: out-of-band API mutation did not succeed (HTTP $$HTTP_STATUS)"; \
 	   exit 1; \
 	 fi
 	@echo "==> [3/5] plan — expect drift to be detected (PR178 regression proof)..."
-	@$(LAB_ENV) $(TF) plan -var="suffix=$(SUFFIX)" -detailed-exitcode -no-color > /tmp/security_role_demo_oob_plan.txt 2>&1; \
+	@PLANFILE=$$(mktemp) && \
+	 echo "    scratch plan file: $$PLANFILE" && \
+	 $(LAB_ENV) $(TF) plan -var="suffix=$(SUFFIX)" -detailed-exitcode -no-color > "$$PLANFILE" 2>&1; \
 	 PLAN_EXIT=$$?; \
-	 cat /tmp/security_role_demo_oob_plan.txt; \
+	 cat "$$PLANFILE"; \
+	 rm -f "$$PLANFILE"; \
 	 if [ $$PLAN_EXIT -eq 2 ]; then \
 	   echo "PASS: terraform plan detected the out-of-band drift (PR178 fix confirmed)."; \
 	 elif [ $$PLAN_EXIT -eq 0 ]; then \
@@ -155,9 +161,12 @@ lab-oob-drift:
 	@echo "==> [4/5] reconcile -- apply to restore the Terraform-managed value..."
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 	@echo "==> [5/5] final drift-check -- expect \"No changes\"..."
-	@$(LAB_ENV) $(TF) plan -var="suffix=$(SUFFIX)" -detailed-exitcode -no-color > /tmp/security_role_demo_oob_final_plan.txt 2>&1; \
+	@PLANFILE=$$(mktemp) && \
+	 echo "    scratch plan file: $$PLANFILE" && \
+	 $(LAB_ENV) $(TF) plan -var="suffix=$(SUFFIX)" -detailed-exitcode -no-color > "$$PLANFILE" 2>&1; \
 	 PLAN_EXIT=$$?; \
-	 cat /tmp/security_role_demo_oob_final_plan.txt; \
+	 cat "$$PLANFILE"; \
+	 rm -f "$$PLANFILE"; \
 	 if [ $$PLAN_EXIT -eq 0 ]; then \
 	   echo "PASS: final drift-check shows No changes -- reconciliation successful."; \
 	 else \

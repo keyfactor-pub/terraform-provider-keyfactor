@@ -131,12 +131,15 @@ lab-omit-permissions-update:
 	  -var="role_description=Initial description (PR179 demo)" \
 	  -var="permissions_declared=true"
 	@echo "==> [2/4] apply again: description changed (unrelated attribute), permissions OMITTED from config..."
-	@$(LAB_ENV) $(TF) apply -auto-approve -no-color \
+	@APPLYFILE=$$(mktemp) && \
+	 echo "    scratch apply-log file: $$APPLYFILE" && \
+	 $(LAB_ENV) $(TF) apply -auto-approve -no-color \
 	  -var="suffix=$(SUFFIX)" \
 	  -var="role_description=Updated description -- unrelated Update (PR179 demo)" \
-	  -var="permissions_declared=false" > /tmp/security_role_permissions_demo_apply2.txt 2>&1; \
+	  -var="permissions_declared=false" > "$$APPLYFILE" 2>&1; \
 	 APPLY_EXIT=$$?; \
-	 cat /tmp/security_role_permissions_demo_apply2.txt; \
+	 cat "$$APPLYFILE"; \
+	 rm -f "$$APPLYFILE"; \
 	 if [ $$APPLY_EXIT -eq 0 ]; then \
 	   echo "PASS: apply succeeded with permissions omitted on an unrelated Update (PR179 fix confirmed)."; \
 	 else \
@@ -149,15 +152,19 @@ lab-omit-permissions-update:
 	 ROLE_NAME=$$($(TF) output -raw role_name) && \
 	 echo "    target role: $$ROLE_NAME (id $$ROLE_ID)" && \
 	 $(KF_CURL_AUTH) \
+	 RESPFILE=$$(mktemp) && \
+	 echo "    scratch response file: $$RESPFILE" && \
 	 curl -s $$CURL_TLS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Security/Roles/$$ROLE_ID" \
 	   -H "x-keyfactor-requested-with: APIClient" \
 	   -H "x-keyfactor-api-version: 1" \
-	   -K "$$KFCFG" > /tmp/security_role_permissions_demo_verify.json && \
+	   -K "$$KFCFG" > "$$RESPFILE" && \
 	 rm -f "$$KFCFG" && \
-	 cat /tmp/security_role_permissions_demo_verify.json | jq . && \
-	 if jq -e '.Permissions | index("Certificates:Read")' /tmp/security_role_permissions_demo_verify.json > /dev/null; then \
+	 cat "$$RESPFILE" | jq . && \
+	 if jq -e '.Permissions | index("Certificates:Read")' "$$RESPFILE" > /dev/null; then \
+	   rm -f "$$RESPFILE"; \
 	   echo "PASS: server-side permissions still contain Certificates:Read -- preserved, not cleared."; \
 	 else \
+	   rm -f "$$RESPFILE"; \
 	   echo "FAIL: server-side permissions no longer contain Certificates:Read -- permissions were cleared."; \
 	   exit 1; \
 	 fi

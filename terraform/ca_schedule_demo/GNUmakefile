@@ -54,13 +54,15 @@ include ../demo-common.mk
 ##   and README.md "Known lab constraints").
 authcert:
 	@if [ -f authcert.pfx ]; then echo "authcert.pfx already exists; remove it first to regenerate."; exit 0; fi
-	openssl req -x509 -newkey rsa:2048 -keyout /tmp/ca_schedule_demo_authcert_key.pem \
-	  -out /tmp/ca_schedule_demo_authcert_cert.pem -days 1 -nodes \
-	  -subj "/CN=tf-ca-schedule-demo-throwaway-authcert"
-	openssl pkcs12 -export -out authcert.pfx \
-	  -inkey /tmp/ca_schedule_demo_authcert_key.pem -in /tmp/ca_schedule_demo_authcert_cert.pem \
-	  -passout pass:fakepassword
-	@rm -f /tmp/ca_schedule_demo_authcert_key.pem /tmp/ca_schedule_demo_authcert_cert.pem
+	@SCRATCHDIR=$$(mktemp -d) && \
+	 echo "    scratch key/cert dir: $$SCRATCHDIR" && \
+	 openssl req -x509 -newkey rsa:2048 -keyout "$$SCRATCHDIR/authcert_key.pem" \
+	   -out "$$SCRATCHDIR/authcert_cert.pem" -days 1 -nodes \
+	   -subj "/CN=tf-ca-schedule-demo-throwaway-authcert" && \
+	 openssl pkcs12 -export -out authcert.pfx \
+	   -inkey "$$SCRATCHDIR/authcert_key.pem" -in "$$SCRATCHDIR/authcert_cert.pem" \
+	   -passout pass:fakepassword && \
+	 rm -rf "$$SCRATCHDIR"
 	@echo "==> Generated authcert.pfx (throwaway, password: fakepassword -- matches var.auth_certificate_password default)"
 
 ## init: Initialize the Terraform working directory (authcert.pfx must exist
@@ -159,14 +161,18 @@ step4-apply:
 ##   demonstrate). A FAIL here is a correct harness outcome, not a crash.
 step4-verify:
 	@if [ -z "$(CA_ID)" ]; then echo "Usage: make step4-verify CA_ID=<id>"; exit 1; fi
-	@$(MAKE) --no-print-directory -C $(PROVIDER_ROOT) api-get-ca CA_ID=$(CA_ID) KEYFACTOR_ENV_FILE=$(KEYFACTOR_ENV_FILE) > /tmp/ca_schedule_demo_step4_verify.json
-	@jq '.ThresholdCheck' /tmp/ca_schedule_demo_step4_verify.json
-	@if jq -e '.ThresholdCheck.Daily != null' /tmp/ca_schedule_demo_step4_verify.json > /dev/null 2>&1; then \
-	  echo "PASS: out-of-band Daily schedule survived an unrelated apply."; \
-	else \
-	  echo "FAIL (KNOWN PROVIDER BUG): out-of-band Daily ThresholdCheck schedule was wiped to null by an unrelated terraform apply (monitor_thresholds toggle). See GNUmakefile step4 header for root cause. This is a genuine provider bug reproduction, not a harness failure."; \
-	  exit 1; \
-	fi
+	@VERIFYFILE=$$(mktemp) && \
+	 echo "    scratch verify file: $$VERIFYFILE" && \
+	 $(MAKE) --no-print-directory -C $(PROVIDER_ROOT) api-get-ca CA_ID=$(CA_ID) KEYFACTOR_ENV_FILE=$(KEYFACTOR_ENV_FILE) > "$$VERIFYFILE" && \
+	 jq '.ThresholdCheck' "$$VERIFYFILE" && \
+	 if jq -e '.ThresholdCheck.Daily != null' "$$VERIFYFILE" > /dev/null 2>&1; then \
+	   rm -f "$$VERIFYFILE"; \
+	   echo "PASS: out-of-band Daily schedule survived an unrelated apply."; \
+	 else \
+	   rm -f "$$VERIFYFILE"; \
+	   echo "FAIL (KNOWN PROVIDER BUG): out-of-band Daily ThresholdCheck schedule was wiped to null by an unrelated terraform apply (monitor_thresholds toggle). See GNUmakefile step4 header for root cause. This is a genuine provider bug reproduction, not a harness failure."; \
+	   exit 1; \
+	 fi
 
 # ---------------------------------------------------------------------------
 # Step 5: Weekly-schedule deserialization failure (KNOWN BUG #185, confirmed
@@ -194,16 +200,21 @@ step5-seed-weekly:
 ##   distinct "harness/unexpected" FAIL if it errors any other way, or PASS
 ##   if the SDK has since been fixed to tolerate string day names.
 step5-verify:
-	@$(LAB_ENV) $(TF) plan -no-color -var="suffix=$(SUFFIX)" -var="full_scan_interval_minutes=120" -var="incremental_scan_interval_minutes=15" -var="monitor_thresholds=false" > /tmp/ca_schedule_demo_step5_plan.txt 2>&1; \
+	@PLANFILE=$$(mktemp) && \
+	 echo "    scratch plan file: $$PLANFILE" && \
+	 $(LAB_ENV) $(TF) plan -no-color -var="suffix=$(SUFFIX)" -var="full_scan_interval_minutes=120" -var="incremental_scan_interval_minutes=15" -var="monitor_thresholds=false" > "$$PLANFILE" 2>&1; \
 	 PLAN_EXIT=$$?; \
-	 cat /tmp/ca_schedule_demo_step5_plan.txt; \
-	 if [ $$PLAN_EXIT -ne 0 ] && grep -q "cannot unmarshal string into" /tmp/ca_schedule_demo_step5_plan.txt && grep -q "Weekly.Days" /tmp/ca_schedule_demo_step5_plan.txt; then \
+	 cat "$$PLANFILE"; \
+	 if [ $$PLAN_EXIT -ne 0 ] && grep -q "cannot unmarshal string into" "$$PLANFILE" && grep -q "Weekly.Days" "$$PLANFILE"; then \
+	   rm -f "$$PLANFILE"; \
 	   echo "FAIL (KNOWN PROVIDER BUG #185): terraform plan crashed reading a Weekly CA schedule -- Command returns ThresholdCheck.Weekly.Days as day-name strings, but the SDK's SystemDayOfWeek only unmarshals integers. This is a genuine provider/SDK bug reproduction, not a harness failure."; \
 	   exit 1; \
 	 elif [ $$PLAN_EXIT -ne 0 ]; then \
+	   rm -f "$$PLANFILE"; \
 	   echo "FAIL (harness/unexpected): terraform plan failed for a reason other than the expected #185 signature -- investigate."; \
 	   exit 1; \
 	 else \
+	   rm -f "$$PLANFILE"; \
 	   echo "PASS: terraform plan succeeded reading a Weekly CA schedule (SDK #185 fix appears to be present)."; \
 	 fi
 

@@ -100,10 +100,13 @@ lab-update:
 	  $(LAB_ENV) $(TF) import keyfactor_certificate_template.demo $(TEMPLATE_ID); \
 	fi
 	@echo "==> [2/3] apply friendly_name change..."
-	@$(LAB_ENV) TF_VAR_friendly_name_override="Terraform Harness Demo ($(TEMPLATE_ID))" \
-	  $(TF) apply -auto-approve -no-color > /tmp/certificate_template_demo_update.txt 2>&1; \
+	@APPLYFILE=$$(mktemp) && \
+	 echo "    scratch apply-log file: $$APPLYFILE" && \
+	 $(LAB_ENV) TF_VAR_friendly_name_override="Terraform Harness Demo ($(TEMPLATE_ID))" \
+	  $(TF) apply -auto-approve -no-color > "$$APPLYFILE" 2>&1; \
 	 APPLY_EXIT=$$?; \
-	 cat /tmp/certificate_template_demo_update.txt; \
+	 cat "$$APPLYFILE"; \
+	 rm -f "$$APPLYFILE"; \
 	 if [ $$APPLY_EXIT -eq 0 ]; then \
 	   echo "PASS: template update succeeded."; \
 	 else \

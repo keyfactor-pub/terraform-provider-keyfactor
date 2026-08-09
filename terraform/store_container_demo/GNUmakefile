@@ -231,14 +231,17 @@ repro175-seed:
 	 STORE_JSON=$$(curl -s $$CURL_TLS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores/$$STORE_ID" \
 	   -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 1" -K "$$KFCFG") && \
 	 UPDATED=$$(echo "$$STORE_JSON" | jq --argjson cid "$$APP_ID" '.ContainerId = $$cid | del(.ServerUsername) | del(.ServerPassword) | .Properties = ((.Properties | fromjson) | del(.ServerUsername) | del(.ServerPassword) | tojson)') && \
-	 HTTP_STATUS=$$(curl -s $$CURL_TLS -o /tmp/store_container_demo_repro175_seed.json -w "%{http_code}" -X PUT \
+	 RESPFILE=$$(mktemp) && \
+	 echo "    scratch response file: $$RESPFILE" && \
+	 HTTP_STATUS=$$(curl -s $$CURL_TLS -o "$$RESPFILE" -w "%{http_code}" -X PUT \
 	   "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores" \
 	   -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 1" \
 	   -H "Content-Type: application/json" -K "$$KFCFG" \
 	   -d "$$UPDATED") && \
 	 rm -f "$$KFCFG" && \
 	 echo "    PUT /CertificateStores HTTP status: $$HTTP_STATUS" && \
-	 cat /tmp/store_container_demo_repro175_seed.json && echo && \
+	 cat "$$RESPFILE" && echo && \
+	 rm -f "$$RESPFILE" && \
 	 if [ "$$HTTP_STATUS" -lt 200 ] || [ "$$HTTP_STATUS" -ge 300 ]; then \
 	   echo "FAIL: out-of-band container assignment did not succeed (HTTP $$HTTP_STATUS)"; \
 	   exit 1; \
@@ -252,10 +255,13 @@ repro175-seed:
 ##   inconsistent-result crash, and container_id MUST remain non-zero.
 repro175-verify-apply:
 	@echo "==> Applying unrelated attribute change (inventory_schedule 13:00 -> 15:00)..."
-	@$(LAB_ENV) $(TF) apply -auto-approve -no-color \
-	  -var="repro175_inventory_schedule=Daily at 15:00:00" > /tmp/store_container_demo_repro175_apply.txt 2>&1; \
+	@APPLYFILE=$$(mktemp) && \
+	 echo "    scratch apply-log file: $$APPLYFILE" && \
+	 $(LAB_ENV) $(TF) apply -auto-approve -no-color \
+	  -var="repro175_inventory_schedule=Daily at 15:00:00" > "$$APPLYFILE" 2>&1; \
 	 APPLY_EXIT=$$?; \
-	 cat /tmp/store_container_demo_repro175_apply.txt; \
+	 cat "$$APPLYFILE"; \
+	 rm -f "$$APPLYFILE"; \
 	 if [ $$APPLY_EXIT -ne 0 ]; then \
 	   echo "FAIL: apply failed (exit $$APPLY_EXIT) -- issue #175 inconsistent-result regression."; \
 	   exit 1; \

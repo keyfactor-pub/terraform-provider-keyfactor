@@ -1253,11 +1253,36 @@ func (r resourceCertificateAuthority) ValidateConfig(ctx context.Context, reques
 			)
 		}
 		if dailyDeclared && !p.daily.Unknown {
-			if _, err := time.Parse(caDailyTimeLayout, p.daily.Value); err != nil {
+			parsed, err := time.Parse(caDailyTimeLayout, p.daily.Value)
+			if err != nil {
 				response.Diagnostics.AddAttributeError(
 					path.Root(p.dailyPath),
 					"Invalid daily schedule time",
 					fmt.Sprintf("%s must be a UTC time-of-day formatted \"HH:MM:SS\" (e.g. \"07:00:00\"); got %q: %s", p.dailyPath, p.daily.Value, err.Error()),
+				)
+			} else if canonical := parsed.Format(caDailyTimeLayout); canonical != p.daily.Value {
+				// time.Parse("15:04:05", ...) is lenient on field width (e.g.
+				// "7:00:00" parses fine), but Command's GET always echoes the
+				// zero-padded canonical spelling ("07:00:00") -- see
+				// scheduleToState's use of Format(caDailyTimeLayout). A
+				// non-canonical spelling therefore plans and applies
+				// successfully but guarantees a "Provider produced
+				// inconsistent result after apply" on every single apply
+				// (planned "7:00:00" vs. applied "07:00:00"), since nothing
+				// preserves the user's original spelling the way
+				// preserveKeyRetentionRepresentation does for key_retention.
+				// Rejecting the non-canonical spelling here, before plan/apply
+				// ever runs, is simpler and more honest than trying to
+				// preserve an arbitrary user spelling server-side. See
+				// full-review round 2 finding #2.
+				response.Diagnostics.AddAttributeError(
+					path.Root(p.dailyPath),
+					"Non-canonical daily schedule time",
+					fmt.Sprintf(
+						"%s must be zero-padded \"HH:MM:SS\"; got %q, which Command's API will echo back as %q on every "+
+							"read, permanently disagreeing with the configured value. Use %q instead.",
+						p.dailyPath, p.daily.Value, canonical, canonical,
+					),
 				)
 			}
 		}

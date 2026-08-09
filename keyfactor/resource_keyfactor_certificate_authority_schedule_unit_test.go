@@ -2,6 +2,7 @@ package keyfactor
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -492,5 +493,101 @@ func TestUnitCAScheduleDailyTimeNormalizesNonUTCOffset(t *testing.T) {
 			"a Daily.Time carrying a non-UTC offset must normalize to the correct UTC time-of-day: got %q, want \"07:00:00\"",
 			daily.Value,
 		)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests for full-review round 2 finding #2 (correctness, medium):
+//
+// Go's time.Parse("15:04:05", ...) is lenient on hour width, so a
+// single-digit-hour spelling like "7:00:00" parses successfully even though
+// it isn't the canonical "HH:MM:SS" form the schema documents. ValidateConfig
+// used to accept it, buildSchedule would send it, and Command would accept
+// the API call -- but scheduleToState always formats the server's echoed
+// Daily.Time with Format("15:04:05"), which zero-pads to "07:00:00". Nothing
+// preserves the user's original non-canonical spelling (unlike key_retention,
+// which has preserveKeyRetentionRepresentation for exactly this class of
+// problem), so every apply of a non-zero-padded *_daily_time guaranteed
+// "Provider produced inconsistent result after apply": planned "7:00:00" vs.
+// applied "07:00:00", forever. The fix rejects non-canonical spellings in
+// ValidateConfig, before plan/apply ever runs.
+// ---------------------------------------------------------------------------
+
+// TestUnitCAValidateConfigRejectsNonCanonicalDailyTime is the direct
+// regression test: a *_daily_time value that time.Parse accepts but that
+// isn't already zero-padded (a single-digit hour -- Go's reference-time
+// parser is lenient on hour width only; minutes/seconds are always strict
+// 2-digit, so "7:5:9"/"07:5:00" etc. are already caught by the pre-existing
+// malformed-value check) must be rejected with an actionable diagnostic
+// telling the user the canonical spelling to use, not silently accepted only
+// to guarantee a permanent post-apply mismatch.
+func TestUnitCAValidateConfigRejectsNonCanonicalDailyTime(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	schema := caSchema(t, ctx)
+	r := resourceCertificateAuthority{}
+
+	cases := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"single-digit hour", "7:00:00", "07:00:00"},
+		{"single-digit hour, non-zero minute/second", "9:30:15", "09:30:15"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			config := blankCAConfig()
+			config.FullScanDailyTime = types.String{Value: tc.value}
+
+			req := tfsdk.ValidateResourceConfigRequest{Config: asConfig(t, ctx, schema, config)}
+			resp := &tfsdk.ValidateResourceConfigResponse{}
+			r.ValidateConfig(ctx, req, resp)
+
+			if !resp.Diagnostics.HasError() {
+				t.Fatalf(
+					"expected ValidateConfig to reject non-canonical full_scan_daily_time %q -- Command's API "+
+						"would echo this back as %q on every read, guaranteeing \"Provider produced inconsistent "+
+						"result after apply\" on every single apply, got no error",
+					tc.value, tc.want,
+				)
+			}
+			found := false
+			for _, d := range resp.Diagnostics {
+				if strings.Contains(d.Detail(), tc.want) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf(
+					"expected ValidateConfig's diagnostic to mention the canonical spelling %q so the user knows "+
+						"how to fix it, got: %+v", tc.want, resp.Diagnostics,
+				)
+			}
+		})
+	}
+}
+
+// TestUnitCAValidateConfigAcceptsCanonicalDailyTime is the negative-space
+// companion: an already-zero-padded "HH:MM:SS" value must NOT be rejected by
+// the canonical-spelling check.
+func TestUnitCAValidateConfigAcceptsCanonicalDailyTime(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	schema := caSchema(t, ctx)
+	r := resourceCertificateAuthority{}
+
+	config := blankCAConfig()
+	config.FullScanDailyTime = types.String{Value: "07:00:00"}
+
+	req := tfsdk.ValidateResourceConfigRequest{Config: asConfig(t, ctx, schema, config)}
+	resp := &tfsdk.ValidateResourceConfigResponse{}
+	r.ValidateConfig(ctx, req, resp)
+
+	if resp.Diagnostics.HasError() {
+		t.Errorf("expected no error for already-canonical full_scan_daily_time \"07:00:00\", got: %+v", resp.Diagnostics)
 	}
 }

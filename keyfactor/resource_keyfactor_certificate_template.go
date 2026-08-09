@@ -1219,17 +1219,56 @@ func buildTemplateUpdateRequest(
 // has no key_type write path (key_type is Computed/read-only, sourced from
 // the CA, and TemplatesTemplateUpdateRequest has no matching writable
 // field), so there is nothing for this function to omit.
-func preserveUndeclaredTemplateFields(plan *KeyfactorCertificateTemplateState, current *v1.TemplatesTemplateRetrievalResponse) {
+func preserveUndeclaredTemplateFields(plan *KeyfactorCertificateTemplateState, config *KeyfactorCertificateTemplateState, current *v1.TemplatesTemplateRetrievalResponse) {
 	if current == nil {
 		return
 	}
 	c := templateResponseToState(current)
 
-	if plan.AllowedRequesters.Null || plan.AllowedRequesters.Unknown {
+	// allowed_requesters / use_allowed_requesters are the two fields
+	// keyfactor_template_role_binding mutates out-of-band via its own PUT
+	// calls (addAllowedRequesterToTemplate / removeRoleFromTemplate), so
+	// whether the fresh GET (`c`) should win over plan must key on whether
+	// CONFIG actually declares the attribute -- NOT on plan null-ness, unlike
+	// every other field below.
+	//
+	// Why plan null-ness is the wrong signal here (full-review round 5
+	// [HIGH]): allowed_requesters is Optional+Computed with
+	// useStateOrNullModifier, so when config leaves it undeclared, its plan
+	// value isn't Null -- MarkComputedNilsAsUnknown marks it Unknown
+	// (whenever ANY other attribute on this resource changes), and
+	// useStateOrNullModifier then pins that Unknown to the PRIOR STATE's
+	// list. That prior state can itself already be stale: a
+	// keyfactor_template_role_binding destroy runs its removeRoleFromTemplate
+	// PUT (clearing the role server-side) BEFORE this template's own Update
+	// runs, in the same apply. Keying off "plan is non-null" then
+	// (wrongly) reads as "config declared this list" and skips the fresh
+	// GET, so buildTemplateUpdateRequest re-PUTs the stale, just-revoked
+	// role list with UseAllowedRequesters=true -- silently re-granting an
+	// enrollment permission the user just removed, with no diff and no
+	// error, forever (the next Read just re-absorbs the re-granted role
+	// back into state).
+	//
+	// Keying off CONFIG instead: when config does not declare
+	// allowed_requesters, the fresh GET's value always wins over plan,
+	// regardless of whether plan happens to be null, unknown, or a known
+	// (possibly stale) list. This is a no-op change for every apply where no
+	// concurrent binding mutation happened (plan and the fresh GET already
+	// agree there), and it never re-grants a revoked role. Its one trade-off:
+	// in the exact binding-destroy-during-this-apply interleaving above, the
+	// fresh GET's value can legitimately disagree with the KNOWN (pinned)
+	// value Terraform core already recorded during planning, which surfaces
+	// as a one-time "Provider produced inconsistent result after apply"
+	// error on that apply. There is no plan-time fix available for that: the
+	// binding resource's Delete that invalidates the pinned plan value runs
+	// AFTER planning, so no plan modifier can see it coming. A loud, one-time
+	// error that self-corrects on retry is the deliberate trade-off versus a
+	// silent, permanent privilege re-grant.
+	if config == nil || config.AllowedRequesters.Null {
 		plan.AllowedRequesters = c.AllowedRequesters
-		if plan.UseAllowedRequesters.Null || plan.UseAllowedRequesters.Unknown {
-			plan.UseAllowedRequesters = c.UseAllowedRequesters
-		}
+	}
+	if config == nil || config.UseAllowedRequesters.Null {
+		plan.UseAllowedRequesters = c.UseAllowedRequesters
 	}
 	if plan.FriendlyName.Null || plan.FriendlyName.Unknown {
 		plan.FriendlyName = c.FriendlyName
@@ -1301,35 +1340,6 @@ func preserveUndeclaredTemplateFields(plan *KeyfactorCertificateTemplateState, c
 	if plan.MetadataFields == nil {
 		plan.MetadataFields = c.MetadataFields
 	}
-}
-
-// templateUpdateNeedsPreservationFetch reports whether any writable field
-// TemplatesTemplateUpdateRequest can represent is left undeclared on plan --
-// i.e. whether Update() needs a preservation GET at all before its PUT. When
-// every field is explicitly declared -- including a collection declared as an
-// explicit empty list, which is a real "clear this" declaration rather than
-// an omission (see preserveUndeclaredTemplateFields) -- the fetch (and
-// preserveUndeclaredTemplateFields, which is then a no-op) is skipped
-// entirely so a fully-specified config incurs no extra API call.
-func templateUpdateNeedsPreservationFetch(plan *KeyfactorCertificateTemplateState) bool {
-	return plan.AllowedRequesters.Null || plan.AllowedRequesters.Unknown ||
-		plan.UseAllowedRequesters.Null || plan.UseAllowedRequesters.Unknown ||
-		plan.FriendlyName.Null || plan.FriendlyName.Unknown ||
-		plan.KeyRetention.Null || plan.KeyRetention.Unknown ||
-		plan.KeyRetentionDays.Null || plan.KeyRetentionDays.Unknown ||
-		plan.AllowedEnrollmentTypes.Null || plan.AllowedEnrollmentTypes.Unknown ||
-		plan.RequiresApproval.Null || plan.RequiresApproval.Unknown ||
-		plan.AllowOneClickRenewals.Null || plan.AllowOneClickRenewals.Unknown ||
-		plan.KeyUsage.Null || plan.KeyUsage.Unknown ||
-		plan.CertificateCleanupEnabled.Null || plan.CertificateCleanupEnabled.Unknown ||
-		plan.TimeAfterExpiration.Null || plan.TimeAfterExpiration.Unknown ||
-		plan.TimeAfterExpirationUnits.Null || plan.TimeAfterExpirationUnits.Unknown ||
-		plan.DeleteWithArchivedKey.Null || plan.DeleteWithArchivedKey.Unknown ||
-		plan.TemplatePolicy == nil ||
-		plan.TemplateRegexes == nil ||
-		plan.TemplateDefaults == nil ||
-		plan.EnrollmentFields == nil ||
-		plan.MetadataFields == nil
 }
 
 // preserveTfListEmptyVsNull is the types.List analog of
@@ -1483,6 +1493,18 @@ func (r resourceCertificateTemplate) Update(
 	if response.Diagnostics.HasError() {
 		return
 	}
+	// CONFIG (not plan, not state) is the only reliable signal for "did the
+	// user actually declare this attribute" -- see preserveUndeclaredTemplateFields's
+	// allowed_requesters/use_allowed_requesters handling below and full-review
+	// round 5 [HIGH]: an Optional+Computed attribute's plan value can be a
+	// known, non-null, but STALE value (pinned from prior state by a plan
+	// modifier) even when config never declared it at all.
+	var config KeyfactorCertificateTemplateState
+	diags = request.Config.Get(ctx, &config)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	// Carry ID from state (plan has it as Unknown during import)
 	if plan.ID.Value == 0 {
 		plan.ID = state.ID
@@ -1492,43 +1514,48 @@ func (r resourceCertificateTemplate) Update(
 
 	templateAPI := r.p.sdkClient.V1.TemplateApi
 
-	// allowed_requesters is Optional but NOT Computed (no UseStateForUnknown),
-	// so a config that simply doesn't declare it plans to Null -- not "leave
-	// unchanged." PUT /Templates is a full-replace endpoint, and
-	// buildTemplateUpdateRequest skips Null attributes entirely, so an
-	// undeclared allowed_requesters silently cleared the template's requester
-	// list server-side on every such update. On Command 25.x this then
-	// surfaces as a confusing downstream validation error ("Enrollment Pattern
-	// needs to have at least one associated role") once the list is empty.
+	// PUT /Templates is a full-replace endpoint, and buildTemplateUpdateRequest
+	// skips any plan field left Null/Unknown -- Command then clears that field
+	// server-side rather than leaving it unchanged. A config that leaves a
+	// writable field undeclared therefore does NOT mean "leave unchanged";
+	// this resource's own prior Terraform state isn't a safe substitute either,
+	// since keyfactor_template_role_binding mutates allowed_requesters/
+	// use_allowed_requesters out-of-band via its own PUT calls, so state here
+	// can already be stale. Read-modify-write against a fresh GET immediately
+	// before this update -- the same "fetch current, then carry forward what
+	// this apply doesn't intend to change" pattern used by
+	// addAllowedRequesterToTemplate/removeRoleFromTemplate (#190) -- is what
+	// actually reflects the current server value. Fixes #195; extended by
+	// preserveUndeclaredTemplateFields (see its doc comment) to every other
+	// writable field, not just allowed_requesters.
 	//
-	// This resource's own prior Terraform state is not a safe source of "the
-	// current value" either: keyfactor_template_role_binding manages some of
-	// these same server-side fields out-of-band via its own PUT calls, so
-	// state here can already be stale. Read-modify-write against a fresh GET
-	// immediately before this update -- the same "fetch current, then carry
-	// forward what this apply doesn't intend to change" pattern used by
-	// addAllowedRequesterToTemplate/removeRoleFromTemplate for TemplatePolicy
-	// (#190) -- is what actually reflects the current server value. Fixes
-	// #195; extended by preserveUndeclaredTemplateFields (see its doc
-	// comment) to every other writable field, not just allowed_requesters.
-	var current *v1.TemplatesTemplateRetrievalResponse
-	if templateUpdateNeedsPreservationFetch(&plan) {
-		getReq := templateAPI.NewGetTemplatesByIdRequest(ctx, int32(plan.ID.Value))
-		fetched, httpResp, err := getReq.Execute()
-		if err != nil {
-			body := readHTTPResponseBody(httpResp)
-			response.Diagnostics.AddError(
-				"Error reading certificate template before update.",
-				fmt.Sprintf(
-					"Could not read template %d to preserve its current field values: %s. Details: %s",
-					plan.ID.Value, err.Error(), body,
-				),
-			)
-			return
-		}
-		current = fetched
+	// This fetch used to be gated behind templateUpdateNeedsPreservationFetch,
+	// skipped only when every writable field was already declared on plan.
+	// That gate's field roster had already drifted from
+	// preserveUndeclaredTemplateFields's own logic (the gate only checked
+	// plan.TemplatePolicy == nil, but preserveUndeclaredTemplateFields also
+	// fills nested-null template_policy fields when TemplatePolicy itself is
+	// non-nil) -- a plan fully declared except for one nested template_policy
+	// field would skip the fetch and silently lose that field, the same #195
+	// bug class the gate existed to prevent. The fetch is now unconditional:
+	// one extra cheap GET in the (rare, for a resource with this many optional
+	// fields) fully-declared case, in exchange for removing that drift hazard
+	// entirely -- preserveUndeclaredTemplateFields is already a no-op when
+	// every field is declared, so this is otherwise behavior-identical.
+	getReq := templateAPI.NewGetTemplatesByIdRequest(ctx, int32(plan.ID.Value))
+	current, httpResp, err := getReq.Execute()
+	if err != nil {
+		body := readHTTPResponseBody(httpResp)
+		response.Diagnostics.AddError(
+			"Error reading certificate template before update.",
+			fmt.Sprintf(
+				"Could not read template %d to preserve its current field values: %s. Details: %s",
+				plan.ID.Value, err.Error(), body,
+			),
+		)
+		return
 	}
-	preserveUndeclaredTemplateFields(&plan, current)
+	preserveUndeclaredTemplateFields(&plan, &config, current)
 
 	updateReq := buildTemplateUpdateRequest(ctx, plan)
 	req := templateAPI.NewUpdateTemplatesRequest(ctx).TemplatesTemplateUpdateRequest(updateReq)

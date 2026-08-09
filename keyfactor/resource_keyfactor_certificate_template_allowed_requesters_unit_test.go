@@ -236,7 +236,11 @@ func TestUnitCertificateTemplateUpdatePreservesAllowedRequesters(t *testing.T) {
 	}
 
 	r := resourceCertificateTemplate{p: provider{configured: true, sdkClient: sdkClient}}
-	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj}
+	// Config: mirrors planObj's Raw verbatim -- this test builds plan directly
+	// rather than via PlanResourceChange, so plan's shape already IS what
+	// config declared (see full-review round 5 [HIGH]).
+	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
+	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
 
 	r.Update(ctx, req, resp)
@@ -283,14 +287,23 @@ func TestUnitCertificateTemplateUpdatePreservesAllowedRequesters(t *testing.T) {
 }
 
 // TestUnitCertificateTemplateUpdateDeclaredAllowedRequestersNotOverridden is
-// the negative-space companion test: when the plan explicitly declares
-// EVERY writable field (allowed_requesters included), Update() must send
-// exactly the declared values and must NOT perform any preservation GET at
-// all -- templateUpdateNeedsPreservationFetch's "fully declared config costs
-// zero extra API calls" optimization, generalized from allowed_requesters
-// alone (its original, narrower scope before the certificate_template_demo
-// finding that completed #195) to every field
-// preserveUndeclaredTemplateFields can now preserve.
+// the negative-space companion test: when the plan (and config -- see the
+// Config setup below) explicitly declares EVERY writable field
+// (allowed_requesters included), Update() must send exactly the declared
+// values, not the fresh GET's server-side value, even though the
+// preservation GET itself now always happens.
+//
+// The preservation GET used to be skippable in this exact fully-declared
+// case (templateUpdateNeedsPreservationFetch); full-review round 5's
+// endorsed advisory removed that gate -- its field roster had already
+// drifted from preserveUndeclaredTemplateFields (the gate only checked
+// plan.TemplatePolicy == nil, missing the nested-null template_policy field
+// preservation preserveUndeclaredTemplateFields also does), which could
+// silently clear an undeclared nested policy field in exactly this
+// fully-declared-except-one-nested-field corner -- the same #195 bug class
+// again. The fetch is unconditional now, so this test asserts exactly ONE
+// GET (not zero), and that the fully-declared plan's values -- not the
+// canned GET response's "ShouldNotAppear" -- are what reach the wire.
 func TestUnitCertificateTemplateUpdateDeclaredAllowedRequestersNotOverridden(t *testing.T) {
 	ctx := context.Background()
 
@@ -377,7 +390,11 @@ func TestUnitCertificateTemplateUpdateDeclaredAllowedRequestersNotOverridden(t *
 	}
 
 	r := resourceCertificateTemplate{p: provider{configured: true, sdkClient: sdkClient}}
-	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj}
+	// Config: mirrors planObj's Raw verbatim -- this test builds plan directly
+	// rather than via PlanResourceChange, so plan's shape already IS what
+	// config declared (see full-review round 5 [HIGH]).
+	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
+	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
 
 	r.Update(ctx, req, resp)
@@ -385,8 +402,9 @@ func TestUnitCertificateTemplateUpdateDeclaredAllowedRequestersNotOverridden(t *
 		t.Fatalf("Update returned diagnostics: %+v", resp.Diagnostics)
 	}
 
-	if getHits != 0 {
-		t.Errorf("expected no preservation GET when every writable field is declared, got %d GET(s)", getHits)
+	if getHits != 1 {
+		t.Errorf("expected exactly 1 preservation GET (now unconditional -- see the advisory in this test's "+
+			"doc comment), got %d", getHits)
 	}
 
 	var onWire map[string]interface{}

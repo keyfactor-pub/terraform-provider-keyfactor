@@ -161,7 +161,13 @@ func TestUnitCertificateTemplateUpdateDeclaredEmptyCollectionClears(t *testing.T
 	}
 
 	r := resourceCertificateTemplate{p: provider{configured: true, sdkClient: sdkClient}}
-	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj}
+	// Config: these tests build plan directly rather than by running
+	// PlanResourceChange, so plan's declared/undeclared shape already IS the
+	// config's declared/undeclared shape here -- reuse planObj's Raw value
+	// verbatim so preserveUndeclaredTemplateFields's config-declaredness check
+	// (full-review round 5 [HIGH]) sees the same thing this test's plan does.
+	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
+	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
 
 	r.Update(ctx, req, resp)
@@ -270,7 +276,13 @@ func TestUnitCertificateTemplateUpdateDeclaredEmptyAllowedRequestersClears(t *te
 	}
 
 	r := resourceCertificateTemplate{p: provider{configured: true, sdkClient: sdkClient}}
-	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj}
+	// Config: these tests build plan directly rather than by running
+	// PlanResourceChange, so plan's declared/undeclared shape already IS the
+	// config's declared/undeclared shape here -- reuse planObj's Raw value
+	// verbatim so preserveUndeclaredTemplateFields's config-declaredness check
+	// (full-review round 5 [HIGH]) sees the same thing this test's plan does.
+	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
+	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
 
 	r.Update(ctx, req, resp)

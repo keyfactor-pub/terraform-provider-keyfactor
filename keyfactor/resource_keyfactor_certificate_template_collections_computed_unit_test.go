@@ -307,7 +307,11 @@ func TestUnitCertificateTemplateUpdatePreservesNonEmptyCollections(t *testing.T)
 	}
 
 	r := resourceCertificateTemplate{p: provider{configured: true, sdkClient: sdkClient}}
-	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj}
+	// Config: mirrors planObj's Raw verbatim -- this test builds plan directly
+	// rather than via PlanResourceChange, so plan's shape already IS what
+	// config declared (see full-review round 5 [HIGH]).
+	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
+	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
 
 	r.Update(ctx, req, resp)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-TAG_VERSION=v2.9.1
-git tag -d $TAG_VERSION || true
-git push origin :$TAG_VERSION || true
+TAG_VERSION=v2.10.0-rc.0
+#git tag -d $TAG_VERSION || true
+#git push origin :$TAG_VERSION || true
 git tag $TAG_VERSION
 git push origin $TAG_VERSION

@@ -42,7 +42,7 @@ apply:
 import-all:
 	@echo "==> Capturing state..."
 	$(UNSET_BASIC) $(TF) show -json > tf_state.json
-	python3 _export_ids.py
+	python3 ../_export_ids.py keyfactor_certificate certificate_id
 	@echo "==> Removing certificates from state (keys remain)..."
 	@while IFS=' ' read -r name id; do \
 	  $(UNSET_BASIC) $(TF) state rm "keyfactor_certificate.$$name" 2>&1 | grep Removed; \

@@ -662,6 +662,15 @@ api-ca-gap-fields:
 # written to a curl -K config file created with `mktemp` + `chmod 600` and
 # removed immediately after use.
 #
+# KF_CURL_AUTH (the credential-handling preamble below) lives in
+# terraform/kf-curl-auth.mk, shared with terraform/demo-common.mk's own
+# lab-oob-* targets -- full-review round 3 advisory: that demo-side copy and
+# this one were the last remaining byte-identical duplicate of this
+# security-sensitive block. A dedicated file (rather than including
+# demo-common.mk itself) keeps this Makefile from also inheriting
+# demo-common.mk's PROVIDER_ROOT/TF/LAB_ENV variables and demo-only targets.
+include terraform/kf-curl-auth.mk
+#
 # HTTP-status gating (full-review round 2 finding #3): the HTTP status is
 # captured via curl -w into $$HTTP_STATUS and written to STDERR, never
 # interleaved with the response body on stdout (a prior version used `curl -w
@@ -680,12 +689,7 @@ api-ca-gap-fields:
 # response is treated as success.
 define KF_API_PUT
 	@. $(KEYFACTOR_ENV_FILE) && \
-	CURL_TLS=""; if [ "$$KEYFACTOR_SKIP_VERIFY" = "true" ]; then CURL_TLS="-k"; fi; \
-	if [ -n "$$KEYFACTOR_CA_CERT" ]; then CURL_TLS="$$CURL_TLS --cacert $$KEYFACTOR_CA_CERT"; fi; \
-	KFCFG=$$(mktemp); chmod 600 "$$KFCFG"; trap 'rm -f "$$KFCFG"' EXIT; \
-	printf 'data = "grant_type=client_credentials&client_id=%s&client_secret=%s"\n' "$$KEYFACTOR_AUTH_CLIENT_ID" "$$KEYFACTOR_AUTH_CLIENT_SECRET" > "$$KFCFG"; \
-	TOKEN=$$(curl -s $$CURL_TLS -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" -K "$$KFCFG" | jq -r '.access_token'); \
-	printf 'header = "Authorization: Bearer %s"\n' "$$TOKEN" > "$$KFCFG"; \
+	$(KF_CURL_AUTH) \
 	BODY=$$(cat) && \
 	RESPFILE=$$(mktemp) && \
 	HTTP_STATUS=$$(curl -s $$CURL_TLS -o "$$RESPFILE" -w "%{http_code}" -X PUT \

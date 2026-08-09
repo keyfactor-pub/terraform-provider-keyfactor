@@ -64,28 +64,13 @@ LAB_ENV = set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
 # ---------------------------------------------------------------------------
 # Shared out-of-band API auth preamble (full-review round 2 advisory B)
 # ---------------------------------------------------------------------------
-# KF_CURL_AUTH is the round-1-hardened curl auth preamble (TLS gating via
-# KEYFACTOR_SKIP_VERIFY/KEYFACTOR_CA_CERT, mktemp+chmod-600 curl -K config so
-# credentials never appear on curl's argv/in `ps`, client-credentials token
-# fetch, bearer-header rewrite into the same config file) that several demos'
-# lab-oob-* targets use to call the Command API directly -- bypassing
-# Terraform -- to mutate or inspect a resource out-of-band (proving a
-# provider Read/drift-detection fix actually works against a change Terraform
-# didn't make itself). Before this, the identical 6-statement block was
-# pasted verbatim at 5 call sites across 4 demo GNUmakefiles; round 1 had to
-# apply the same hardening edit to all 5 at once, which is exactly the
-# maintenance cost this consolidates away.
-#
-# Recursive ('=') on purpose, matching LAB_ENV above: $$KEYFACTOR_* resolve
-# at recipe-execution time (after LAB_ENV has sourced KEYFACTOR_ENV_FILE),
-# not at include time.
-#
-# Usage: within a target's own $(LAB_ENV)-sourced recipe, splice in
-# `$(KF_CURL_AUTH) \` where the preamble used to live, then keep using
-# $$CURL_TLS / -K "$$KFCFG" exactly as before for the endpoint-specific
-# request that follows -- this only replaces the preamble, nothing
-# downstream of it.
-KF_CURL_AUTH = CURL_TLS=""; if [ "$$KEYFACTOR_SKIP_VERIFY" = "true" ]; then CURL_TLS="-k"; fi; if [ -n "$$KEYFACTOR_CA_CERT" ]; then CURL_TLS="$$CURL_TLS --cacert $$KEYFACTOR_CA_CERT"; fi; KFCFG=$$(mktemp); chmod 600 "$$KFCFG"; trap 'rm -f "$$KFCFG"' EXIT; printf 'data = "grant_type=client_credentials&client_id=%s&client_secret=%s"\n' "$$KEYFACTOR_AUTH_CLIENT_ID" "$$KEYFACTOR_AUTH_CLIENT_SECRET" > "$$KFCFG"; TOKEN=$$(curl -s $$CURL_TLS -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" -K "$$KFCFG" | jq -r '.access_token'); printf 'header = "Authorization: Bearer %s"\n' "$$TOKEN" > "$$KFCFG";
+# KF_CURL_AUTH (used by several demos' lab-oob-* targets to call the Command
+# API directly -- bypassing Terraform -- to mutate or inspect a resource
+# out-of-band) now lives in terraform/kf-curl-auth.mk, shared with the root
+# GNUmakefile's KF_API_PUT (full-review round 3 advisory: that was the last
+# remaining duplicate of this same credential-handling block). See that
+# file's header comment for the full history and usage.
+include ../kf-curl-auth.mk
 
 # ---------------------------------------------------------------------------
 # Provider build

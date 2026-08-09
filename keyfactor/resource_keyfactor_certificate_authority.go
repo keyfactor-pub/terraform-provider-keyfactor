@@ -1307,13 +1307,34 @@ const caHTTPSType = 1
 //     exclusive -- rejecting both explicitly set true.
 //  2. new_end_entity_on_renew_and_reissue is required to be true for HTTPS
 //     CAs (ca_type=1) -- rejecting an explicit false paired with ca_type=1.
-//  3. allowed_enrollment_types, use_allowed_requesters, and
-//     allowed_requesters all apply to standalone CAs only -- rejecting any
-//     of them being declared while standalone is explicitly set false.
-//  4. auth_certificate and client_id/token_url (client-certificate vs OAuth
+//  3. auth_certificate and client_id/token_url (client-certificate vs OAuth
 //     authentication) are mutually exclusive -- rejecting both declared
 //     with a genuinely non-empty value at once (full-review round 1
 //     finding #4).
+//
+// A fourth check -- rejecting allowed_enrollment_types/use_allowed_requesters/
+// allowed_requesters declared alongside standalone=false, on the theory that
+// those three attributes are standalone-only -- existed between full-review
+// round 1 and round 2 and has been REMOVED (round 2 finding #4). See that
+// check's own removed doc comment, preserved in git history, for the full
+// backward-compatibility failure it caused; the short version: Command's own
+// resting/echoed value for allowed_enrollment_types on a real non-standalone
+// HTTPS CA is 3, not 0 (confirmed against a live lab CA and this repo's own
+// committed certificate_authority_demo tfstate), so rejecting any non-zero
+// value there was rejecting the server's own default -- a hard break for
+// every config produced by this project's own documented import-then-codify
+// workflow. use_allowed_requesters/allowed_requesters are removed alongside
+// it for consistency: Command's API docs describe all three attributes with
+// identical wording ("supported only for standalone CAs"), which round 2's
+// investigation showed does NOT mean "rejected/forced to zero for
+// non-standalone" for allowed_enrollment_types -- and this provider has no
+// live evidence (no standalone CA exists in the available lab to compare
+// against) that Command enforces anything stricter for the other two. Absent
+// proof the server actually rejects a non-standalone CA holding
+// use_allowed_requesters=true or a non-empty allowed_requesters, this
+// provider now relies on Command's own server-side validation for all three
+// rather than guessing at a client-side constraint that already proved wrong
+// once for the sibling attribute sharing the identical doc language.
 //
 // Every check here follows the same declaredInConfig-style discipline as the
 // schedule validation above: a null or unknown value is never an error,
@@ -1380,56 +1401,10 @@ func validateCAConfigConstraints(cfg KeyfactorCertificateAuthority) diag.Diagnos
 		)
 	}
 
-	// F4: allowed_enrollment_types, use_allowed_requesters, and
-	// allowed_requesters all apply to standalone CAs only -- only an issue
-	// when standalone is explicitly declared false; standalone left
-	// undeclared/unknown never trips this (config-time validation can't
-	// resolve a computed/unresolved standalone value).
-	//
-	// Full-review round 1 finding #6: this originally rejected on mere
-	// DECLAREDNESS (any known value, including an explicit no-op like
-	// allowed_enrollment_types=0, use_allowed_requesters=false, or
-	// allowed_requesters=[]), rather than on a genuinely conflicting value.
-	// buildCARequest has always sent these via setBoolIfKnown/equivalent
-	// regardless of standalone, and Command accepts an explicit no-op
-	// value on a non-standalone CA as exactly that -- a no-op (confirmed
-	// live: terraform/certificate_authority_demo's committed tfstate shows
-	// Command returning standalone=false with allowed_enrollment_types=3 and
-	// use_allowed_requesters=false on a real non-standalone HTTPS CA). Since
-	// every one of these three attributes is Optional+Computed, the
-	// project's own documented import-then-codify workflow ("terraform state
-	// show" output copied into config, or make lab-import's drift-check
-	// step) routinely produces exactly this declared-but-no-op shape, and
-	// rejecting it at plan time is a backward-compatibility break with no
-	// deprecation path: existing configs that applied cleanly on prior
-	// provider versions would hard-fail every plan after upgrading. Only
-	// reject a value that actually conflicts with a non-standalone CA:
-	// allowed_enrollment_types != 0, use_allowed_requesters == true, or a
-	// non-empty allowed_requesters list.
-	standaloneKnown := !cfg.Standalone.Null && !cfg.Standalone.Unknown
-	if standaloneKnown && !cfg.Standalone.Value {
-		if !cfg.AllowedEnrollmentTypes.Null && !cfg.AllowedEnrollmentTypes.Unknown && cfg.AllowedEnrollmentTypes.Value != 0 {
-			diags.AddAttributeError(
-				path.Root("allowed_enrollment_types"),
-				"Invalid certificate authority attribute for a non-standalone CA",
-				"allowed_enrollment_types requires standalone=true.",
-			)
-		}
-		if !cfg.UseAllowedRequesters.Null && !cfg.UseAllowedRequesters.Unknown && cfg.UseAllowedRequesters.Value {
-			diags.AddAttributeError(
-				path.Root("use_allowed_requesters"),
-				"Invalid certificate authority attribute for a non-standalone CA",
-				"use_allowed_requesters applies to standalone CAs only.",
-			)
-		}
-		if !cfg.AllowedRequesters.Null && !cfg.AllowedRequesters.Unknown && len(cfg.AllowedRequesters.Elems) > 0 {
-			diags.AddAttributeError(
-				path.Root("allowed_requesters"),
-				"Invalid certificate authority attribute for a non-standalone CA",
-				"allowed_requesters applies to standalone CAs only.",
-			)
-		}
-	}
+	// No standalone-only constraint on allowed_enrollment_types/
+	// use_allowed_requesters/allowed_requesters is enforced here -- see this
+	// function's doc comment (round 2 finding #4) for why the check that
+	// used to live here was removed rather than merely relaxed further.
 
 	return diags
 }

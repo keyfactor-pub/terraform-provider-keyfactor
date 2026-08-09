@@ -316,38 +316,95 @@ func TestUnitCAValidateConfigAllowsNewEndEntityUnsetOrUnknownForHTTPSCa(t *testi
 	assert.False(t, validateCAConfigConstraints(trueForHTTPS).HasError())
 }
 
-// TestUnitCAValidateConfigRejectsStandaloneOnlyAttributesWithStandaloneFalse
-// is the F4 regression for allowed_enrollment_types/use_allowed_requesters/
-// allowed_requesters: each is documented as applying to standalone CAs only,
-// but before this fix none of them were rejected when standalone was
-// explicitly declared false.
-func TestUnitCAValidateConfigRejectsStandaloneOnlyAttributesWithStandaloneFalse(t *testing.T) {
+// ---------------------------------------------------------------------------
+// Regression tests — full-review round 2 finding #4 (backward-compat break,
+// high):
+//
+// A prior round (full-review round 1 finding #6) relaxed the standalone-only
+// check on allowed_enrollment_types/use_allowed_requesters/allowed_requesters
+// from "reject on mere declaredness" to "reject only a value that actually
+// conflicts" (treating 0/false/[] as no-ops). That relaxation was still
+// wrong: Command's own resting/echoed value for allowed_enrollment_types on a
+// REAL non-standalone HTTPS CA is 3, not 0 -- confirmed against both this
+// repo's own committed terraform/certificate_authority_demo tfstate and a
+// live lab CA (`GET /CertificateAuthority` against a kfclab non-standalone
+// HTTPS CA returns AllowedEnrollmentTypes: 3, UseAllowedRequesters: false,
+// AllowedRequesters: []). So `allowed_enrollment_types != 0` was rejecting
+// the server's OWN DEFAULT for that attribute on a non-standalone CA -- every
+// config produced by this project's own documented import-then-codify
+// workflow (`terraform state show` output copied into config) hard-failed
+// every plan after upgrading, with no deprecation path.
+//
+// The fix removes the standalone-only constraint entirely for all three
+// attributes (see validateCAConfigConstraints's doc comment for the full
+// reasoning on why use_allowed_requesters/allowed_requesters are removed
+// alongside allowed_enrollment_types rather than left partially enforced) and
+// relies on Command's own server-side validation instead. These tests assert
+// the new behavior: none of the three attributes are ever rejected by
+// ValidateConfig, regardless of their value or of standalone's value.
+// ---------------------------------------------------------------------------
+
+// TestUnitCAValidateConfigNeverRejectsAllowedEnrollmentTypesRegardlessOfStandalone
+// is the direct regression test for finding #4: standalone=false paired with
+// allowed_enrollment_types=3 -- the exact shape Command itself returns for a
+// real non-standalone HTTPS CA, and the exact shape this project's own
+// certificate_authority_demo needed to drop from its config to keep working
+// -- must plan cleanly. A smaller non-zero value (the old "genuine conflict"
+// boundary case from round 1) and a standalone=true pairing are also checked
+// to confirm the constraint is gone, not just further relaxed.
+func TestUnitCAValidateConfigNeverRejectsAllowedEnrollmentTypesRegardlessOfStandalone(t *testing.T) {
 	base := func() KeyfactorCertificateAuthority {
 		cfg := caConstraintsAllUnset
 		cfg.Standalone = types.Bool{Value: false}
 		return cfg
 	}
 
-	allowedEnrollmentTypes := base()
-	allowedEnrollmentTypes.AllowedEnrollmentTypes = types.Int64{Value: 2}
-	assert.True(t, validateCAConfigConstraints(allowedEnrollmentTypes).HasError(),
-		"allowed_enrollment_types requires standalone=true")
+	serverRestingValue := base()
+	serverRestingValue.AllowedEnrollmentTypes = types.Int64{Value: 3}
+	assert.False(t, validateCAConfigConstraints(serverRestingValue).HasError(),
+		"allowed_enrollment_types=3 with standalone=false is Command's own resting value on a real non-standalone "+
+			"HTTPS CA (confirmed live and via this repo's committed demo tfstate) and must not be rejected")
+
+	smallNonZero := base()
+	smallNonZero.AllowedEnrollmentTypes = types.Int64{Value: 1}
+	assert.False(t, validateCAConfigConstraints(smallNonZero).HasError(),
+		"allowed_enrollment_types=1 with standalone=false must not be rejected -- the standalone-only constraint "+
+			"was removed entirely, not merely further relaxed")
+
+	withStandaloneTrue := caConstraintsAllUnset
+	withStandaloneTrue.Standalone = types.Bool{Value: true}
+	withStandaloneTrue.AllowedEnrollmentTypes = types.Int64{Value: 2}
+	assert.False(t, validateCAConfigConstraints(withStandaloneTrue).HasError())
+}
+
+// TestUnitCAValidateConfigNeverRejectsAllowedRequestersRegardlessOfStandalone
+// is the companion test for use_allowed_requesters/allowed_requesters: absent
+// live evidence that Command rejects either on a non-standalone CA (see the
+// doc comment on validateCAConfigConstraints), they are removed from the
+// standalone-only constraint alongside allowed_enrollment_types and must
+// never be rejected by ValidateConfig regardless of standalone's value.
+func TestUnitCAValidateConfigNeverRejectsAllowedRequestersRegardlessOfStandalone(t *testing.T) {
+	base := func() KeyfactorCertificateAuthority {
+		cfg := caConstraintsAllUnset
+		cfg.Standalone = types.Bool{Value: false}
+		return cfg
+	}
 
 	useAllowedRequesters := base()
 	useAllowedRequesters.UseAllowedRequesters = types.Bool{Value: true}
-	assert.True(t, validateCAConfigConstraints(useAllowedRequesters).HasError(),
-		"use_allowed_requesters applies to standalone CAs only")
+	assert.False(t, validateCAConfigConstraints(useAllowedRequesters).HasError(),
+		"use_allowed_requesters=true with standalone=false must not be rejected")
 
 	allowedRequesters := base()
 	allowedRequesters.AllowedRequesters = stringSliceToTfList([]string{"Administrator"})
-	assert.True(t, validateCAConfigConstraints(allowedRequesters).HasError(),
-		"allowed_requesters applies to standalone CAs only")
+	assert.False(t, validateCAConfigConstraints(allowedRequesters).HasError(),
+		"a non-empty allowed_requesters with standalone=false must not be rejected")
 }
 
 // TestUnitCAValidateConfigAllowsStandaloneOnlyAttributesWhenStandaloneUnsetOrUnknown
-// confirms that config-time validation can't resolve a computed/unresolved
-// standalone value, so leaving it undeclared or Unknown must never trip
-// these checks regardless of what the standalone-only attributes are set to.
+// confirms standalone left undeclared or Unknown never trips any check
+// (config-time validation can't resolve a computed/unresolved standalone
+// value regardless).
 func TestUnitCAValidateConfigAllowsStandaloneOnlyAttributesWhenStandaloneUnsetOrUnknown(t *testing.T) {
 	undeclared := caConstraintsAllUnset
 	undeclared.AllowedEnrollmentTypes = types.Int64{Value: 2}
@@ -363,8 +420,8 @@ func TestUnitCAValidateConfigAllowsStandaloneOnlyAttributesWhenStandaloneUnsetOr
 }
 
 // TestUnitCAValidateConfigAllowsStandaloneOnlyAttributesWhenStandaloneTrue is
-// the passing case for a real standalone CA: all three standalone-only
-// attributes together must remain legal.
+// the passing case for a real standalone CA: all three formerly
+// standalone-only attributes together must remain legal.
 func TestUnitCAValidateConfigAllowsStandaloneOnlyAttributesWhenStandaloneTrue(t *testing.T) {
 	cfg := caConstraintsAllUnset
 	cfg.Standalone = types.Bool{Value: true}
@@ -372,82 +429,4 @@ func TestUnitCAValidateConfigAllowsStandaloneOnlyAttributesWhenStandaloneTrue(t 
 	cfg.UseAllowedRequesters = types.Bool{Value: true}
 	cfg.AllowedRequesters = stringSliceToTfList([]string{"Administrator"})
 	assert.False(t, validateCAConfigConstraints(cfg).HasError())
-}
-
-// ---------------------------------------------------------------------------
-// Regression tests — full-review round 1 finding #6 (backward-compat break,
-// medium):
-//
-// The standalone-only checks above originally fired on mere DECLAREDNESS --
-// any known value, including an explicit no-op like
-// allowed_enrollment_types=0, use_allowed_requesters=false, or
-// allowed_requesters=[] -- rather than on a genuinely conflicting value.
-// buildCARequest has always sent these fields regardless of standalone, and
-// Command accepts an explicit no-op value on a non-standalone CA as exactly
-// that: a no-op. Since all three attributes are Optional+Computed, the
-// project's own documented import-then-codify workflow ("terraform state
-// show" output copied into config) routinely produces exactly this
-// declared-but-no-op shape for an existing, previously-working
-// keyfactor_certificate_authority config -- e.g. standalone=false paired
-// with an explicit use_allowed_requesters=false carried over from a prior
-// `terraform show`. Before the fix, upgrading the provider made every plan
-// in such a workspace hard-fail with no deprecation path. The fix relaxes
-// these three checks to only reject a value that actually conflicts with a
-// non-standalone CA.
-// ---------------------------------------------------------------------------
-
-// TestUnitCAValidateConfigAllowsExplicitNoOpStandaloneOnlyAttributesWithStandaloneFalse
-// is the direct regression test: standalone=false paired with an EXPLICIT
-// no-op value for each standalone-only attribute (0 / false / empty list --
-// not merely undeclared) must pass cleanly, mirroring the exact shape
-// produced by codifying `terraform state show` output for an existing
-// non-standalone CA.
-func TestUnitCAValidateConfigAllowsExplicitNoOpStandaloneOnlyAttributesWithStandaloneFalse(t *testing.T) {
-	base := func() KeyfactorCertificateAuthority {
-		cfg := caConstraintsAllUnset
-		cfg.Standalone = types.Bool{Value: false}
-		return cfg
-	}
-
-	allowedEnrollmentTypesZero := base()
-	allowedEnrollmentTypesZero.AllowedEnrollmentTypes = types.Int64{Value: 0}
-	assert.False(t, validateCAConfigConstraints(allowedEnrollmentTypesZero).HasError(),
-		"an explicit allowed_enrollment_types=0 is a no-op and must not be rejected for a non-standalone CA")
-
-	useAllowedRequestersFalse := base()
-	useAllowedRequestersFalse.UseAllowedRequesters = types.Bool{Value: false}
-	assert.False(t, validateCAConfigConstraints(useAllowedRequestersFalse).HasError(),
-		"an explicit use_allowed_requesters=false is a no-op and must not be rejected for a non-standalone CA")
-
-	allowedRequestersEmpty := base()
-	allowedRequestersEmpty.AllowedRequesters = stringSliceToTfList([]string{})
-	assert.False(t, validateCAConfigConstraints(allowedRequestersEmpty).HasError(),
-		"an explicit allowed_requesters=[] is a no-op and must not be rejected for a non-standalone CA")
-
-	// All three explicit no-ops together, the full shape codified state
-	// output would produce.
-	allNoOps := base()
-	allNoOps.AllowedEnrollmentTypes = types.Int64{Value: 0}
-	allNoOps.UseAllowedRequesters = types.Bool{Value: false}
-	allNoOps.AllowedRequesters = stringSliceToTfList([]string{})
-	assert.False(t, validateCAConfigConstraints(allNoOps).HasError(),
-		"all three standalone-only attributes declared with explicit no-op values together must not be rejected for a non-standalone CA")
-}
-
-// TestUnitCAValidateConfigStillRejectsRealStandaloneOnlyValuesWithStandaloneFalse
-// guards against finding #6's fix over-correcting into a no-op check: a
-// GENUINELY conflicting value (non-zero allowed_enrollment_types, true
-// use_allowed_requesters, or a non-empty allowed_requesters list) must still
-// be rejected when standalone=false -- this is the exact behavior
-// TestUnitCAValidateConfigRejectsStandaloneOnlyAttributesWithStandaloneFalse
-// already covers; this test additionally exercises the AllowedEnrollmentTypes
-// boundary value that most resembles a no-op-but-isn't (a small non-zero
-// bitmask) to make sure the fix's `!= 0` check, not some broader `> N`
-// threshold, is what's actually implemented.
-func TestUnitCAValidateConfigStillRejectsRealStandaloneOnlyValuesWithStandaloneFalse(t *testing.T) {
-	cfg := caConstraintsAllUnset
-	cfg.Standalone = types.Bool{Value: false}
-	cfg.AllowedEnrollmentTypes = types.Int64{Value: 1}
-	assert.True(t, validateCAConfigConstraints(cfg).HasError(),
-		"allowed_enrollment_types=1 (PFX enrollment enabled) is a genuine conflict and must still be rejected for a non-standalone CA")
 }

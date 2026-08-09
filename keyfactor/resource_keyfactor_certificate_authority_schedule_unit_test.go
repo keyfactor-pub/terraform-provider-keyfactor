@@ -112,6 +112,20 @@ func asConfig(t *testing.T, ctx context.Context, schema tfsdk.Schema, v Keyfacto
 	return tfsdk.Config{Schema: schema, Raw: p.Raw}
 }
 
+// asState is asConfig's State-typed counterpart, needed by tests exercising
+// authVariantSiblingModifier's unknownTriggerPaths (full-review round 4
+// finding #1), which compares a trigger path's CONFIG value against its own
+// prior STATE value to distinguish an incoming/rotating auth_certificate
+// from a steadily-redeclared one.
+func asState(t *testing.T, ctx context.Context, schema tfsdk.Schema, v KeyfactorCertificateAuthority) tfsdk.State {
+	t.Helper()
+	p := tfsdk.Plan{Schema: schema}
+	if d := p.Set(ctx, &v); d.HasError() {
+		t.Fatalf("test setup: Plan.Set returned diagnostics: %+v", d)
+	}
+	return tfsdk.State{Schema: schema, Raw: p.Raw}
+}
+
 // ---------------------------------------------------------------------------
 // TestUnitCAReadPreservesDailySchedule
 // ---------------------------------------------------------------------------

@@ -308,14 +308,22 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 			// client-certificate auth to OAuth in one apply nulls this stale
 			// metadata on the plan instead of resurrecting it from state --
 			// see authVariantSiblingModifier's doc comment. Full-review round 3.
+			//
+			// unknownTriggerPaths also watches auth_certificate itself: when
+			// the client-certificate variant is incoming (OAuth->cert switch)
+			// or rotating (a new auth_certificate value on an already
+			// cert-auth CA), the server computes fresh metadata that cannot
+			// be predicted at plan time, so the plan must stay Unknown rather
+			// than copy stale/null state. Full-review round 4 finding #1.
 			"auth_certificate_issued_dn": {
 				Type:        types.StringType,
 				Computed:    true,
 				Description: "Issued DN of the authentication certificate (read-only).",
 				PlanModifiers: []tfsdk.AttributePlanModifier{
 					authVariantSiblingModifier{
-						triggerPaths: []path.Path{path.Root("client_id"), path.Root("token_url"), path.Root("scope"), path.Root("audience")},
-						nullValue:    types.String{Null: true},
+						triggerPaths:        caOAuthTriggerPaths,
+						unknownTriggerPaths: caCertAuthTriggerPaths,
+						nullValue:           types.String{Null: true},
 					},
 				},
 			},
@@ -325,8 +333,9 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Description: "Issuer DN of the authentication certificate (read-only).",
 				PlanModifiers: []tfsdk.AttributePlanModifier{
 					authVariantSiblingModifier{
-						triggerPaths: []path.Path{path.Root("client_id"), path.Root("token_url"), path.Root("scope"), path.Root("audience")},
-						nullValue:    types.String{Null: true},
+						triggerPaths:        caOAuthTriggerPaths,
+						unknownTriggerPaths: caCertAuthTriggerPaths,
+						nullValue:           types.String{Null: true},
 					},
 				},
 			},
@@ -336,8 +345,9 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Description: "Thumbprint of the authentication certificate (read-only).",
 				PlanModifiers: []tfsdk.AttributePlanModifier{
 					authVariantSiblingModifier{
-						triggerPaths: []path.Path{path.Root("client_id"), path.Root("token_url"), path.Root("scope"), path.Root("audience")},
-						nullValue:    types.String{Null: true},
+						triggerPaths:        caOAuthTriggerPaths,
+						unknownTriggerPaths: caCertAuthTriggerPaths,
+						nullValue:           types.String{Null: true},
 					},
 				},
 			},
@@ -354,7 +364,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Computed:    true,
 				Description: "For HTTPS CAs, a string indicating the bearer token URL of the identity provider.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{
-					authVariantSiblingModifier{triggerPaths: []path.Path{path.Root("auth_certificate")}, nullValue: types.String{Null: true}},
+					authVariantSiblingModifier{triggerPaths: caCertAuthTriggerPaths, nullValue: types.String{Null: true}},
 				},
 			},
 			"client_id": {
@@ -363,7 +373,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Computed:    true,
 				Description: "For HTTPS CAs, a string specifying the client ID used to authenticate when OAuth authentication is selected.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{
-					authVariantSiblingModifier{triggerPaths: []path.Path{path.Root("auth_certificate")}, nullValue: types.String{Null: true}},
+					authVariantSiblingModifier{triggerPaths: caCertAuthTriggerPaths, nullValue: types.String{Null: true}},
 				},
 			},
 			"client_secret": {
@@ -378,7 +388,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Computed:    true,
 				Description: "For HTTPS CAs, a string indicating scopes included in token requests, separated by spaces.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{
-					authVariantSiblingModifier{triggerPaths: []path.Path{path.Root("auth_certificate")}, nullValue: types.String{Null: true}},
+					authVariantSiblingModifier{triggerPaths: caCertAuthTriggerPaths, nullValue: types.String{Null: true}},
 				},
 			},
 			"audience": {
@@ -387,7 +397,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Computed:    true,
 				Description: "For HTTPS CAs, a string specifying the audience to include in token requests to the identity provider.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{
-					authVariantSiblingModifier{triggerPaths: []path.Path{path.Root("auth_certificate")}, nullValue: types.String{Null: true}},
+					authVariantSiblingModifier{triggerPaths: caCertAuthTriggerPaths, nullValue: types.String{Null: true}},
 				},
 			},
 
@@ -1238,11 +1248,29 @@ func (m scheduleSiblingModifier) Modify(ctx context.Context, req tfsdk.ModifyAtt
 	}
 
 	// Sibling also null/undeclared: ordinary UseStateForUnknown semantics.
-	if req.AttributeState.IsUnknown() {
+	// Mirrors tfsdk.UseStateForUnknownModifier's own IsNull guard (there is
+	// nothing to preserve if the prior state itself is null) -- full-review
+	// round 4 finding #1's cheap-to-add note on this tail.
+	if req.AttributeState.IsNull() || req.AttributeState.IsUnknown() {
 		return
 	}
 	resp.AttributePlan = req.AttributeState
 }
+
+// caOAuthTriggerPaths and caCertAuthTriggerPaths are the shared trigger-path
+// sets for authVariantSiblingModifier, hoisted out of the schema's seven
+// call sites (three cert-metadata attributes x caOAuthTriggerPaths, four
+// OAuth attributes x caCertAuthTriggerPaths) so the OAuth trigger set used by
+// all three cert-metadata attributes -- which must stay identical for the
+// variant-switch reconciliation below to be symmetric -- cannot drift apart
+// if a fifth OAuth attribute is ever added to some call sites but not
+// others. caCertAuthTriggerPaths additionally serves as auth_certificate_*'s
+// unknownTriggerPaths (see authVariantSiblingModifier's doc comment).
+// Full-review round 4 advisory.
+var (
+	caOAuthTriggerPaths    = []path.Path{path.Root("client_id"), path.Root("token_url"), path.Root("scope"), path.Root("audience")}
+	caCertAuthTriggerPaths = []path.Path{path.Root("auth_certificate")}
+)
 
 // authVariantSiblingModifier is the plan-time half of certificate-authority
 // auth-variant switch reconciliation -- the OAuth<->client-certificate
@@ -1283,9 +1311,48 @@ func (m scheduleSiblingModifier) Modify(ctx context.Context, req tfsdk.ModifyAtt
 // -- the "multiple triggers fire for the same attribute" case is therefore
 // unreachable in practice, mirroring scheduleSiblingModifier's own note on
 // the equivalent both-declared situation for schedule pairs.
+//
+// unknownTriggerPaths (full-review round 4 finding #1) fixes a second gap:
+// the three cert-metadata attributes' triggerPaths only cover the OUTGOING
+// direction (an OAuth attribute becoming declared means client-certificate
+// auth is going away, so nulling is correct). They have no trigger at all
+// for the INCOMING/rotating direction -- auth_certificate itself becoming
+// declared -- so on an OAuth->cert-auth switch, or on rotating
+// auth_certificate on an already cert-auth CA, none of triggerPaths fire and
+// the tail resurrects the stale (null, for a switch; old, for a rotation)
+// prior-state metadata onto the plan, while the PUT response carries the
+// server's freshly computed DN/thumbprint for the new certificate --
+// "Provider produced inconsistent result after apply" on the very switch
+// round 3 fixed for the OAuth attributes, and on every cert rotation.
+//
+// A trigger path in unknownTriggerPaths behaves differently from one in
+// triggerPaths: instead of nulling the plan, it leaves the plan Unknown
+// (the server will compute a value neither state nor config can predict) --
+// but only when the trigger's config value actually differs from its own
+// prior state value. auth_certificate is Optional but not Computed
+// (write-only, never preserved from state by the framework), so a
+// steady-state cert-auth CA must re-declare the identical certificate value
+// in config on every single apply just to avoid clearAuthVariant treating it
+// as cleared; comparing config against state (not merely checking
+// "declared") is what distinguishes that steady-state redeclaration --
+// which must fall through to ordinary UseStateForUnknown carry-forward, or
+// every apply would show a perpetual "(known after apply)" diff on metadata
+// that never actually changed -- from a genuine incoming switch or rotation.
 type authVariantSiblingModifier struct {
+	// triggerPaths: when any is genuinely declared (known, non-empty) in
+	// config, the OTHER variant is taking over -- null this attribute's plan
+	// instead of resurrecting its stale prior-state value.
 	triggerPaths []path.Path
-	nullValue    attr.Value
+
+	// unknownTriggerPaths: when any is genuinely declared in config AND its
+	// value differs from its own prior state value, the variant THIS
+	// attribute is metadata for is incoming or rotating this apply -- leave
+	// the plan Unknown so the server-computed value isn't pinned stale (nor
+	// incorrectly nulled). An unchanged, steadily-redeclared trigger value
+	// falls through to ordinary UseStateForUnknown carry-forward instead.
+	unknownTriggerPaths []path.Path
+
+	nullValue attr.Value
 }
 
 func (m authVariantSiblingModifier) Description(_ context.Context) string {
@@ -1328,6 +1395,38 @@ func (m authVariantSiblingModifier) Modify(ctx context.Context, req tfsdk.Modify
 		}
 	}
 
+	for _, triggerPath := range m.unknownTriggerPaths {
+		var triggerConfig types.String
+		if diags := req.Config.GetAttribute(ctx, triggerPath, &triggerConfig); diags.HasError() {
+			continue
+		}
+		if triggerConfig.Unknown {
+			anyUnknown = true
+			continue
+		}
+		if !isKnownNonEmptyString(triggerConfig) {
+			continue
+		}
+		// The variant this attribute is metadata for is genuinely declared
+		// in config. Only treat it as incoming/rotating -- and therefore
+		// leave the plan Unknown for the server to compute a fresh value --
+		// if the trigger's config value actually differs from its own prior
+		// state value; an unchanged, steadily-redeclared value (the normal
+		// shape of every apply for a write-only, non-Computed field like
+		// auth_certificate) falls through to ordinary UseStateForUnknown
+		// carry-forward below instead, so a steady-state CA doesn't show a
+		// perpetual diff on its metadata attributes.
+		var triggerState types.String
+		if diags := req.State.GetAttribute(ctx, triggerPath, &triggerState); diags.HasError() {
+			// Conservative: can't tell whether it changed, so assume it did
+			// rather than risk resurrecting stale metadata onto the plan.
+			return
+		}
+		if triggerState.Null || triggerState.Unknown || triggerState.Value != triggerConfig.Value {
+			return
+		}
+	}
+
 	if anyUnknown {
 		// At least one trigger attribute depends on some other not-yet-known
 		// value this apply -- cannot yet tell whether the other variant is
@@ -1336,8 +1435,11 @@ func (m authVariantSiblingModifier) Modify(ctx context.Context, req tfsdk.Modify
 		return
 	}
 
-	// No trigger declared: ordinary UseStateForUnknown semantics.
-	if req.AttributeState.IsUnknown() {
+	// No trigger declared (or an unknownTriggerPaths trigger declared but
+	// unchanged from state): ordinary UseStateForUnknown semantics. Mirrors
+	// tfsdk.UseStateForUnknownModifier's own IsNull guard -- full-review
+	// round 4 finding #1.
+	if req.AttributeState.IsNull() || req.AttributeState.IsUnknown() {
 		return
 	}
 	resp.AttributePlan = req.AttributeState

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -330,16 +331,17 @@ func TestUnitCAAuthAttributesUseSiblingModifier(t *testing.T) {
 	schema := caSchema(t, ctx)
 
 	cases := []struct {
-		attrName     string
-		triggerNames []string
+		attrName            string
+		triggerNames        []string
+		unknownTriggerNames []string
 	}{
-		{"token_url", []string{"auth_certificate"}},
-		{"client_id", []string{"auth_certificate"}},
-		{"scope", []string{"auth_certificate"}},
-		{"audience", []string{"auth_certificate"}},
-		{"auth_certificate_issued_dn", []string{"client_id", "token_url", "scope", "audience"}},
-		{"auth_certificate_issuer_dn", []string{"client_id", "token_url", "scope", "audience"}},
-		{"auth_certificate_thumbprint", []string{"client_id", "token_url", "scope", "audience"}},
+		{"token_url", []string{"auth_certificate"}, nil},
+		{"client_id", []string{"auth_certificate"}, nil},
+		{"scope", []string{"auth_certificate"}, nil},
+		{"audience", []string{"auth_certificate"}, nil},
+		{"auth_certificate_issued_dn", []string{"client_id", "token_url", "scope", "audience"}, []string{"auth_certificate"}},
+		{"auth_certificate_issuer_dn", []string{"client_id", "token_url", "scope", "audience"}, []string{"auth_certificate"}},
+		{"auth_certificate_thumbprint", []string{"client_id", "token_url", "scope", "audience"}, []string{"auth_certificate"}},
 	}
 
 	for _, c := range cases {
@@ -370,6 +372,307 @@ func TestUnitCAAuthAttributesUseSiblingModifier(t *testing.T) {
 					t.Errorf("%s: triggerPaths[%d] = %q, want %q", c.attrName, i, m.triggerPaths[i].String(), path.Root(wantName).String())
 				}
 			}
+			if len(m.unknownTriggerPaths) != len(c.unknownTriggerNames) {
+				t.Fatalf(
+					"%s: modifier has %d unknownTriggerPaths, want %d -- full-review round 4 finding #1: without "+
+						"an unknownTriggerPaths entry for auth_certificate, this attribute has no way to know its "+
+						"own variant is incoming/rotating, and resurrects stale/null metadata onto the plan",
+					c.attrName, len(m.unknownTriggerPaths), len(c.unknownTriggerNames),
+				)
+			}
+			for i, wantName := range c.unknownTriggerNames {
+				if m.unknownTriggerPaths[i].String() != path.Root(wantName).String() {
+					t.Errorf("%s: unknownTriggerPaths[%d] = %q, want %q", c.attrName, i, m.unknownTriggerPaths[i].String(), path.Root(wantName).String())
+				}
+			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests — full-review round 4 finding #1 (correctness, medium):
+//
+// authVariantSiblingModifier's cert-metadata triggerPaths only ever cover the
+// OUTGOING direction (an OAuth attribute becoming declared). There was no
+// trigger at all for the INCOMING/rotating direction -- auth_certificate
+// itself becoming declared or changing -- so an OAuth->cert-auth switch, or
+// rotating auth_certificate on an already cert-auth CA, resurrected stale
+// (null, for a switch; old, for a rotation) metadata onto the plan while the
+// PUT response carries the server's freshly computed values: "Provider
+// produced inconsistent result after apply" on the very switch round 3
+// fixed for the OAuth attributes, and on every cert rotation.
+//
+// unknownTriggerPaths fixes this by leaving the plan Unknown (not null, not
+// resurrected) whenever auth_certificate is genuinely declared AND its
+// config value differs from its own prior state value.
+// ---------------------------------------------------------------------------
+
+// TestUnitCAAuthVariantSiblingModifierLeavesMetadataUnknownOnSwitchToCertAuth
+// covers the OAuth->cert-auth switch: the CA's prior state has no cert
+// metadata (it was an OAuth CA), config declares auth_certificate for the
+// first time, and the metadata attributes' own plan must stay Unknown so the
+// server's freshly computed DN/thumbprint isn't compared against a
+// null we pinned onto the plan ourselves.
+func TestUnitCAAuthVariantSiblingModifierLeavesMetadataUnknownOnSwitchToCertAuth(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	schema := caSchema(t, ctx)
+
+	config := blankCAConfig()
+	config.AuthCertificate = types.String{Value: "-----BEGIN CERTIFICATE-----new-cert-----END CERTIFICATE-----"}
+	cfg := asConfig(t, ctx, schema, config)
+
+	// Prior state: an OAuth CA. auth_certificate was never declared, so its
+	// state value is Null -- the same shape preserveSecrets leaves it in for
+	// any CA that has never used client-certificate auth.
+	priorState := blankCAConfig()
+	priorState.AuthCertificate = types.String{Null: true}
+	st := asState(t, ctx, schema, priorState)
+
+	metadataAttrs := []string{"auth_certificate_issued_dn", "auth_certificate_issuer_dn", "auth_certificate_thumbprint"}
+	for _, attrName := range metadataAttrs {
+		attrName := attrName
+		t.Run(attrName, func(t *testing.T) {
+			t.Parallel()
+
+			req := tfsdk.ModifyAttributePlanRequest{
+				AttributeState:  types.String{Null: true}, // OAuth CA: no cert metadata in prior state
+				AttributeConfig: types.String{Null: true},
+				Config:          cfg,
+				State:           st,
+			}
+			resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: types.String{Unknown: true}}
+
+			m := authVariantSiblingModifier{
+				triggerPaths:        caOAuthTriggerPaths,
+				unknownTriggerPaths: caCertAuthTriggerPaths,
+				nullValue:           types.String{Null: true},
+			}
+			m.Modify(ctx, req, resp)
+
+			got, ok := resp.AttributePlan.(types.String)
+			if !ok {
+				t.Fatalf("resp.AttributePlan is not types.String: %T", resp.AttributePlan)
+			}
+			if !got.Unknown {
+				t.Fatalf(
+					"%s plan = %+v, want Unknown -- auth_certificate is newly declared (incoming variant), so the "+
+						"server will compute fresh metadata that cannot be predicted at plan time; a Null plan "+
+						"here would still mismatch the server's known-non-null applied value, producing "+
+						"\"Provider produced inconsistent result after apply\"",
+					attrName, got,
+				)
+			}
+		})
+	}
+}
+
+// TestUnitCAAuthVariantSiblingModifierLeavesMetadataUnknownOnCertRotation
+// covers rotating auth_certificate on an already cert-auth CA: neither
+// triggerPaths (OAuth attrs, still undeclared) nor a naive "is
+// auth_certificate declared" check would catch this, because
+// auth_certificate is declared on every single apply of a cert-auth CA
+// (write-only, not Computed) -- only comparing against the PRIOR state
+// value distinguishes a genuine rotation from steady-state redeclaration.
+func TestUnitCAAuthVariantSiblingModifierLeavesMetadataUnknownOnCertRotation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	schema := caSchema(t, ctx)
+
+	config := blankCAConfig()
+	config.AuthCertificate = types.String{Value: "-----BEGIN CERTIFICATE-----new-rotated-cert-----END CERTIFICATE-----"}
+	cfg := asConfig(t, ctx, schema, config)
+
+	priorState := blankCAConfig()
+	priorState.AuthCertificate = types.String{Value: "-----BEGIN CERTIFICATE-----old-cert-----END CERTIFICATE-----"}
+	st := asState(t, ctx, schema, priorState)
+
+	metadataAttrs := []string{"auth_certificate_issued_dn", "auth_certificate_issuer_dn", "auth_certificate_thumbprint"}
+	for _, attrName := range metadataAttrs {
+		attrName := attrName
+		t.Run(attrName, func(t *testing.T) {
+			t.Parallel()
+
+			req := tfsdk.ModifyAttributePlanRequest{
+				AttributeState:  types.String{Value: "CN=old-cert-metadata"}, // real prior metadata for the OLD cert
+				AttributeConfig: types.String{Null: true},
+				Config:          cfg,
+				State:           st,
+			}
+			resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: types.String{Unknown: true}}
+
+			m := authVariantSiblingModifier{
+				triggerPaths:        caOAuthTriggerPaths,
+				unknownTriggerPaths: caCertAuthTriggerPaths,
+				nullValue:           types.String{Null: true},
+			}
+			m.Modify(ctx, req, resp)
+
+			got, ok := resp.AttributePlan.(types.String)
+			if !ok {
+				t.Fatalf("resp.AttributePlan is not types.String: %T", resp.AttributePlan)
+			}
+			if !got.Unknown {
+				t.Fatalf(
+					"%s plan = %+v, want Unknown -- auth_certificate's config value differs from its prior state "+
+						"value (a genuine rotation), so the server will compute fresh metadata for the NEW "+
+						"certificate; pinning the OLD metadata (%q) onto the plan mismatches the server's applied "+
+						"value, producing \"Provider produced inconsistent result after apply\"",
+					attrName, got, "CN=old-cert-metadata",
+				)
+			}
+		})
+	}
+}
+
+// TestUnitCAAuthVariantSiblingModifierCarriesForwardMetadataOnStableCertAuth
+// is the no-perpetual-diff companion: a steady-state cert-auth CA
+// re-declares the SAME auth_certificate value every apply (it is write-only
+// and not Computed, so config must keep supplying it or clearAuthVariant
+// treats it as cleared) -- unknownTriggerPaths must not mistake that steady
+// redeclaration for an incoming/rotating switch, or every plan on an
+// unchanged cert-auth CA would show its metadata as "(known after apply)"
+// forever.
+func TestUnitCAAuthVariantSiblingModifierCarriesForwardMetadataOnStableCertAuth(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	schema := caSchema(t, ctx)
+
+	const stableCert = "-----BEGIN CERTIFICATE-----stable-cert-----END CERTIFICATE-----"
+
+	config := blankCAConfig()
+	config.AuthCertificate = types.String{Value: stableCert}
+	cfg := asConfig(t, ctx, schema, config)
+
+	priorState := blankCAConfig()
+	priorState.AuthCertificate = types.String{Value: stableCert} // identical to config: unchanged
+	st := asState(t, ctx, schema, priorState)
+
+	metadataAttrs := []string{"auth_certificate_issued_dn", "auth_certificate_issuer_dn", "auth_certificate_thumbprint"}
+	for _, attrName := range metadataAttrs {
+		attrName := attrName
+		t.Run(attrName, func(t *testing.T) {
+			t.Parallel()
+
+			req := tfsdk.ModifyAttributePlanRequest{
+				AttributeState:  types.String{Value: "CN=stable-cert-metadata"},
+				AttributeConfig: types.String{Null: true},
+				Config:          cfg,
+				State:           st,
+			}
+			resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: types.String{Unknown: true}}
+
+			m := authVariantSiblingModifier{
+				triggerPaths:        caOAuthTriggerPaths,
+				unknownTriggerPaths: caCertAuthTriggerPaths,
+				nullValue:           types.String{Null: true},
+			}
+			m.Modify(ctx, req, resp)
+
+			got, ok := resp.AttributePlan.(types.String)
+			if !ok {
+				t.Fatalf("resp.AttributePlan is not types.String: %T", resp.AttributePlan)
+			}
+			if got.Unknown || got.Null || got.Value != "CN=stable-cert-metadata" {
+				t.Fatalf(
+					"%s plan = %+v, want the prior state value (%q) carried forward -- auth_certificate is "+
+						"unchanged from state, so this is steady-state redeclaration, not an incoming/rotating "+
+						"switch; forcing Unknown here would show a perpetual diff on every apply of an unchanged "+
+						"cert-auth CA",
+					attrName, got, "CN=stable-cert-metadata",
+				)
+			}
+		})
+	}
+}
+
+// TestUnitCAAuthVariantSiblingModifierWithoutUnknownTriggerResurrectsStaleMetadataOnRotation
+// is the concrete "red" reproduction for the cert-rotation half of finding
+// #1: run the SAME rotation scenario as
+// TestUnitCAAuthVariantSiblingModifierLeavesMetadataUnknownOnCertRotation
+// above through a modifier configured exactly like the pre-round-4 schema
+// wiring (triggerPaths only, no unknownTriggerPaths) to prove
+// unknownTriggerPaths -- not the tail's IsNull guard -- is what fixes
+// rotation: the metadata attribute's own prior state here is non-null (a
+// real cert-auth CA's real prior metadata), so the IsNull guard alone never
+// fires, and without unknownTriggerPaths there is no signal at all that
+// auth_certificate changed.
+func TestUnitCAAuthVariantSiblingModifierWithoutUnknownTriggerResurrectsStaleMetadataOnRotation(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	schema := caSchema(t, ctx)
+
+	config := blankCAConfig()
+	config.AuthCertificate = types.String{Value: "-----BEGIN CERTIFICATE-----new-rotated-cert-----END CERTIFICATE-----"}
+	cfg := asConfig(t, ctx, schema, config)
+
+	priorState := blankCAConfig()
+	priorState.AuthCertificate = types.String{Value: "-----BEGIN CERTIFICATE-----old-cert-----END CERTIFICATE-----"}
+	st := asState(t, ctx, schema, priorState)
+
+	req := tfsdk.ModifyAttributePlanRequest{
+		AttributeState:  types.String{Value: "CN=old-cert-metadata"},
+		AttributeConfig: types.String{Null: true},
+		Config:          cfg,
+		State:           st,
+	}
+	resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: types.String{Unknown: true}}
+
+	// Deliberately the pre-round-4 shape: no unknownTriggerPaths.
+	m := authVariantSiblingModifier{triggerPaths: caOAuthTriggerPaths, nullValue: types.String{Null: true}}
+	m.Modify(ctx, req, resp)
+
+	got, ok := resp.AttributePlan.(types.String)
+	if !ok {
+		t.Fatalf("resp.AttributePlan is not types.String: %T", resp.AttributePlan)
+	}
+	if got.Unknown || got.Null || got.Value != "CN=old-cert-metadata" {
+		t.Fatalf(
+			"reproduces the bug: without unknownTriggerPaths, the modifier has no way to notice auth_certificate "+
+				"changed and resurrects the stale OLD metadata (%q) from state -- got %+v, want the stale value "+
+				"resurrected to prove unknownTriggerPaths (not the tail's IsNull guard) is what fixes cert "+
+				"rotation", "CN=old-cert-metadata", got,
+		)
+	}
+}
+
+// TestUnitCAAuthVariantSiblingModifierPreRound4TailPinsNullMetadataOnSwitch
+// is the concrete "red" reproduction for the OAuth->cert-auth switch half of
+// finding #1, run against the tail logic AS IT EXISTED BEFORE this fix
+// (mirrored verbatim below -- an IsUnknown()-only guard, no IsNull() guard --
+// since that exact code no longer exists in the modifier to call directly):
+// a genuinely-null prior metadata state (an OAuth CA that never had
+// client-certificate auth) got pinned onto the plan as an explicit Null
+// instead of staying Unknown, which still mismatches the server's non-null
+// applied value once the switch to auth_certificate completes.
+func TestUnitCAAuthVariantSiblingModifierPreRound4TailPinsNullMetadataOnSwitch(t *testing.T) {
+	t.Parallel()
+
+	// req.AttributeState mirrors an OAuth CA's cert-metadata attribute: it
+	// has never been set, so it is Null (not Unknown, and not the Go-nil
+	// interface the framework itself already guards at the top of Modify).
+	state := types.String{Null: true}
+
+	// Pre-round-4 tail (resource_keyfactor_certificate_authority.go, before
+	// this fix): only checked IsUnknown(), so a Null state value fell
+	// through to being copied onto the plan verbatim.
+	var plan attr.Value = types.String{Unknown: true}
+	if !state.IsUnknown() {
+		plan = state
+	}
+
+	got, ok := plan.(types.String)
+	if !ok {
+		t.Fatalf("plan is not types.String: %T", plan)
+	}
+	if !got.Null {
+		t.Fatalf(
+			"reproduces the bug: the pre-round-4 tail (IsUnknown()-only guard) pinned the metadata plan to an "+
+				"explicit Null (got %+v) instead of leaving it Unknown, even though the OAuth->cert-auth switch "+
+				"this apply means the server will return real non-null metadata -- \"Provider produced "+
+				"inconsistent result after apply\" on the null-vs-known-string mismatch. The fix adds an "+
+				"IsNull() guard to the tail (matching tfsdk.UseStateForUnknownModifier's own contract) so this "+
+				"case is left Unknown instead", got,
+		)
 	}
 }

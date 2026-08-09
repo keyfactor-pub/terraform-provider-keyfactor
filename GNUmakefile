@@ -653,22 +653,35 @@ api-ca-gap-fields:
 # succeeded (confirmed 2026-08-08: this silently broke every caller that
 # checks api-update-ca's exit code or pipes its output onward, e.g.
 # ca_schedule_demo's step3/4/5-seed targets).
+#
+# TLS verification is controlled by KEYFACTOR_SKIP_VERIFY (set in
+# KEYFACTOR_ENV_FILE): only "true" adds curl's -k; anything else leaves
+# verification on. KEYFACTOR_CA_CERT may additionally point at a CA bundle
+# to trust via --cacert. Client credentials and the resulting bearer token
+# never appear on curl's command line (and so never in the process table any
+# other local user on a shared machine could read via `ps`) -- they're
+# written to a curl -K config file created with `mktemp` + `chmod 600` and
+# removed immediately after use.
 api-update-ca:
-	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
-		| jq -r '.access_token') && \
+	@. $(KEYFACTOR_ENV_FILE) && \
+	CURL_TLS=""; if [ "$$KEYFACTOR_SKIP_VERIFY" = "true" ]; then CURL_TLS="-k"; fi; \
+	if [ -n "$$KEYFACTOR_CA_CERT" ]; then CURL_TLS="$$CURL_TLS --cacert $$KEYFACTOR_CA_CERT"; fi; \
+	KFCFG=$$(mktemp); chmod 600 "$$KFCFG"; trap 'rm -f "$$KFCFG"' EXIT; \
+	printf 'data = "grant_type=client_credentials&client_id=%s&client_secret=%s"\n' "$$KEYFACTOR_AUTH_CLIENT_ID" "$$KEYFACTOR_AUTH_CLIENT_SECRET" > "$$KFCFG"; \
+	TOKEN=$$(curl -s $$CURL_TLS -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" -K "$$KFCFG" | jq -r '.access_token'); \
+	printf 'header = "Authorization: Bearer %s"\n' "$$TOKEN" > "$$KFCFG"; \
 	BODY=$$(cat) && \
 	RESPFILE=$$(mktemp) && \
-	HTTP_STATUS=$$(curl -sk -o "$$RESPFILE" -w "%{http_code}" -X PUT \
+	HTTP_STATUS=$$(curl -s $$CURL_TLS -o "$$RESPFILE" -w "%{http_code}" -X PUT \
 		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority?forceSave=true" \
 		-H "x-keyfactor-requested-with: APIClient" \
 		-H "x-keyfactor-api-version: 1" \
 		-H "Content-Type: application/json" \
-		-H "Authorization: Bearer $$TOKEN" \
+		-K "$$KFCFG" \
 		-d "$$BODY") && \
 	echo "HTTP_STATUS: $$HTTP_STATUS" >&2 && \
 	jq . "$$RESPFILE"; \
-	RC=$$?; rm -f "$$RESPFILE"; exit $$RC
+	RC=$$?; rm -f "$$RESPFILE" "$$KFCFG"; exit $$RC
 
 ## testint-ca-snapshot: Capture current CA state to /tmp/ca_snapshot_<CA_ID>.json.
 ##   Usage: make testint-ca-snapshot [CA_ID=1]
@@ -816,22 +829,30 @@ api-get-template:
 #   shape) piped via stdin -- mirrors api-update-ca. Used to seed/restore a
 #   template's state directly, bypassing Terraform (e.g. byte-for-byte
 #   restoration of a shared lab template after a demo run touches it).
+#
+# See api-update-ca above for the TLS-verification (KEYFACTOR_SKIP_VERIFY/
+# KEYFACTOR_CA_CERT) and secret-handling (curl -K config file, never argv)
+# conventions this target follows.
 api-update-template:
-	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
-		| jq -r '.access_token') && \
+	@. $(KEYFACTOR_ENV_FILE) && \
+	CURL_TLS=""; if [ "$$KEYFACTOR_SKIP_VERIFY" = "true" ]; then CURL_TLS="-k"; fi; \
+	if [ -n "$$KEYFACTOR_CA_CERT" ]; then CURL_TLS="$$CURL_TLS --cacert $$KEYFACTOR_CA_CERT"; fi; \
+	KFCFG=$$(mktemp); chmod 600 "$$KFCFG"; trap 'rm -f "$$KFCFG"' EXIT; \
+	printf 'data = "grant_type=client_credentials&client_id=%s&client_secret=%s"\n' "$$KEYFACTOR_AUTH_CLIENT_ID" "$$KEYFACTOR_AUTH_CLIENT_SECRET" > "$$KFCFG"; \
+	TOKEN=$$(curl -s $$CURL_TLS -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" -K "$$KFCFG" | jq -r '.access_token'); \
+	printf 'header = "Authorization: Bearer %s"\n' "$$TOKEN" > "$$KFCFG"; \
 	BODY=$$(cat) && \
 	RESPFILE=$$(mktemp) && \
-	HTTP_STATUS=$$(curl -sk -o "$$RESPFILE" -w "%{http_code}" -X PUT \
+	HTTP_STATUS=$$(curl -s $$CURL_TLS -o "$$RESPFILE" -w "%{http_code}" -X PUT \
 		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Templates" \
 		-H "x-keyfactor-requested-with: APIClient" \
 		-H "x-keyfactor-api-version: 1" \
 		-H "Content-Type: application/json" \
-		-H "Authorization: Bearer $$TOKEN" \
+		-K "$$KFCFG" \
 		-d "$$BODY") && \
 	echo "HTTP_STATUS: $$HTTP_STATUS" >&2 && \
 	jq . "$$RESPFILE"; \
-	RC=$$?; rm -f "$$RESPFILE"; exit $$RC
+	RC=$$?; rm -f "$$RESPFILE" "$$KFCFG"; exit $$RC
 
 # Certificate API targets
 #   make api-list-certs                              — list 5 most recent certs

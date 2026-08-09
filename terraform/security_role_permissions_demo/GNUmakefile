@@ -190,13 +190,17 @@ lab-omit-permissions-update:
 	 ROLE_ID=$$($(TF) output -raw role_id) && \
 	 ROLE_NAME=$$($(TF) output -raw role_name) && \
 	 echo "    target role: $$ROLE_NAME (id $$ROLE_ID)" && \
-	 TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-	   -d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
-	   | jq -r '.access_token') && \
-	 curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Security/Roles/$$ROLE_ID" \
+	 CURL_TLS=""; if [ "$$KEYFACTOR_SKIP_VERIFY" = "true" ]; then CURL_TLS="-k"; fi; \
+	 if [ -n "$$KEYFACTOR_CA_CERT" ]; then CURL_TLS="$$CURL_TLS --cacert $$KEYFACTOR_CA_CERT"; fi; \
+	 KFCFG=$$(mktemp); chmod 600 "$$KFCFG"; trap 'rm -f "$$KFCFG"' EXIT; \
+	 printf 'data = "grant_type=client_credentials&client_id=%s&client_secret=%s"\n' "$$KEYFACTOR_AUTH_CLIENT_ID" "$$KEYFACTOR_AUTH_CLIENT_SECRET" > "$$KFCFG"; \
+	 TOKEN=$$(curl -s $$CURL_TLS -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" -K "$$KFCFG" | jq -r '.access_token'); \
+	 printf 'header = "Authorization: Bearer %s"\n' "$$TOKEN" > "$$KFCFG"; \
+	 curl -s $$CURL_TLS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Security/Roles/$$ROLE_ID" \
 	   -H "x-keyfactor-requested-with: APIClient" \
 	   -H "x-keyfactor-api-version: 1" \
-	   -H "Authorization: Bearer $$TOKEN" > /tmp/security_role_permissions_demo_verify.json && \
+	   -K "$$KFCFG" > /tmp/security_role_permissions_demo_verify.json && \
+	 rm -f "$$KFCFG" && \
 	 cat /tmp/security_role_permissions_demo_verify.json | jq . && \
 	 if jq -e '.Permissions | index("Certificates:Read")' /tmp/security_role_permissions_demo_verify.json > /dev/null; then \
 	   echo "PASS: server-side permissions still contain Certificates:Read -- preserved, not cleared."; \

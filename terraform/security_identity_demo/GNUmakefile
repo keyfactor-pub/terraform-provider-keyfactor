@@ -210,13 +210,17 @@ lab-omit-roles-update:
 	@$(LAB_ENV) \
 	 ACCT=$$($(TF) output -raw identity_account_name) && \
 	 echo "    target identity: $$ACCT" && \
-	 TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-	   -d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
-	   | jq -r '.access_token') && \
-	 curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Security/Identities" \
+	 CURL_TLS=""; if [ "$$KEYFACTOR_SKIP_VERIFY" = "true" ]; then CURL_TLS="-k"; fi; \
+	 if [ -n "$$KEYFACTOR_CA_CERT" ]; then CURL_TLS="$$CURL_TLS --cacert $$KEYFACTOR_CA_CERT"; fi; \
+	 KFCFG=$$(mktemp); chmod 600 "$$KFCFG"; trap 'rm -f "$$KFCFG"' EXIT; \
+	 printf 'data = "grant_type=client_credentials&client_id=%s&client_secret=%s"\n' "$$KEYFACTOR_AUTH_CLIENT_ID" "$$KEYFACTOR_AUTH_CLIENT_SECRET" > "$$KFCFG"; \
+	 TOKEN=$$(curl -s $$CURL_TLS -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" -K "$$KFCFG" | jq -r '.access_token'); \
+	 printf 'header = "Authorization: Bearer %s"\n' "$$TOKEN" > "$$KFCFG"; \
+	 curl -s $$CURL_TLS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Security/Identities" \
 	   -H "x-keyfactor-requested-with: APIClient" \
 	   -H "x-keyfactor-api-version: 1" \
-	   -H "Authorization: Bearer $$TOKEN" > /tmp/security_identity_demo_verify.json && \
+	   -K "$$KFCFG" > /tmp/security_identity_demo_verify.json && \
+	 rm -f "$$KFCFG" && \
 	 jq --arg acct "$$ACCT" '.[] | select(.AccountName == $$acct)' /tmp/security_identity_demo_verify.json && \
 	 if jq -e --arg acct "$$ACCT" '.[] | select(.AccountName == $$acct) | .Roles | length > 0' /tmp/security_identity_demo_verify.json > /dev/null; then \
 	   echo "PASS: server-side roles are still present -- preserved, not cleared."; \

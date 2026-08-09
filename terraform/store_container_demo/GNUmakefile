@@ -268,17 +268,21 @@ repro175-seed:
 	 STORE_ID=$$($(TF) output -raw repro175_store_id) && \
 	 APP_ID=$$($(TF) output -raw application_id 2>/dev/null || $(TF) show -json | jq -r '.values.root_module.resources[] | select(.address=="keyfactor_application.demo") | .values.id') && \
 	 echo "    store: $$STORE_ID  ->  container/application id: $$APP_ID" && \
-	 TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-	   -d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
-	   | jq -r '.access_token') && \
-	 STORE_JSON=$$(curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores/$$STORE_ID" \
-	   -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 1" -H "Authorization: Bearer $$TOKEN") && \
+	 CURL_TLS=""; if [ "$$KEYFACTOR_SKIP_VERIFY" = "true" ]; then CURL_TLS="-k"; fi; \
+	 if [ -n "$$KEYFACTOR_CA_CERT" ]; then CURL_TLS="$$CURL_TLS --cacert $$KEYFACTOR_CA_CERT"; fi; \
+	 KFCFG=$$(mktemp); chmod 600 "$$KFCFG"; trap 'rm -f "$$KFCFG"' EXIT; \
+	 printf 'data = "grant_type=client_credentials&client_id=%s&client_secret=%s"\n' "$$KEYFACTOR_AUTH_CLIENT_ID" "$$KEYFACTOR_AUTH_CLIENT_SECRET" > "$$KFCFG"; \
+	 TOKEN=$$(curl -s $$CURL_TLS -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" -K "$$KFCFG" | jq -r '.access_token'); \
+	 printf 'header = "Authorization: Bearer %s"\n' "$$TOKEN" > "$$KFCFG"; \
+	 STORE_JSON=$$(curl -s $$CURL_TLS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores/$$STORE_ID" \
+	   -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 1" -K "$$KFCFG") && \
 	 UPDATED=$$(echo "$$STORE_JSON" | jq --argjson cid "$$APP_ID" '.ContainerId = $$cid | del(.ServerUsername) | del(.ServerPassword) | .Properties = ((.Properties | fromjson) | del(.ServerUsername) | del(.ServerPassword) | tojson)') && \
-	 HTTP_STATUS=$$(curl -sk -o /tmp/store_container_demo_repro175_seed.json -w "%{http_code}" -X PUT \
+	 HTTP_STATUS=$$(curl -s $$CURL_TLS -o /tmp/store_container_demo_repro175_seed.json -w "%{http_code}" -X PUT \
 	   "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores" \
 	   -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 1" \
-	   -H "Content-Type: application/json" -H "Authorization: Bearer $$TOKEN" \
+	   -H "Content-Type: application/json" -K "$$KFCFG" \
 	   -d "$$UPDATED") && \
+	 rm -f "$$KFCFG" && \
 	 echo "    PUT /CertificateStores HTTP status: $$HTTP_STATUS" && \
 	 cat /tmp/store_container_demo_repro175_seed.json && echo && \
 	 if [ "$$HTTP_STATUS" -lt 200 ] || [ "$$HTTP_STATUS" -ge 300 ]; then \
@@ -315,12 +319,16 @@ repro175-verify-apply:
 repro175-verify-server:
 	@$(LAB_ENV) \
 	 STORE_ID=$$($(TF) output -raw repro175_store_id) && \
-	 TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-	   -d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
-	   | jq -r '.access_token') && \
-	 curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores/$$STORE_ID" \
-	   -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 1" -H "Authorization: Bearer $$TOKEN" \
-	   | jq '{Id, ContainerId, ContainerName}'
+	 CURL_TLS=""; if [ "$$KEYFACTOR_SKIP_VERIFY" = "true" ]; then CURL_TLS="-k"; fi; \
+	 if [ -n "$$KEYFACTOR_CA_CERT" ]; then CURL_TLS="$$CURL_TLS --cacert $$KEYFACTOR_CA_CERT"; fi; \
+	 KFCFG=$$(mktemp); chmod 600 "$$KFCFG"; trap 'rm -f "$$KFCFG"' EXIT; \
+	 printf 'data = "grant_type=client_credentials&client_id=%s&client_secret=%s"\n' "$$KEYFACTOR_AUTH_CLIENT_ID" "$$KEYFACTOR_AUTH_CLIENT_SECRET" > "$$KFCFG"; \
+	 TOKEN=$$(curl -s $$CURL_TLS -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" -K "$$KFCFG" | jq -r '.access_token'); \
+	 printf 'header = "Authorization: Bearer %s"\n' "$$TOKEN" > "$$KFCFG"; \
+	 curl -s $$CURL_TLS "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateStores/$$STORE_ID" \
+	   -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 1" -K "$$KFCFG" \
+	   | jq '{Id, ContainerId, ContainerName}'; \
+	 rm -f "$$KFCFG"
 
 ## repro175: Full standalone reproduction sequence for issue #175.
 repro175: repro175-apply repro175-seed repro175-verify-apply repro175-verify-server

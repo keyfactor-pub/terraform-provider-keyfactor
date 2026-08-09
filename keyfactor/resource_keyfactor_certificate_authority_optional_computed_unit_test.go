@@ -82,8 +82,9 @@ func TestUnitCAPropertiesModifierSuppressesReorderedJSONDiff(t *testing.T) {
 	plan := types.String{Value: `{"a":1,"b":2}`} // same data, different key order -- config-declared
 
 	req := tfsdk.ModifyAttributePlanRequest{
-		AttributeState: state,
-		AttributePlan:  plan,
+		AttributeState:  state,
+		AttributeConfig: plan, // config declares the (differently-formatted) value, so config is known, not null/unknown
+		AttributePlan:   plan,
 	}
 	resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: req.AttributePlan}
 
@@ -159,8 +160,9 @@ func TestUnitCAPropertiesModifierUndeclaredCopiesState(t *testing.T) {
 	state := types.String{Value: `{"a":1}`}
 
 	req := tfsdk.ModifyAttributePlanRequest{
-		AttributeState: state,
-		AttributePlan:  types.String{Unknown: true},
+		AttributeState:  state,
+		AttributeConfig: types.String{Null: true}, // undeclared in config -- known-null, not the nil interface value
+		AttributePlan:   types.String{Unknown: true},
 	}
 	resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: req.AttributePlan}
 
@@ -188,6 +190,41 @@ func TestUnitCAPropertiesModifierCreateStaysUnknown(t *testing.T) {
 	got, ok := resp.AttributePlan.(types.String)
 	if assert.True(t, ok) {
 		assert.True(t, got.Unknown, "no prior state to copy from on Create -- plan must stay Unknown")
+	}
+}
+
+// TestUnitCAPropertiesModifierLeavesPlanUnknownWhenConfigUnknown is the
+// red/green regression test for full-review round 1 finding #3:
+// normalizedJSONPropertiesModifier lacked the req.AttributeConfig.IsUnknown()
+// guard that vendored tfsdk.UseStateForUnknownModifier has (attribute_plan_
+// modification.go, comment "otherwise, interpolation gets messed up"). When
+// properties is computed from a not-yet-known expression (e.g.
+// jsonencode({ref = some_other_resource.attr}) where that attribute is
+// unknown at plan time), the proposed plan is Unknown; without the guard,
+// this modifier's "plan is Unknown -> copy state forward" branch pinned the
+// plan to the stale prior-state JSON. At apply, the provider re-plans with
+// the now-resolved config, and if the resolved value's normalized form
+// differs from prior state, the final plan no longer matches what was
+// recorded -- Terraform core then rejects the apply with "Provider produced
+// inconsistent final plan". The fix mirrors the vendored modifier's own
+// guard: when config is unknown, leave the plan Unknown too.
+func TestUnitCAPropertiesModifierLeavesPlanUnknownWhenConfigUnknown(t *testing.T) {
+	req := tfsdk.ModifyAttributePlanRequest{
+		AttributeState:  types.String{Value: `{"a":1}`},
+		AttributeConfig: types.String{Unknown: true}, // e.g. jsonencode(...) referencing an unknown same-run value
+		AttributePlan:   types.String{Unknown: true},
+	}
+	resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: req.AttributePlan}
+
+	normalizedJSONPropertiesModifier{}.Modify(context.Background(), req, resp)
+
+	got, ok := resp.AttributePlan.(types.String)
+	if assert.True(t, ok, "expected resp.AttributePlan to be types.String, got %T", resp.AttributePlan) {
+		assert.True(t, got.Unknown,
+			"plan must stay Unknown when config is Unknown -- pinning it to the stale prior-state value here "+
+				"(the pre-fix bug) risks a later apply-time re-plan with the resolved config producing a "+
+				"different final value than what was recorded, which Terraform core rejects as "+
+				"\"Provider produced inconsistent final plan\"")
 	}
 }
 
@@ -335,4 +372,82 @@ func TestUnitCAValidateConfigAllowsStandaloneOnlyAttributesWhenStandaloneTrue(t 
 	cfg.UseAllowedRequesters = types.Bool{Value: true}
 	cfg.AllowedRequesters = stringSliceToTfList([]string{"Administrator"})
 	assert.False(t, validateCAConfigConstraints(cfg).HasError())
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests — full-review round 1 finding #6 (backward-compat break,
+// medium):
+//
+// The standalone-only checks above originally fired on mere DECLAREDNESS --
+// any known value, including an explicit no-op like
+// allowed_enrollment_types=0, use_allowed_requesters=false, or
+// allowed_requesters=[] -- rather than on a genuinely conflicting value.
+// buildCARequest has always sent these fields regardless of standalone, and
+// Command accepts an explicit no-op value on a non-standalone CA as exactly
+// that: a no-op. Since all three attributes are Optional+Computed, the
+// project's own documented import-then-codify workflow ("terraform state
+// show" output copied into config) routinely produces exactly this
+// declared-but-no-op shape for an existing, previously-working
+// keyfactor_certificate_authority config -- e.g. standalone=false paired
+// with an explicit use_allowed_requesters=false carried over from a prior
+// `terraform show`. Before the fix, upgrading the provider made every plan
+// in such a workspace hard-fail with no deprecation path. The fix relaxes
+// these three checks to only reject a value that actually conflicts with a
+// non-standalone CA.
+// ---------------------------------------------------------------------------
+
+// TestUnitCAValidateConfigAllowsExplicitNoOpStandaloneOnlyAttributesWithStandaloneFalse
+// is the direct regression test: standalone=false paired with an EXPLICIT
+// no-op value for each standalone-only attribute (0 / false / empty list --
+// not merely undeclared) must pass cleanly, mirroring the exact shape
+// produced by codifying `terraform state show` output for an existing
+// non-standalone CA.
+func TestUnitCAValidateConfigAllowsExplicitNoOpStandaloneOnlyAttributesWithStandaloneFalse(t *testing.T) {
+	base := func() KeyfactorCertificateAuthority {
+		cfg := caConstraintsAllUnset
+		cfg.Standalone = types.Bool{Value: false}
+		return cfg
+	}
+
+	allowedEnrollmentTypesZero := base()
+	allowedEnrollmentTypesZero.AllowedEnrollmentTypes = types.Int64{Value: 0}
+	assert.False(t, validateCAConfigConstraints(allowedEnrollmentTypesZero).HasError(),
+		"an explicit allowed_enrollment_types=0 is a no-op and must not be rejected for a non-standalone CA")
+
+	useAllowedRequestersFalse := base()
+	useAllowedRequestersFalse.UseAllowedRequesters = types.Bool{Value: false}
+	assert.False(t, validateCAConfigConstraints(useAllowedRequestersFalse).HasError(),
+		"an explicit use_allowed_requesters=false is a no-op and must not be rejected for a non-standalone CA")
+
+	allowedRequestersEmpty := base()
+	allowedRequestersEmpty.AllowedRequesters = stringSliceToTfList([]string{})
+	assert.False(t, validateCAConfigConstraints(allowedRequestersEmpty).HasError(),
+		"an explicit allowed_requesters=[] is a no-op and must not be rejected for a non-standalone CA")
+
+	// All three explicit no-ops together, the full shape codified state
+	// output would produce.
+	allNoOps := base()
+	allNoOps.AllowedEnrollmentTypes = types.Int64{Value: 0}
+	allNoOps.UseAllowedRequesters = types.Bool{Value: false}
+	allNoOps.AllowedRequesters = stringSliceToTfList([]string{})
+	assert.False(t, validateCAConfigConstraints(allNoOps).HasError(),
+		"all three standalone-only attributes declared with explicit no-op values together must not be rejected for a non-standalone CA")
+}
+
+// TestUnitCAValidateConfigStillRejectsRealStandaloneOnlyValuesWithStandaloneFalse
+// guards against finding #6's fix over-correcting into a no-op check: a
+// GENUINELY conflicting value (non-zero allowed_enrollment_types, true
+// use_allowed_requesters, or a non-empty allowed_requesters list) must still
+// be rejected when standalone=false -- this is the exact behavior
+// TestUnitCAValidateConfigRejectsStandaloneOnlyAttributesWithStandaloneFalse
+// already covers; this test additionally exercises the AllowedEnrollmentTypes
+// boundary value that most resembles a no-op-but-isn't (a small non-zero
+// bitmask) to make sure the fix's `!= 0` check, not some broader `> N`
+// threshold, is what's actually implemented.
+func TestUnitCAValidateConfigStillRejectsRealStandaloneOnlyValuesWithStandaloneFalse(t *testing.T) {
+	cfg := caConstraintsAllUnset
+	cfg.Standalone = types.Bool{Value: false}
+	cfg.AllowedEnrollmentTypes = types.Int64{Value: 1}
+	assert.True(t, validateCAConfigConstraints(cfg).HasError(),
+		"allowed_enrollment_types=1 (PFX enrollment enabled) is a genuine conflict and must still be rejected for a non-standalone CA")
 }

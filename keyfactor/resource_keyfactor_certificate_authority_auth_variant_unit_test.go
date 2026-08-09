@@ -229,3 +229,118 @@ func TestUnitCADeleteClearScheduleFallbackDoesNotConflictAuthVariants(t *testing
 		t.Errorf("FullScan: want nil (schedule was cleared for the pre-delete update), got non-nil")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Regression tests — full-review round 1 finding #4 (missing cross-field
+// validation, low):
+//
+// Before this fix, nothing at plan time rejected a config that declares BOTH
+// auth_certificate AND client_id/token_url on the same CA. clearAuthVariant's
+// switch prefers client-certificate auth (hasCertAuth case first), so it
+// silently stripped the user's declared OAuth fields from the request --
+// Command never saw the conflict and never returned its own actionable
+// "Fields for OAuth and Client Certificate Authentication cannot both be
+// provided for the same CA" error. Instead, because client_id/token_url are
+// Optional+Computed (a known, declared config value plans directly to
+// itself), Terraform recorded a plan with the user's declared client_id,
+// while the actually-created CA has no OAuth config at all -- caResponseToState
+// returns null/empty ClientID, and the framework rejects the resulting apply
+// with a confusing "Provider produced inconsistent result after apply:
+// .client_id" instead of a clear, actionable plan-time error naming both
+// attributes.
+//
+// The fix adds a ValidateConfig-time cross-field check
+// (validateCAConfigConstraints) rejecting both variants declared with a
+// genuinely non-empty value at once, mirroring the schedule-pair mutual-
+// exclusion check already added in this same file for the analogous
+// full_scan_interval_minutes/full_scan_daily_time-style conflict.
+// ---------------------------------------------------------------------------
+
+// TestUnitCAValidateConfigRejectsBothAuthVariantsDeclared is the direct
+// regression test: declaring both auth_certificate and client_id (or
+// token_url) with genuinely non-empty values must be rejected at plan time.
+func TestUnitCAValidateConfigRejectsBothAuthVariantsDeclared(t *testing.T) {
+	t.Parallel()
+
+	t.Run("auth_certificate + client_id", func(t *testing.T) {
+		t.Parallel()
+		cfg := blankCAConfig()
+		cfg.AuthCertificate = types.String{Value: "-----BEGIN CERTIFICATE-----..."}
+		cfg.ClientID = types.String{Value: "my-client-id"}
+
+		diags := validateCAConfigConstraints(cfg)
+		if !diags.HasError() {
+			t.Fatalf(
+				"expected validateCAConfigConstraints to reject auth_certificate + client_id declared " +
+					"together, got no error -- without this check, clearAuthVariant silently strips the " +
+					"declared client_id from the request, and the framework surfaces a confusing " +
+					"\"Provider produced inconsistent result after apply: .client_id\" instead of an " +
+					"actionable plan-time error",
+			)
+		}
+	})
+
+	t.Run("auth_certificate + token_url", func(t *testing.T) {
+		t.Parallel()
+		cfg := blankCAConfig()
+		cfg.AuthCertificate = types.String{Value: "-----BEGIN CERTIFICATE-----..."}
+		cfg.TokenURL = types.String{Value: "https://idp.example.com/oauth/token"}
+
+		diags := validateCAConfigConstraints(cfg)
+		if !diags.HasError() {
+			t.Fatalf("expected validateCAConfigConstraints to reject auth_certificate + token_url declared together, got no error")
+		}
+	})
+}
+
+// TestUnitCAValidateConfigAllowsEachAuthVariantAlone is the negative-space
+// companion: declaring exactly one auth variant (or neither) must never be
+// rejected by this check.
+func TestUnitCAValidateConfigAllowsEachAuthVariantAlone(t *testing.T) {
+	t.Parallel()
+
+	t.Run("client-certificate auth alone", func(t *testing.T) {
+		t.Parallel()
+		cfg := blankCAConfig()
+		cfg.AuthCertificate = types.String{Value: "-----BEGIN CERTIFICATE-----..."}
+		cfg.AuthCertificatePassword = types.String{Value: "s3cr3t"}
+
+		if diags := validateCAConfigConstraints(cfg); diags.HasError() {
+			t.Errorf("expected no error for auth_certificate declared alone, got: %+v", diags)
+		}
+	})
+
+	t.Run("OAuth alone", func(t *testing.T) {
+		t.Parallel()
+		cfg := blankCAConfig()
+		cfg.ClientID = types.String{Value: "my-client-id"}
+		cfg.TokenURL = types.String{Value: "https://idp.example.com/oauth/token"}
+
+		if diags := validateCAConfigConstraints(cfg); diags.HasError() {
+			t.Errorf("expected no error for client_id/token_url declared alone, got: %+v", diags)
+		}
+	})
+
+	t.Run("neither declared", func(t *testing.T) {
+		t.Parallel()
+		cfg := blankCAConfig()
+
+		if diags := validateCAConfigConstraints(cfg); diags.HasError() {
+			t.Errorf("expected no error when neither auth variant is declared, got: %+v", diags)
+		}
+	})
+
+	t.Run("client_id unknown alongside declared auth_certificate", func(t *testing.T) {
+		t.Parallel()
+		// An Unknown client_id (e.g. referencing another not-yet-known
+		// resource's output) can never be resolved at config-validation time --
+		// must not be treated as "declared."
+		cfg := blankCAConfig()
+		cfg.AuthCertificate = types.String{Value: "-----BEGIN CERTIFICATE-----..."}
+		cfg.ClientID = types.String{Unknown: true}
+
+		if diags := validateCAConfigConstraints(cfg); diags.HasError() {
+			t.Errorf("expected no error when client_id is Unknown (not yet resolvable), got: %+v", diags)
+		}
+	})
+}

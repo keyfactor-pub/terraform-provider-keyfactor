@@ -9,6 +9,7 @@ import (
 	"time"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -364,46 +365,58 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 			// Daily. Setting both the *_interval_minutes and *_daily_time attribute for the
 			// same schedule at once is invalid and rejected at plan time (ValidateConfig).
 			"full_scan_interval_minutes": {
-				Type:          types.Int64Type,
-				Optional:      true,
-				Computed:      true,
-				Description:   "Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with full_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.Int64Type,
+				Optional:    true,
+				Computed:    true,
+				Description: "Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with full_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					scheduleSiblingModifier{siblingPath: path.Root("full_scan_daily_time"), nullValue: types.Int64{Null: true}},
+				},
 			},
 			"full_scan_daily_time": {
-				Type:          types.StringType,
-				Optional:      true,
-				Computed:      true,
-				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					scheduleSiblingModifier{siblingPath: path.Root("full_scan_interval_minutes"), nullValue: types.String{Null: true}},
+				},
 			},
 			"incremental_scan_interval_minutes": {
-				Type:          types.Int64Type,
-				Optional:      true,
-				Computed:      true,
-				Description:   "Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with incremental_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.Int64Type,
+				Optional:    true,
+				Computed:    true,
+				Description: "Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with incremental_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					scheduleSiblingModifier{siblingPath: path.Root("incremental_scan_daily_time"), nullValue: types.Int64{Null: true}},
+				},
 			},
 			"incremental_scan_daily_time": {
-				Type:          types.StringType,
-				Optional:      true,
-				Computed:      true,
-				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					scheduleSiblingModifier{siblingPath: path.Root("incremental_scan_interval_minutes"), nullValue: types.String{Null: true}},
+				},
 			},
 			"threshold_check_interval_minutes": {
-				Type:          types.Int64Type,
-				Optional:      true,
-				Computed:      true,
-				Description:   "Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with threshold_check_daily_time.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.Int64Type,
+				Optional:    true,
+				Computed:    true,
+				Description: "Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with threshold_check_daily_time.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					scheduleSiblingModifier{siblingPath: path.Root("threshold_check_daily_time"), nullValue: types.Int64{Null: true}},
+				},
 			},
 			"threshold_check_daily_time": {
-				Type:          types.StringType,
-				Optional:      true,
-				Computed:      true,
-				Description:   "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					scheduleSiblingModifier{siblingPath: path.Root("threshold_check_interval_minutes"), nullValue: types.String{Null: true}},
+				},
 			},
 
 			// --- Write-only control flags ---
@@ -1091,6 +1104,113 @@ func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, config Keyfacto
 	reconcileSchedule(&plan.ThresholdCheckIntervalMinutes, &plan.ThresholdCheckDailyTime, config.ThresholdCheckIntervalMinutes, config.ThresholdCheckDailyTime)
 }
 
+// scheduleSiblingModifier is the plan-time half of schedule variant-switch
+// reconciliation (the other half is preserveCAUpdateFields, which only runs
+// inside Update() -- see its doc comment for why that alone is NOT
+// sufficient). Full-review round 1 finding #2:
+//
+// All six schedule attributes were Optional+Computed with only a bare
+// tfsdk.UseStateForUnknown(). Consider a CA in state with
+// full_scan_interval_minutes=60 (no full_scan_daily_time), where config
+// switches to declaring only full_scan_daily_time: core's proposed plan
+// keeps full_scan_interval_minutes at its prior state value BEFORE any
+// plan modifier runs (Computed + null config -> marked Unknown), and a bare
+// UseStateForUnknown then pins that Unknown straight back to the OLD known
+// value (60) -- it has no way to know a sibling attribute is taking over.
+// The recorded plan therefore has BOTH full_scan_interval_minutes=60 AND
+// full_scan_daily_time="<new>" at once. preserveCAUpdateFields nulls the
+// stale sibling, but only in Update()'s own LOCAL plan copy, long after
+// PlanResourceChange already recorded the plan Terraform core will compare
+// the final applied state against -- so the update succeeds server-side,
+// but Terraform then hard-fails with "Provider produced inconsistent result
+// after apply: .full_scan_interval_minutes: was cty.NumberIntVal(60), but
+// now null" on every single variant switch, in both directions, for all
+// three pairs.
+//
+// This modifier fixes it AT PLAN TIME by reading the SIBLING attribute's
+// CONFIG value (the same req.Config.GetAttribute pattern
+// displayNameFollowsFriendlyNameModifier uses to read a related attribute's
+// config) before falling back to UseStateForUnknown semantics:
+//   - Sibling declared (known) in config: this attribute's own config must be
+//     null (Modify only ever reaches the Unknown-plan branch for a
+//     null-configured Computed attribute), so the sibling is taking over --
+//     null this attribute's plan instead of resurrecting its stale prior
+//     state value.
+//   - Sibling itself Unknown (depends on some other not-yet-known value):
+//     conservatively leave this attribute Unknown too, deferring the
+//     decision to apply time rather than guessing.
+//   - Sibling also null/undeclared: ordinary UseStateForUnknown semantics --
+//     carry this attribute's own prior state value forward.
+//
+// preserveCAUpdateFields remains in place as a defensive no-op / safety net
+// for the neither-variant-declared case it already handled correctly; with
+// this modifier the variant-switch case it existed for is resolved before
+// Update() ever runs.
+//
+// This hand-ports the concept (not the code) of PR #182's unmerged
+// `pairedWith` modifier on fix/ca-schedule-daily-variant.
+type scheduleSiblingModifier struct {
+	siblingPath path.Path
+	nullValue   attr.Value
+}
+
+func (m scheduleSiblingModifier) Description(_ context.Context) string {
+	return "Uses the prior state value unless the sibling schedule variant is declared in config, in which case the plan is nulled so the new variant can take over cleanly."
+}
+
+func (m scheduleSiblingModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m scheduleSiblingModifier) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() {
+		return
+	}
+
+	var siblingConfig attr.Value
+	if diags := req.Config.GetAttribute(ctx, m.siblingPath, &siblingConfig); diags.HasError() {
+		// Conservative fallback: behave like plain UseStateForUnknown.
+		if !req.AttributeState.IsUnknown() {
+			resp.AttributePlan = req.AttributeState
+		}
+		return
+	}
+
+	switch {
+	case siblingConfig == nil:
+		// No usable sibling value -- fall through to default
+		// UseStateForUnknown semantics below.
+	case siblingConfig.IsUnknown():
+		// Cannot yet tell whether the sibling variant is taking over (it
+		// depends on some other not-yet-known value this apply) -- be
+		// conservative and leave this attribute Unknown too, rather than
+		// guessing and risking the same inconsistent-result class this
+		// modifier exists to prevent.
+		return
+	case !siblingConfig.IsNull():
+		// Sibling variant is declared in config and taking over this apply.
+		// This attribute's own config is null (guaranteed by reaching this
+		// point: AttributeConfig isn't itself Unknown, and a Computed
+		// attribute's plan only becomes Unknown when its own config is
+		// null) -- so do not resurrect this attribute's stale prior-state
+		// value onto the plan.
+		resp.AttributePlan = m.nullValue
+		return
+	}
+
+	// Sibling also null/undeclared: ordinary UseStateForUnknown semantics.
+	if req.AttributeState.IsUnknown() {
+		return
+	}
+	resp.AttributePlan = req.AttributeState
+}
+
 // ValidateConfig rejects two classes of invalid schedule configuration before
 // plan/apply ever runs: declaring both the Interval and Daily variant of the
 // same schedule pair at once (ambiguous -- buildSchedule would otherwise have
@@ -1165,6 +1285,10 @@ const caHTTPSType = 1
 //  3. allowed_enrollment_types, use_allowed_requesters, and
 //     allowed_requesters all apply to standalone CAs only -- rejecting any
 //     of them being declared while standalone is explicitly set false.
+//  4. auth_certificate and client_id/token_url (client-certificate vs OAuth
+//     authentication) are mutually exclusive -- rejecting both declared
+//     with a genuinely non-empty value at once (full-review round 1
+//     finding #4).
 //
 // Every check here follows the same declaredInConfig-style discipline as the
 // schedule validation above: a null or unknown value is never an error,
@@ -1206,28 +1330,74 @@ func validateCAConfigConstraints(cfg KeyfactorCertificateAuthority) diag.Diagnos
 		)
 	}
 
+	// Auth variant mutual exclusion (full-review round 1 finding #4): Command
+	// rejects a CA request that configures both OAuth (client_id/token_url)
+	// and client-certificate (auth_certificate) authentication at once
+	// ("Fields for OAuth and Client Certificate Authentication cannot both
+	// be provided for the same CA"). Before this check, clearAuthVariant
+	// (see its doc comment; case order there prefers client-certificate auth)
+	// silently stripped the user's declared OAuth fields from the request
+	// without telling anyone, so Command never saw -- and never reported --
+	// the conflict: the CA was created/updated with only client-certificate
+	// auth, and the framework then rejected the resulting apply with a
+	// confusing "Provider produced inconsistent result after apply:
+	// .client_id" instead of an actionable plan-time error naming the real
+	// problem. Mirrors clearAuthVariant's own isKnownNonEmptyString
+	// declaredness check so this rejects exactly the configs that function
+	// would otherwise silently resolve. A null/unknown value on either side
+	// is never an error, same discipline as every other check here.
+	if isKnownNonEmptyString(cfg.AuthCertificate) &&
+		(isKnownNonEmptyString(cfg.ClientID) || isKnownNonEmptyString(cfg.TokenURL)) {
+		diags.AddAttributeError(
+			path.Root("client_id"),
+			"Conflicting certificate authority authentication configuration",
+			"auth_certificate and client_id/token_url are mutually exclusive representations of certificate authority authentication; declare at most one variant. Command rejects a request that configures both OAuth and client-certificate authentication for the same CA.",
+		)
+	}
+
 	// F4: allowed_enrollment_types, use_allowed_requesters, and
 	// allowed_requesters all apply to standalone CAs only -- only an issue
 	// when standalone is explicitly declared false; standalone left
 	// undeclared/unknown never trips this (config-time validation can't
 	// resolve a computed/unresolved standalone value).
+	//
+	// Full-review round 1 finding #6: this originally rejected on mere
+	// DECLAREDNESS (any known value, including an explicit no-op like
+	// allowed_enrollment_types=0, use_allowed_requesters=false, or
+	// allowed_requesters=[]), rather than on a genuinely conflicting value.
+	// buildCARequest has always sent these via setBoolIfKnown/equivalent
+	// regardless of standalone, and Command accepts an explicit no-op
+	// value on a non-standalone CA as exactly that -- a no-op (confirmed
+	// live: terraform/certificate_authority_demo's committed tfstate shows
+	// Command returning standalone=false with allowed_enrollment_types=3 and
+	// use_allowed_requesters=false on a real non-standalone HTTPS CA). Since
+	// every one of these three attributes is Optional+Computed, the
+	// project's own documented import-then-codify workflow ("terraform state
+	// show" output copied into config, or make lab-import's drift-check
+	// step) routinely produces exactly this declared-but-no-op shape, and
+	// rejecting it at plan time is a backward-compatibility break with no
+	// deprecation path: existing configs that applied cleanly on prior
+	// provider versions would hard-fail every plan after upgrading. Only
+	// reject a value that actually conflicts with a non-standalone CA:
+	// allowed_enrollment_types != 0, use_allowed_requesters == true, or a
+	// non-empty allowed_requesters list.
 	standaloneKnown := !cfg.Standalone.Null && !cfg.Standalone.Unknown
 	if standaloneKnown && !cfg.Standalone.Value {
-		if !cfg.AllowedEnrollmentTypes.Null && !cfg.AllowedEnrollmentTypes.Unknown {
+		if !cfg.AllowedEnrollmentTypes.Null && !cfg.AllowedEnrollmentTypes.Unknown && cfg.AllowedEnrollmentTypes.Value != 0 {
 			diags.AddAttributeError(
 				path.Root("allowed_enrollment_types"),
 				"Invalid certificate authority attribute for a non-standalone CA",
 				"allowed_enrollment_types requires standalone=true.",
 			)
 		}
-		if !cfg.UseAllowedRequesters.Null && !cfg.UseAllowedRequesters.Unknown {
+		if !cfg.UseAllowedRequesters.Null && !cfg.UseAllowedRequesters.Unknown && cfg.UseAllowedRequesters.Value {
 			diags.AddAttributeError(
 				path.Root("use_allowed_requesters"),
 				"Invalid certificate authority attribute for a non-standalone CA",
 				"use_allowed_requesters applies to standalone CAs only.",
 			)
 		}
-		if !cfg.AllowedRequesters.Null && !cfg.AllowedRequesters.Unknown {
+		if !cfg.AllowedRequesters.Null && !cfg.AllowedRequesters.Unknown && len(cfg.AllowedRequesters.Elems) > 0 {
 			diags.AddAttributeError(
 				path.Root("allowed_requesters"),
 				"Invalid certificate authority attribute for a non-standalone CA",
@@ -1758,12 +1928,20 @@ func normalizePropertiesJSON(s string) string {
 // Modify runs in this order:
 //  1. No prior state (Create) -- nothing to compare against; leave the plan
 //     alone.
-//  2. Plan is Unknown (properties undeclared in config, Computed-only) --
+//  2. Config is Unknown (properties computed from a not-yet-known
+//     expression, e.g. referencing another resource's attribute applied in
+//     the same run) -- leave the plan Unknown too, mirroring
+//     tfsdk.UseStateForUnknownModifier's own guard ("otherwise interpolation
+//     gets messed up"). Pinning the plan to the stale prior-state value here
+//     would make apply's re-plan against the now-resolved config produce a
+//     different final value than what was recorded, which Terraform core
+//     rejects as "Provider produced inconsistent final plan".
+//  3. Plan is Unknown (properties undeclared in config, Computed-only) --
 //     fall back to plain UseStateForUnknown semantics: copy state forward.
-//  3. Plan and state are both known strings and, once parsed and
+//  4. Plan and state are both known strings and, once parsed and
 //     re-marshaled, are semantically equal -- keep the prior state value
 //     (byte-for-byte) so the diff (and the Update PUT) disappears.
-//  4. Otherwise (a genuine value change, or either side isn't a comparable
+//  5. Otherwise (a genuine value change, or either side isn't a comparable
 //     JSON string) -- leave the plan as computed, surfacing a real diff.
 type normalizedJSONPropertiesModifier struct{}
 
@@ -1776,12 +1954,20 @@ func (m normalizedJSONPropertiesModifier) MarkdownDescription(ctx context.Contex
 }
 
 func (m normalizedJSONPropertiesModifier) Modify(_ context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
-	if req.AttributeState == nil || resp.AttributePlan == nil {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
 		return
 	}
 	stateVal, ok := req.AttributeState.(types.String)
 	if !ok || stateVal.Unknown {
 		// No usable prior state (e.g. Create) -- nothing to compare against.
+		return
+	}
+
+	if req.AttributeConfig.IsUnknown() {
+		// Config itself is unknown (e.g. an interpolated reference to a
+		// not-yet-applied resource) -- leave the plan Unknown rather than
+		// pinning it to a stale state value that apply's re-plan may not agree
+		// with once the config resolves.
 		return
 	}
 

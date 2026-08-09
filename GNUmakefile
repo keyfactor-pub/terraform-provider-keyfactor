@@ -611,15 +611,19 @@ api-list-cas:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
+## api-get-ca is hardened via the shared KF_API_GET recipe (see its
+## definition below, next to KF_API_PUT): unlike the other api-list-*/api-get-*
+## debugging targets in this file, api-get-ca is called by the
+## ca_schedule_demo harness's step3/4/5 seed/verify targets, chained straight
+## into api-update-ca (which is already hardened) to read-modify-write a
+## CA's schedule out-of-band -- so it shares api-update-ca's credential
+## exposure and hardcoded-TLS-skip fix (full-review round 4 finding #2). The
+## sibling api-list-cas/api-list-cas-short/api-ca-gap-fields/api-list-agents
+## targets just above are plain ad-hoc debugging aids no harness or Makefile
+## target calls, so they're left as-is rather than churning unrelated code.
 api-get-ca:
 	@if [ -z "$(CA_ID)" ]; then echo "Usage: make api-get-ca CA_ID=<id>"; exit 1; fi
-	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
-		| jq -r '.access_token') && \
-	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateAuthority/$(CA_ID)" \
-		-H "x-keyfactor-requested-with: APIClient" \
-		-H "x-keyfactor-api-version: 1" \
-		-H "Authorization: Bearer $$TOKEN" | jq .
+	$(call KF_API_GET,https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateAuthority/$(CA_ID))
 
 api-list-cas-short:
 	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
@@ -703,6 +707,36 @@ define KF_API_PUT
 	case "$$HTTP_STATUS" in \
 		2??) jq . "$$RESPFILE"; RC=$$?;; \
 		*) echo "KF_API_PUT: PUT to $(1) failed with HTTP $$HTTP_STATUS. Response body:" >&2; cat "$$RESPFILE" >&2; RC=22;; \
+	esac; \
+	rm -f "$$RESPFILE" "$$KFCFG"; exit $$RC
+endef
+
+# KF_API_GET: shared canned recipe for a read-only GET against a Command API
+# endpoint, parameterized on the full target URL ($(1)). The GET-side
+# counterpart of KF_API_PUT above -- same KF_CURL_AUTH preamble (gated TLS,
+# mktemp+chmod-600 curl -K config so credentials/bearer token never appear on
+# curl's argv/in `ps`), same HTTP-status gate so a failed GET (expired OAuth
+# secret, bad ID) exits non-zero instead of jq silently parsing an error body
+# and returning 0. Introduced so api-get-ca -- called out-of-band by the
+# ca_schedule_demo harness's step3/4/5 seed/verify targets, piped straight
+# into the already-hardened api-update-ca -- gets the same credential
+# handling instead of the ad-hoc `curl -sk` + argv-token pattern the other
+# plain debugging api-list-*/api-get-* targets in this file still use
+# (full-review round 4 finding #2).
+#
+# Usage: make api-get-ca CA_ID=1
+define KF_API_GET
+	@. $(KEYFACTOR_ENV_FILE) && \
+	$(KF_CURL_AUTH) \
+	RESPFILE=$$(mktemp) && \
+	HTTP_STATUS=$$(curl -s $$CURL_TLS -o "$$RESPFILE" -w "%{http_code}" \
+		"$(1)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-K "$$KFCFG") && \
+	case "$$HTTP_STATUS" in \
+		2??) jq . "$$RESPFILE"; RC=$$?;; \
+		*) echo "KF_API_GET: GET $(1) failed with HTTP $$HTTP_STATUS. Response body:" >&2; cat "$$RESPFILE" >&2; RC=22;; \
 	esac; \
 	rm -f "$$RESPFILE" "$$KFCFG"; exit $$RC
 endef

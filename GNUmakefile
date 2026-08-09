@@ -641,18 +641,17 @@ api-ca-gap-fields:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq '{UseForEnrollment, CertificateCleanupEnabled, DeleteWithArchivedKey, TimeAfterExpiration, TimeAfterExpirationUnits}'
 
-# api-update-ca: PUT /CertificateAuthority?forceSave=true using the CA JSON snapshot
-# piped via stdin.  Useful for verifying the correct PUT URL (no ID in path).
-# Usage: make api-get-ca CA_ID=1 | make api-update-ca
+# KF_API_PUT: shared canned recipe for a stdin-body PUT against a Command API
+# endpoint, parameterized on the full target URL ($(1)). api-update-ca and
+# api-update-template both call this -- they were previously two
+# byte-for-byte-identical ~20-line recipes (api-update-template's own comment
+# said "mirrors api-update-ca") differing only in this URL, which meant the
+# security-sensitive credential-handling block below had to be hand-patched
+# in two places every time it changed (as it just was, twice, to add the
+# HTTP-status gate below). Deduping to one edit point makes that impossible
+# to reintroduce (full-review round 2 advisory A).
 #
-# NOTE: the HTTP status is written to STDERR, not interleaved with the
-# response body on stdout. A prior version used `curl -w "\nHTTP_STATUS:
-# %{http_code}\n" | jq .`, which appends non-JSON trailing text to stdout --
-# jq then tries to parse it as a second JSON document and fails with "parse
-# error: Invalid numeric literal" and exit code 5, even when the PUT itself
-# succeeded (confirmed 2026-08-08: this silently broke every caller that
-# checks api-update-ca's exit code or pipes its output onward, e.g.
-# ca_schedule_demo's step3/4/5-seed targets).
+# Usage: make api-get-ca CA_ID=1 | make api-update-ca
 #
 # TLS verification is controlled by KEYFACTOR_SKIP_VERIFY (set in
 # KEYFACTOR_ENV_FILE): only "true" adds curl's -k; anything else leaves
@@ -662,7 +661,24 @@ api-ca-gap-fields:
 # other local user on a shared machine could read via `ps`) -- they're
 # written to a curl -K config file created with `mktemp` + `chmod 600` and
 # removed immediately after use.
-api-update-ca:
+#
+# HTTP-status gating (full-review round 2 finding #3): the HTTP status is
+# captured via curl -w into $$HTTP_STATUS and written to STDERR, never
+# interleaved with the response body on stdout (a prior version used `curl -w
+# "\nHTTP_STATUS: %{http_code}\n" | jq .`, which appended non-JSON trailing
+# text to stdout that made jq fail on a SUCCESSFUL PUT). But that fix alone
+# left the target's exit code coming from `jq . "$$RESPFILE"` parsing
+# whatever body Command returned -- and jq happily parses an error response
+# body (or an empty one) and exits 0, so a rejected PUT (expired OAuth
+# secret -> "Bearer null" -> 401; a 400 on a malformed CA/template body) still
+# made the recipe exit 0. Callers that gate on this target's exit code (e.g.
+# ca_schedule_demo's step3/4/5-seed targets, whose own comments say they
+# exist specifically so callers CAN check that exit code) would then proceed
+# past a seed that silently never happened, corrupting the harness's verdict
+# for whatever downstream regression it was trying to demonstrate. Gating
+# explicitly on $$HTTP_STATUS's first digit closes that gap: only a 2xx
+# response is treated as success.
+define KF_API_PUT
 	@. $(KEYFACTOR_ENV_FILE) && \
 	CURL_TLS=""; if [ "$$KEYFACTOR_SKIP_VERIFY" = "true" ]; then CURL_TLS="-k"; fi; \
 	if [ -n "$$KEYFACTOR_CA_CERT" ]; then CURL_TLS="$$CURL_TLS --cacert $$KEYFACTOR_CA_CERT"; fi; \
@@ -673,15 +689,25 @@ api-update-ca:
 	BODY=$$(cat) && \
 	RESPFILE=$$(mktemp) && \
 	HTTP_STATUS=$$(curl -s $$CURL_TLS -o "$$RESPFILE" -w "%{http_code}" -X PUT \
-		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority?forceSave=true" \
+		"$(1)" \
 		-H "x-keyfactor-requested-with: APIClient" \
 		-H "x-keyfactor-api-version: 1" \
 		-H "Content-Type: application/json" \
 		-K "$$KFCFG" \
 		-d "$$BODY") && \
 	echo "HTTP_STATUS: $$HTTP_STATUS" >&2 && \
-	jq . "$$RESPFILE"; \
-	RC=$$?; rm -f "$$RESPFILE" "$$KFCFG"; exit $$RC
+	case "$$HTTP_STATUS" in \
+		2??) jq . "$$RESPFILE"; RC=$$?;; \
+		*) echo "KF_API_PUT: PUT to $(1) failed with HTTP $$HTTP_STATUS. Response body:" >&2; cat "$$RESPFILE" >&2; RC=22;; \
+	esac; \
+	rm -f "$$RESPFILE" "$$KFCFG"; exit $$RC
+endef
+
+# api-update-ca: PUT /CertificateAuthority?forceSave=true using the CA JSON
+# snapshot piped via stdin. Useful for verifying the correct PUT URL (no ID
+# in path). See KF_API_PUT above for the shared implementation.
+api-update-ca:
+	$(call KF_API_PUT,https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority?forceSave=true)
 
 ## testint-ca-snapshot: Capture current CA state to /tmp/ca_snapshot_<CA_ID>.json.
 ##   Usage: make testint-ca-snapshot [CA_ID=1]
@@ -826,33 +852,12 @@ api-get-template:
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
 # api-update-template: PUT /Templates with a raw JSON body (UpdateTemplateArg
-#   shape) piped via stdin -- mirrors api-update-ca. Used to seed/restore a
-#   template's state directly, bypassing Terraform (e.g. byte-for-byte
-#   restoration of a shared lab template after a demo run touches it).
-#
-# See api-update-ca above for the TLS-verification (KEYFACTOR_SKIP_VERIFY/
-# KEYFACTOR_CA_CERT) and secret-handling (curl -K config file, never argv)
-# conventions this target follows.
+#   shape) piped via stdin -- mirrors api-update-ca via the shared KF_API_PUT
+#   define above. Used to seed/restore a template's state directly, bypassing
+#   Terraform (e.g. byte-for-byte restoration of a shared lab template after a
+#   demo run touches it).
 api-update-template:
-	@. $(KEYFACTOR_ENV_FILE) && \
-	CURL_TLS=""; if [ "$$KEYFACTOR_SKIP_VERIFY" = "true" ]; then CURL_TLS="-k"; fi; \
-	if [ -n "$$KEYFACTOR_CA_CERT" ]; then CURL_TLS="$$CURL_TLS --cacert $$KEYFACTOR_CA_CERT"; fi; \
-	KFCFG=$$(mktemp); chmod 600 "$$KFCFG"; trap 'rm -f "$$KFCFG"' EXIT; \
-	printf 'data = "grant_type=client_credentials&client_id=%s&client_secret=%s"\n' "$$KEYFACTOR_AUTH_CLIENT_ID" "$$KEYFACTOR_AUTH_CLIENT_SECRET" > "$$KFCFG"; \
-	TOKEN=$$(curl -s $$CURL_TLS -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" -K "$$KFCFG" | jq -r '.access_token'); \
-	printf 'header = "Authorization: Bearer %s"\n' "$$TOKEN" > "$$KFCFG"; \
-	BODY=$$(cat) && \
-	RESPFILE=$$(mktemp) && \
-	HTTP_STATUS=$$(curl -s $$CURL_TLS -o "$$RESPFILE" -w "%{http_code}" -X PUT \
-		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Templates" \
-		-H "x-keyfactor-requested-with: APIClient" \
-		-H "x-keyfactor-api-version: 1" \
-		-H "Content-Type: application/json" \
-		-K "$$KFCFG" \
-		-d "$$BODY") && \
-	echo "HTTP_STATUS: $$HTTP_STATUS" >&2 && \
-	jq . "$$RESPFILE"; \
-	RC=$$?; rm -f "$$RESPFILE" "$$KFCFG"; exit $$RC
+	$(call KF_API_PUT,https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Templates)
 
 # Certificate API targets
 #   make api-list-certs                              — list 5 most recent certs

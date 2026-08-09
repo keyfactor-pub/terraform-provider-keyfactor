@@ -10,53 +10,11 @@
 ##   make all            # run the full workflow
 ##   make SUFFIX=_MY_ORG generate  # regenerate with custom suffix
 
-PROVIDER_ROOT := $(abspath ../..)
-PROVIDER_BIN  := $(HOME)/go/bin
-SUFFIX        ?= _TF
-
-PROVIDER_MODE ?= registry
-
-ifeq ($(PROVIDER_MODE),dev)
-TF            := TF_CLI_CONFIG_FILE=.terraformrc terraform
-else
-TF            := TF_CLI_CONFIG_FILE=$(PROVIDER_ROOT)/terraform/.terraformrc.registry terraform
-endif
-UNSET_BASIC   := unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN;
-
-# ---------------------------------------------------------------------------
-# Lab environment helpers
-# Source KEYFACTOR_ENV_FILE for OAuth credentials.
-# Override via: make KEYFACTOR_ENV_FILE=~/.env_other lifecycle
-# ---------------------------------------------------------------------------
-SHELL         := /bin/bash
-KEYFACTOR_ENV_FILE ?= $(HOME)/.env_kfclab
-LAB_TIMEOUT   ?= 600
-
-LAB_ENV := set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
-           unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN && \
-           export KEYFACTOR_CLIENT_TIMEOUT=$(LAB_TIMEOUT) &&
-
-# ---------------------------------------------------------------------------
-# Provider build
-# ---------------------------------------------------------------------------
-
-## build: Compile and install the provider binary to ~/go/bin
-build:
-	@echo "==> Building provider..."
-	cd $(PROVIDER_ROOT) && go install .
-	@echo "==> Provider installed to $(PROVIDER_BIN)/terraform-provider-keyfactor"
+include ../demo-common.mk
 
 # ---------------------------------------------------------------------------
 # Terraform lifecycle
 # ---------------------------------------------------------------------------
-
-## init: Initialize the Terraform working directory
-init:
-	$(UNSET_BASIC) $(TF) init
-
-## validate: Validate the Terraform configuration
-validate:
-	$(UNSET_BASIC) $(TF) validate
 
 ## apply-data: Apply only the data sources (discovers all store types, saves state)
 apply-data:

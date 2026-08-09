@@ -45,32 +45,7 @@
 ##   make lifecycle        # runs all of the above in order; see the lifecycle target
 ##                          # itself for how step5's expected failure is handled
 
-PROVIDER_ROOT  := $(abspath ../..)
-PROVIDER_BIN   := $(HOME)/go/bin
-SUFFIX         ?= _TF
-
-PROVIDER_MODE ?= registry
-
-ifeq ($(PROVIDER_MODE),dev)
-TF            := TF_CLI_CONFIG_FILE=.terraformrc terraform
-else
-TF            := TF_CLI_CONFIG_FILE=$(PROVIDER_ROOT)/terraform/.terraformrc.registry terraform
-endif
-UNSET_BASIC   := unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN;
-
-SHELL         := /bin/bash
-KEYFACTOR_ENV_FILE ?= $(HOME)/.env_kfclab
-LAB_TIMEOUT   ?= 600
-
-LAB_ENV := set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
-           unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN && \
-           export KEYFACTOR_CLIENT_TIMEOUT=$(LAB_TIMEOUT) &&
-
-## build: Compile and install the provider binary to ~/go/bin
-build:
-	@echo "==> Building provider..."
-	cd $(PROVIDER_ROOT) && go install .
-	@echo "==> Provider installed to $(PROVIDER_BIN)/terraform-provider-keyfactor"
+include ../demo-common.mk
 
 ## authcert: Generate a throwaway self-signed authcert.pfx (never committed --
 ##   see .gitignore). Only needed if this lab's Command instance rejects

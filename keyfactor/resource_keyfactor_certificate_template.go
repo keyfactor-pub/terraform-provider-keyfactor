@@ -1199,11 +1199,18 @@ func buildTemplateUpdateRequest(
 //
 // TemplatePolicy and the TemplateRegexes/TemplateDefaults/EnrollmentFields/
 // MetadataFields collections are native Go pointer/slice types rather than
-// types.List/types.Object, so "declared empty" and "undeclared" cannot be
-// distinguished -- nil/empty is conservatively treated as "undeclared" and
-// filled from the server's current value, the same modeling limitation
-// already documented on buildTemplateRoleBindingUpdateArg for the older
-// client's equivalent fields.
+// types.List/types.Object. Unlike TemplatePolicy (a pointer, where nil really
+// is the only "unset" representation available), the four slice fields CAN
+// distinguish "declared empty" from "undeclared": the plugin framework's
+// reflection layer (internal/reflect/slice.go, BuildValue) decodes a null
+// list into a nil Go slice but a known (possibly zero-length) list into a
+// non-nil slice via reflect.MakeSlice -- so `plan.X == nil` means undeclared
+// (or explicitly null) while a non-nil `plan.X` with len 0 means the config
+// declared `x = []` and intends a clear. The checks below key off nil-ness,
+// not len(), for exactly that reason: a `len(plan.X) == 0` check cannot tell
+// those two cases apart and would silently refill a declared-empty list from
+// the server, so the clear the user asked for would never actually happen
+// (see full-review round 2 finding #1).
 //
 // Every field TemplatesTemplateUpdateRequest can represent is covered here.
 // KeyType is the one further field GetTemplateResponse (the OLDER client
@@ -1282,16 +1289,16 @@ func preserveUndeclaredTemplateFields(plan *KeyfactorCertificateTemplateState, c
 		}
 	}
 
-	if len(plan.TemplateRegexes) == 0 {
+	if plan.TemplateRegexes == nil {
 		plan.TemplateRegexes = c.TemplateRegexes
 	}
-	if len(plan.TemplateDefaults) == 0 {
+	if plan.TemplateDefaults == nil {
 		plan.TemplateDefaults = c.TemplateDefaults
 	}
-	if len(plan.EnrollmentFields) == 0 {
+	if plan.EnrollmentFields == nil {
 		plan.EnrollmentFields = c.EnrollmentFields
 	}
-	if len(plan.MetadataFields) == 0 {
+	if plan.MetadataFields == nil {
 		plan.MetadataFields = c.MetadataFields
 	}
 }
@@ -1299,7 +1306,9 @@ func preserveUndeclaredTemplateFields(plan *KeyfactorCertificateTemplateState, c
 // templateUpdateNeedsPreservationFetch reports whether any writable field
 // TemplatesTemplateUpdateRequest can represent is left undeclared on plan --
 // i.e. whether Update() needs a preservation GET at all before its PUT. When
-// every field is explicitly declared, the fetch (and
+// every field is explicitly declared -- including a collection declared as an
+// explicit empty list, which is a real "clear this" declaration rather than
+// an omission (see preserveUndeclaredTemplateFields) -- the fetch (and
 // preserveUndeclaredTemplateFields, which is then a no-op) is skipped
 // entirely so a fully-specified config incurs no extra API call.
 func templateUpdateNeedsPreservationFetch(plan *KeyfactorCertificateTemplateState) bool {
@@ -1317,10 +1326,45 @@ func templateUpdateNeedsPreservationFetch(plan *KeyfactorCertificateTemplateStat
 		plan.TimeAfterExpirationUnits.Null || plan.TimeAfterExpirationUnits.Unknown ||
 		plan.DeleteWithArchivedKey.Null || plan.DeleteWithArchivedKey.Unknown ||
 		plan.TemplatePolicy == nil ||
-		len(plan.TemplateRegexes) == 0 ||
-		len(plan.TemplateDefaults) == 0 ||
-		len(plan.EnrollmentFields) == 0 ||
-		len(plan.MetadataFields) == 0
+		plan.TemplateRegexes == nil ||
+		plan.TemplateDefaults == nil ||
+		plan.EnrollmentFields == nil ||
+		plan.MetadataFields == nil
+}
+
+// preserveTfListEmptyVsNull is the types.List analog of
+// preserveListEmptyVsNull (see resource_keyfactor_certificate_store_type.go,
+// issue #192) for Optional+Computed list attributes backed by types.List --
+// here, allowed_requesters -- rather than a native Go slice.
+//
+// templateResponseToState maps AllowedRequesters to a known list only when
+// the server returns a non-empty array; an empty/absent array always becomes
+// types.List{Null: true} (see its "AllowedRequesters" comment), regardless
+// of whether the user declared `allowed_requesters = []` (a real "clear the
+// list" intent, which the PUT above did carry out) or left the attribute
+// undeclared. Left alone, a declared-empty plan value (known, 0 elements)
+// disagrees with that always-null response shape and Terraform core rejects
+// the apply with "Provider produced inconsistent result after apply" --
+// permanently, since the next Read reproduces the same null vs. the user's
+// still-declared [] on every subsequent plan (full-review round 2 finding
+// #1b).
+//
+// target is only ever Null or a non-empty known list coming out of
+// templateResponseToState, never a known empty list -- so it is enough to
+// key off target.Null and reference's null-ness alone: reference (the plan
+// in Update, or prior state in Read) faithfully preserves "declared empty"
+// vs. "undeclared" because the reflection layer encodes them differently (a
+// non-nil empty Go slice underlies a known empty list -- see
+// preserveUndeclaredTemplateFields's doc comment). A populated target is left
+// untouched -- there both shapes already agree with any non-null reference.
+func preserveTfListEmptyVsNull(target *types.List, reference types.List) {
+	if !target.Null {
+		return
+	}
+	if reference.Null || reference.Unknown {
+		return
+	}
+	*target = types.List{Elems: []attr.Value{}, ElemType: target.ElemType}
 }
 
 func buildKeyInfoRequest(ki *TemplateKeyInfo) *v1.CSSCMSDataModelModelsTemplatesAlgorithmsKeyInfo {
@@ -1401,6 +1445,19 @@ func (r resourceCertificateTemplate) Read(
 	}
 
 	newState := templateResponseToState(resp)
+
+	// Reconcile the null-vs-empty shape of the writable collections against
+	// prior state rather than trusting the server response's shape alone --
+	// see preserveTfListEmptyVsNull/preserveListEmptyVsNull's doc comments
+	// (full-review round 2 finding #1b) for why templateResponseToState
+	// cannot, by itself, tell "declared empty" apart from "undeclared" once
+	// the server reports zero entries.
+	preserveTfListEmptyVsNull(&newState.AllowedRequesters, state.AllowedRequesters)
+	preserveListEmptyVsNull(&newState.TemplateRegexes, state.TemplateRegexes)
+	preserveListEmptyVsNull(&newState.TemplateDefaults, state.TemplateDefaults)
+	preserveListEmptyVsNull(&newState.EnrollmentFields, state.EnrollmentFields)
+	preserveListEmptyVsNull(&newState.MetadataFields, state.MetadataFields)
+
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
 	LogFunctionExit(ctx, "resourceCertificateTemplate.Read")
@@ -1486,6 +1543,20 @@ func (r resourceCertificateTemplate) Update(
 	}
 
 	newState := templateResponseToState(resp)
+
+	// Reconcile the null-vs-empty shape of the writable collections against
+	// plan rather than trusting the server response's shape alone -- a
+	// declared `x = []` (a real clear, sent above) must read back as a known
+	// empty list to match the plan's known-empty value, not collapse to null
+	// the way an always-empty-on-clear server response otherwise would. See
+	// preserveTfListEmptyVsNull/preserveListEmptyVsNull's doc comments
+	// (full-review round 2 finding #1b).
+	preserveTfListEmptyVsNull(&newState.AllowedRequesters, plan.AllowedRequesters)
+	preserveListEmptyVsNull(&newState.TemplateRegexes, plan.TemplateRegexes)
+	preserveListEmptyVsNull(&newState.TemplateDefaults, plan.TemplateDefaults)
+	preserveListEmptyVsNull(&newState.EnrollmentFields, plan.EnrollmentFields)
+	preserveListEmptyVsNull(&newState.MetadataFields, plan.MetadataFields)
+
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
 	LogFunctionExit(ctx, "resourceCertificateTemplate.Update")

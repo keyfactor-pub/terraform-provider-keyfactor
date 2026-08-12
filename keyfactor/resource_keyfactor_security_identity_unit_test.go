@@ -1054,3 +1054,113 @@ func TestUnitSecurityIdentityResource_UpdateResolvesNumericRoleIdViaIdPath(t *te
 		"Update() must resolve and grant the declared numeric role ID via the ID-path lookup, not fail to resolve it via a doomed name lookup",
 	)
 }
+
+// TestUnitSecurityIdentityResource_UpdateRejectsUnverifiedRoleNameMatch is a
+// regression test for Fix C: GetSecurityRole's string branch builds
+// `name -eq "<value>"` PQL with zero escaping of the declared role string
+// (keyfactor-go-client v3/api/security.go). A pre-existing `[^\w]` sanitizer
+// used to strip quotes and PQL operators from the role string before lookup,
+// accidentally closing off query injection; it was removed (correctly, to
+// stop mangling legitimate names like "Power Users") but nothing replaced
+// the safeguard it happened to provide.
+//
+// This simulates a successful injection: the declared role string is a
+// PQL-operator-shaped payload containing an embedded `"`, and the mock
+// server's name-query handler returns an entirely unrelated role
+// ("Administrators") rather than erroring or reporting "not found" -- as
+// Command's query parser might do if it honors an injected `-or` clause.
+// resolveDeclaredSecurityRole must reject this as unresolved (the returned
+// role's Name doesn't match the declared string) rather than trusting the
+// query match, so Update() surfaces an error and never calls setIdentityRole
+// with the unrelated role's ID.
+func TestUnitSecurityIdentityResource_UpdateRejectsUnverifiedRoleNameMatch(t *testing.T) {
+	ctx := context.Background()
+
+	const injectionPayload = `Foo" -or name -eq "Administrators`
+
+	var mutationCalled bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutationCalled = true
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"Id": 1, "Name": "Administrators"})
+			return
+		}
+		// Simulate a successful injection: the query for the payload string
+		// returns an unrelated, genuinely-existing role instead of erroring
+		// or coming back empty.
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
+			{"Id": 1, "Name": "Administrators", "Description": ""},
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutationCalled = true
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		// Description must be non-blank: UpdateSecurityRole (called by
+		// addIdentityToRole) rejects a blank Description with a client-side
+		// validation error before ever issuing the PUT. Without a non-blank
+		// Description here, setIdentityRole would error out for that
+		// unrelated reason even on the UNFIXED code, masking whether Fix C's
+		// name-match check is actually what's preventing the mutation.
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Id": 1, "Name": "Administrators", "Description": "Built-in administrators role"})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	state := SecurityIdentity{
+		ID:           types.Int64{Value: 42},
+		AccountName:  types.String{Value: `KEYFACTOR\\tf-unit-injection`},
+		IdentityType: types.String{Value: "User"},
+		Valid:        types.Bool{Value: true},
+		Roles:        types.List{ElemType: types.StringType, Elems: []attr.Value{}},
+	}
+
+	plan := state
+	plan.Roles = types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: injectionPayload},
+	}}
+	config := plan
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
+
+	r := resourceSecurityIdentity{p: provider{configured: true, client: client}}
+
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+
+	assert.True(
+		t, resp.Diagnostics.HasError(),
+		"Update() must reject a name-query match whose returned role Name doesn't match the declared string -- an unverified match must not be trusted, even if Command's query parser honored an injected clause",
+	)
+	assert.False(
+		t, mutationCalled,
+		"Update() must not call setIdentityRole (any role add/remove) when the declared role's lookup could not be verified",
+	)
+}

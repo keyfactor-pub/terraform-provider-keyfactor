@@ -259,11 +259,40 @@ func identityRolesResultForRead(stateRoles types.List, serverRoles []api.Securit
 // always) fails to find one, even though a role with ID 7 exists. Parsing the
 // declared string as an integer first and passing it through as an int fixes
 // this by routing it to the real ID-path lookup.
+//
+// For the remaining name-based (string) lookups, GetSecurityRole's string
+// branch builds `name -eq "<value>"` PQL with ZERO escaping of the value
+// (keyfactor-go-client v3/api/security.go). Before this resource's roles
+// attribute accepted arbitrary role name strings, a `[^\w]` regex used to
+// strip every non-word character -- including quotes and PQL operators --
+// before the lookup, which accidentally closed off query injection via a
+// role name containing an embedded `"`. That regex was removed because it
+// also mangled legitimate names (e.g. "Power Users" -> "PowerUsers"), but
+// nothing replaced the safeguard it happened to provide: a role string like
+// `Foo" -or name -eq "Administrators` reaches Command's predicate-query
+// parser unescaped, and if Command's parser honors the injected clause,
+// GetSecurityRole could return an unintended (possibly higher-privileged)
+// role. Since the escaping itself isn't fixed here (that's the go-client
+// library's responsibility, out of scope for this provider-side change),
+// this instead verifies the returned role's Name actually matches the
+// declared string -- case-insensitively, consistent with
+// identityRolesResultForRead's role-name matching convention -- before
+// trusting kfRole.Id. A mismatch is treated as unresolved ((nil, nil), same
+// shape as a genuine "not found") so callers' existing not-found handling
+// rejects it rather than silently trusting an unverified query match.
 func resolveDeclaredSecurityRole(client *api.Client, roleStr string) (*api.GetSecurityRoleResponse, error) {
 	if id, convErr := strconv.Atoi(roleStr); convErr == nil {
 		return client.GetSecurityRole(id)
 	}
-	return client.GetSecurityRole(roleStr)
+
+	kfRole, err := client.GetSecurityRole(roleStr)
+	if err != nil || kfRole == nil {
+		return kfRole, err
+	}
+	if !strings.EqualFold(kfRole.Name, roleStr) {
+		return nil, nil
+	}
+	return kfRole, nil
 }
 
 func (r resourceSecurityIdentity) Update(

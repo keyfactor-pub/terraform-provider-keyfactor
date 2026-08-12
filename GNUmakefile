@@ -297,7 +297,7 @@ testunit-check:
 testunit-ca:
 	go test ./keyfactor/ -run "TestUnitKeyfactorCertificateAuthority|TestUnitCertificateAuthorityResponseToState" -v -count=1 -timeout 30m
 
-KEYFACTOR_ENV_FILE ?= ~/.env_ses2541
+KEYFACTOR_ENV_FILE ?= ~/.env_kfclab
 KEYFACTOR_K8S_CREDENTIALS_FILE ?= $(HOME)/GolandProjects/terraform-keyfactor-provider-testing/examples/certs/deployment/k8s-creds.json
 
 # Integration test timeout; override with `make testint-check INT_TIMEOUT=180m`.

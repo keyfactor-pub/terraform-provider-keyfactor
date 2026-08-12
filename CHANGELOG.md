@@ -20,6 +20,21 @@
 
 - fix: `keyfactor_certificate` `dns_sans`/`ip_sans`/`uri_sans` no longer force a full destroy+recreate on the first plan after `terraform import`. Fixes [#197](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/197)
 
+## Certificate Deployments
+
+### Features
+
+- feat: `keyfactor_certificate_deployment` new optional `skip_inventory_validation` attribute — skips the post-submit store-inventory polling on both deploy and destroy (fire-and-forget). The single-pass duplicate-deployment pre-check and Update drift repair still run. Note that a green apply then no longer confirms the certificate reached the store; combine with `fail_on_job_failure` for job-level confirmation
+- feat: `keyfactor_certificate_deployment` new optional `fail_on_job_failure` attribute — tracks the orchestrator job(s) created by the add/remove operations via `GET /OrchestratorJobs/JobHistory` and fails the Terraform run with the orchestrator's message when a job reaches a final failure result. Jobs that fail but will be retried by Command (`CompletedWillRetry`) are waited on until a final result. Stores with no inventory schedule (previously submitted with zero validation) are validated by job status when this flag is set. Requires the Agent Management - Read permission (claim `/agents/management/read/`) in Keyfactor Command
+
+### Fixes
+
+- fix: `keyfactor_certificate_deployment` Create's deployment-validation failure diagnostic reported the wrong error message (the initial pre-check result instead of the validation error)
+- fix: `keyfactor_certificate_deployment` Update and Delete now probe the destination store's inventory schedule before starting a `fail_on_job_failure` inventory-based wait, matching Create's behavior — previously a schedule-less store could never satisfy the inventory check, causing the wait to poll indefinitely instead of falling back to job-status-only validation
+- fix: `keyfactor_certificate_deployment` Create now persists resource state when a `fail_on_job_failure` job-status wait fails (e.g. a permission error or an orchestrator job failure) — the management job was already submitted to Keyfactor Command, so a subsequent apply now sees a tainted resource in state instead of blindly resubmitting a brand-new job every run (note: destroying the now-tainted resource still requires the same Agent Management - Read permission, since Delete submits its own Remove job and polls its status)
+- fix: `keyfactor_certificate_deployment` orchestrator job status Acknowledged (Status=4) is now treated as a terminal result, like Completed, when evaluating `fail_on_job_failure` job history — previously a job that settled on Acknowledged as its latest history entry would poll forever
+- fix: `keyfactor_certificate_deployment` the `fail_on_job_failure` orchestrator `JobHistory` lookup now sorts descending by `JobHistoryId` with an explicit return limit, instead of relying on the server's undocumented default page size/sort, so the "latest" job history entry is determined deterministically even for jobs with many retry attempts
+
 ## Certificate Stores
 
 ### Fixes
@@ -58,6 +73,7 @@
 ## Chores
 
 - chore(deps): `keyfactor-go-client/v3` bumped to `v3.5.6` GA
+- chore(deps): security bumps resolving all 15 open Dependabot alerts (7 critical, 3 high, 5 moderate): `golang.org/x/crypto` v0.47.0 → v0.52.0 (SSH auth-bypass/DoS advisories incl. GHSA-vgwf-h737-ff37, GHSA-jppx-rxg9-jmrx), `google.golang.org/grpc` v1.79.3 → v1.82.1 (GHSA-hrxh-6v49-42gf xDS RBAC/HTTP2), `golang.org/x/net` v0.49.0 → v0.55.0 (HTML parser DoS), plus transitive `x/sys`/`x/text`/`x/tools`/`protobuf` updates. All indirect dependencies; no Terraform plugin framework or Keyfactor client changes. Minimum Go toolchain moves 1.24 → 1.25 (required by the updated dependencies)
 - chore(test): add a real-Terraform release-test harness (`terraform/`, `make -C terraform harness`) that runs every resource through `plan → apply → import → drift-check → destroy` against a live Command instance; used to find and verify every fix above
 
 # v2.9.1

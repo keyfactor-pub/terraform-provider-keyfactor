@@ -1363,12 +1363,18 @@ func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func
 }
 
 // newVCRProviderFactoriesReplayable is like newVCRProviderFactories but
-// configures the replay recorder with WithReplayableInteractions(true).
-// Use this ONLY for tests that issue purely idempotent read-only requests
-// (e.g. data-source lookups) where repeated identical URL calls always return
-// the same body. Do NOT use for polling/stateful tests (e.g. inventory polls
-// that expect different responses across sequential identical-URL calls) —
-// those rely on consume-once ordering and must use newVCRProviderFactories.
+// configures the replay recorder with WithReplayableInteractions(true), so a
+// cassette interaction can be replayed more than once instead of being
+// consumed after its first match.
+//
+// This is safe — including for polling tests — whenever every repeated,
+// identical-URL request in the flow must return the SAME response every time
+// (e.g. a poll loop that always observes the same terminal job/inventory
+// state). Use newVCRProviderFactories (consume-once) instead whenever
+// sequential requests to the same URL must return DIFFERENT responses in
+// order (e.g. an inventory poll that starts "not present" and later becomes
+// "present") — replayable interactions would incorrectly return the first
+// recorded response forever.
 func newVCRProviderFactoriesReplayable(t *testing.T, cassetteName string) (map[string]func() (tfprotov6.ProviderServer, error), func()) {
 	return newVCRProviderFactoriesOpts(t, cassetteName, true)
 }

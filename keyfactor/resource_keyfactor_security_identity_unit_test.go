@@ -487,6 +487,75 @@ func TestUnitSecurityIdentityReadNumericIdMatchesServerRole(t *testing.T) {
 	)
 }
 
+// TestUnitRoleIdToInt is a regression test for setIdentityRole's role-ID type
+// switch, which blindly asserted every non-int role identifier to int via a
+// `case string, interface{}: roleId = role.(int)` catch-all. Since
+// api.GetSecurityRoleResponse.Id (github.com/Keyfactor/keyfactor-go-client/v3
+// /api/security_models.go) is declared as float64 -- both the by-name and
+// by-ID GetSecurityRole lookup branches populate it that way -- every role ID
+// Create()/Update() appended to validRolesInterface was actually a float64,
+// never an int. The old switch's `interface{}` case matched float64 and then
+// panicked on the hard `.(int)` assertion, meaning ANY successful role
+// resolution during a real Create or Update would crash `terraform apply`
+// (see TestUnitSecurityIdentityResource_UpdateRoleLookupPreservesSpaces
+// below, which reproduces this end-to-end).
+//
+// roleIdToInt replaces that switch: it accepts int (defensive) and float64
+// (the real-world case), and returns an error -- never panics -- for any
+// other type.
+func TestUnitRoleIdToInt(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      interface{}
+		want    int
+		wantErr bool
+	}{
+		{name: "int passes through", in: int(7), want: 7},
+		{name: "float64 converts (the real-world case from api.GetSecurityRoleResponse.Id)", in: float64(7), want: 7},
+		{name: "unexpected type errors instead of panicking", in: "7", wantErr: true},
+		{name: "nil errors instead of panicking", in: nil, wantErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := roleIdToInt(tc.in)
+			if tc.wantErr {
+				assert.Error(t, err, "an unexpected role identifier type must produce an error, not a panic")
+				return
+			}
+			if assert.NoError(t, err) {
+				assert.Equal(t, tc.want, got)
+			}
+		})
+	}
+}
+
+// TestUnitSetIdentityRole_UnexpectedRoleIdTypeErrors is the setIdentityRole-
+// level companion to TestUnitRoleIdToInt: it drives the real function (not
+// just the roleIdToInt helper) with a role ID of an unexpected type, and
+// asserts setIdentityRole returns an error instead of panicking, and that no
+// HTTP request is ever issued (the bad value is caught before any network
+// call).
+func TestUnitSetIdentityRole_UnexpectedRoleIdTypeErrors(t *testing.T) {
+	ctx := context.Background()
+
+	requestMade := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		requestMade = true
+		w.WriteHeader(http.StatusOK)
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	err := setIdentityRole(ctx, client, "tf-unit-badtype", []interface{}{"not-a-number"})
+
+	assert.Error(t, err, "setIdentityRole must return an error for an unexpected role identifier type, not panic")
+	assert.False(t, requestMade, "setIdentityRole must reject the bad role identifier before issuing any HTTP request")
+}
+
 // TestUnitSecurityIdentityReadSurfacesRealDrift is the negative-case
 // companion to the two tests above: when the server's role set genuinely
 // differs from what's declared (an extra role attached out-of-band), Read()

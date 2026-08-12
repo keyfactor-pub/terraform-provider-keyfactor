@@ -543,6 +543,33 @@ func (r resourceSecurityIdentity) ImportState(
 	}
 }
 
+// roleIdToInt converts a role identifier value -- as stored in the
+// []interface{} that Create/Update build from kfRole.Id (see
+// api.GetSecurityRoleResponse.Id, github.com/Keyfactor/keyfactor-go-client/
+// v3/api/security_models.go) -- into an int.
+//
+// This is a regression fix: GetSecurityRoleResponse.Id is declared as
+// float64 (both the by-name and by-ID GetSecurityRole lookup branches
+// populate it that way), so every role ID flowing through setIdentityRole
+// was actually a float64, never an int. The prior code's type switch
+// (`case int: ...; case string, interface{}: roleId = role.(int)`) matched
+// float64 via the `interface{}` catch-all and then blindly asserted it to
+// int, which panics for any non-int dynamic type -- meaning ANY
+// Create/Update that resolved at least one role successfully would crash
+// `terraform apply`. This handles both int (defensive, in case a caller ever
+// passes one directly) and float64, and returns an error instead of
+// panicking for any other unexpected type.
+func roleIdToInt(role interface{}) (int, error) {
+	switch v := role.(type) {
+	case int:
+		return v, nil
+	case float64:
+		return int(v), nil
+	default:
+		return 0, fmt.Errorf("unexpected role identifier type %T (value %v); expected int or float64", role, role)
+	}
+}
+
 func setIdentityRole(
 	ctx context.Context,
 	kfClient *api.Client,
@@ -555,14 +582,10 @@ func setIdentityRole(
 
 	// Start by blindly adding the identity to each role.
 	if len(roleIds) > 0 {
-		var roleId int
 		for _, role := range roleIds {
-			switch role.(type) {
-			case int:
-				roleId = role.(int)
-
-			case string, interface{}:
-				roleId = role.(int)
+			roleId, convErr := roleIdToInt(role)
+			if convErr != nil {
+				return convErr
 			}
 			err := addIdentityToRole(ctx, kfClient, identityAccountName, roleId)
 			if err != nil {
@@ -591,7 +614,11 @@ func setIdentityRole(
 
 	list := make(map[string]struct{}, len(roleIds))
 	for _, x := range roleIds {
-		list[strconv.Itoa(x.(int))] = struct{}{}
+		xId, convErr := roleIdToInt(x)
+		if convErr != nil {
+			return convErr
+		}
+		list[strconv.Itoa(xId)] = struct{}{}
 	}
 	var diff []int
 	for _, x := range identity.Roles {

@@ -35,6 +35,23 @@
 - fix: `keyfactor_certificate_deployment` orchestrator job status Acknowledged (Status=4) is now treated as a terminal result, like Completed, when evaluating `fail_on_job_failure` job history — previously a job that settled on Acknowledged as its latest history entry would poll forever
 - fix: `keyfactor_certificate_deployment` the `fail_on_job_failure` orchestrator `JobHistory` lookup now sorts descending by `JobHistoryId` with an explicit return limit, instead of relying on the server's undocumented default page size/sort, so the "latest" job history entry is determined deterministically even for jobs with many retry attempts
 
+## Security Identities
+
+### Fixes
+
+- fix: `keyfactor_security_identity` `Update` no longer clears a role's roles when config doesn't declare the `roles` attribute
+- fix: `keyfactor_security_identity` `Read` now calls Command to detect roles added/removed out-of-band instead of always re-asserting whatever was already in state
+- fix: `keyfactor_security_identity` `Read` no longer overwrites a practitioner's declared role casing or numeric-ID form with Command's canonical role name when the declared and server role sets are otherwise identical, which previously manufactured a diff no apply could resolve; genuinely different role sets still surface as drift
+
+## Security Roles
+
+### Fixes
+
+- fix: `keyfactor_security_role` `Update` no longer sends `Permissions: null` (clearing every permission) when config omits the `permissions` attribute
+- fix: `keyfactor_security_role` `Update` now surfaces real server-side permission drift instead of always trusting the plan's declared order
+- fix: `keyfactor_security_role` `Read` now calls Command to detect name/description/permission changes made out-of-band, instead of only ever re-asserting existing state
+- fix: `keyfactor_security_role` `Update` now resends the role's current permissions explicitly when config omits `permissions`, instead of omitting the field — Command's `PUT /Security/Roles` is a full-replace endpoint and clears permissions when the field is absent, not just when it's `null`
+
 ## Certificate Stores
 
 ### Fixes

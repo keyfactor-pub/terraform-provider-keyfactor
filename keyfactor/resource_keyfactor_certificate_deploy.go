@@ -61,6 +61,41 @@ func storeHasInventorySchedule(conn *api.Client, storeId string) (hasSchedule bo
 	return sched.Immediate != nil || sched.Interval != nil || sched.Daily != nil || sched.ExactlyOnce != nil, nil
 }
 
+// resolveInventoryCheck probes storeId's inventory schedule before committing
+// to an inventory-based wait, and returns the inventory-check function
+// waitForJobsAndInventory should poll -- or nil to fall back to
+// job-status-only validation. A schedule-less store never satisfies an
+// inventory-based check (it would otherwise poll forever, see T1), so nil is
+// returned whenever inventory validation is skipped by config, the store
+// read itself fails, or the store genuinely has no inventory schedule
+// configured. checkFn is only returned (never called by this function
+// itself) when a schedule is confirmed present.
+//
+// This is shared by Update and Delete, which previously duplicated this
+// probe-then-fallback block verbatim, each logging the same storeReadErr
+// twice in a row (once via Warn, once via Info).
+func resolveInventoryCheck(
+	ctx context.Context,
+	kfClient *api.Client,
+	storeId string,
+	skipInventoryValidation bool,
+	checkFn func() (bool, error),
+) func() (bool, error) {
+	if skipInventoryValidation {
+		return nil
+	}
+	hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
+	if storeReadErr != nil {
+		tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s; falling back to job-status-only validation.", storeId, storeReadErr.Error()))
+		return nil
+	}
+	if !hasInventorySchedule {
+		tflog.Info(ctx, "Store has no inventory schedule; falling back to job-status-only validation.")
+		return nil
+	}
+	return checkFn
+}
+
 // deploymentOverwriteOnCertIDChange is a plan modifier used by the certificate
 // deployment resource. It requires that the resource be replaced when the
 // `certificate_id` attribute changes unless the top-level `overwrite` attribute
@@ -540,23 +575,12 @@ func (r resourceCommandCertificateDeployment) Read(
 		tflog.Debug(ctx, fmt.Sprintf("Certificate %v stored in location: %v", certificateIdInt, location))
 	}
 
-	// Set state
-	var result = CommandCertificateDeployment{
-		ID:               state.ID,
-		CertificateId:    state.CertificateId,
-		StoreId:          state.StoreId,
-		CertificateAlias: state.CertificateAlias,
-		KeyPassword:      state.KeyPassword,
-		JobParameters:    state.JobParameters,
-		Redeploy:         state.Redeploy,
-		Overwrite:        state.Overwrite,
-		SkipRemoval:      state.SkipRemoval,
-
-		SkipInventoryValidation: state.SkipInventoryValidation,
-		FailOnJobFailure:        state.FailOnJobFailure,
-	}
-
-	diags = response.State.Set(ctx, result)
+	// Set state. This deployment resource has no server-refreshable fields of
+	// its own (the certificate/store/alias identity and write-only knobs are
+	// all sourced from state) -- the GetCertificateContext call above exists
+	// to confirm the certificate itself is still reachable, not to refresh
+	// any field, so state is written back as-is.
+	diags = response.State.Set(ctx, state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -664,27 +688,9 @@ func (r resourceCommandCertificateDeployment) Update(
 		}
 
 		if failOnJobFailure {
-			var inventoryCheck func() (bool, error)
-			if !skipInventoryValidation {
-				// Probe the store's inventory schedule before committing to an
-				// inventory-based wait: a schedule-less store never satisfies
-				// deploymentPresentInInventory, which would otherwise poll
-				// forever (T1). Fall back to job-status-only validation when no
-				// schedule is present, matching Create's behavior.
-				hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
-				if storeReadErr != nil {
-					tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
-				}
-				if storeReadErr != nil {
-					tflog.Info(ctx, fmt.Sprintf("Store read failed (%s); falling back to job-status-only validation.", storeReadErr.Error()))
-				} else if !hasInventorySchedule {
-					tflog.Info(ctx, "Store has no inventory schedule; falling back to job-status-only validation.")
-				} else {
-					inventoryCheck = func() (bool, error) {
-						return deploymentPresentInInventory(ctx, kfClient, storeId, certificateAlias, certificateData)
-					}
-				}
-			}
+			inventoryCheck := resolveInventoryCheck(ctx, kfClient, storeId, skipInventoryValidation, func() (bool, error) {
+				return deploymentPresentInInventory(ctx, kfClient, storeId, certificateAlias, certificateData)
+			})
 			waitDiags := waitForJobsAndInventory(ctx, r.p.sdkClient, deploymentJobWatch{
 				jobIDs:         jobIDs,
 				inventoryCheck: inventoryCheck,
@@ -856,34 +862,19 @@ func (r resourceCommandCertificateDeployment) Delete(
 	}
 
 	if failOnJobFailure {
-		var inventoryCheck func() (bool, error)
-		if !skipInventoryValidation {
-			// Probe the store's inventory schedule before committing to an
-			// inventory-based wait (T1): the diff store is always the single
-			// element built from storeId above.
-			hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
-			if storeReadErr != nil {
-				tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
-			}
-			if storeReadErr != nil {
-				tflog.Info(ctx, fmt.Sprintf("Store read failed (%s); falling back to job-status-only validation.", storeReadErr.Error()))
-			} else if !hasInventorySchedule {
-				tflog.Info(ctx, "Store has no inventory schedule; falling back to job-status-only validation.")
-			} else {
-				inventoryCheck = func() (bool, error) {
-					for _, store := range diff {
-						stillPresent, invErr := undeploymentStillPresent(ctx, kfClient, store.CertificateStoreId, certificateAlias, certificateData)
-						if invErr != nil {
-							return false, invErr
-						}
-						if stillPresent {
-							return false, nil
-						}
-					}
-					return true, nil
+		// The diff store is always the single element built from storeId above.
+		inventoryCheck := resolveInventoryCheck(ctx, kfClient, storeId, skipInventoryValidation, func() (bool, error) {
+			for _, store := range diff {
+				stillPresent, invErr := undeploymentStillPresent(ctx, kfClient, store.CertificateStoreId, certificateAlias, certificateData)
+				if invErr != nil {
+					return false, invErr
+				}
+				if stillPresent {
+					return false, nil
 				}
 			}
-		}
+			return true, nil
+		})
 		waitDiags := waitForJobsAndInventory(ctx, r.p.sdkClient, deploymentJobWatch{
 			jobIDs:         jobIDs,
 			inventoryCheck: inventoryCheck,

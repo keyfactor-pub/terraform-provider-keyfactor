@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
@@ -185,16 +186,11 @@ func permissionSetsEqual(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	aSorted := append([]string{}, a...)
-	bSorted := append([]string{}, b...)
-	sort.Strings(aSorted)
-	sort.Strings(bSorted)
-	for i := range aSorted {
-		if aSorted[i] != bSorted[i] {
-			return false
-		}
-	}
-	return true
+	aSorted := slices.Clone(a)
+	bSorted := slices.Clone(b)
+	slices.Sort(aSorted)
+	slices.Sort(bSorted)
+	return slices.Equal(aSorted, bSorted)
 }
 
 // permissionsToTfList builds a types.List of permission strings, for writing

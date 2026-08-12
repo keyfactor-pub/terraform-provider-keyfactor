@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -1163,4 +1164,122 @@ func TestUnitSecurityIdentityResource_UpdateRejectsUnverifiedRoleNameMatch(t *te
 		t, mutationCalled,
 		"Update() must not call setIdentityRole (any role add/remove) when the declared role's lookup could not be verified",
 	)
+}
+
+// TestUnitSecurityIdentityResource_UpdateSetIdentityRoleFailurePersistsState is
+// a regression test for Fix D: Update()'s setIdentityRole failure branch
+// returned without ever calling response.State.Set. setIdentityRole is NOT
+// atomic -- it issues one Command API call per role addition, then one per
+// role removal -- so a failure partway through can leave Command's actual
+// role membership already diverged from both the prior state and the plan.
+// Returning without an explicit State.Set relied entirely on the framework's
+// implicit "persist req.PriorState" default (see
+// vendor/github.com/hashicorp/terraform-plugin-framework/internal/fwserver/
+// server_updateresource.go), which is *safe* in production (Terraform Core
+// pre-seeds it) but, in this repo's direct-method-call unit test harness,
+// means resp.State is left as a completely unset zero value -- and even in
+// production, the diagnostic never told the operator that a partial mutation
+// might have occurred.
+//
+// This drives Update() with a role addition whose underlying PUT (issued by
+// addIdentityToRole, invoked from setIdentityRole) fails with HTTP 500, and
+// asserts: (1) an error diagnostic is produced, (2) the diagnostic text warns
+// about a possible partial change and tells the operator to re-plan, and (3)
+// resp.State was explicitly populated (Raw is not the null zero-value, and
+// reading it back succeeds and reflects the untouched prior state).
+func TestUnitSecurityIdentityResource_UpdateSetIdentityRoleFailurePersistsState(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
+			{"Id": 1, "Name": "RoleA", "Description": "desc"},
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"Id":          1,
+				"Name":        "RoleA",
+				"Identities":  []map[string]interface{}{},
+				"Description": "desc",
+			})
+			return
+		}
+		// The PUT that addIdentityToRole issues to actually grant the role
+		// fails -- simulating a mutation that errors partway through
+		// setIdentityRole's sequential add-loop.
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Message": "Internal Server Error"})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	state := SecurityIdentity{
+		ID:           types.Int64{Value: 42},
+		AccountName:  types.String{Value: `KEYFACTOR\\tf-unit-setrole-fail`},
+		IdentityType: types.String{Value: "User"},
+		Valid:        types.Bool{Value: true},
+		Roles:        types.List{ElemType: types.StringType, Elems: []attr.Value{}},
+	}
+
+	plan := state
+	plan.Roles = types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "RoleA"},
+	}}
+	config := plan
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
+
+	r := resourceSecurityIdentity{p: provider{configured: true, client: client}}
+
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+
+	assert.True(t, resp.Diagnostics.HasError(),
+		"Update() must surface an error when setIdentityRole fails")
+
+	foundPartialWarning := false
+	for _, d := range resp.Diagnostics.Errors() {
+		if strings.Contains(d.Detail(), "partially") && strings.Contains(d.Detail(), "terraform plan") {
+			foundPartialWarning = true
+		}
+	}
+	assert.True(t, foundPartialWarning,
+		"the error diagnostic must mention that role membership may have been partially changed on Keyfactor Command and that `terraform plan` will detect/reconcile any actual drift, not just report a bare error")
+
+	assert.False(t, resp.State.Raw.IsNull(),
+		"Update() must explicitly persist state on the setIdentityRole failure path, not leave resp.State completely unset")
+
+	var result SecurityIdentity
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("resp.State was not populated with a value conforming to the schema: %+v", d)
+	}
+	assert.Equal(t, state.AccountName.Value, result.AccountName.Value,
+		"the persisted state must reflect the untouched prior AccountName")
+	assert.Empty(t, result.Roles.Elems,
+		"the persisted state must reflect the untouched prior Roles (empty), not the plan's Roles that may not have actually been granted")
 }

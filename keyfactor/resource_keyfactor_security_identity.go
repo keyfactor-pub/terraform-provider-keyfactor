@@ -405,7 +405,39 @@ func (r resourceSecurityIdentity) Update(
 		//Update role identities (full-replace; an explicit empty list clears them)
 		err := setIdentityRole(ctx, r.p.client, state.AccountName.Value, validRolesInterface)
 		if err != nil {
-			response.Diagnostics.AddError("Error updating identity roles.", "Error updating identity roles: "+err.Error())
+			// setIdentityRole is NOT atomic: it issues one Command API call per
+			// role addition, then one per role removal (see its sequential
+			// add-loop/remove-loop below). A failure partway through means
+			// Command's actual role membership may already have diverged from
+			// BOTH the prior state and the plan -- e.g. the 2nd of 3 adds
+			// succeeded before the 3rd failed. Returning here without an
+			// explicit State.Set would rely on the framework's implicit
+			// default (terraform-plugin-framework's server_updateresource.go
+			// pre-seeds updateResp.State from req.PriorState before calling
+			// Update, so an early return silently persists the untouched OLD
+			// state) -- technically safe (it doesn't claim the plan's roles
+			// were granted), but it gives the operator zero indication that a
+			// partial mutation may have happened on Command itself. Make that
+			// persistence explicit and make the diagnostic say so: state is
+			// left as the untouched prior values (state, not result, since
+			// result.Roles was never advanced to plan.Roles on this path), and
+			// the next `terraform plan`/refresh will run Read()'s existing
+			// drift-detection logic (identityRolesResultForRead), which
+			// compares state.Roles against Command's actual current roles and
+			// will surface any real change automatically.
+			response.Diagnostics.AddError(
+				"Error updating identity roles.",
+				fmt.Sprintf(
+					"Error updating identity roles for '%s': %s. Role membership may have been partially "+
+						"changed on Keyfactor Command before this error occurred (setIdentityRole applies role "+
+						"additions and removals as a sequence of separate API calls, not atomically). The prior "+
+						"state has been preserved; run `terraform plan` again to detect and reconcile any actual "+
+						"drift in role membership, or verify role membership manually on Keyfactor Command.",
+					state.AccountName.Value, err.Error(),
+				),
+			)
+			stateDiags := response.State.Set(ctx, state)
+			response.Diagnostics.Append(stateDiags...)
 			return
 		}
 		result.Roles = plan.Roles

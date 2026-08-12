@@ -280,11 +280,49 @@ func identityRolesResultForRead(stateRoles types.List, serverRoles []api.Securit
 // trusting kfRole.Id. A mismatch is treated as unresolved ((nil, nil), same
 // shape as a genuine "not found") so callers' existing not-found handling
 // rejects it rather than silently trusting an unverified query match.
+//
+// A declared value that parses as an integer is tried via the ID-path lookup
+// first (the common case: a genuine numeric role ID), but that is not the
+// only role a purely-numeric declared string can refer to -- Command allows a
+// role's Name to itself be a numeric string (e.g. a role literally named
+// "123"), which identityRolesResultForRead (used by Read for drift-detection)
+// already accounts for via its own ID-then-name fallback. If the ID lookup
+// doesn't produce a usable role (an error, a 404/not-found, or a nil result),
+// this falls back to the same case-insensitive name-based lookup used for
+// non-numeric declarations, so a role named "123" still resolves instead of
+// hard-failing Create/Update for a role that genuinely exists. Only once BOTH
+// the ID lookup and the name fallback fail to resolve is the declaration
+// treated as not found.
 func resolveDeclaredSecurityRole(client *api.Client, roleStr string) (*api.GetSecurityRoleResponse, error) {
 	if id, convErr := strconv.Atoi(roleStr); convErr == nil {
-		return client.GetSecurityRole(id)
+		idRole, idErr := client.GetSecurityRole(id)
+		if idErr == nil && idRole != nil {
+			return idRole, nil
+		}
+		nameRole, nameErr := resolveDeclaredSecurityRoleByName(client, roleStr)
+		if nameErr == nil && nameRole != nil {
+			return nameRole, nil
+		}
+		// Neither form resolved. Prefer surfacing the ID lookup's error, if
+		// any, since roleStr was declared as a numeric value and the ID path
+		// is the primary lookup for that form; otherwise fall through to
+		// whatever the name-based fallback produced (including a clean (nil,
+		// nil) "not found").
+		if idErr != nil {
+			return nil, idErr
+		}
+		return nameRole, nameErr
 	}
 
+	return resolveDeclaredSecurityRoleByName(client, roleStr)
+}
+
+// resolveDeclaredSecurityRoleByName performs the case-insensitive name-based
+// lookup and verification described in resolveDeclaredSecurityRole's doc
+// comment. Split out so both the non-numeric declaration path and the
+// numeric-declaration ID-lookup-failed fallback path share the exact same
+// verification logic.
+func resolveDeclaredSecurityRoleByName(client *api.Client, roleStr string) (*api.GetSecurityRoleResponse, error) {
 	kfRole, err := client.GetSecurityRole(roleStr)
 	if err != nil || kfRole == nil {
 		return kfRole, err

@@ -1283,3 +1283,80 @@ func TestUnitSecurityIdentityResource_UpdateSetIdentityRoleFailurePersistsState(
 	assert.Empty(t, result.Roles.Elems,
 		"the persisted state must reflect the untouched prior Roles (empty), not the plan's Roles that may not have actually been granted")
 }
+
+// TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericNameFallback
+// is a regression test for Fix E: resolveDeclaredSecurityRole, once it parses
+// a declared role string as an integer, ONLY tried the ID-path lookup with no
+// fallback to a name-based lookup. Before Fix B (the numeric-ID resolution
+// added the previous round) every lookup was name-based, so a security role
+// whose display Name happens to be purely numeric (e.g. a role literally
+// named "123") resolved correctly. Fix E without the fallback regressed that:
+// if no role has ID 123, Create/Update hard-fails even though a role named
+// "123" genuinely exists.
+//
+// This drives resolveDeclaredSecurityRole directly (no Update() plumbing
+// needed) against a mock server where GET /Security/Roles/123 (the ID-path
+// lookup) 404s, but the name-query endpoint resolves a role literally named
+// "123", and asserts the fallback succeeds and returns that role's real ID.
+func TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericNameFallback(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/123", func(w http.ResponseWriter, r *http.Request) {
+		// No role has ID 123.
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Message": "Not Found"})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		// A role literally named "123" does exist, with a different real ID
+		// (7), reached via the name-query fallback.
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
+			{"Id": 7, "Name": "123", "Description": "a role literally named 123"},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	kfRole, err := resolveDeclaredSecurityRole(client, "123")
+	if !assert.NoError(t, err, "the name-based fallback must resolve a role literally named \"123\" once the ID lookup fails") {
+		return
+	}
+	if !assert.NotNil(t, kfRole, "resolveDeclaredSecurityRole must not return a nil role when the name fallback found a genuine match") {
+		return
+	}
+	assert.Equal(t, float64(7), kfRole.Id,
+		"resolveDeclaredSecurityRole must resolve to the role's real ID (7) via the name fallback, not fail just because ID 123 doesn't exist")
+}
+
+// TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericFastPath
+// is the companion "no regression in the common case" test for Fix E: when a
+// role genuinely has the declared numeric ID, resolveDeclaredSecurityRole
+// must resolve it via the fast ID-path lookup alone, without ever falling
+// back to (or needing) a name-based query.
+func TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericFastPath(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/123", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id": 123, "Name": "RoleOneTwoThree", "Description": "the real role with ID 123",
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("the ID-path lookup for a genuinely-existing numeric role ID must resolve without ever falling back to the name-query endpoint (%s %s)", r.Method, r.URL.String())
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	kfRole, err := resolveDeclaredSecurityRole(client, "123")
+	if !assert.NoError(t, err) {
+		return
+	}
+	if !assert.NotNil(t, kfRole) {
+		return
+	}
+	assert.Equal(t, float64(123), kfRole.Id,
+		"resolveDeclaredSecurityRole must resolve the genuine numeric-ID role via the fast ID path")
+}

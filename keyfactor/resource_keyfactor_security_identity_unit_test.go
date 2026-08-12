@@ -935,3 +935,122 @@ func TestUnitSecurityIdentityResource_CreateFailsOnRoleLookupError(t *testing.T)
 		"Roles must reflect that nothing was actually granted (setIdentityRole was never called), not the full declared plan.Roles",
 	)
 }
+
+// TestUnitSecurityIdentityResource_UpdateResolvesNumericRoleIdViaIdPath is a
+// regression test for Fix B: the roles attribute's schema Description
+// documents that a declared entry may be a role name OR a numeric role ID,
+// but Create()/Update() always called GetSecurityRole with a Go string, even
+// when its content was purely numeric (e.g. "7"). api.Client.GetSecurityRole
+// type-switches on the Go type of its argument -- `case string:` always does
+// a name-based query (`name -eq "<value>"`), even for a numeric-looking
+// string -- so a declared numeric role ID could never actually resolve; it
+// would look up a role literally named "7" instead of the role whose ID is 7.
+//
+// This drives Update() end-to-end with roles = ["7"] and asserts the ID-path
+// endpoint (GET /Security/Roles/7) is hit, never the name-query endpoint
+// (GET /Security/Roles?pq.queryString=...) -- failing the test outright if
+// the name-query path is ever reached.
+func TestUnitSecurityIdentityResource_UpdateResolvesNumericRoleIdViaIdPath(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/7", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("unexpected %s request to /KeyfactorAPI/Security/Roles/7 -- the identity is already a member of the role, so no role mutation should be needed", r.Method)
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":   7,
+			"Name": "RoleSeven",
+			"Identities": []map[string]interface{}{
+				{"AccountName": `KEYFACTOR\\tf-unit-numeric-id`},
+			},
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf(
+			"declared role \"7\" is a numeric role ID and must resolve via the Security/Roles/{id} ID-path lookup, not this name-query endpoint (%s %s)",
+			r.Method, r.URL.String(),
+		)
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Identities", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
+			{
+				"Id":           42,
+				"AccountName":  `KEYFACTOR\\tf-unit-numeric-id`,
+				"IdentityType": "User",
+				"Valid":        true,
+				"Roles": []map[string]interface{}{
+					{"Id": 7, "Name": "RoleSeven"},
+				},
+			},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	state := SecurityIdentity{
+		ID:           types.Int64{Value: 42},
+		AccountName:  types.String{Value: `KEYFACTOR\\tf-unit-numeric-id`},
+		IdentityType: types.String{Value: "User"},
+		Valid:        types.Bool{Value: true},
+		Roles:        types.List{ElemType: types.StringType, Elems: []attr.Value{}},
+	}
+
+	plan := state
+	plan.Roles = types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "7"},
+	}}
+	config := plan
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
+
+	r := resourceSecurityIdentity{p: provider{configured: true, client: client}}
+
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	var result SecurityIdentity
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+
+	var roles []string
+	for _, e := range result.Roles.Elems {
+		s, ok := e.(types.String)
+		if !ok {
+			t.Fatalf("expected roles element to be types.String, got %T", e)
+		}
+		roles = append(roles, s.Value)
+	}
+
+	assert.Equal(
+		t, []string{"7"}, roles,
+		"Update() must resolve and grant the declared numeric role ID via the ID-path lookup, not fail to resolve it via a doomed name lookup",
+	)
+}

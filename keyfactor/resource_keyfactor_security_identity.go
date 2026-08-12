@@ -243,6 +243,29 @@ func identityRolesResultForRead(stateRoles types.List, serverRoles []api.Securit
 	return stateRoles
 }
 
+// resolveDeclaredSecurityRole resolves a single entry from the `roles`
+// attribute against Keyfactor Command. It is shared by Create() and Update()
+// so their role-resolution loops can't drift out of sync with each other.
+//
+// The roles attribute's schema Description documents that a declared entry
+// may be either a role NAME or a numeric role ID -- identityRolesResultForRead
+// above already recognizes both forms when comparing state to the server's
+// roles on Read. But api.Client.GetSecurityRole(id interface{}) type-switches
+// on the Go type of its argument: `case int:` performs a real
+// Security/Roles/{id} ID-path lookup, while `case string:` ALWAYS performs a
+// name-based query, even when the string's content is purely numeric. Passing
+// a numeric string like "7" straight through as a string therefore never hits
+// the ID-lookup path -- it looks up a role literally NAMED "7" and (almost
+// always) fails to find one, even though a role with ID 7 exists. Parsing the
+// declared string as an integer first and passing it through as an int fixes
+// this by routing it to the real ID-path lookup.
+func resolveDeclaredSecurityRole(client *api.Client, roleStr string) (*api.GetSecurityRoleResponse, error) {
+	if id, convErr := strconv.Atoi(roleStr); convErr == nil {
+		return client.GetSecurityRole(id)
+	}
+	return client.GetSecurityRole(roleStr)
+}
+
 func (r resourceSecurityIdentity) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -323,7 +346,7 @@ func (r resourceSecurityIdentity) Update(
 			}
 			roleStr := roleVal.Value
 			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", roleStr))
-			kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
+			kfRole, roleLookupErr := resolveDeclaredSecurityRole(r.p.client, roleStr)
 			if roleLookupErr != nil {
 				response.Diagnostics.AddError(
 					"Error looking up role on Keyfactor.",
@@ -501,7 +524,7 @@ func (r resourceSecurityIdentity) Create(
 			}
 			roleStr := roleVal.Value
 			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", roleStr))
-			kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
+			kfRole, roleLookupErr := resolveDeclaredSecurityRole(r.p.client, roleStr)
 			if roleLookupErr != nil {
 				response.Diagnostics.AddError(
 					"Error looking up role on Keyfactor.",

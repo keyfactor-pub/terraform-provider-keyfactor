@@ -11,11 +11,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/stretchr/testify/assert"
 )
+
+// securityRoleMockAuthConfig implements api.AuthConfig for httptest-backed
+// unit tests of the security role resource's Update path (mirrors
+// certUpdateMockAuthConfig in resource_keyfactor_certificate_unit_test.go).
+type securityRoleMockAuthConfig struct {
+	server *httptest.Server
+}
+
+func (m *securityRoleMockAuthConfig) GetServerConfig() *auth_providers.Server {
+	return &auth_providers.Server{
+		Host:          m.server.URL,
+		APIPath:       "KeyfactorAPI",
+		SkipTLSVerify: true,
+	}
+}
+
+func (m *securityRoleMockAuthConfig) GetHttpClient() (*http.Client, error) {
+	return m.server.Client(), nil
+}
+
+func (m *securityRoleMockAuthConfig) Authenticate() error       { return nil }
+func (m *securityRoleMockAuthConfig) GetCommandVersion() string { return "25.1.0.0" }
 
 type roleTestCase struct {
 	name           string
@@ -342,7 +365,7 @@ func TestUnitKeyfactorSecurityRoleResource_UpdateOmittingPermissionsPreservesThe
 	server := httptest.NewTLSServer(mux)
 	defer server.Close()
 
-	p := &provider{testAuth: newCertAPIMockAuthConfig(server)}
+	p := &provider{testAuth: &securityRoleMockAuthConfig{server: server}}
 	factories := map[string]func() (tfprotov6.ProviderServer, error){
 		"keyfactor": providerserver.NewProtocol6WithError(p),
 	}

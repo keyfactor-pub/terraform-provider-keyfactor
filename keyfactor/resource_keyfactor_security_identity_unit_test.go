@@ -834,3 +834,104 @@ func TestUnitSecurityIdentityReadSurfacesRealDrift(t *testing.T) {
 		"Read() must surface real out-of-band role drift with the server's canonical names, not hide it behind declared-spelling preservation",
 	)
 }
+
+// TestUnitSecurityIdentityResource_CreateFailsOnRoleLookupError is a
+// regression test for Create() treating a role lookup error (or a (nil, nil)
+// "not found" GetSecurityRole response) as an AddWarning-and-continue: the
+// unresolvable role was silently dropped from validRolesInterface (so
+// setIdentityRole, when called, never actually granted it), yet the separate
+// `validRoles` bookkeeping list this dropping fed into was never even used --
+// the final state write used the full, undropped `plan.Roles` regardless, so
+// state (and a green `terraform apply`) claimed every declared role was
+// granted even when one silently wasn't.
+//
+// Fix A makes Create() fail-fast on any role lookup error or not-found for a
+// declared role, exactly mirroring Update()'s round-1 fix -- AddError instead
+// of AddWarning, and return before ever calling setIdentityRole. Unlike
+// Update(), the identity has ALREADY been created on Keyfactor by the time
+// the role loop runs, so this test also asserts the resulting state: the
+// already-created identity must still be persisted (tracked, not orphaned
+// out of state), but with Roles reflecting reality -- empty, since nothing
+// was actually granted -- rather than the full declared plan.Roles.
+func TestUnitSecurityIdentityResource_CreateFailsOnRoleLookupError(t *testing.T) {
+	ctx := context.Background()
+
+	var mutationCalled bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Identities", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"Id":           99,
+				"AccountName":  `KEYFACTOR\\tf-unit-create-lookup-fail`,
+				"IdentityType": "User",
+				"Valid":        true,
+			})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]map[string]interface{}{})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutationCalled = true
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"Id": 7, "Name": "Administrators"})
+			return
+		}
+		// The name-lookup GET fails transiently -- e.g. a network blip or
+		// server error, not a genuine "role doesn't exist".
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Message": "Internal Server Error"})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	plan := SecurityIdentity{
+		AccountName: types.String{Value: `KEYFACTOR\\tf-unit-create-lookup-fail`},
+		Roles: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "Administrators"},
+		}},
+	}
+
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityIdentity{p: provider{configured: true, client: client}}
+
+	req := tfsdk.CreateResourceRequest{Plan: planObj}
+	resp := &tfsdk.CreateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Create(ctx, req, resp)
+
+	assert.True(
+		t, resp.Diagnostics.HasError(),
+		"Create() must fail the apply when a declared role's lookup errors, not silently drop the role via AddWarning and report success",
+	)
+	assert.False(
+		t, mutationCalled,
+		"Create() must not call setIdentityRole (any role add/remove) when a declared role's lookup failed",
+	)
+
+	var result SecurityIdentity
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+	assert.Equal(
+		t, int64(99), result.ID.Value,
+		"the identity was already created on Keyfactor before the role lookup failed; it must still be tracked in state, not orphaned",
+	)
+	assert.Empty(
+		t, result.Roles.Elems,
+		"Roles must reflect that nothing was actually granted (setIdentityRole was never called), not the full declared plan.Roles",
+	)
+}

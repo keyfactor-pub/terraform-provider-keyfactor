@@ -444,11 +444,45 @@ func (r resourceSecurityIdentity) Create(
 	// for more information on logging from providers, refer to
 	// https://pkg.go.dev/github.com/hashicorp/terraform-plugin-log/tflog
 	tflog.Trace(ctx, "created security id", map[string]interface{}{"identity_account_name": plan.AccountName.Value})
-	var validRoles []attr.Value
+
+	// The identity has ALREADY been created on Keyfactor Command by this point
+	// (createResponse is a real response from a completed POST). Build the
+	// baseline result now so that any error encountered while resolving/applying
+	// the declared roles below can still persist a tracked, if incomplete,
+	// resource -- mirroring this repo's precedent for "already created
+	// upstream, but a later step failed" (see the certificate deployment
+	// resource's Create(), which persists tainted state on a failed post-submit
+	// job wait rather than leaving a Command-side object with no Terraform
+	// record at all). Losing this identity out of state entirely would be
+	// strictly worse than surfacing an error alongside a resource the user can
+	// still see, re-apply, import, or destroy.
+	//
+	// Roles starts at an empty list, not plan.Roles: at this point in Create no
+	// role has actually been granted yet (setIdentityRole is only called below,
+	// after every declared role has resolved), so an empty list is the only
+	// value that doesn't overclaim what actually happened on the server.
+	result := SecurityIdentity{
+		ID:           types.Int64{Value: int64(createResponse.Id)},
+		AccountName:  types.String{Value: accountName},
+		IdentityType: types.String{Value: plan.IdentityType.Value},
+		Valid:        types.Bool{Value: plan.Valid.Value},
+		Roles:        types.List{ElemType: types.StringType, Elems: []attr.Value{}},
+	}
+
 	if len(plan.Roles.Elems) > 0 {
+		// Every declared role MUST resolve to a real Keyfactor role before
+		// setIdentityRole is ever called -- mirrors Update()'s round-1 fix (see
+		// its comment above for the full rationale: silently dropping an
+		// unresolvable role here previously let it disappear from
+		// validRolesInterface while state still recorded the full declared
+		// list as granted, a silent gap between state and reality). Unlike
+		// Update(), the identity here has already been created, so a lookup
+		// failure can't "abort before mutating anything" -- it aborts before
+		// granting ANY of the declared roles, and persists the tainted
+		// `result` above (identity tracked in state, zero roles) so the
+		// failure is unambiguous and nothing is silently claimed granted.
 		var validRolesInterface []interface{}
 		for _, role := range plan.Roles.Elems {
-			//validRoles = append(validRoles.Elems, role.Name.Value)
 			tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
 
 			// Use the role's underlying string value directly -- see the
@@ -461,58 +495,59 @@ func (r resourceSecurityIdentity) Create(
 					"Unexpected role value type.",
 					fmt.Sprintf("Expected role element to be a string, got %T.", role),
 				)
+				stateDiags := response.State.Set(ctx, result)
+				response.Diagnostics.Append(stateDiags...)
 				return
 			}
 			roleStr := roleVal.Value
 			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", roleStr))
 			kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
-			if roleLookupErr != nil || kfRole == nil {
-				tflog.Warn(ctx, fmt.Sprintf("Error looking up role with id: %s", role))
-				response.Diagnostics.AddWarning(
+			if roleLookupErr != nil {
+				response.Diagnostics.AddError(
 					"Error looking up role on Keyfactor.",
 					fmt.Sprintf(
-						"Error looking up role '%s' on Keyfactor. %s will not have role %s.",
-						roleStr,
-						accountName,
-						roleStr,
+						"Identity '%s' (id %d) was created on Keyfactor, but looking up declared role '%s' failed: %s. "+
+							"No roles have been granted. Re-apply once the role can be resolved, or remove the resource "+
+							"from state (`terraform state rm`) if the identity is no longer needed.",
+						accountName, createResponse.Id, roleStr, roleLookupErr.Error(),
 					),
 				)
-				continue
+				stateDiags := response.State.Set(ctx, result)
+				response.Diagnostics.Append(stateDiags...)
+				return
 			}
-			validRoles = append(validRoles, types.String{Value: fmt.Sprintf("%s", roleStr)})
+			if kfRole == nil {
+				response.Diagnostics.AddError(
+					"Role not found on Keyfactor.",
+					fmt.Sprintf(
+						"Identity '%s' (id %d) was created on Keyfactor, but declared role '%s' was not found. "+
+							"No roles have been granted. Re-apply once the role exists, or remove the resource from "+
+							"state (`terraform state rm`) if the identity is no longer needed.",
+						accountName, createResponse.Id, roleStr,
+					),
+				)
+				stateDiags := response.State.Set(ctx, result)
+				response.Diagnostics.Append(stateDiags...)
+				return
+			}
 			validRolesInterface = append(validRolesInterface, kfRole.Id)
 		}
+
 		err = setIdentityRole(ctx, kfClient, identityArg.AccountName, validRolesInterface)
 		if err != nil {
 			response.Diagnostics.AddError(
 				"Error updating identity roles.",
-				"Error updating identity roles: "+err.Error(),
+				fmt.Sprintf(
+					"Identity '%s' (id %d) was created on Keyfactor, but syncing its role assignments failed: %s. "+
+						"Role membership may be partially applied. Re-apply to retry, or verify role membership manually.",
+					accountName, createResponse.Id, err.Error(),
+				),
 			)
+			stateDiags := response.State.Set(ctx, result)
+			response.Diagnostics.Append(stateDiags...)
+			return
 		}
-	}
-
-	if validRoles == nil {
-		validRoles = plan.Roles.Elems
-	}
-
-	// roles is Optional+Computed: when config omits it entirely, plan.Roles
-	// arrives Unknown (there's no prior state yet for UseStateForUnknown to
-	// copy forward from during Create). A freshly-created identity genuinely
-	// has no roles unless declared, so resolve Unknown to a concrete empty
-	// list rather than writing an Unknown value into state, which Terraform
-	// Core would reject.
-	resultRoles := plan.Roles
-	if resultRoles.Unknown {
-		resultRoles = types.List{ElemType: types.StringType, Elems: []attr.Value{}}
-	}
-
-	// Generate resource state struct
-	var result = SecurityIdentity{
-		ID:           types.Int64{Value: int64(createResponse.Id)},
-		AccountName:  types.String{Value: accountName},
-		IdentityType: types.String{Value: plan.IdentityType.Value},
-		Valid:        types.Bool{Value: plan.Valid.Value},
-		Roles:        resultRoles,
+		result.Roles = plan.Roles
 	}
 
 	diags = response.State.Set(ctx, result)

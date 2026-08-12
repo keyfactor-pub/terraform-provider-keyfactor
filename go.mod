@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/Keyfactor/keyfactor-auth-client-go v1.5.0
 	github.com/Keyfactor/keyfactor-go-client-sdk/v24 v24.1.1
-	github.com/Keyfactor/keyfactor-go-client/v3 v3.5.6
+	github.com/Keyfactor/keyfactor-go-client/v3 v3.6.0-rc.0
 	github.com/hashicorp/terraform-plugin-framework v0.10.0
 	github.com/hashicorp/terraform-plugin-go v0.18.0
 	github.com/hashicorp/terraform-plugin-log v0.10.0

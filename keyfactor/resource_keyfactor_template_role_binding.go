@@ -429,19 +429,29 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 //     older client. A future migration to the v1 SDK client would close this
 //     gap; until then, an update through this resource cannot preserve those
 //     fields because it has no way to even read their current value.
-//   - KeyUsage is a genuine type mismatch between the two models:
-//     GetTemplateResponse.KeyUsage is an int (a bitmask, per the v1 SDK's
-//     equivalent field), but UpdateTemplateArg.KeyUsage is a *bool. There is
-//     no lossless conversion from an arbitrary bitmask int to a bool, so
-//     this field is left nil/omitted here (matching its pre-fix behavior)
-//     rather than risk sending a wrong value.
 func buildTemplateRoleBindingUpdateArg(template *api.GetTemplateResponse, allowedRequesters []string, useAllowedRequesters bool) *api.UpdateTemplateArg {
+	// KeyUsage is a carry-forward value read fresh from GetTemplate
+	// immediately above, exactly like KeyType/FriendlyName/KeyRetention/
+	// KeyRetentionDays below -- it always has a real current value, even
+	// when that value is the zero bitmask (0). Take its address directly
+	// rather than collapsing 0 to nil. keyfactor-go-client/v3 v3.6.0+
+	// types UpdateTemplateArg.KeyUsage as *int (matching
+	// GetTemplateResponse.KeyUsage's int bitmask and Command's wire
+	// format); earlier client versions typed it *bool, which Command
+	// rejects with a live HTTP 400 ("Unexpected character encountered
+	// while parsing value: t. Path 'KeyUsage'") and which had no lossless
+	// conversion from the bitmask anyway, so this field was previously
+	// left nil/omitted -- silently resetting the template's KeyUsage to 0
+	// on every role attach/detach, since PUT /Templates is a full-replace
+	// endpoint.
+	keyUsage := template.KeyUsage
 	return &api.UpdateTemplateArg{
 		Id:           template.Id,
 		CommonName:   template.CommonName,
 		TemplateName: template.TemplateName,
 		Oid:          template.Oid,
 		KeySize:      template.KeySize,
+		KeyUsage:     &keyUsage,
 		// KeyType/FriendlyName/AllowedEnrollmentTypes/KeyRetention/
 		// KeyRetentionDays are carry-forward values read fresh from
 		// GetTemplate immediately above -- they came from the server, so

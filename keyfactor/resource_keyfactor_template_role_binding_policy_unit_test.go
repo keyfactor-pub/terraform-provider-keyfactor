@@ -92,6 +92,7 @@ func existingTemplateFieldSweep() api.GetTemplateResponse {
 		Oid:                    "1.2.3.4",
 		KeySize:                "2048",
 		KeyType:                "RSA",
+		KeyUsage:               160,
 		ForestRoot:             "example.com",
 		FriendlyName:           "Test Template",
 		KeyRetention:           "AfterExpiration",
@@ -259,14 +260,16 @@ func assertPUTBodyCarriesFullFieldSweep(t *testing.T, body []byte) {
 		}
 	}
 
-	// KeyUsage is a documented, deliberate exception: GetTemplateResponse
-	// models it as an int (bitmask) but UpdateTemplateArg models it as a
-	// *bool -- there is no lossless conversion, so it is intentionally left
-	// nil/omitted rather than sent with a wrong value. Assert it stays that
-	// way rather than silently regressing to "carried forward" behavior that
-	// would send a nonsensical value.
-	if _, present := onWire["KeyUsage"]; present {
-		t.Errorf("PUT /Templates payload unexpectedly includes KeyUsage = %v -- this field has a type mismatch between GetTemplateResponse (int) and UpdateTemplateArg (*bool) and must stay omitted, not be sent", onWire["KeyUsage"])
+	// KeyUsage is a carry-forward value like KeyRetentionDays above: it must
+	// round-trip from GetTemplate onto UpdateTemplate unchanged, since this
+	// resource does not manage KeyUsage at all and PUT /Templates is a
+	// full-replace endpoint. keyfactor-go-client/v3 v3.6.0+ types
+	// UpdateTemplateArg.KeyUsage as *int (matching GetTemplateResponse's int
+	// bitmask), closing what was previously a genuine type mismatch
+	// (UpdateTemplateArg.KeyUsage was *bool) that made this field
+	// unrepresentable and forced it to stay nil/omitted.
+	if keyUsage, ok := onWire["KeyUsage"].(float64); !ok || int(keyUsage) != 160 {
+		t.Errorf("PUT /Templates payload KeyUsage = %v, want 160 carried over from GET response", onWire["KeyUsage"])
 	}
 }
 
@@ -328,8 +331,8 @@ func TestUnitRemoveRoleFromTemplatePreservesTemplatePolicy(t *testing.T) {
 
 // zeroValueTemplateFieldSweep returns an api.GetTemplateResponse identical to
 // existingTemplateFieldSweep but with KeyRetentionDays, KeyType,
-// FriendlyName, and AllowedEnrollmentTypes all at their real, legitimate
-// zero/empty values -- template 7's exact live shape.
+// FriendlyName, AllowedEnrollmentTypes, and KeyUsage all at their real,
+// legitimate zero/empty values -- template 7's exact live shape.
 func zeroValueTemplateFieldSweep() api.GetTemplateResponse {
 	sweep := existingTemplateFieldSweep()
 	sweep.KeyRetention = "FromIssuance"
@@ -337,6 +340,7 @@ func zeroValueTemplateFieldSweep() api.GetTemplateResponse {
 	sweep.KeyType = ""
 	sweep.FriendlyName = ""
 	sweep.AllowedEnrollmentTypes = 0
+	sweep.KeyUsage = 0
 	return sweep
 }
 
@@ -425,6 +429,17 @@ func assertPUTBodyCarriesZeroValueFields(t *testing.T, body []byte) {
 		t.Errorf("PUT /Templates payload has no AllowedEnrollmentTypes -- want 0 carried forward, not omitted")
 	} else if n, ok := typesRaw.(float64); !ok || n != 0 {
 		t.Errorf("PUT /Templates payload AllowedEnrollmentTypes = %v, want 0", typesRaw)
+	}
+
+	// KeyUsage==0 (no key usages set) must also survive as an explicit 0,
+	// not be omitted -- omitting it would still clear KeyUsage to 0 on
+	// Command via the full-replace PUT, but only by accident; assert it is
+	// actually sent.
+	keyUsageRaw, present := onWire["KeyUsage"]
+	if !present || keyUsageRaw == nil {
+		t.Errorf("PUT /Templates payload has no KeyUsage -- want 0 carried forward, not omitted")
+	} else if n, ok := keyUsageRaw.(float64); !ok || n != 0 {
+		t.Errorf("PUT /Templates payload KeyUsage = %v, want 0", keyUsageRaw)
 	}
 }
 

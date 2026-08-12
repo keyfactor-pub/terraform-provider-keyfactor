@@ -324,6 +324,9 @@ Note:  This parameter is considered deprecated as for Keyfactor Command v25.1.0 
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate
 - `owner_role_name` (String) A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
 
+> [!NOTE]
+> **Attribute contract**: omitting `owner_role_name` from config leaves ownership unmanaged -- Terraform never sends a clearing value, and drift from an out-of-band owner change is still surfaced on plan/refresh. Declaring an explicit empty string (`owner_role_name = ""`) is a declarative "clear the owner" sentinel: Terraform sends a PUT with no role identifier, which Keyfactor Command interprets as removing the certificate's owner.
+
 Expanded Change Owner Permission: A user who holds the Certificates > Expanded Change Owner permission can set the certificate owner to any role within the permission sets they are a member of. This permission setting overrides the Certificates > Collections > Change Owner permission (both Global and Collection-level) if both are set.
 
 Collections > Change Owner Permission:

@@ -31,6 +31,25 @@ RESULTS_FILE  := $(CURDIR)/harness-results.txt
 # read-mostly demos first, certificate-issuing and K8S-heavy demos last.
 # ecc_pfx_debug and _state_archive_* are NOT part of the harness.
 # ---------------------------------------------------------------------------
+## security_identity_demo (keyfactor_identity) is a PERMANENT structural
+## no-op against kfclab: the resource only supports Active Directory
+## identities, and kfclab is Authentik-OAuth-only with no AD backend (see
+## security_identity_demo/README.md for the exact HTTP 400 and the
+## SKIP_LAB_AD default that makes its lifecycle print SKIPPED and exit 0).
+## A green harness run therefore proves NOTHING about this resource's
+## correctness -- `make testunit`'s TestUnitSecurityIdentity* suite in
+## keyfactor/resource_keyfactor_security_identity_unit_test.go is the
+## REQUIRED, non-optional substitute regression gate and MUST be green
+## before any release. In particular:
+##   TestUnitSecurityIdentityResource_CreateFailsOnRoleLookupError
+##     (Create() silently dropping an unresolvable role instead of failing)
+##   TestUnitSecurityIdentityResource_UpdateResolvesNumericRoleIdViaIdPath
+##     (numeric role IDs never resolving via the name-query lookup)
+##   TestUnitSecurityIdentityResource_UpdateRejectsUnverifiedRoleNameMatch
+##     (unescaped PQL role-name query allowing an unverified match through)
+## These are unit tests against a mock server, not live-lab coverage --
+## they are the best available regression gate for this specific resource,
+## not equivalent to it.
 DEMOS := \
 	oauth_security_demo \
 	pam_provider_type_demo \

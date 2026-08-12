@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -294,32 +293,59 @@ func (r resourceSecurityIdentity) Update(
 	}
 
 	if identityRolesDeclared(config) {
-		// Generate API request body from plan
+		// Generate API request body from plan. Every declared role MUST
+		// resolve to a real Keyfactor role before setIdentityRole is ever
+		// called: setIdentityRole performs a full-replace sync of the
+		// identity's role membership, so silently dropping a role here (e.g.
+		// on a lookup error or "not found") would cause setIdentityRole to
+		// actively REVOKE the identity's existing membership in that role —
+		// a silent access change on what looks like a successful apply. A
+		// lookup failure for a declared role must fail the apply with
+		// nothing mutated, matching this project's standing rule that
+		// transient/lookup errors are surfaced, never swallowed.
 		var validRolesInterface []interface{}
 		for _, role := range plan.Roles.Elems {
 			tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
-			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
 
-			//TODO: Verify role exists in Keyfactor or throw warning
-			re, err := regexp.Compile(`[^\w]`)
-			if err != nil {
-				log.Fatal(err)
+			// Use the role's underlying string value directly. role.String()
+			// returns the framework's %q-quoted representation, and the old
+			// `[^\w]` sanitizer stripped more than just the surrounding
+			// quotes -- it also stripped spaces and hyphens from legitimate
+			// role names (e.g. "Power Users" -> "PowerUsers"), causing the
+			// lookup below to look for a role that doesn't exist.
+			roleVal, ok := role.(types.String)
+			if !ok {
+				response.Diagnostics.AddError(
+					"Unexpected role value type.",
+					fmt.Sprintf("Expected role element to be a string, got %T.", role),
+				)
+				return
 			}
-			roleStr := re.ReplaceAllString(role.String(), "")
-			tflog.Debug(ctx, fmt.Sprintf("Role string: %s", roleStr))
+			roleStr := roleVal.Value
+			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", roleStr))
 			kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
-			if roleLookupErr != nil || kfRole == nil {
-				tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
-				response.Diagnostics.AddWarning(
+			if roleLookupErr != nil {
+				response.Diagnostics.AddError(
 					"Error looking up role on Keyfactor.",
 					fmt.Sprintf(
-						"Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.",
+						"Error looking up role '%s' on Keyfactor: %s. Update aborted before applying any role changes to '%s' to avoid silently revoking its existing role membership.",
 						roleStr,
+						roleLookupErr.Error(),
 						state.AccountName.Value,
-						roleStr,
 					),
 				)
-				continue
+				return
+			}
+			if kfRole == nil {
+				response.Diagnostics.AddError(
+					"Role not found on Keyfactor.",
+					fmt.Sprintf(
+						"Role '%s' declared for identity '%s' was not found on Keyfactor. Update aborted before applying any role changes to avoid silently revoking existing role membership.",
+						roleStr,
+						state.AccountName.Value,
+					),
+				)
+				return
 			}
 			validRolesInterface = append(validRolesInterface, kfRole.Id)
 		}
@@ -328,6 +354,7 @@ func (r resourceSecurityIdentity) Update(
 		err := setIdentityRole(ctx, r.p.client, state.AccountName.Value, validRolesInterface)
 		if err != nil {
 			response.Diagnostics.AddError("Error updating identity roles.", "Error updating identity roles: "+err.Error())
+			return
 		}
 		result.Roles = plan.Roles
 	}
@@ -423,12 +450,21 @@ func (r resourceSecurityIdentity) Create(
 		for _, role := range plan.Roles.Elems {
 			//validRoles = append(validRoles.Elems, role.Name.Value)
 			tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
-			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
 
-			//TODO: Verify role exists in Keyfactor or throw warning
-			re, _ := regexp.Compile(`[^\w]`)
-			roleStr := re.ReplaceAllString(role.String(), "")
-			tflog.Debug(ctx, fmt.Sprintf("Role string: %s", roleStr))
+			// Use the role's underlying string value directly -- see the
+			// matching fix in Update() for why the old `[^\w]` regex
+			// sanitizer over role.String() mangled legitimate role names
+			// (e.g. names containing spaces or hyphens).
+			roleVal, ok := role.(types.String)
+			if !ok {
+				response.Diagnostics.AddError(
+					"Unexpected role value type.",
+					fmt.Sprintf("Expected role element to be a string, got %T.", role),
+				)
+				return
+			}
+			roleStr := roleVal.Value
+			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", roleStr))
 			kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
 			if roleLookupErr != nil || kfRole == nil {
 				tflog.Warn(ctx, fmt.Sprintf("Error looking up role with id: %s", role))

@@ -487,6 +487,201 @@ func TestUnitSecurityIdentityReadNumericIdMatchesServerRole(t *testing.T) {
 	)
 }
 
+// TestUnitSecurityIdentityResource_UpdateFailsOnRoleLookupError is a
+// regression test for Update() treating a role lookup error (or a (nil, nil)
+// "not found" GetSecurityRole response) as a Warning-and-continue: dropping
+// the unresolvable role from validRolesInterface let setIdentityRole's
+// full-replace sync run anyway, actively REVOKING the identity's existing
+// membership in that role while the apply exited 0 and state recorded the
+// full plan.Roles as assigned -- a silent access change contradicting the
+// executed action.
+//
+// This drives Update() end-to-end against a mock Command server whose role
+// name lookup (GET /Security/Roles?pq.queryString=...) fails with HTTP 500,
+// and asserts (1) Update() surfaces an error diagnostic, and (2) no
+// role-mutation call (PUT /Security/Roles, which setIdentityRole's
+// addIdentityToRole/removeIdentityFromRole would issue) is ever made --
+// the apply must fail with nothing mutated, not partially apply then error.
+func TestUnitSecurityIdentityResource_UpdateFailsOnRoleLookupError(t *testing.T) {
+	ctx := context.Background()
+
+	var mutationCalled bool
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutationCalled = true
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"Id": 7, "Name": "Power Users"})
+			return
+		}
+		// The name-lookup GET fails transiently -- e.g. a network blip or
+		// server error, not a genuine "role doesn't exist".
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Message": "Internal Server Error"})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	state := SecurityIdentity{
+		ID:           types.Int64{Value: 42},
+		AccountName:  types.String{Value: `KEYFACTOR\\tf-unit-lookup-fail`},
+		IdentityType: types.String{Value: "User"},
+		Valid:        types.Bool{Value: true},
+		Roles: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "Administrators"},
+		}},
+	}
+
+	// Plan/config declare a new role, forcing the lookup that fails.
+	plan := state
+	plan.Roles = types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "Power Users"},
+	}}
+	config := plan
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
+
+	r := resourceSecurityIdentity{p: provider{configured: true, client: client}}
+
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+
+	assert.True(t, resp.Diagnostics.HasError(),
+		"Update() must fail the apply when a declared role's lookup errors, not silently drop the role and proceed with a partial role sync")
+	assert.False(t, mutationCalled,
+		"Update() must not call setIdentityRole (any role add/remove) when a declared role's lookup failed -- doing so would revoke the identity's existing role membership under a state record that claims success")
+}
+
+// TestUnitSecurityIdentityResource_UpdateRoleLookupPreservesSpaces is a
+// regression test for the `[^\w]` sanitizer applied to role.String() (the
+// framework's %q-quoted representation) before the role name lookup: for a
+// role name containing a space or hyphen (e.g. "Power Users"), the sanitizer
+// stripped more than just the surrounding quotes, mangling the lookup to
+// "PowerUsers" -- a role that doesn't exist. That caused a (nil, nil)
+// "not found" response and, pre-fix, silently dropped the role and revoked
+// the identity's real membership in "Power Users" on every apply.
+//
+// This drives Update() end-to-end and captures the actual HTTP query string
+// GetSecurityRole issues, asserting the role name reaches the server
+// unmangled -- spaces intact -- rather than as a sanitizer-stripped
+// alphanumeric string.
+func TestUnitSecurityIdentityResource_UpdateRoleLookupPreservesSpaces(t *testing.T) {
+	ctx := context.Background()
+
+	var capturedQuery string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			capturedQuery = r.URL.Query().Get("pq.queryString")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode([]map[string]interface{}{
+				{"Id": 7, "Name": "Power Users", "Description": ""},
+			})
+			return
+		}
+		t.Fatalf("unexpected %s request to /KeyfactorAPI/Security/Roles -- the identity is already a member of the role, so no role mutation should be needed", r.Method)
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/7", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// The identity is already associated with the role, so
+		// addIdentityToRole short-circuits without issuing a PUT.
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":   7,
+			"Name": "Power Users",
+			"Identities": []map[string]interface{}{
+				{"AccountName": `KEYFACTOR\\tf-unit-space`},
+			},
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Identities", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
+			{
+				"Id":           42,
+				"AccountName":  `KEYFACTOR\\tf-unit-space`,
+				"IdentityType": "User",
+				"Valid":        true,
+				"Roles": []map[string]interface{}{
+					{"Id": 7, "Name": "Power Users"},
+				},
+			},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityIdentityType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	state := SecurityIdentity{
+		ID:           types.Int64{Value: 42},
+		AccountName:  types.String{Value: `KEYFACTOR\\tf-unit-space`},
+		IdentityType: types.String{Value: "User"},
+		Valid:        types.Bool{Value: true},
+		Roles:        types.List{ElemType: types.StringType, Elems: []attr.Value{}},
+	}
+
+	plan := state
+	plan.Roles = types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "Power Users"},
+	}}
+	config := plan
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
+
+	r := resourceSecurityIdentity{p: provider{configured: true, client: client}}
+
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	assert.Equal(
+		t, `name -eq "Power Users"`, capturedQuery,
+		"the role lookup query must carry the role name's raw value, unmangled by the old `[^\\w]` sanitizer over role.String() which stripped spaces (and would have looked up \"PowerUsers\" instead)",
+	)
+}
+
 // TestUnitRoleIdToInt is a regression test for setIdentityRole's role-ID type
 // switch, which blindly asserted every non-int role identifier to int via a
 // `case string, interface{}: roleId = role.(int)` catch-all. Since

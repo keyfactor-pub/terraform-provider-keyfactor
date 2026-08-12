@@ -448,6 +448,115 @@ func TestUnitSecurityRoleResource_ReadPreservesPermissionsOrderWhenUnchanged(t *
 	)
 }
 
+// TestUnitSecurityRoleResource_ReadRemovesResourceOn404 is a regression test
+// for resourceSecurityRole.Read unconditionally AddError-ing on any error
+// from GetSecurityRole. GetSecurityRole (github.com/Keyfactor/keyfactor-go-
+// client/v3/api) converts an HTTP 404 into a non-nil Go error rather than a
+// structured status code, so a role deleted out-of-band in Keyfactor Command
+// previously bricked every subsequent `terraform plan`/refresh/destroy for
+// that resource until the user manually ran `terraform state rm`.
+//
+// This exercises the real Read() path against a mock Command server that
+// returns HTTP 404 for the role, proving Read now removes the resource from
+// state (so Terraform plans a re-create) instead of erroring.
+func TestUnitSecurityRoleResource_ReadRemovesResourceOn404(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/5", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Message": "Role not found",
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	priorState := SecurityRole{
+		ID:          types.Int64{Value: 5},
+		Name:        types.String{Value: "tf-unit-role"},
+		Description: types.String{Value: "Original description"},
+		Permissions: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "Certificates:Read"},
+		}},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &priorState); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityRole{p: provider{configured: true, client: client}}
+
+	req := tfsdk.ReadResourceRequest{State: stateObj}
+	resp := &tfsdk.ReadResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Read(ctx, req, resp)
+
+	assert.False(t, resp.Diagnostics.HasError(),
+		"Read() must not error on a 404 -- it should remove the resource from state so Terraform plans a re-create, not brick plan/refresh/destroy: %+v", resp.Diagnostics)
+	assert.True(t, resp.State.Raw.IsNull(),
+		"Read() must remove the resource from state (State.Raw must be null) when the role is not found on Keyfactor")
+}
+
+// TestUnitSecurityRoleResource_ReadErrorsOnNon404 is the companion regression
+// test to TestUnitSecurityRoleResource_ReadRemovesResourceOn404: it guards
+// against a naive fix that treats ANY GetSecurityRole error as "not found"
+// and silently removes the resource from state, which would mask real
+// errors (5xx, auth, network) as spurious deletes. A non-404 error from
+// GetSecurityRole must still fail Read with an error diagnostic.
+func TestUnitSecurityRoleResource_ReadErrorsOnNon404(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/5", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Message": "Internal Server Error",
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	priorState := SecurityRole{
+		ID:          types.Int64{Value: 5},
+		Name:        types.String{Value: "tf-unit-role"},
+		Description: types.String{Value: "Original description"},
+		Permissions: types.List{ElemType: types.StringType, Elems: []attr.Value{
+			types.String{Value: "Certificates:Read"},
+		}},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &priorState); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityRole{p: provider{configured: true, client: client}}
+
+	req := tfsdk.ReadResourceRequest{State: stateObj}
+	resp := &tfsdk.ReadResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Read(ctx, req, resp)
+
+	assert.True(t, resp.Diagnostics.HasError(),
+		"Read() must surface a non-404 error (e.g. HTTP 500) as an error diagnostic, not silently remove the resource from state")
+}
+
 // TestUnitSecurityRoleSchema_PermissionsIsComputedWithUseStateForUnknown is a
 // regression test for "Provider produced inconsistent result after apply:
 // .permissions: was null, but now cty.ListVal(...)" -- the identical defect to

@@ -79,6 +79,21 @@ func (r resourceSecurityRole) Read(
 
 	remoteState, err := r.p.client.GetSecurityRole(int(roleId))
 	if err != nil {
+		// GetSecurityRole converts an HTTP 404 into a non-nil Go error (see
+		// vendor/.../keyfactor-go-client/v3/api/client.go's sendRequest,
+		// which returns errors.New(body["Message"]) for 404s -- no
+		// structured status code is preserved on this call path). A role
+		// deleted out-of-band in Command must not brick every subsequent
+		// plan/refresh/destroy; detect the not-found signature the same way
+		// resource_keyfactor_certificate_store_type.go's Read does for this
+		// same api.Client style, and remove the resource from state instead
+		// of erroring, so Terraform plans a re-create. Any other error (5xx,
+		// auth, network) still fails Read.
+		if isNotFoundError(err) {
+			tflog.Info(ctx, fmt.Sprintf("Security role '%s' (id %v) not found on Keyfactor, removing from state", roleName, roleId))
+			response.State.RemoveResource(ctx)
+			return
+		}
 		response.Diagnostics.AddError(
 			"Error reading role from Keyfactor.",
 			fmt.Sprintf("Unknown error while trying to read role '%s' (id %v) on Keyfactor. Read failed. ", roleName, roleId)+err.Error(),
@@ -86,10 +101,12 @@ func (r resourceSecurityRole) Read(
 		return
 	}
 	if remoteState == nil {
-		response.Diagnostics.AddError(
-			"Unknown role error.",
-			fmt.Sprintf("Unable to find role '%s' (id %v) on Keyfactor. Read failed.", roleName, roleId),
-		)
+		// A (nil, nil) response is GetSecurityRole's other not-found shape
+		// (its string-lookup branch falls off the loop with no match and
+		// returns nil, nil with no error at all) -- treat it identically to
+		// the 404 case above.
+		tflog.Info(ctx, fmt.Sprintf("Security role '%s' (id %v) not found on Keyfactor, removing from state", roleName, roleId))
+		response.State.RemoveResource(ctx)
 		return
 	}
 

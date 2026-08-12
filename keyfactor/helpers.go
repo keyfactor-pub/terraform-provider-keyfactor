@@ -1322,6 +1322,23 @@ func hasAPIErrors(
 	return false
 }
 
+// isNotFoundError reports whether err represents an HTTP 404 / "not found"
+// response from Keyfactor Command as surfaced by the legacy api.Client
+// (github.com/Keyfactor/keyfactor-go-client/v3/api). That client's
+// sendRequest doesn't preserve a structured status code on its returned
+// error -- for a 404 it returns errors.New(body["Message"]), so callers on
+// this code path must pattern-match the error string. This mirrors the
+// existing idiom in resource_keyfactor_certificate_store_type.go's Read
+// (strings.Contains(err.Error(), "404")), broadened to also catch "not
+// found" text, matching resource_keyfactor_certificate_deploy.go's Read.
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "404") || strings.Contains(msg, "not found")
+}
+
 // effectiveCertificateFormat normalizes a certificate_format value to the
 // effective download format. Empty string and "STORE" both resolve to PEM
 // (since the STORE format produces PEM output in the Read path).

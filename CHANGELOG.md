@@ -5,6 +5,7 @@
 ### Fixes
 
 - fix: `keyfactor_template_role_binding` no longer fails with `'Policies' cannot be empty` when updating a role binding on Command 25.x, and no longer clears a template's retention, enrollment/metadata, regex, or approval settings as a side effect of an unrelated binding change. Fixes [#190](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/190)
+- fix: `keyfactor_template_role_binding` no longer resets a template's `KeyUsage` bitmask to 0 as a side effect of an unrelated role attach/detach
 
 ## Certificate Templates
 
@@ -19,6 +20,7 @@
 ### Fixes
 
 - fix: `keyfactor_certificate` `dns_sans`/`ip_sans`/`uri_sans` no longer force a full destroy+recreate on the first plan after `terraform import`. Fixes [#197](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/197)
+- fix: `keyfactor_certificate` `owner_role_name` no longer clears the certificate's owner as a side effect of omitting the attribute from config on an unrelated `Update`; omitting it now leaves ownership unmanaged, and an explicit empty string (`owner_role_name = ""`) is a declarative clear that stays stable across refreshes instead of manufacturing a permanent diff
 
 ## Certificate Deployments
 
@@ -89,7 +91,7 @@
 
 ## Chores
 
-- chore(deps): `keyfactor-go-client/v3` bumped to `v3.5.6` GA
+- chore(deps): `keyfactor-go-client/v3` bumped to `v3.6.0-rc.0` (from `v3.5.6` GA) — changes `UpdateTemplateArg.KeyUsage` from `*bool` to `*int` to match Command's actual int-bitmask wire format for `PUT /Templates`; final GA of this provider must pin a go-client GA once `v3.6.0` is cut
 - chore(deps): security bumps resolving all 15 open Dependabot alerts (7 critical, 3 high, 5 moderate): `golang.org/x/crypto` v0.47.0 → v0.52.0 (SSH auth-bypass/DoS advisories incl. GHSA-vgwf-h737-ff37, GHSA-jppx-rxg9-jmrx), `google.golang.org/grpc` v1.79.3 → v1.82.1 (GHSA-hrxh-6v49-42gf xDS RBAC/HTTP2), `golang.org/x/net` v0.49.0 → v0.55.0 (HTML parser DoS), plus transitive `x/sys`/`x/text`/`x/tools`/`protobuf` updates. All indirect dependencies; no Terraform plugin framework or Keyfactor client changes. Minimum Go toolchain moves 1.24 → 1.25 (required by the updated dependencies)
 - chore(test): add a real-Terraform release-test harness (`terraform/`, `make -C terraform harness`) that runs every resource through `plan → apply → import → drift-check → destroy` against a live Command instance; used to find and verify every fix above
 

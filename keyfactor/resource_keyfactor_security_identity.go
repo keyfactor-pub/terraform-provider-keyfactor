@@ -737,15 +737,15 @@ func (r resourceSecurityIdentity) ImportState(
 		if accountName == identity.AccountName {
 			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %s", accountName))
 			identityExists = true
-			var roles []attr.Value
-			for _, role := range identity.Roles {
-				roles = append(roles, types.String{Value: role.Name})
-			}
+			// identityRolesCanonical builds the same (server canonical role
+			// name, ElemType String) types.List this loop used to build
+			// inline -- reuse it instead of maintaining a second copy of the
+			// same logic.
 			state = SecurityIdentity{
 				ID:           types.Int64{Value: int64(identity.Id)},
 				AccountName:  types.String{Value: identity.AccountName},
 				IdentityType: types.String{Value: identity.IdentityType},
-				Roles:        types.List{Elems: roles, ElemType: types.StringType},
+				Roles:        identityRolesCanonical(identity.Roles),
 				Valid:        types.Bool{Value: identity.Valid},
 			}
 

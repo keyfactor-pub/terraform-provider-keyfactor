@@ -26,10 +26,13 @@ resource "keyfactor_certificate" "demo" {
 # read-only — the Add operation is not supported by this store type.
 #
 # Alias format per store type (from k8s-orchestrator docs):
-#   K8STLSSecr  — omit alias; cert is placed into the store's backing TLS
-#                 secret unconditionally. Providing an alias requires overwrite=true
-#                 AND the alias must already be tracked by Command.
-#   K8SSecret   — same as K8STLSSecr; omit alias for unconditional placement.
+#   K8STLSSecr  — alias is the backing secret's name. The k8s-orchestrator extension
+#                 requires overwrite=true whenever the backing secret already holds
+#                 data (i.e. on every redeploy after the first) and, per Command's own
+#                 validation, overwrite=true requires an alias that Command already
+#                 tracks in the store's inventory. This demo sets both explicitly so
+#                 repeated applies stay idempotent.
+#   K8SSecret   — same as K8STLSSecr.
 #   K8SJKS      — "<CertificateDataFieldName>/<keystore-alias>"
 #                 CertificateDataFieldName defaults to "jks" when not set.
 #                 Example: "jks/my-cert"
@@ -41,49 +44,29 @@ resource "keyfactor_certificate" "demo" {
 resource "keyfactor_certificate_deployment" "tls_secret" {
   certificate_id       = keyfactor_certificate.demo.certificate_id
   certificate_store_id = keyfactor_certificate_store.k8s_tls_secret.id
-  # K8STLSSecr: alias is the K8S secret name; omitting alias lets Command match by cert ID.
-  # Overwrite is required if an alias is provided but the alias already exists; without
-  # an alias the cert is placed into the store's backing secret unconditionally.
-
-  # TEMPORARY WORKAROUND — DO NOT treat as the intended long-term config.
-  # The k8s-orchestrator extension's Management (Add) job for K8STLSSecr, on the
-  # no-alias/"unconditional replace" code path used here, reports Result: Success
-  # in Command's JobHistory but does not actually write the new certificate into
-  # the target K8s Secret (confirmed against a live lab: JobHistory showed
-  # Success while the Secret's tls.crt still held a certificate enrolled 5 days
-  # earlier). Because the job falsely reports success, fail_on_job_failure cannot
-  # catch this — it only fires on a genuine failure/warning result. The only way
-  # to avoid an indefinite hang polling for inventory that will never reflect the
-  # new cert is to skip inventory validation entirely.
-  # skip_inventory_validation = true therefore means "fire and forget": apply
-  # goes green once the job is submitted (and even falsely reports success), but
-  # this does NOT confirm the certificate actually landed in the K8s Secret.
-  # Tracked upstream: https://github.com/Keyfactor/k8s-orchestrator/issues/91
-  # REVERT: remove this line once the upstream issue is fixed, to restore full
-  # inventory-based verification (the demo's actual intended behavior).
-  skip_inventory_validation = true
+  # K8STLSSecr: alias is the K8S secret name; Command already tracks "tf-demo-tls-secret"
+  # as the store's inventoried alias, so overwrite=true is required (and valid) to
+  # redeploy onto the existing backing secret.
+  certificate_alias = "tf-demo-tls-secret"
+  overwrite         = true
+  #
+  # Full inventory-based verification (the default apply behavior): the resource waits
+  # for the deployed certificate to appear in the store's inventory before completing.
+  # Previously worked around via skip_inventory_validation = true because the
+  # k8s-orchestrator extension's Management (Add) job silently failed to write the K8s
+  # Secret while still reporting Result: Success. Fixed upstream:
+  # https://github.com/Keyfactor/k8s-orchestrator/issues/91
 }
 
 resource "keyfactor_certificate_deployment" "opaque_secret" {
   certificate_id       = keyfactor_certificate.demo.certificate_id
   certificate_store_id = keyfactor_certificate_store.k8s_opaque_secret.id
-  # K8SSecret: same pattern as K8STLSSecr — alias optional, omit for unconditional placement.
-
-  # TEMPORARY WORKAROUND — DO NOT treat as the intended long-term config.
-  # Same root cause as tls_secret above: the k8s-orchestrator extension's
-  # Management (Add) job for K8SSecret, on the no-alias/"unconditional replace"
-  # code path, reports Result: Success in Command's JobHistory but does not
-  # actually write the new certificate into the target K8s Secret (confirmed
-  # against a live lab via JobHistory + direct inspection of the Secret's
-  # contents). fail_on_job_failure cannot catch this false-positive success, so
-  # skip_inventory_validation = true is used to avoid an indefinite hang.
-  # skip_inventory_validation = true means "fire and forget": apply goes green
-  # once the job is submitted (and even falsely reports success), but this does
-  # NOT confirm the certificate actually landed in the K8s Secret.
-  # Tracked upstream: https://github.com/Keyfactor/k8s-orchestrator/issues/91
-  # REVERT: remove this line once the upstream issue is fixed, to restore full
-  # inventory-based verification (the demo's actual intended behavior).
-  skip_inventory_validation = true
+  # K8SSecret: same pattern as tls_secret above.
+  certificate_alias = "tf-demo-opaque-secret"
+  overwrite         = true
+  #
+  # Full inventory-based verification (the default apply behavior) — see the tls_secret
+  # resource above; same fixed upstream issue applied to K8SSecret as well.
 }
 
 resource "keyfactor_certificate_deployment" "jks" {

@@ -149,3 +149,19 @@ terraform import keyfactor_certificate_store.k8s_tls_secret "xxxxxxxx-xxxx-xxxx-
 | K8SJKS | `jks/<keystore-alias>` | Field name `jks` set via `CertificateDataFieldName` |
 | K8SPKCS12 | `.p12/<keystore-alias>` | Field name `.p12` set via `CertificateDataFieldName` |
 | K8SCert / K8SNS / K8SCluster | *(not applicable)* | Inventory/discovery only — Add not supported |
+
+> **TEMPORARY limitation — `tls_secret` / `opaque_secret` (K8STLSSecr / K8SSecret):**
+> The k8s-orchestrator extension's Management (Add) job for these two store types, on the
+> no-alias/"unconditional replace" code path used by this demo, reports `Result: Success`
+> in Command's JobHistory but does not actually write the new certificate into the target
+> K8s Secret (confirmed against a live lab: the Secret's `tls.crt` still held a certificate
+> enrolled 5 days earlier after a job reporting Success). Because the job falsely reports
+> success, `fail_on_job_failure` cannot catch this — it only fires on a genuine
+> failure/warning result. To avoid an indefinite hang, `deployments.tf` sets
+> `skip_inventory_validation = true` on `tls_secret` and `opaque_secret` only. This means
+> "fire and forget": `apply` goes green once the job is submitted, but does **not** verify
+> the certificate actually landed in the K8s Secret. `jks`, `jks_buddy`, `pkcs12`, and
+> `pkcs12_buddy` are unaffected and keep full inventory-based verification.
+> Tracked upstream: https://github.com/Keyfactor/k8s-orchestrator/issues/91
+> **REVERT** `skip_inventory_validation = true` on both resources once the upstream issue
+> is fixed, to restore this demo's intended end-to-end verification guarantee.

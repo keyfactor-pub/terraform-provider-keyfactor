@@ -303,11 +303,22 @@ func (r resourceSecurityRole) Update(
 		return
 	}
 
+	// resultPermissions is the final resolved permission list -- the one
+	// actually written to state below -- not raw config/prior-state, so the
+	// debug log below reflects what the role ends up with after Update, same
+	// as ImportState's equivalent per-permission log line.
+	resultPermissions := permissionsResultForUpdate(ctx, config.Permissions, remoteState.Permissions)
+	for _, v := range resultPermissions.Elems {
+		if perm, ok := v.(types.String); ok {
+			tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm.Value))
+		}
+	}
+
 	var result = SecurityRole{
 		ID:          types.Int64{Value: int64(state.ID.Value)},
 		Name:        types.String{Value: remoteState.Name},
 		Description: types.String{Value: remoteState.Description},
-		Permissions: permissionsResultForUpdate(ctx, config.Permissions, remoteState.Permissions),
+		Permissions: resultPermissions,
 	}
 
 	// Set state

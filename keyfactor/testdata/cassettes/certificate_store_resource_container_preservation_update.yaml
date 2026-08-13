@@ -1,0 +1,703 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStoreTypes/Name/K8STLSSecr
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 2136
+        body: '[{"Name":"Kubernetes TLS Secret","ShortName":"K8STLSSecr","Capability":"K8STLSSecr","StoreType":106,"ImportType":0,"LocalStore":false,"SupportedOperations":{"Add":true,"Create":true,"Discovery":true,"Enrollment":false,"Remove":true},"Properties":[{"Id":142,"StoreTypeId":106,"Name":"ServerUsername","DisplayName":"Server Username","Type":"Secret","DefaultValue":"kubeconfig","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":143,"StoreTypeId":106,"Name":"ServerPassword","DisplayName":"Server Password","Type":"Secret","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":144,"StoreTypeId":106,"Name":"ServerUseSsl","DisplayName":"Use SSL","Type":"Bool","DefaultValue":"true","Required":true,"ValidationOptions":{"OnCreation":1}},{"Id":145,"StoreTypeId":106,"Name":"KubeNamespace","DisplayName":"KubeNamespace","Type":"String","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":146,"StoreTypeId":106,"Name":"KubeSecretName","DisplayName":"KubeSecretName","Type":"String","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":147,"StoreTypeId":106,"Name":"KubeSecretType","DisplayName":"KubeSecretType","Type":"String","DefaultValue":"tls_secret","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":148,"StoreTypeId":106,"Name":"IncludeCertChain","DisplayName":"Include Certificate Chain","Type":"Bool","DefaultValue":"true","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":149,"StoreTypeId":106,"Name":"SeparateChain","DisplayName":"Separate Chain","Type":"Bool","DefaultValue":"false","Required":false,"ValidationOptions":{"OnCreation":0}}],"EntryParameters":[],"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"StorePathValue":"","PrivateKeyAllowed":"Optional","CertificateFormat":0,"JobProperties":[],"ServerRequired":true,"PowerShell":false,"BlueprintAllowed":false,"CustomAliasAllowed":"Forbidden","ServerRegistration":4,"InventoryEndpoint":"/AnyInventory/Update","InventoryJobType":"ac9d92b3-1db0-444f-a6c8-341ab5c94866","ManagementJobType":"d45d6761-7724-4581-8240-1cd4196263f8","DiscoveryJobType":"6fec00a5-8ad0-4449-817b-08632b291e5e"}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "2136"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:18 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 8a28d4f7-6b26-4e23-8f0b-ec492110aa3c
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 10.608122291s
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        form:
+            pq.queryString:
+                - AgentId -eq "f5f4d314-16d7-4ed5-a9c0-b16880b75bdd"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Agents?pq.queryString=AgentId%20-eq%20%22f5f4d314-16d7-4ed5-a9c0-b16880b75bdd%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3646
+        body: '[{"AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","ClientMachine":"kfclab-uo-tertiary-uo","Username":"ak-Keyfactor Command 26-client_credentials","AgentPlatform":1,"Version":"25.5.0.0","Status":2,"LastSeen":"2026-08-13T15:03:45.1Z","Capabilities":["K8STLSSecr","K8SPKCS12","K8SSecret","K8SCert","K8SJKS","SSL","K8SCluster","K8SNS"],"Blueprint":null,"Thumbprint":"","LegacyThumbprint":"","AuthCertificateReenrollment":"None","LastThumbprintUsed":"","LastErrorCode":null,"LastErrorMessage":null,"JobTypes":[{"Name":"Kubernetes TLS Secret Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"6fec00a5-8ad0-4449-817b-08632b291e5e"},{"Name":"Kubernetes PKCS12 Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"4fde2eb2-81e3-47a1-b5f4-0cde5f0d8cd6"},{"Name":"Kubernetes Secret Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"101aaf63-0659-492b-af90-1515cc6b0393"},{"Name":"Kubernetes Certificate Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"31554c7a-5dd8-403f-b893-19279af2da01"},{"Name":"Kubernetes TLS Secret Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"d45d6761-7724-4581-8240-1cd4196263f8"},{"Name":"Kubernetes PKCS12 Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"844515ed-48d9-4caa-9a3c-25f908c1d14d"},{"Name":"Kubernetes TLS Secret Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"ac9d92b3-1db0-444f-a6c8-341ab5c94866"},{"Name":"Kubernetes JKS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"69113341-fbf0-4a5b-81f1-38797bb280fe"},{"Name":"Kubernetes Secret Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"e74ddba5-10e5-4d2f-953b-3b2af18c322c"},{"Name":"SSL Endpoint Discovery","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"332abd4e-cf9a-4449-a550-3c984a2399f9"},{"Name":"Kubernetes JKS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"3602e651-9a49-481c-a79c-4ea4e5ba8839"},{"Name":"Kubernetes Secret Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"2f83a121-f400-4346-8162-6977b06f77f0"},{"Name":"Kubernetes Certificate Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"a78796e9-1bec-4df1-b59d-81b2bd1b83c1"},{"Name":"Kubernetes Cluster Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"fe10111c-3bf0-43eb-a05a-8c33922fdfbd"},{"Name":"Kubernetes Namespace Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"8df5f549-9003-4854-aa87-8e35d9b45766"},{"Name":"Kubernetes Namespace Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"85161bad-ed33-4b11-abaf-b07e59e9ce98"},{"Name":"SSL Endpoint Monitoring","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"ecd5758a-2f05-49b1-9373-d9bde7077f59"},{"Name":"Kubernetes Cluster Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"c76e1cb8-0763-4fc1-b82f-dc119c962456"},{"Name":"Kubernetes PKCS12 Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"0bd4335d-a63c-4974-b60a-ee2899171a65"},{"Name":"Kubernetes JKS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"684f0bd5-0076-42ea-82c9-f67a0e82076c"},{"Name":"Kubernetes Namespace Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"b34bf473-765a-4617-857a-f814d594b662"}]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "3646"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:29 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - fbe16ee6-7832-4ce0-af5c-265b2c063e8e
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 32.490998ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 432
+        host: command.lab.local
+        body: '{"ClientMachine":"kfclab-uo-tertiary-uo","StorePath":"default/tf-unit-gh175-1786633594171837000","CertStoreType":106,"Approved":false,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"\\n\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"kubeconfig\"}","AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","AgentAssigned":false,"ContainerName":"","InventorySchedule":{},"SetNewPasswordAllowed":false}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStores
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 709
+        body: '{"Id":"5003dfba-3513-4ac7-aec1-a65ffff0e4e3","ContainerId":null,"DisplayName":"kfclab-uo-tertiary-uo - default/tf-unit-gh175-1786633594171837000","ClientMachine":"kfclab-uo-tertiary-uo","Storepath":"default/tf-unit-gh175-1786633594171837000","CertStoreInventoryJobId":null,"CertStoreType":106,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"c37bad9a-0e5e-4165-a1c6-a0feab389cbd\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"11376ee5-d19d-4265-948e-ce167a320544\"}","AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","AgentAssigned":true,"ContainerName":null,"InventorySchedule":{},"ReenrollmentStatus":null,"SetNewPasswordAllowed":false,"Password":null}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "709"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:30 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - d8175f39-f64b-457f-860f-83796b843496
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 1.561113728s
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStores/5003dfba-3513-4ac7-aec1-a65ffff0e4e3
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1665
+        body: '{"Id":"5003dfba-3513-4ac7-aec1-a65ffff0e4e3","ContainerId":null,"DisplayName":"kfclab-uo-tertiary-uo - default/tf-unit-gh175-1786633594171837000","ClientMachine":"kfclab-uo-tertiary-uo","Storepath":"default/tf-unit-gh175-1786633594171837000","CertStoreInventoryJobId":"16fe85fd-030f-4686-9cdd-e5ee06768cc4","CertStoreType":106,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":{\"Value\":\"********************\",\"SecretTypeGuid\":\"00000000-0000-0000-0000-000000000000\",\"InstanceId\":null,\"InstanceGuid\":null,\"ProviderTypeParameterValues\":[],\"ProviderId\":null,\"IsManaged\":false,\"SecretType\":0,\"RemoteProviderName\":null,\"HasValue\":true},\"ServerUseSsl\":\"true\",\"ServerUsername\":{\"Value\":\"********************\",\"SecretTypeGuid\":\"00000000-0000-0000-0000-000000000000\",\"InstanceId\":null,\"InstanceGuid\":null,\"ProviderTypeParameterValues\":[],\"ProviderId\":null,\"IsManaged\":false,\"SecretType\":0,\"RemoteProviderName\":null,\"HasValue\":true}}","AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","AgentAssigned":true,"ContainerName":null,"InventorySchedule":{"Daily":{"Time":"2026-08-13T16:00:00Z"}},"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":{"Value":"********************","SecretTypeGuid":"00000000-0000-0000-0000-000000000000","InstanceId":null,"InstanceGuid":null,"ProviderTypeParameterValues":[],"ProviderId":null,"IsManaged":false,"SecretType":0,"RemoteProviderName":null,"HasValue":true}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "1665"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:32 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - f450cbd5-f3d9-47d7-a1f9-4ac2ffc03dd1
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 38.247128ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStores/5003dfba-3513-4ac7-aec1-a65ffff0e4e3
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1685
+        body: '{"Id":"5003dfba-3513-4ac7-aec1-a65ffff0e4e3","ContainerId":20,"DisplayName":"kfclab-uo-tertiary-uo - default/tf-unit-gh175-1786633594171837000","ClientMachine":"kfclab-uo-tertiary-uo","Storepath":"default/tf-unit-gh175-1786633594171837000","CertStoreInventoryJobId":"16fe85fd-030f-4686-9cdd-e5ee06768cc4","CertStoreType":106,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":{\"Value\":\"********************\",\"SecretTypeGuid\":\"00000000-0000-0000-0000-000000000000\",\"InstanceId\":null,\"InstanceGuid\":null,\"ProviderTypeParameterValues\":[],\"ProviderId\":null,\"IsManaged\":false,\"SecretType\":0,\"RemoteProviderName\":null,\"HasValue\":true},\"ServerUseSsl\":\"true\",\"ServerUsername\":{\"Value\":\"********************\",\"SecretTypeGuid\":\"00000000-0000-0000-0000-000000000000\",\"InstanceId\":null,\"InstanceGuid\":null,\"ProviderTypeParameterValues\":[],\"ProviderId\":null,\"IsManaged\":false,\"SecretType\":0,\"RemoteProviderName\":null,\"HasValue\":true}}","AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","AgentAssigned":true,"ContainerName":"Demo Monthly Schedule_TF","InventorySchedule":{"Daily":{"Time":"2026-08-13T16:00:00Z"}},"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":{"Value":"********************","SecretTypeGuid":"00000000-0000-0000-0000-000000000000","InstanceId":null,"InstanceGuid":null,"ProviderTypeParameterValues":[],"ProviderId":null,"IsManaged":false,"SecretType":0,"RemoteProviderName":null,"HasValue":true}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "1685"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:54 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 3cd6929c-d9cf-48b4-991a-4d7354a9c567
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 35.935091ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStoreContainers/20
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1361
+        body: '{"Id":20,"Name":"Demo Monthly Schedule_TF","Schedule":{"Monthly":{"Day":1,"Time":"2026-08-13T04:00:00Z"}},"CertStoreType":-1,"CertificateStores":[{"Id":"5003dfba-3513-4ac7-aec1-a65ffff0e4e3","ContainerId":20,"DisplayName":"kfclab-uo-tertiary-uo - default/tf-unit-gh175-1786633594171837000","ClientMachine":"kfclab-uo-tertiary-uo","Storepath":"default/tf-unit-gh175-1786633594171837000","CertStoreInventoryJobId":"16fe85fd-030f-4686-9cdd-e5ee06768cc4","CertStoreType":106,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"c37bad9a-0e5e-4165-a1c6-a0feab389cbd\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"11376ee5-d19d-4265-948e-ce167a320544\"}","AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","AgentAssigned":true,"ContainerName":"Demo Monthly Schedule_TF","InventorySchedule":{"Daily":{"Time":"2026-08-13T16:00:00Z"}},"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":{"Value":"********************","SecretTypeGuid":"00000000-0000-0000-0000-000000000000","InstanceId":null,"InstanceGuid":null,"ProviderTypeParameterValues":[],"ProviderId":null,"IsManaged":false,"SecretType":0,"RemoteProviderName":null,"HasValue":true}}]}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "1361"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:54 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - c65a18f7-5979-419c-8ca4-9bb19b792986
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 30.670799ms
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "100"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStoreContainers?PageReturned=1&ReturnLimit=100
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 129
+        body: '[{"Id":20,"Name":"Demo Monthly Schedule_TF","OverwriteSchedules":false,"Schedule":"M_1_04:00","CertStoreType":-1,"StoreCount":1}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "129"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:54 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - e1f80236-587d-461d-9595-e83e4e4e4c14
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 24.120235ms
+    - id: 7
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStoreTypes/Name/K8STLSSecr
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 2136
+        body: '[{"Name":"Kubernetes TLS Secret","ShortName":"K8STLSSecr","Capability":"K8STLSSecr","StoreType":106,"ImportType":0,"LocalStore":false,"SupportedOperations":{"Add":true,"Create":true,"Discovery":true,"Enrollment":false,"Remove":true},"Properties":[{"Id":142,"StoreTypeId":106,"Name":"ServerUsername","DisplayName":"Server Username","Type":"Secret","DefaultValue":"kubeconfig","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":143,"StoreTypeId":106,"Name":"ServerPassword","DisplayName":"Server Password","Type":"Secret","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":144,"StoreTypeId":106,"Name":"ServerUseSsl","DisplayName":"Use SSL","Type":"Bool","DefaultValue":"true","Required":true,"ValidationOptions":{"OnCreation":1}},{"Id":145,"StoreTypeId":106,"Name":"KubeNamespace","DisplayName":"KubeNamespace","Type":"String","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":146,"StoreTypeId":106,"Name":"KubeSecretName","DisplayName":"KubeSecretName","Type":"String","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":147,"StoreTypeId":106,"Name":"KubeSecretType","DisplayName":"KubeSecretType","Type":"String","DefaultValue":"tls_secret","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":148,"StoreTypeId":106,"Name":"IncludeCertChain","DisplayName":"Include Certificate Chain","Type":"Bool","DefaultValue":"true","Required":false,"ValidationOptions":{"OnCreation":0}},{"Id":149,"StoreTypeId":106,"Name":"SeparateChain","DisplayName":"Separate Chain","Type":"Bool","DefaultValue":"false","Required":false,"ValidationOptions":{"OnCreation":0}}],"EntryParameters":[],"PasswordOptions":{"EntrySupported":false,"StoreRequired":false,"Style":"Default"},"StorePathValue":"","PrivateKeyAllowed":"Optional","CertificateFormat":0,"JobProperties":[],"ServerRequired":true,"PowerShell":false,"BlueprintAllowed":false,"CustomAliasAllowed":"Forbidden","ServerRegistration":4,"InventoryEndpoint":"/AnyInventory/Update","InventoryJobType":"ac9d92b3-1db0-444f-a6c8-341ab5c94866","ManagementJobType":"d45d6761-7724-4581-8240-1cd4196263f8","DiscoveryJobType":"6fec00a5-8ad0-4449-817b-08632b291e5e"}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "2136"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:55 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - d8fd2210-e842-45c1-9747-dddfe3d8a9c8
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 34.569982ms
+    - id: 8
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        form:
+            pq.queryString:
+                - Name -eq "Demo Monthly Schedule_TF"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStoreContainers?pq.queryString=Name%20-eq%20%22Demo%20Monthly%20Schedule_TF%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 129
+        body: '[{"Id":20,"Name":"Demo Monthly Schedule_TF","OverwriteSchedules":false,"Schedule":"M_1_04:00","CertStoreType":-1,"StoreCount":1}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "129"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:55 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - eb2b2982-244a-45db-beb4-6c4304a89375
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 19.407552ms
+    - id: 9
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        form:
+            pq.queryString:
+                - AgentId -eq "f5f4d314-16d7-4ed5-a9c0-b16880b75bdd"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Agents?pq.queryString=AgentId%20-eq%20%22f5f4d314-16d7-4ed5-a9c0-b16880b75bdd%22
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 3646
+        body: '[{"AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","ClientMachine":"kfclab-uo-tertiary-uo","Username":"ak-Keyfactor Command 26-client_credentials","AgentPlatform":1,"Version":"25.5.0.0","Status":2,"LastSeen":"2026-08-13T15:03:45.1Z","Capabilities":["K8STLSSecr","K8SPKCS12","K8SSecret","K8SCert","K8SJKS","SSL","K8SCluster","K8SNS"],"Blueprint":null,"Thumbprint":"","LegacyThumbprint":"","AuthCertificateReenrollment":"None","LastThumbprintUsed":"","LastErrorCode":null,"LastErrorMessage":null,"JobTypes":[{"Name":"Kubernetes TLS Secret Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"6fec00a5-8ad0-4449-817b-08632b291e5e"},{"Name":"Kubernetes PKCS12 Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"4fde2eb2-81e3-47a1-b5f4-0cde5f0d8cd6"},{"Name":"Kubernetes Secret Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"101aaf63-0659-492b-af90-1515cc6b0393"},{"Name":"Kubernetes Certificate Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"31554c7a-5dd8-403f-b893-19279af2da01"},{"Name":"Kubernetes TLS Secret Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"d45d6761-7724-4581-8240-1cd4196263f8"},{"Name":"Kubernetes PKCS12 Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"844515ed-48d9-4caa-9a3c-25f908c1d14d"},{"Name":"Kubernetes TLS Secret Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"ac9d92b3-1db0-444f-a6c8-341ab5c94866"},{"Name":"Kubernetes JKS Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"69113341-fbf0-4a5b-81f1-38797bb280fe"},{"Name":"Kubernetes Secret Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"e74ddba5-10e5-4d2f-953b-3b2af18c322c"},{"Name":"SSL Endpoint Discovery","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"332abd4e-cf9a-4449-a550-3c984a2399f9"},{"Name":"Kubernetes JKS Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"3602e651-9a49-481c-a79c-4ea4e5ba8839"},{"Name":"Kubernetes Secret Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"2f83a121-f400-4346-8162-6977b06f77f0"},{"Name":"Kubernetes Certificate Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"a78796e9-1bec-4df1-b59d-81b2bd1b83c1"},{"Name":"Kubernetes Cluster Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"fe10111c-3bf0-43eb-a05a-8c33922fdfbd"},{"Name":"Kubernetes Namespace Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"8df5f549-9003-4854-aa87-8e35d9b45766"},{"Name":"Kubernetes Namespace Discovery","CertStoreTypeShortName":"","CertStoreJobType":"Discovery","JobTypeId":"85161bad-ed33-4b11-abaf-b07e59e9ce98"},{"Name":"SSL Endpoint Monitoring","CertStoreTypeShortName":"","CertStoreJobType":"","JobTypeId":"ecd5758a-2f05-49b1-9373-d9bde7077f59"},{"Name":"Kubernetes Cluster Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"c76e1cb8-0763-4fc1-b82f-dc119c962456"},{"Name":"Kubernetes PKCS12 Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"0bd4335d-a63c-4974-b60a-ee2899171a65"},{"Name":"Kubernetes JKS Management","CertStoreTypeShortName":"","CertStoreJobType":"Management","JobTypeId":"684f0bd5-0076-42ea-82c9-f67a0e82076c"},{"Name":"Kubernetes Namespace Inventory","CertStoreTypeShortName":"","CertStoreJobType":"Inventory","JobTypeId":"b34bf473-765a-4617-857a-f814d594b662"}]}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "3646"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:55 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - abf8bcf0-759d-4d26-a2e8-615b178b6d7b
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 60.033282ms
+    - id: 10
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 542
+        host: command.lab.local
+        body: '{"Id":"5003dfba-3513-4ac7-aec1-a65ffff0e4e3","ContainerId":20,"ClientMachine":"kfclab-uo-tertiary-uo","StorePath":"default/tf-unit-gh175-1786633594171837000","CertStoreType":106,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"\\n\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"kubeconfig\"}","AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","AgentAssigned":true,"ContainerName":"Demo Monthly Schedule_TF","InventorySchedule":{"Daily":{"Time":"12:00:00"}},"SetNewPasswordAllowed":false}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStores
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1098
+        body: '{"Id":"5003dfba-3513-4ac7-aec1-a65ffff0e4e3","ContainerId":20,"DisplayName":"kfclab-uo-tertiary-uo - default/tf-unit-gh175-1786633594171837000","ClientMachine":"kfclab-uo-tertiary-uo","Storepath":"default/tf-unit-gh175-1786633594171837000","CertStoreInventoryJobId":null,"CertStoreType":106,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"\\n\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"kubeconfig\"}","AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","AgentAssigned":true,"ContainerName":null,"InventorySchedule":{"Daily":{"Time":"2026-08-13T12:00:00Z"}},"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":{"Value":"********************","SecretTypeGuid":"00000000-0000-0000-0000-000000000000","InstanceId":null,"InstanceGuid":null,"ProviderTypeParameterValues":[],"ProviderId":null,"IsManaged":false,"SecretType":0,"RemoteProviderName":null,"HasValue":true}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "1098"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:55 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 38d2de83-b814-4a14-a9a7-d9aedac5210d
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 111.912621ms
+    - id: 11
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStores/5003dfba-3513-4ac7-aec1-a65ffff0e4e3
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1685
+        body: '{"Id":"5003dfba-3513-4ac7-aec1-a65ffff0e4e3","ContainerId":20,"DisplayName":"kfclab-uo-tertiary-uo - default/tf-unit-gh175-1786633594171837000","ClientMachine":"kfclab-uo-tertiary-uo","Storepath":"default/tf-unit-gh175-1786633594171837000","CertStoreInventoryJobId":"16fe85fd-030f-4686-9cdd-e5ee06768cc4","CertStoreType":106,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":{\"Value\":\"********************\",\"SecretTypeGuid\":\"00000000-0000-0000-0000-000000000000\",\"InstanceId\":null,\"InstanceGuid\":null,\"ProviderTypeParameterValues\":[],\"ProviderId\":null,\"IsManaged\":false,\"SecretType\":0,\"RemoteProviderName\":null,\"HasValue\":true},\"ServerUseSsl\":\"true\",\"ServerUsername\":{\"Value\":\"********************\",\"SecretTypeGuid\":\"00000000-0000-0000-0000-000000000000\",\"InstanceId\":null,\"InstanceGuid\":null,\"ProviderTypeParameterValues\":[],\"ProviderId\":null,\"IsManaged\":false,\"SecretType\":0,\"RemoteProviderName\":null,\"HasValue\":true}}","AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","AgentAssigned":true,"ContainerName":"Demo Monthly Schedule_TF","InventorySchedule":{"Daily":{"Time":"2026-08-13T12:00:00Z"}},"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":{"Value":"********************","SecretTypeGuid":"00000000-0000-0000-0000-000000000000","InstanceId":null,"InstanceGuid":null,"ProviderTypeParameterValues":[],"ProviderId":null,"IsManaged":false,"SecretType":0,"RemoteProviderName":null,"HasValue":true}}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "1685"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:56 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 6203e9b1-2f8e-429e-a6fe-c156c499944f
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 187.431456ms
+    - id: 12
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStoreContainers/20
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 1361
+        body: '{"Id":20,"Name":"Demo Monthly Schedule_TF","Schedule":{"Monthly":{"Day":1,"Time":"2026-08-13T04:00:00Z"}},"CertStoreType":-1,"CertificateStores":[{"Id":"5003dfba-3513-4ac7-aec1-a65ffff0e4e3","ContainerId":20,"DisplayName":"kfclab-uo-tertiary-uo - default/tf-unit-gh175-1786633594171837000","ClientMachine":"kfclab-uo-tertiary-uo","Storepath":"default/tf-unit-gh175-1786633594171837000","CertStoreInventoryJobId":"16fe85fd-030f-4686-9cdd-e5ee06768cc4","CertStoreType":106,"Approved":true,"CreateIfMissing":false,"Properties":"{\"KubeSecretType\":\"tls\",\"ServerPassword\":\"2bafe273-34b5-49e4-b6cc-0ac020cb3c4d\",\"ServerUseSsl\":\"true\",\"ServerUsername\":\"b7c8b8bf-437b-44fc-a784-6e31ae14f95f\"}","AgentId":"f5f4d314-16d7-4ed5-a9c0-b16880b75bdd","AgentAssigned":true,"ContainerName":"Demo Monthly Schedule_TF","InventorySchedule":{"Daily":{"Time":"2026-08-13T12:00:00Z"}},"ReenrollmentStatus":{"Data":false,"AgentId":null,"Message":"Key generation is not supported by the agent for this store.","JobProperties":null,"CustomAliasAllowed":0,"EntryParameters":[]},"SetNewPasswordAllowed":false,"Password":{"Value":"********************","SecretTypeGuid":"00000000-0000-0000-0000-000000000000","InstanceId":null,"InstanceGuid":null,"ProviderTypeParameterValues":[],"ProviderId":null,"IsManaged":false,"SecretType":0,"RemoteProviderName":null,"HasValue":true}}]}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "1361"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:56 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 8b22f7ad-0b07-49ef-9dce-71ad094b98c3
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 34.250835ms
+    - id: 13
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "100"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStoreContainers?PageReturned=1&ReturnLimit=100
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 129
+        body: '[{"Id":20,"Name":"Demo Monthly Schedule_TF","OverwriteSchedules":false,"Schedule":"M_1_04:00","CertStoreType":-1,"StoreCount":1}]'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "129"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 13 Aug 2026 15:07:56 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 0fcd25c5-5538-4851-b069-0ce1628757e8
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+            X-Total-Count:
+                - "1"
+        status: 200 OK
+        code: 200
+        duration: 43.524298ms
+    - id: 14
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateStores/5003dfba-3513-4ac7-aec1-a65ffff0e4e3
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Date:
+                - Thu, 13 Aug 2026 15:07:56 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 14b05346-92fb-434f-b3f2-886da4b5bac0
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 204 No Content
+        code: 204
+        duration: 55.955194ms

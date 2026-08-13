@@ -418,7 +418,7 @@ func (r resourceSecurityRole) Create(
 	// value into state, which Terraform Core would reject.
 	resultPermissions := plan.Permissions
 	if resultPermissions.Unknown {
-		resultPermissions = types.List{ElemType: types.StringType, Elems: []attr.Value{}}
+		resultPermissions = permissionsToTfList(nil)
 	}
 
 	var result = SecurityRole{

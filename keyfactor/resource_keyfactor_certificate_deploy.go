@@ -1377,6 +1377,38 @@ func evaluateJobHistoryEntry(entry *v1.CertificateStoresJobHistoryResponse) jobW
 	return outcome
 }
 
+// orchestratorJobFailedMessage, orchestratorJobWarningMessage, and
+// orchestratorJobWillRetryMessage build the diags.AddError/AddWarning detail and
+// tflog.Warn message logged from waitForJobsAndInventory's per-job switch. In each,
+// msg is the orchestrator-supplied JobHistory Message field (populated from
+// entry.Message.Get() in evaluateJobHistoryEntry) -- untrusted input from whatever
+// orchestrator/extension reported the job outcome, not a shape this provider
+// controls -- so it is %q-quoted (escaping embedded control characters like \r\n)
+// rather than interpolated raw via %v/%s. This mirrors roleLookupLogMessage's
+// rationale in resource_keyfactor_security_identity.go: a compromised or malicious
+// orchestrator agent crafted to emit a CRLF sequence in its Message can't forge a
+// fake log/diagnostic line under TF_LOG=WARN (CWE-117 log injection).
+func orchestratorJobFailedMessage(jobID, operation, msg string) string {
+	return fmt.Sprintf(
+		"Orchestrator job '%s' for the %s completed with a failure result: %q",
+		jobID, operation, msg,
+	)
+}
+
+func orchestratorJobWarningMessage(jobID, operation, msg string) string {
+	return fmt.Sprintf(
+		"Orchestrator job '%s' for the %s completed with a warning result: %q",
+		jobID, operation, msg,
+	)
+}
+
+func orchestratorJobWillRetryMessage(jobID, msg string) string {
+	return fmt.Sprintf(
+		"Orchestrator job %s attempt failed and will be retried by Keyfactor Command: %q",
+		jobID, msg,
+	)
+}
+
 // waitForJobsAndInventory implements the wait behavior for fail_on_job_failure. Each
 // iteration checks the latest job history of every still-pending orchestrator job — a
 // terminal failure fails the operation immediately with the orchestrator's message —
@@ -1431,28 +1463,19 @@ func waitForJobsAndInventory(
 				}
 				diags.AddError(
 					"Orchestrator job failed.",
-					fmt.Sprintf(
-						"Orchestrator job '%s' for the %s completed with a failure result: %s",
-						jobID, watch.operation, msg,
-					),
+					orchestratorJobFailedMessage(jobID, watch.operation, msg),
 				)
 				return diags
 			case outcome.terminal:
 				if outcome.warning {
 					diags.AddWarning(
 						"Orchestrator job completed with warnings.",
-						fmt.Sprintf(
-							"Orchestrator job '%s' for the %s completed with a warning result: %s",
-							jobID, watch.operation, outcome.message,
-						),
+						orchestratorJobWarningMessage(jobID, watch.operation, outcome.message),
 					)
 				}
 				delete(pending, jobID)
 			case outcome.willRetry:
-				tflog.Warn(ctx, fmt.Sprintf(
-					"Orchestrator job %s attempt failed and will be retried by Keyfactor Command: %s",
-					jobID, outcome.message,
-				))
+				tflog.Warn(ctx, orchestratorJobWillRetryMessage(jobID, outcome.message))
 			default:
 				tflog.Debug(ctx, fmt.Sprintf("Orchestrator job %s has not completed yet", jobID))
 			}

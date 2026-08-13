@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/stretchr/testify/assert"
 )
 
 // ---------------------------------------------------------------------------
@@ -681,4 +682,65 @@ func TestUnitKeyfactorCertificateDeployResource_JobWatchNoSchedule(t *testing.T)
 			},
 		},
 	})
+}
+
+// TestUnitOrchestratorJobLogMessagesEscapeControlCharacters is a regression test
+// for a CWE-117 (log injection) finding in waitForJobsAndInventory: the
+// orchestrator-supplied JobHistory Message field (outcome.message, populated from
+// entry.Message.Get() in evaluateJobHistoryEntry) used to be interpolated raw via
+// %s into the diags.AddError/AddWarning detail and tflog.Warn message for the
+// failed/warning/willRetry branches. Message is untrusted input from whatever
+// orchestrator/extension reported the job outcome, so a compromised or malicious
+// orchestrator agent could embed a "\r\n" sequence to forge a fake log line under
+// TF_LOG=WARN (a routinely-enabled level). This is the same threat class already
+// fixed for the declared `roles` string in resource_keyfactor_security_identity.go's
+// roleLookupLogMessage (see TestUnitRoleLookupLogMessageEscapesControlCharacters),
+// left unfixed in this newer deploy-resource code from the same PR.
+//
+// This drives the three extracted helpers directly (not a reimplementation of
+// their format strings) with a message containing an embedded CRLF sequence and
+// asserts the result is a single, escaped line: no raw "\r" or "\n" byte reaches
+// the message, and the original control characters are recoverable only via
+// their escaped (%q) form.
+func TestUnitOrchestratorJobLogMessagesEscapeControlCharacters(t *testing.T) {
+	const injected = "job failed\r\nlevel=error msg=\"fake injected log line\""
+	const jobID = "11111111-1111-1111-1111-111111111111"
+	const operation = "deployment of certificate '123' to store 'abc'"
+
+	cases := map[string]string{
+		"failed":    orchestratorJobFailedMessage(jobID, operation, injected),
+		"warning":   orchestratorJobWarningMessage(jobID, operation, injected),
+		"willRetry": orchestratorJobWillRetryMessage(jobID, injected),
+	}
+
+	for name, got := range cases {
+		if strings.Contains(got, "\r") {
+			t.Errorf("%s: message must not contain a raw carriage return -- an unescaped CR/LF could be used to forge a fake log line: %q", name, got)
+		}
+		if strings.Contains(got, "\n") {
+			t.Errorf("%s: message must not contain a raw newline -- an unescaped CR/LF could be used to forge a fake log line: %q", name, got)
+		}
+		if !strings.Contains(got, `\r\n`) {
+			t.Errorf("%s: expected the injected CRLF to be recoverable in its escaped (%%q) form, got: %q", name, got)
+		}
+	}
+
+	assert.Equal(
+		t,
+		`Orchestrator job '11111111-1111-1111-1111-111111111111' for the deployment of certificate '123' to store 'abc' completed with a failure result: "job failed\r\nlevel=error msg=\"fake injected log line\""`,
+		cases["failed"],
+		"orchestratorJobFailedMessage must %q-quote msg so embedded control characters are escaped, not interpolate it raw via %v/%s",
+	)
+	assert.Equal(
+		t,
+		`Orchestrator job '11111111-1111-1111-1111-111111111111' for the deployment of certificate '123' to store 'abc' completed with a warning result: "job failed\r\nlevel=error msg=\"fake injected log line\""`,
+		cases["warning"],
+		"orchestratorJobWarningMessage must %q-quote msg so embedded control characters are escaped, not interpolate it raw via %v/%s",
+	)
+	assert.Equal(
+		t,
+		`Orchestrator job 11111111-1111-1111-1111-111111111111 attempt failed and will be retried by Keyfactor Command: "job failed\r\nlevel=error msg=\"fake injected log line\""`,
+		cases["willRetry"],
+		"orchestratorJobWillRetryMessage must %q-quote msg so embedded control characters are escaped, not interpolate it raw via %v/%s",
+	)
 }

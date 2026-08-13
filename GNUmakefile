@@ -5,7 +5,7 @@ GOFMT_FILES  := $$(find $(PROVIDER_DIR) -name '*.go' |grep -v vendor)
 NAMESPACE=keyfactor
 WEBSITE_REPO=https://github.com/Keyfactor/terraform-provider-keyfactor
 NAME=keyfactor
-VERSION=2.2.0
+VERSION=2.10.0-rc.1
 BINARY=terraform-provider-${NAME}
 OS_ARCH := $(shell go env GOOS)_$(shell go env GOARCH)
 BASEDIR := ${HOME}/.terraform.d/plugins
@@ -25,83 +25,15 @@ tfdocs:
 	@if [ -d "$(SCREENSHOTS_TMP)/screenshots" ]; then cp -r "$(SCREENSHOTS_TMP)/screenshots" docs/; fi
 	@rm -rf "$(SCREENSHOTS_TMP)"
 
-## gen-store-types: Regenerate terraform/data_store_types/store_types.tf from live state.
-##   Requires: terraform apply has been run in terraform/data_store_types/ so that
-##   terraform show -json produces data.keyfactor_certificate_store_types.all.
-##   Usage: make gen-store-types [STORE_TYPE_SUFFIX=_TF]
-STORE_TYPE_SUFFIX ?= _TF
-STORE_TYPE_DIR    := $(PROVIDER_DIR)/terraform/data_store_types
-gen-store-types:
-	cd $(STORE_TYPE_DIR) && \
-	  TF_CLI_CONFIG_FILE=.terraformrc terraform show -json > tf_state.json && \
-	  python3 gen_store_types.py --suffix "$(STORE_TYPE_SUFFIX)"
+## release-harness: Run the full terraform/ release-test harness against the
+##   registry provider (keyfactor-pub/keyfactor). See terraform/GNUmakefile.
+release-harness:
+	$(MAKE) -C $(PROVIDER_DIR)/terraform harness-registry
 
-## store-type-demo: Run full lifecycle demo in terraform/store_type_demo/
-##   (build, init, validate, apply, import, drift-check, destroy)
-##   Usage: make store-type-demo [SUFFIX=_TF]
-SUFFIX ?= _TF
-store-type-demo:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/store_type_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
-
-## application-demo: Run full lifecycle demo in terraform/application_demo/
-##   (build, init, validate, plan, apply, import, reconcile, drift-check, destroy)
-##   Usage: make application-demo [SUFFIX=_TF]
-application-demo:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/application_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
-
-
-## oauth-security-demo: Run full lifecycle demo in terraform/oauth_security_demo/
-##   (build, init, validate, plan, apply, import, reconcile, drift-check, destroy)
-##   Usage: make oauth-security-demo [SUFFIX=_TF]
-oauth-security-demo:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/oauth_security_demo && $(MAKE) all SUFFIX="$(SUFFIX)"
-
-## oauth-security-demo-apply: Build and apply OAuth security demo (leave running for portal review)
-oauth-security-demo-apply:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/oauth_security_demo && $(MAKE) build init validate plan apply SUFFIX="$(SUFFIX)"
-
-## oauth-security-demo-destroy: Destroy OAuth security demo resources
-oauth-security-demo-destroy:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/oauth_security_demo && $(MAKE) destroy SUFFIX="$(SUFFIX)"
-
-
-## k8s-orchestrator-demo: Run full lifecycle demo in terraform/k8s_orchestrator_demo/
-##   (build, init, validate, plan, apply, import, drift-check, destroy)
-##   Usage: make k8s-orchestrator-demo
-k8s-orchestrator-demo:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/k8s_orchestrator_demo && $(MAKE) all
-
-## k8s-orchestrator-demo-apply: Build and apply K8S orchestrator demo (leave running for portal review)
-k8s-orchestrator-demo-apply:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/k8s_orchestrator_demo && $(MAKE) build init validate plan apply
-
-## k8s-orchestrator-demo-destroy: Destroy K8S orchestrator demo resources
-k8s-orchestrator-demo-destroy:
-	. $(KEYFACTOR_ENV_FILE) && cd $(PROVIDER_DIR)/terraform/k8s_orchestrator_demo && $(MAKE) destroy
-
-# ---------------------------------------------------------------------------
-# ECC PFX debug demo (terraform/ecc_pfx_debug)
-# Iteratively debug ECC PFX enrollment by testing different KeyType/Curve combos.
-# Usage:
-#   make ecc-pfx-debug-build    — build provider + terraform init
-#   make ecc-pfx-debug-plan     — plan the enrollment
-#   make ecc-pfx-debug-apply    — enroll the cert
-#   make ecc-pfx-debug-destroy  — revoke/delete the cert
-# ---------------------------------------------------------------------------
-ECC_PFX_DEBUG_DIR := $(PROVIDER_DIR)/terraform/ecc_pfx_debug
-
-ecc-pfx-debug-build:
-	$(MAKE) build
-	cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) init
-
-ecc-pfx-debug-plan:
-	. $(KEYFACTOR_ENV_FILE) && cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) plan
-
-ecc-pfx-debug-apply:
-	. $(KEYFACTOR_ENV_FILE) && cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) apply
-
-ecc-pfx-debug-destroy:
-	. $(KEYFACTOR_ENV_FILE) && cd $(ECC_PFX_DEBUG_DIR) && $(MAKE) destroy
+## release-harness-dev: Run the full terraform/ release-test harness against
+##   a locally-built dev provider binary. See terraform/GNUmakefile.
+release-harness-dev:
+	$(MAKE) -C $(PROVIDER_DIR)/terraform harness-dev
 
 release:
 	GOOS=darwin GOARCH=amd64 go build -o ./bin/${BINARY}_${VERSION}_darwin_amd64
@@ -365,7 +297,7 @@ testunit-check:
 testunit-ca:
 	go test ./keyfactor/ -run "TestUnitKeyfactorCertificateAuthority|TestUnitCertificateAuthorityResponseToState" -v -count=1 -timeout 30m
 
-KEYFACTOR_ENV_FILE ?= ~/.env_ses2541
+KEYFACTOR_ENV_FILE ?= ~/.env_kfclab
 KEYFACTOR_K8S_CREDENTIALS_FILE ?= $(HOME)/GolandProjects/terraform-keyfactor-provider-testing/examples/certs/deployment/k8s-creds.json
 
 # Integration test timeout; override with `make testint-check INT_TIMEOUT=180m`.
@@ -599,7 +531,8 @@ api-options-application:
 #   make api-create-store-raw AGENT_ID=<guid> STORE_TYPE_ID=104 CONTAINER_NAME=tf-int-app-test
 #   make api-delete-store-raw STORE_ID=<guid>
 # ---------------------------------------------------------------------------
-AGENT_ID     ?= 275bcd31-9e7b-4c4a-bce9-1719e0c2168d
+AGENT_ID     ?=
+CLIENT_MACHINE ?= tf-harness-debug
 CONTAINER_NAME ?= tf-int-app-test
 
 api-create-store-raw:
@@ -612,7 +545,7 @@ api-create-store-raw:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Content-Type: application/json" \
 		-H "Authorization: Bearer $$TOKEN" \
-		-d "{\"ClientMachine\":\"container_uo-25-4\",\"Storepath\":\"default/curl-raw-test\",\"CertStoreType\":$(STORE_TYPE_ID),\"ContainerName\":\"$(CONTAINER_NAME)\",\"AgentId\":\"$(AGENT_ID)\",\"Properties\":\"{\\\"KubeSecretType\\\":\\\"tls\\\",\\\"ServerUseSsl\\\":\\\"true\\\"}\",\"ServerUsername\":\"kubeconfig\"}" | jq .
+		-d "{\"ClientMachine\":\"$(CLIENT_MACHINE)\",\"Storepath\":\"default/curl-raw-test\",\"CertStoreType\":$(STORE_TYPE_ID),\"ContainerName\":\"$(CONTAINER_NAME)\",\"AgentId\":\"$(AGENT_ID)\",\"Properties\":\"{\\\"KubeSecretType\\\":\\\"tls\\\",\\\"ServerUseSsl\\\":\\\"true\\\"}\",\"ServerUsername\":\"kubeconfig\"}" | jq .
 
 api-delete-store-raw:
 	@if [ -z "$(STORE_ID)" ]; then echo "Usage: make api-delete-store-raw STORE_ID=<guid>"; exit 1; fi
@@ -678,15 +611,19 @@ api-list-cas:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
+## api-get-ca is hardened via the shared KF_API_GET recipe (see its
+## definition below, next to KF_API_PUT): unlike the other api-list-*/api-get-*
+## debugging targets in this file, api-get-ca is called by the
+## ca_schedule_demo harness's step3/4/5 seed/verify targets, chained straight
+## into api-update-ca (which is already hardened) to read-modify-write a
+## CA's schedule out-of-band -- so it shares api-update-ca's credential
+## exposure and hardcoded-TLS-skip fix (full-review round 4 finding #2). The
+## sibling api-list-cas/api-list-cas-short/api-ca-gap-fields/api-list-agents
+## targets just above are plain ad-hoc debugging aids no harness or Makefile
+## target calls, so they're left as-is rather than churning unrelated code.
 api-get-ca:
 	@if [ -z "$(CA_ID)" ]; then echo "Usage: make api-get-ca CA_ID=<id>"; exit 1; fi
-	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
-		| jq -r '.access_token') && \
-	curl -sk "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateAuthority/$(CA_ID)" \
-		-H "x-keyfactor-requested-with: APIClient" \
-		-H "x-keyfactor-api-version: 1" \
-		-H "Authorization: Bearer $$TOKEN" | jq .
+	$(call KF_API_GET,https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/CertificateAuthority/$(CA_ID))
 
 api-list-cas-short:
 	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
@@ -708,21 +645,107 @@ api-ca-gap-fields:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq '{UseForEnrollment, CertificateCleanupEnabled, DeleteWithArchivedKey, TimeAfterExpiration, TimeAfterExpirationUnits}'
 
-# api-update-ca: PUT /CertificateAuthority?forceSave=true using the CA JSON snapshot
-# piped via stdin.  Useful for verifying the correct PUT URL (no ID in path).
+# KF_API_PUT: shared canned recipe for a stdin-body PUT against a Command API
+# endpoint, parameterized on the full target URL ($(1)). api-update-ca and
+# api-update-template both call this -- they were previously two
+# byte-for-byte-identical ~20-line recipes (api-update-template's own comment
+# said "mirrors api-update-ca") differing only in this URL, which meant the
+# security-sensitive credential-handling block below had to be hand-patched
+# in two places every time it changed (as it just was, twice, to add the
+# HTTP-status gate below). Deduping to one edit point makes that impossible
+# to reintroduce (full-review round 2 advisory A).
+#
 # Usage: make api-get-ca CA_ID=1 | make api-update-ca
-api-update-ca:
-	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET" \
-		| jq -r '.access_token') && \
+#
+# TLS verification is controlled by KEYFACTOR_SKIP_VERIFY (set in
+# KEYFACTOR_ENV_FILE): only "true" adds curl's -k; anything else leaves
+# verification on. KEYFACTOR_CA_CERT may additionally point at a CA bundle
+# to trust via --cacert. Client credentials and the resulting bearer token
+# never appear on curl's command line (and so never in the process table any
+# other local user on a shared machine could read via `ps`) -- they're
+# written to a curl -K config file created with `mktemp` + `chmod 600` and
+# removed immediately after use.
+#
+# KF_CURL_AUTH (the credential-handling preamble below) lives in
+# terraform/kf-curl-auth.mk, shared with terraform/demo-common.mk's own
+# lab-oob-* targets -- full-review round 3 advisory: that demo-side copy and
+# this one were the last remaining byte-identical duplicate of this
+# security-sensitive block. A dedicated file (rather than including
+# demo-common.mk itself) keeps this Makefile from also inheriting
+# demo-common.mk's PROVIDER_ROOT/TF/LAB_ENV variables and demo-only targets.
+include terraform/kf-curl-auth.mk
+#
+# HTTP-status gating (full-review round 2 finding #3): the HTTP status is
+# captured via curl -w into $$HTTP_STATUS and written to STDERR, never
+# interleaved with the response body on stdout (a prior version used `curl -w
+# "\nHTTP_STATUS: %{http_code}\n" | jq .`, which appended non-JSON trailing
+# text to stdout that made jq fail on a SUCCESSFUL PUT). But that fix alone
+# left the target's exit code coming from `jq . "$$RESPFILE"` parsing
+# whatever body Command returned -- and jq happily parses an error response
+# body (or an empty one) and exits 0, so a rejected PUT (expired OAuth
+# secret -> "Bearer null" -> 401; a 400 on a malformed CA/template body) still
+# made the recipe exit 0. Callers that gate on this target's exit code (e.g.
+# ca_schedule_demo's step3/4/5-seed targets, whose own comments say they
+# exist specifically so callers CAN check that exit code) would then proceed
+# past a seed that silently never happened, corrupting the harness's verdict
+# for whatever downstream regression it was trying to demonstrate. Gating
+# explicitly on $$HTTP_STATUS's first digit closes that gap: only a 2xx
+# response is treated as success.
+define KF_API_PUT
+	@. $(KEYFACTOR_ENV_FILE) && \
+	$(KF_CURL_AUTH) \
 	BODY=$$(cat) && \
-	curl -sk -w "\nHTTP_STATUS: %{http_code}\n" -X PUT \
-		"https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority?forceSave=true" \
+	RESPFILE=$$(mktemp) && \
+	HTTP_STATUS=$$(curl -s $$CURL_TLS -o "$$RESPFILE" -w "%{http_code}" -X PUT \
+		"$(1)" \
 		-H "x-keyfactor-requested-with: APIClient" \
 		-H "x-keyfactor-api-version: 1" \
 		-H "Content-Type: application/json" \
-		-H "Authorization: Bearer $$TOKEN" \
-		-d "$$BODY" | jq .
+		-K "$$KFCFG" \
+		-d "$$BODY") && \
+	echo "HTTP_STATUS: $$HTTP_STATUS" >&2 && \
+	case "$$HTTP_STATUS" in \
+		2??) jq . "$$RESPFILE"; RC=$$?;; \
+		*) echo "KF_API_PUT: PUT to $(1) failed with HTTP $$HTTP_STATUS. Response body:" >&2; cat "$$RESPFILE" >&2; RC=22;; \
+	esac; \
+	rm -f "$$RESPFILE" "$$KFCFG"; exit $$RC
+endef
+
+# KF_API_GET: shared canned recipe for a read-only GET against a Command API
+# endpoint, parameterized on the full target URL ($(1)). The GET-side
+# counterpart of KF_API_PUT above -- same KF_CURL_AUTH preamble (gated TLS,
+# mktemp+chmod-600 curl -K config so credentials/bearer token never appear on
+# curl's argv/in `ps`), same HTTP-status gate so a failed GET (expired OAuth
+# secret, bad ID) exits non-zero instead of jq silently parsing an error body
+# and returning 0. Introduced so api-get-ca -- called out-of-band by the
+# ca_schedule_demo harness's step3/4/5 seed/verify targets, piped straight
+# into the already-hardened api-update-ca -- gets the same credential
+# handling instead of the ad-hoc `curl -sk` + argv-token pattern the other
+# plain debugging api-list-*/api-get-* targets in this file still use
+# (full-review round 4 finding #2).
+#
+# Usage: make api-get-ca CA_ID=1
+define KF_API_GET
+	@. $(KEYFACTOR_ENV_FILE) && \
+	$(KF_CURL_AUTH) \
+	RESPFILE=$$(mktemp) && \
+	HTTP_STATUS=$$(curl -s $$CURL_TLS -o "$$RESPFILE" -w "%{http_code}" \
+		"$(1)" \
+		-H "x-keyfactor-requested-with: APIClient" \
+		-H "x-keyfactor-api-version: 1" \
+		-K "$$KFCFG") && \
+	case "$$HTTP_STATUS" in \
+		2??) jq . "$$RESPFILE"; RC=$$?;; \
+		*) echo "KF_API_GET: GET $(1) failed with HTTP $$HTTP_STATUS. Response body:" >&2; cat "$$RESPFILE" >&2; RC=22;; \
+	esac; \
+	rm -f "$$RESPFILE" "$$KFCFG"; exit $$RC
+endef
+
+# api-update-ca: PUT /CertificateAuthority?forceSave=true using the CA JSON
+# snapshot piped via stdin. Useful for verifying the correct PUT URL (no ID
+# in path). See KF_API_PUT above for the shared implementation.
+api-update-ca:
+	$(call KF_API_PUT,https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-KeyfactorAPI}/CertificateAuthority?forceSave=true)
 
 ## testint-ca-snapshot: Capture current CA state to /tmp/ca_snapshot_<CA_ID>.json.
 ##   Usage: make testint-ca-snapshot [CA_ID=1]
@@ -865,6 +888,14 @@ api-get-template:
 		-H "x-keyfactor-requested-with: APIClient" \
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
+
+# api-update-template: PUT /Templates with a raw JSON body (UpdateTemplateArg
+#   shape) piped via stdin -- mirrors api-update-ca via the shared KF_API_PUT
+#   define above. Used to seed/restore a template's state directly, bypassing
+#   Terraform (e.g. byte-for-byte restoration of a shared lab template after a
+#   demo run touches it).
+api-update-template:
+	$(call KF_API_PUT,https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Templates)
 
 # Certificate API targets
 #   make api-list-certs                              — list 5 most recent certs
@@ -1253,4 +1284,4 @@ api-get-cert-store:
 		-H "x-keyfactor-api-version: 1" \
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
-.PHONY: store-type-demo application-demo oauth-security-demo oauth-security-demo-apply oauth-security-demo-destroy k8s-orchestrator-demo k8s-orchestrator-demo-apply k8s-orchestrator-demo-destroy ecc-pfx-debug-build ecc-pfx-debug-plan ecc-pfx-debug-apply ecc-pfx-debug-destroy build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-cert-import testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-template-role-binding-import testunit-record-cert-store-import testunit-record-oauth-role-import testunit-record-oauth-role-claim-assoc-import testunit-record-oauth-role-claim-assoc-multi testunit-record-oauth-role-nil testunit-record-oauth-claim-nil testunit-record-all testunit-check testunit-ca testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testint-oauth-access-token testint-ca-snapshot testint-ca-diff testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-update-ca api-ca-schema-diff api-ca-gap-fields api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-list-certs api-get-cert api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key api-list-agents
+.PHONY: release-harness release-harness-dev build release install test testacc testunit testunit-record testunit-record-one testunit-record-csr testunit-record-cert-import testunit-record-keytypes testunit-record-keytypes-pfx testunit-record-keytypes-csr testunit-record-application testunit-record-pam-provider testunit-record-pam-provider-type testunit-record-security-identity testunit-record-security-role testunit-record-cert-store-type testunit-record-cert-store-types testunit-record-cert-store-ds-guid testunit-record-agent-ds testunit-record-permission-set testunit-record-oauth-claim testunit-record-oauth-role testunit-record-oauth-role-ds testunit-record-oauth-role-claim-assoc testunit-record-enrollment-pattern testunit-record-application-schedules testunit-record-cert-authority testunit-record-cert-template testunit-record-cert-deploy testunit-record-template-role-binding testunit-record-template-role-binding-import testunit-record-cert-store-import testunit-record-oauth-role-import testunit-record-oauth-role-claim-assoc-import testunit-record-oauth-role-claim-assoc-multi testunit-record-oauth-role-nil testunit-record-oauth-claim-nil testunit-record-all testunit-check testunit-ca testint testint-check testint-run testint-debug testint-debug-run testint-pam testint-ca testint-template testint-keytypes-pfx testint-keytypes-csr testint-oauth-access-token testint-ca-snapshot testint-ca-diff testall lint check vet fmtcheck fmt tag setversion vendor vendor-dev showlines api-list-applications api-list-cas api-get-ca api-list-cas-short api-update-ca api-ca-schema-diff api-ca-gap-fields api-get-application api-create-application api-update-application api-delete-application api-options-application api-list-pam-providers api-get-pam-provider api-delete-pam-provider api-list-pam-provider-types api-get-pam-provider-type api-delete-pam-provider-type api-list-templates api-get-template api-update-template api-list-certs api-get-cert api-download-cert api-inspect-cert-download api-recover-cert api-recover-cert-pfx api-inspect-cert-recover-pfx api-recover-cert-pem api-list-enrollment-patterns api-get-enrollment-pattern api-enroll-pfx-rsa api-enroll-pfx-rsa-2048 api-enroll-pfx-rsa-3072 api-enroll-pfx-rsa-4096 api-enroll-pfx-rsa-8192 api-enroll-pfx-ecc-p256 api-enroll-pfx-ecc-p384 api-enroll-pfx-ecc-p521 api-enroll-pfx-ecc-p256-both api-enroll-pfx-ecc-p384-both api-enroll-pfx-ecc-p521-both api-enroll-pfx-ecc-curve api-enroll-pfx-ecc-keylen api-enroll-pfx-ecc-nokey api-enroll-pfx-ed25519 api-enroll-pfx-ed448 api-enroll-pfx-ed25519-tmpl api-enroll-pfx-ed448-tmpl api-enroll-pfx-ed25519-both api-enroll-pfx-ed448-both api-enroll-pfx-ed25519-altkey api-enroll-pfx-ed448-altkey api-enroll-pfx-ed25519-255 api-enroll-pfx-ed25519-256 api-enroll-pfx-ed448-448 api-enroll-pfx-ed25519-v1 api-enroll-pfx-ed448-v1 api-check-cert-key api-list-agents

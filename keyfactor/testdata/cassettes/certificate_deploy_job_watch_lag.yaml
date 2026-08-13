@@ -1,0 +1,225 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/2429?includeLocations=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '{"Id":2429,"Thumbprint":"D25F423760A047052E0B064B4B756E00B800C476","IssuedCN":"tf-unit-deploy.example.com","IssuedDN":"CN=tf-unit-deploy.example.com","Locations":[],"LocationsCount":[],"SSLLocations":[],"Metadata":{}}'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/f0cc1ede-3173-44b3-8368-ba1251ddb32e/Inventory?query.pageReturned=1
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '[]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/Certificates/Add
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '["11111111-7777-4777-8777-000000000001"]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/OrchestratorJobs/JobHistory?QueryString=JobId+-eq+%2211111111-7777-4777-8777-000000000001%22&ReturnLimit=100&SortAscending=1&SortField=JobHistoryId
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '[]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/OrchestratorJobs/JobHistory?QueryString=JobId+-eq+%2211111111-7777-4777-8777-000000000001%22&ReturnLimit=100&SortAscending=1&SortField=JobHistoryId
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '[{"JobHistoryId":601,"AgentMachine":"container_uo-25-4","JobId":"11111111-7777-4777-8777-000000000001","JobType":"K8STLSSecrManagement","OperationStart":"2026-03-19T21:26:45Z","OperationEnd":"2026-03-19T21:26:50Z","Message":"Job completed successfully","Result":2,"Status":3,"StorePath":"default/tf-unit-deploy","ClientMachine":"container_uo-25-4"}]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    # The terraform-plugin-testing framework performs a post-apply "plan for no
+    # changes" check after this TestStep, which calls Read (GetCertificateContext)
+    # once more before the implicit destroy begins -- a SECOND occurrence of this
+    # same URL, distinct from Create's initial read (id 0) and Delete's own read
+    # below (id 6). See pr-189 triage: omitting this interaction lets Delete's
+    # real GetCertificateContext call (id 6) find no un-replayed match, error with
+    # go-vcr's "requested interaction not found", and trip Delete's pre-existing
+    # strings.Contains(err.Error(), "not found") fallback (F1) -- swallowing that
+    # as a benign "already gone" and returning WITHOUT ever reaching the Remove
+    # POST or JobHistory wait, i.e. a vacuous destroy.
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/2429?includeLocations=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '{"Id":2429,"Thumbprint":"D25F423760A047052E0B064B4B756E00B800C476","IssuedCN":"tf-unit-deploy.example.com","IssuedDN":"CN=tf-unit-deploy.example.com","Locations":[],"LocationsCount":[],"SSLLocations":[],"Metadata":{}}'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    # Destroy phase begins here. certificate_alias is set explicitly in the test
+    # config, so Delete's alias-lookup-from-inventory block is never entered --
+    # the first destroy-phase request is removeCertificateAliasFromStore's own
+    # GetCertificateContext read (same URL as ids 0 and 5, but a distinct,
+    # separately consumed interaction under the consume-once VCR factory).
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/2429?includeLocations=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '{"Id":2429,"Thumbprint":"D25F423760A047052E0B064B4B756E00B800C476","IssuedCN":"tf-unit-deploy.example.com","IssuedDN":"CN=tf-unit-deploy.example.com","Locations":[],"LocationsCount":[],"SSLLocations":[],"Metadata":{}}'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 7
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/Certificates/Remove
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '["11111111-7777-4777-8777-000000000002"]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 8
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/OrchestratorJobs/JobHistory?QueryString=JobId+-eq+%2211111111-7777-4777-8777-000000000002%22&ReturnLimit=100&SortAscending=1&SortField=JobHistoryId
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '[{"JobHistoryId":602,"AgentMachine":"container_uo-25-4","JobId":"11111111-7777-4777-8777-000000000002","JobType":"K8STLSSecrManagement","OperationStart":"2026-03-19T21:28:45Z","OperationEnd":"2026-03-19T21:28:50Z","Message":"Job completed successfully","Result":2,"Status":3,"StorePath":"default/tf-unit-deploy","ClientMachine":"container_uo-25-4"}]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms

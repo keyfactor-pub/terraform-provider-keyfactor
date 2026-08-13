@@ -1,0 +1,8 @@
+.env
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+tf_state.json
+_import_pairs.txt
+.ed448_key.pem

@@ -300,22 +300,30 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			"dns_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 				Description: "List of DNS names to use as subjects of the certificate. " +
 					"NOTE: This field **does not work with CSR enrollments**, " +
 					"all SANs should be included in the CSR. " +
 					"Additional SANs added by the CA during enrollment **will" +
-					" not** be reflected in this field",
+					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
+					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
+					"certificate's real SAN list shows no drift; declaring a different list still forces " +
+					"replacement (see GH issue #197).",
 			},
 			"uri_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 				Description: "List of URIs to use as subjects of the certificate. " +
 					"NOTE: This field **does not work with CSR enrollments**, " +
 					"all SANs should be included in the CSR. " +
 					"Additional SANs added by the CA during enrollment **will" +
-					" not** be reflected in this field",
+					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
+					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
+					"certificate's real SAN list shows no drift; declaring a different list still forces " +
+					"replacement (see GH issue #197).",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -325,12 +333,16 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			"ip_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 				Description: "List of DNS names to use as subjects of the certificate. " +
 					"NOTE: This field **does not work with CSR enrollments**, " +
 					"all SANs should be included in the CSR. " +
 					"Additional SANs added by the CA during enrollment **will" +
-					" not** be reflected in this field",
+					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
+					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
+					"certificate's real SAN list shows no drift; declaring a different list still forces " +
+					"replacement (see GH issue #197).",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -409,9 +421,14 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Optional: true,
 				Description: "Optional owner role name. " +
 					"This is required if the certificate template being used requires an owner role to be set during" +
-					" enrollment. Only compatible with Keyfactor Command versions v12.3.0 and later.",
+					" enrollment. Only compatible with Keyfactor Command versions v12.3.0 and later. " +
+					"Omitting this attribute leaves ownership unmanaged/preserved (server-side changes are not corrected); " +
+					"an explicit empty string (\"\") declaratively clears the certificate's owner.",
 				MarkdownDescription: `
 A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
+
+> [!NOTE]
+> **Attribute contract**: omitting ` + "`owner_role_name`" + ` from config leaves ownership unmanaged -- Terraform never sends a clearing value, and drift from an out-of-band owner change is still surfaced on plan/refresh. Declaring an explicit empty string (` + "`owner_role_name = \"\"`" + `) is a declarative "clear the owner" sentinel: Terraform sends a PUT with no role identifier, which Keyfactor Command interprets as removing the certificate's owner.
 
 Expanded Change Owner Permission: A user who holds the Certificates > Expanded Change Owner permission can set the certificate owner to any role within the permission sets they are a member of. This permission setting overrides the Certificates > Collections > Change Owner permission (both Global and Collection-level) if both are set.
 
@@ -925,6 +942,36 @@ func preserveWriteOnlyEnrollmentFieldsFromState(state CommandCertificate, result
 	result.UseCNAsFriendlyName = state.UseCNAsFriendlyName
 }
 
+// ownerRoleNameForRead implements sentinel stability for owner_role_name's
+// attribute contract: an explicit "" plan/config value declaratively clears
+// the certificate's owner, while omitting the attribute entirely (Null)
+// leaves ownership unmanaged. Command's GET /Certificates response cannot
+// distinguish those two cases -- both report an empty OwnerRoleName -- so
+// this reconstructs the right state value from serverOwnerRoleName (the
+// server's current truth) and priorOwnerRoleName (the attribute's value
+// before this Read):
+//
+//   - A non-empty serverOwnerRoleName always wins and is surfaced as-is, even
+//     over a stale "" sentinel in prior state -- a real owner set out-of-band
+//     (or by this resource's own prior Update) must always be drift-visible.
+//   - An empty serverOwnerRoleName keeps the "" sentinel ONLY if prior state
+//     itself already held it (Known, non-null, ""), so a declared
+//     owner_role_name = "" stays settled against config instead of
+//     collapsing to Null and manufacturing a permanent "" -> null -> ""
+//     diff.
+//   - Otherwise (empty serverOwnerRoleName, prior state Null/Unknown/never
+//     the sentinel), the attribute was never declared/managed -- return
+//     Null.
+func ownerRoleNameForRead(serverOwnerRoleName string, priorOwnerRoleName types.String) types.String {
+	if serverOwnerRoleName != "" {
+		return types.String{Value: serverOwnerRoleName}
+	}
+	if !priorOwnerRoleName.Null && !priorOwnerRoleName.Unknown && priorOwnerRoleName.Value == "" {
+		return types.String{Value: ""}
+	}
+	return types.String{Null: true}
+}
+
 func (r resourceCommandCertificate) Read(
 	ctx context.Context,
 	request tfsdk.ReadResourceRequest,
@@ -1209,9 +1256,9 @@ func (r resourceCommandCertificate) Read(
 		enrollmentPatternName = state.EnrollmentPattern.Value
 	}
 
-	var ownerRoleName string
-	if certGetResp != nil && certGetResp.OwnerRoleName != "" {
-		ownerRoleName = certGetResp.OwnerRoleName
+	var serverOwnerRoleName string
+	if certGetResp != nil {
+		serverOwnerRoleName = certGetResp.OwnerRoleName
 	}
 	tflog.Debug(ctx, "Creating state object for certificate.")
 	result := CommandCertificate{
@@ -1261,10 +1308,18 @@ func (r resourceCommandCertificate) Read(
 			Value: certGetResp != nil && strings.Contains(strings.ToLower(certGetResp.CertStateString), "pending"),
 		},
 		RenewalConfig: renewalConfig,
-		OwnerRoleName: types.String{
-			Value: ownerRoleName,
-			Null:  isNullString(ownerRoleName),
-		},
+		// owner_role_name attribute contract: omitting it from config leaves
+		// ownership unmanaged; an explicit "" declaratively clears it. The
+		// wire (Command's GET /Certificates response) cannot distinguish "no
+		// owner" from "the declared clear sentinel" -- both report "" -- so
+		// sentinel stability must be reconstructed here: if the server
+		// reports a real owner, that always wins (drift-visible, even over a
+		// stale sentinel); otherwise, keep state at the "" sentinel only if
+		// prior state itself already held it, and fall back to Null
+		// (unmanaged) otherwise. Without this, an explicit owner_role_name =
+		// "" would collapse straight to Null on every Read, manufacturing a
+		// permanent "" -> null -> "" diff since config still declares "".
+		OwnerRoleName:       ownerRoleNameForRead(serverOwnerRoleName, state.OwnerRoleName),
 		EnrollmentPattern:   state.EnrollmentPattern,   // This may be mutated below
 		CertificateTemplate: state.CertificateTemplate, // This may be mutated below
 		NotBefore: types.String{
@@ -1415,6 +1470,48 @@ func (r resourceCommandCertificate) Read(
 	}
 }
 
+// certificateOwnerRoleChanged reports whether Update should send a
+// PUT /Certificates/{id}/Owner request. owner_role_name's attribute
+// contract: omitting it from config (plan Null/Unknown) means ownership is
+// unmanaged -- Terraform must never send a clearing value just because the
+// attribute wasn't declared. Only a genuinely Known plan value (including an
+// explicit "" clear sentinel) that differs from the prior state's value
+// triggers a change.
+func certificateOwnerRoleChanged(plan, state CommandCertificate) bool {
+	if plan.OwnerRoleName.Null || plan.OwnerRoleName.Unknown {
+		return false
+	}
+	return plan.OwnerRoleName.Value != state.OwnerRoleName.Value
+}
+
+// ownerChangeRequestForPlan builds the PUT /Certificates/{id}/Owner payload
+// for a declared owner_role_name plan value. Only called when
+// certificateOwnerRoleChanged reports a change, so ownerRoleName is always a
+// Known plan value here (never Null/Unknown).
+//
+// An explicit empty string ("") is the declarative "clear ownership"
+// sentinel: per the Keyfactor Command API (PUT /Certificates/{id}/Owner
+// Swagger doc: "If removing the owner, leave both empty"), a request with
+// both NewRoleId and NewRoleName unset clears the certificate's owner --
+// confirmed against a v25.x lab: HTTP 204, subsequent GET shows
+// OwnerRoleId/OwnerRoleName null. api.OwnerRequest's fields are `omitempty`
+// pointers, so &api.OwnerRequest{} serializes to exactly `{}` (a non-nil
+// pointer to an empty string, by contrast, is NOT omitted by encoding/json --
+// omitempty only checks for a nil pointer -- so this must be a genuinely nil
+// field, not `NewRoleName: &""`).
+//
+// A non-empty value may be either a numeric role ID or a role name; try
+// parsing as an int first and fall back to treating it as a name.
+func ownerChangeRequestForPlan(ownerRoleName string) *api.OwnerRequest {
+	if ownerRoleName == "" {
+		return &api.OwnerRequest{}
+	}
+	if ownerInt, convErr := strconv.Atoi(ownerRoleName); convErr == nil {
+		return &api.OwnerRequest{NewRoleId: &ownerInt}
+	}
+	return &api.OwnerRequest{NewRoleName: &ownerRoleName}
+}
+
 func (r resourceCommandCertificate) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -1549,17 +1646,13 @@ func (r resourceCommandCertificate) Update(
 		}
 	}
 
-	// Check if ownerrolename has changed
-	if plan.OwnerRoleName.Value != state.OwnerRoleName.Value {
+	// Check if ownerrolename has changed. certificateOwnerRoleChanged refuses
+	// to fire when config omits owner_role_name (plan Null/Unknown) --
+	// ownership stays unmanaged in that case, never cleared as a side effect
+	// of an unrelated Update.
+	if certificateOwnerRoleChanged(plan, state) {
 		tflog.Debug(ctx, "OwnerRoleName has changed, updating certificate owner role.")
-		// Check if rolename is an integer ID or string name
-		ownerInt, convErr := strconv.Atoi(plan.OwnerRoleName.Value)
-		ownerRequest := &api.OwnerRequest{}
-		if convErr != nil {
-			ownerRequest.NewRoleName = &plan.OwnerRoleName.Value
-		} else {
-			ownerRequest.NewRoleId = &ownerInt
-		}
+		ownerRequest := ownerChangeRequestForPlan(plan.OwnerRoleName.Value)
 
 		oErr := r.p.client.ChangeCertificateOwnerRole(certificateID, ownerRequest)
 		if oErr != nil {
@@ -1636,9 +1729,9 @@ func (r resourceCommandCertificate) Update(
 			Country:              plan.Country,
 			Organization:         plan.Organization,
 			OrganizationalUnit:   plan.OrganizationalUnit,
-			DNSSANs:              plan.DNSSANs,
-			IPSANs:               plan.IPSANs,
-			URISANs:              plan.URISANs,
+			DNSSANs:              knownListFromPlan(plan.DNSSANs),
+			IPSANs:               knownListFromPlan(plan.IPSANs),
+			URISANs:              knownListFromPlan(plan.URISANs),
 			SerialNumber:         state.SerialNumber,
 			IssuerDN:             state.IssuerDN,
 			Thumbprint:           state.Thumbprint,
@@ -2989,9 +3082,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		Locality:           plan.Locality,
 		State:              plan.State,
 		Country:            plan.Country,
-		DNSSANs:            plan.DNSSANs,
-		IPSANs:             plan.IPSANs,
-		URISANs:            plan.URISANs,
+		DNSSANs:            knownListFromPlan(plan.DNSSANs),
+		IPSANs:             knownListFromPlan(plan.IPSANs),
+		URISANs:            knownListFromPlan(plan.URISANs),
 		SerialNumber:       types.String{Value: normalizeSerialNumber(enrolledSerialNumber)},
 		IssuerDN:           types.String{Value: enrolledIssuerDN},
 		Thumbprint:         types.String{Value: normalizeThumbprint(enrolledThumbprint)},
@@ -3398,6 +3491,21 @@ func knownInt64FromPlan(i types.Int64) types.Int64 {
 	return i
 }
 
+// knownListFromPlan returns the plan value if known, otherwise a null list
+// with the same element type. Prevents storing Unknown in state for Computed
+// list fields such as dns_sans/ip_sans/uri_sans -- those attributes became
+// Optional+Computed (with UseStateForUnknown) as part of the fix for GH
+// issue #197 (dns_sans not populated on import forced replacement); a fresh
+// Create() whose config doesn't declare them plans them Unknown (no prior
+// state exists yet for UseStateForUnknown to carry forward), and the final
+// state Create() returns must never contain an Unknown value.
+func knownListFromPlan(l types.List) types.List {
+	if l.Unknown {
+		return types.List{Null: true, ElemType: l.ElemType}
+	}
+	return l
+}
+
 func (r resourceCommandCertificate) parseMetadata(
 	ctx context.Context,
 	plan *CommandCertificate,
@@ -3625,9 +3733,9 @@ func (r resourceCommandCertificate) enrollCSR(
 		Locality:           plan.Locality,
 		State:              plan.State,
 		Country:            plan.Country,
-		DNSSANs:            plan.DNSSANs,
-		IPSANs:             plan.IPSANs,
-		URISANs:            plan.URISANs,
+		DNSSANs:            knownListFromPlan(plan.DNSSANs),
+		IPSANs:             knownListFromPlan(plan.IPSANs),
+		URISANs:            knownListFromPlan(plan.URISANs),
 		SerialNumber:       types.String{Value: normalizeSerialNumber(enrollResponse.CertificateInformation.SerialNumber)},
 		IssuerDN:           types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
 		Thumbprint:         types.String{Value: normalizeThumbprint(enrollResponse.CertificateInformation.Thumbprint)},

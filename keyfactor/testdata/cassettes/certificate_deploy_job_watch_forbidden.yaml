@@ -1,0 +1,151 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/2429?includeLocations=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '{"Id":2429,"Thumbprint":"D25F423760A047052E0B064B4B756E00B800C476","IssuedCN":"tf-unit-deploy.example.com","IssuedDN":"CN=tf-unit-deploy.example.com","Locations":[],"LocationsCount":[],"SSLLocations":[],"Metadata":{}}'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/f0cc1ede-3173-44b3-8368-ba1251ddb32e/Inventory?query.pageReturned=1
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '[]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/Certificates/Add
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '["ffffffff-6666-4666-8666-000000000001"]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/OrchestratorJobs/JobHistory?QueryString=JobId+-eq+%22ffffffff-6666-4666-8666-000000000001%22&ReturnLimit=100&SortAscending=1&SortField=JobHistoryId
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '{"Status":403,"Message":"Access is denied due to insufficient permissions.","ErrorCode":"KF-AUTH-403","FailedOperations":[{"Reason":"The authenticated identity does not hold the Agent Management - Read permission required by this endpoint."}]}'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 403 Forbidden
+        code: 403
+        duration: 1ms
+    # Interactions 4-5 are the test framework's implicit destroy of the tainted
+    # resource left behind by the 403 above. This is a test-harness necessity:
+    # resource.UnitTest requires cleanup destroy to complete so the test itself
+    # doesn't leak state, so interaction 5's JobHistory poll below is hand-crafted
+    # to return a terminal 200/success rather than the honest 403 the same
+    # under-permissioned identity would actually receive. A real destroy of this
+    # tainted resource with the same identity would 403 exactly like interaction 3
+    # did on Create (see U1/pr-189 CHANGELOG note + resource schema [!NOTE]) --
+    # the permission must be granted, or the resource removed from state manually,
+    # before a real destroy can succeed.
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/Certificates/Remove
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '["ffffffff-6666-4666-8666-000000000002"]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/OrchestratorJobs/JobHistory?QueryString=JobId+-eq+%22ffffffff-6666-4666-8666-000000000002%22&ReturnLimit=100&SortAscending=1&SortField=JobHistoryId
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '[{"JobHistoryId":501,"AgentMachine":"container_uo-25-4","JobId":"ffffffff-6666-4666-8666-000000000002","JobType":"K8STLSSecrManagement","OperationStart":"2026-03-19T21:26:45Z","OperationEnd":"2026-03-19T21:26:50Z","Message":"Job completed successfully","Result":2,"Status":3,"StorePath":"default/tf-unit-deploy","ClientMachine":"container_uo-25-4"}]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms

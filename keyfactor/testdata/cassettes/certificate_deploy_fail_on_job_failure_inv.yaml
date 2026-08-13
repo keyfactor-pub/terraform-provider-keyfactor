@@ -1,0 +1,164 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Certificates/2429?includeLocations=true
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '{"Id":2429,"Thumbprint":"D25F423760A047052E0B064B4B756E00B800C476","IssuedCN":"tf-unit-deploy.example.com","IssuedDN":"CN=tf-unit-deploy.example.com","Locations":[],"LocationsCount":[],"SSLLocations":[],"Metadata":{}}'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/f0cc1ede-3173-44b3-8368-ba1251ddb32e/Inventory?query.pageReturned=1
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '[]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/Certificates/Add
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '["dddddddd-4444-4444-8444-000000000001"]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/f0cc1ede-3173-44b3-8368-ba1251ddb32e
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '{"Id":"f0cc1ede-3173-44b3-8368-ba1251ddb32e","ContainerId":null,"DisplayName":"container_uo-25-4 - default/tf-unit-deploy","ClientMachine":"container_uo-25-4","Storepath":"default/tf-unit-deploy","CertStoreType":154,"Approved":true,"CreateIfMissing":false,"AgentId":"275bcd31-9e7b-4c4a-bce9-1719e0c2168d","AgentAssigned":true,"ContainerName":null,"InventorySchedule":{"Daily":{"Time":"2026-03-19T22:26:00Z"}}}'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/OrchestratorJobs/JobHistory?QueryString=JobId+-eq+%22dddddddd-4444-4444-8444-000000000001%22&ReturnLimit=100&SortAscending=1&SortField=JobHistoryId
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '[{"JobHistoryId":301,"AgentMachine":"container_uo-25-4","JobId":"dddddddd-4444-4444-8444-000000000001","JobType":"K8STLSSecrManagement","OperationStart":"2026-03-19T21:26:45Z","OperationEnd":"2026-03-19T21:26:50Z","Message":"K8S orchestrator error: secrets \"tf-unit-jobfail-inv\" is forbidden: User cannot create resource \"secrets\" in namespace \"default\"","Result":4,"Status":3,"StorePath":"default/tf-unit-deploy","ClientMachine":"container_uo-25-4"}]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/CertificateStores/Certificates/Remove
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '["dddddddd-4444-4444-8444-000000000002"]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        host: int25-4-1.kftestlab.com
+        body: ""
+        headers:
+            Accept:
+                - application/json
+        url: https://int25-4-1.kftestlab.com/Keyfactor/API/OrchestratorJobs/JobHistory?QueryString=JobId+-eq+%22dddddddd-4444-4444-8444-000000000002%22&ReturnLimit=100&SortAscending=1&SortField=JobHistoryId
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        body: '[{"JobHistoryId":302,"AgentMachine":"container_uo-25-4","JobId":"dddddddd-4444-4444-8444-000000000002","JobType":"K8STLSSecrManagement","OperationStart":"2026-03-19T21:28:45Z","OperationEnd":"2026-03-19T21:28:50Z","Message":"Job completed successfully","Result":2,"Status":3,"StorePath":"default/tf-unit-deploy","ClientMachine":"container_uo-25-4"}]'
+        headers:
+            Content-Type:
+                - application/json; charset=utf-8
+        status: 200 OK
+        code: 200
+        duration: 1ms

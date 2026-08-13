@@ -385,6 +385,115 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 	return result, diags
 }
 
+// buildTemplateRoleBindingUpdateArg constructs an api.UpdateTemplateArg that
+// carries forward EVERY field the legacy v3/api.GetTemplateResponse model
+// exposes, overriding only AllowedRequesters/UseAllowedRequesters (the
+// fields this resource actually manages). PUT /Templates is a full-replace
+// endpoint: any field left off the request is cleared server-side, not left
+// unchanged. Before this fix, addAllowedRequesterToTemplate/
+// removeRoleFromTemplate only carried a fixed subset of fields (Id,
+// CommonName, TemplateName, Oid, KeySize, ForestRoot, FriendlyName,
+// AllowedEnrollmentTypes, KeyRetention, RFCEnforcement, TemplatePolicy),
+// which silently cleared everything else the template had configured on
+// every role-binding update -- including KeyRetentionDays, which produces a
+// live, user-facing error the moment a template has a KeyRetention policy
+// that requires a day count: "In order to enable a retention policy on a
+// template, the number of days to retain after expiration must be defined."
+// See dev-harness Gap C (extends GH issue #190).
+//
+// A second, related defect existed even after that fix: KeyType, FriendlyName,
+// AllowedEnrollmentTypes, KeyRetention, and KeyRetentionDays were carried
+// forward via intToPointer/stringToPointer, which collapse a genuinely-zero
+// int (0) or empty string ("") to nil. Those helpers are correct for a
+// user-supplied Optional plan value (0/"" there really does mean "not set"),
+// but wrong for these carry-forward fields, whose value always comes from a
+// fresh GetTemplate immediately before this call -- it is never "unset,"
+// even when it happens to be the zero value. This dropped a real
+// KeyRetentionDays==0 (a valid combination alongside e.g.
+// KeyRetention=="FromIssuance") from the PUT while KeyRetention itself was
+// still sent, and Command rejected the whole request. Fixed by taking the
+// address of the fetched value directly via the generic ptr() helper
+// instead. See dev-harness Gap C live-verification follow-up.
+//
+// Not every field GetTemplateResponse returns can be represented here:
+//   - CertificateCleanupEnabled, TimeAfterExpiration, TimeAfterExpirationUnits,
+//     DeleteWithArchivedKey, AllowOneClickRenewals, and TemplateDefaults (the
+//     per-subject-part default values, not to be confused with the unrelated
+//     TemplateDefault bool used by enrollment_patterns_models.go) do not exist
+//     anywhere in the v3/api.GetTemplateResponse / api.UpdateTemplateArg
+//     models at all (confirmed against keyfactor-go-client v3.5.6) -- the
+//     newer keyfactor-go-client-sdk v1 TemplatesTemplateRetrievalResponse /
+//     TemplatesTemplateUpdateRequest models used by
+//     resource_keyfactor_certificate_template.go DO model these fields, but
+//     this resource (keyfactor_template_role_binding) is still built on the
+//     older client. A future migration to the v1 SDK client would close this
+//     gap; until then, an update through this resource cannot preserve those
+//     fields because it has no way to even read their current value.
+func buildTemplateRoleBindingUpdateArg(template *api.GetTemplateResponse, allowedRequesters []string, useAllowedRequesters bool) *api.UpdateTemplateArg {
+	// KeyUsage is a carry-forward value read fresh from GetTemplate
+	// immediately above, exactly like KeyType/FriendlyName/KeyRetention/
+	// KeyRetentionDays below -- it always has a real current value, even
+	// when that value is the zero bitmask (0). Take its address directly
+	// rather than collapsing 0 to nil. keyfactor-go-client/v3 v3.6.0+
+	// types UpdateTemplateArg.KeyUsage as *int (matching
+	// GetTemplateResponse.KeyUsage's int bitmask and Command's wire
+	// format); earlier client versions typed it *bool, which Command
+	// rejects with a live HTTP 400 ("Unexpected character encountered
+	// while parsing value: t. Path 'KeyUsage'") and which had no lossless
+	// conversion from the bitmask anyway, so this field was previously
+	// left nil/omitted -- silently resetting the template's KeyUsage to 0
+	// on every role attach/detach, since PUT /Templates is a full-replace
+	// endpoint.
+	keyUsage := template.KeyUsage
+	return &api.UpdateTemplateArg{
+		Id:           template.Id,
+		CommonName:   template.CommonName,
+		TemplateName: template.TemplateName,
+		Oid:          template.Oid,
+		KeySize:      template.KeySize,
+		KeyUsage:     &keyUsage,
+		// KeyType/FriendlyName/AllowedEnrollmentTypes/KeyRetention/
+		// KeyRetentionDays are carry-forward values read fresh from
+		// GetTemplate immediately above -- they came from the server, so
+		// they are always "set," even when the real current value is the
+		// zero value (0/""). Take their address directly via the generic
+		// ptr() helper rather than routing through intToPointer/
+		// stringToPointer: those helpers intentionally collapse 0/"" to nil,
+		// which is correct for a genuinely-optional user-supplied plan value
+		// but wrong here -- it silently drops a legitimately-zero/empty
+		// current value from the PUT. Observed live: a template with
+		// KeyRetention="FromIssuance" and KeyRetentionDays==0 (a real,
+		// valid combination) got KeyRetentionDays collapsed to nil while
+		// KeyRetention was still sent, and Command 25.x rejected the
+		// request outright with "In order to enable a retention policy on a
+		// template, the number of days to retain after expiration must be
+		// defined." (0xA011000F). See dev-harness Gap C, completes #190.
+		KeyType:                ptr(template.KeyType),
+		ForestRoot:             template.ForestRoot,
+		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
+		AllowedRequesters:      &allowedRequesters,
+		FriendlyName:           ptr(template.FriendlyName),
+		AllowedEnrollmentTypes: ptr(template.AllowedEnrollmentTypes),
+		KeyRetention:           ptr(template.KeyRetention),
+		KeyRetentionDays:       ptr(template.KeyRetentionDays),
+		KeyArchival:            boolToPointer(template.KeyArchival),
+		EnrollmentFields:       &template.EnrollmentFields,
+		MetadataFields:         &template.MetadataFields,
+		TemplateRegexes:        &template.TemplateRegexes,
+		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
+		RequiresApproval:       boolToPointer(template.RequiresApproval),
+		// TemplatePolicy: carry the template's existing policy through
+		// unchanged. PUT /Templates is a full-replace endpoint: omitting
+		// TemplatePolicy here would silently clear it, and for a template
+		// linked to an enrollment pattern Command 25.x then rejects the
+		// request with "'Policies' cannot be empty" because its internal
+		// policy set derives from TemplatePolicy's key-algorithm lists. This
+		// binding resource only manages allowed_requesters, so it must never
+		// alter unrelated policy content. See issue #190.
+		TemplatePolicy: template.TemplatePolicy,
+	}
+}
+
 /*
  * The resourceTemplateAttachRoleUpdate function is responsible for updating a Keyfactor security role.
  */
@@ -631,20 +740,7 @@ func addAllowedRequesterToTemplate(
 	}
 	// Fill required fields with information retrieved from the get request above
 	tflog.Debug(ctx, "Creating update context to add role to template")
-	updateContext := &api.UpdateTemplateArg{
-		Id:                     template.Id,
-		CommonName:             template.CommonName,
-		TemplateName:           template.TemplateName,
-		Oid:                    template.Oid,
-		KeySize:                template.KeySize,
-		ForestRoot:             template.ForestRoot,
-		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
-		AllowedRequesters:      &newAllowedRequester,
-		FriendlyName:           stringToPointer(template.FriendlyName),
-		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
-		KeyRetention:           stringToPointer(template.KeyRetention),
-		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
-	}
+	updateContext := buildTemplateRoleBindingUpdateArg(template, newAllowedRequester, useAllowedRequesters)
 
 	tflog.Trace(
 		ctx, "Updating template in Keyfactor with context:", map[string]interface{}{
@@ -708,21 +804,10 @@ func removeRoleFromTemplate(
 	if len(newAllowedRequester) > 0 {
 		useAllowedRequesters = true
 	}
-	// Fill required fields with information retrieved from the get request above
-	updateContext := &api.UpdateTemplateArg{
-		Id:                     template.Id,
-		CommonName:             template.CommonName,
-		TemplateName:           template.TemplateName,
-		Oid:                    template.Oid,
-		KeySize:                template.KeySize,
-		ForestRoot:             template.ForestRoot,
-		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
-		AllowedRequesters:      &newAllowedRequester,
-		FriendlyName:           stringToPointer(template.FriendlyName),
-		AllowedEnrollmentTypes: intToPointer(template.AllowedEnrollmentTypes),
-		KeyRetention:           stringToPointer(template.KeyRetention),
-		RFCEnforcement:         boolToPointer(template.RFCEnforcement),
-	}
+	// Fill required fields with information retrieved from the get request above --
+	// see buildTemplateRoleBindingUpdateArg for why every representable field
+	// (not just the requester list) must be carried forward here.
+	updateContext := buildTemplateRoleBindingUpdateArg(template, newAllowedRequester, useAllowedRequesters)
 
 	tflog.Trace(
 		ctx, "Updating template in Keyfactor with context:", map[string]interface{}{

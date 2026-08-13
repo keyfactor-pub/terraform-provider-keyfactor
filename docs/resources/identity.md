@@ -29,7 +29,7 @@ resource "keyfactor_identity" "identity" {
 
 ### Optional
 
-- `roles` (List of String) An array of role names or numeric role IDs that the identity is attached to. Role names are matched case-insensitively against Keyfactor Command's role names, so a declared spelling that only differs in case from the server is not reported as drift. Omit to leave role membership unmanaged (preserved on update); set [] explicitly to remove all roles.
+- `roles` (List of String) An array of role names or numeric role IDs that the identity is attached to. Role names are matched case-insensitively against Keyfactor Command's role names, so a declared spelling that only differs in case from the server is not reported as drift. A declared entry that parses as an integer is looked up by role ID first, falling back to a name-based lookup only if no role has that ID (this preserves resolving a role whose Name is itself a numeric string, e.g. a role literally named "123"). Resolving via the numeric-ID path always surfaces a warning in the plan/apply output, so a match found only by ID -- rather than by name -- is never silent. Omit to leave role membership unmanaged (preserved on update); set [] explicitly to remove all roles.
 
 ### Read-Only
 

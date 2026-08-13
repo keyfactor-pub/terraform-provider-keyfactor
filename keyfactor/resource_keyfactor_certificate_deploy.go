@@ -1026,15 +1026,18 @@ func tryAddCertificateToStore(
 	return nil, err
 }
 
-// undeploymentStillPresent performs a single inventory read and reports whether the
-// certificate is still present in the store under the given alias. Matching semantics
-// are shared with validateUndeployment.
-func undeploymentStillPresent(
+// certificateInInventory performs a single inventory read and reports whether certObj is
+// present in the store under certAlias. It backs both undeploymentStillPresent and
+// deploymentPresentInInventory, which differ only in matchEmptyAliasByLeafId: deployment
+// checks also match by the leaf certificate's ID when no alias is set (certAlias == ""),
+// while undeployment checks never fall back to ID-only matching for an empty alias.
+func certificateInInventory(
 	ctx context.Context,
 	conn *api.Client,
 	storeId string,
 	certAlias string,
 	certObj *api.GetCertificateResponse,
+	matchEmptyAliasByLeafId bool,
 ) (bool, error) {
 	inv, invErr := conn.GetCertStoreInventory(storeId)
 	if invErr != nil {
@@ -1052,9 +1055,27 @@ func undeploymentStillPresent(
 					return true, nil
 				}
 			}
+		} else if matchEmptyAliasByLeafId && certAlias == "" {
+			// if not alias is provided then just compare cert ID of the leaf node
+			if len(cert.Ids) > 0 && cert.Ids[0] == certObj.Id { //TODO: This may not be the best way to do this as a cert ID can show up multiple times in a store
+				return true, nil
+			}
 		}
 	}
 	return false, nil
+}
+
+// undeploymentStillPresent performs a single inventory read and reports whether the
+// certificate is still present in the store under the given alias. Matching semantics
+// are shared with validateUndeployment.
+func undeploymentStillPresent(
+	ctx context.Context,
+	conn *api.Client,
+	storeId string,
+	certAlias string,
+	certObj *api.GetCertificateResponse,
+) (bool, error) {
+	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, false)
 }
 
 func validateUndeployment(
@@ -1117,30 +1138,7 @@ func deploymentPresentInInventory(
 	certAlias string,
 	certObj *api.GetCertificateResponse,
 ) (bool, error) {
-	inv, invErr := conn.GetCertStoreInventory(storeId)
-	if invErr != nil {
-		return false, invErr
-	}
-	// check if inv is empty or nil
-	if inv == nil || len(*inv) == 0 {
-		return false, nil
-	}
-	for _, cert := range *inv {
-		if cert.Name == certAlias {
-			// Iterate through Certificates in the store and check if the certificate we're looking for is there
-			for _, iCert := range cert.Certificates {
-				if iCert.Id == certObj.Id {
-					return true, nil
-				}
-			}
-		} else if certAlias == "" {
-			// if not alias is provided then just compare cert ID of the leaf node
-			if len(cert.Ids) > 0 && cert.Ids[0] == certObj.Id { //TODO: This may not be the best way to do this as a cert ID can show up multiple times in a store
-				return true, nil
-			}
-		}
-	}
-	return false, nil
+	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, true)
 }
 
 func validateDeployment(

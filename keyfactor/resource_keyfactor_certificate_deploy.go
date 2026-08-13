@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
@@ -836,7 +835,7 @@ func (r resourceCommandCertificateDeployment) Delete(
 	tflog.Info(ctx, "Removing certificate from store.")
 	jobIDs, certificateData, err := removeCertificateAliasFromStore(kfClient, &diff, certId)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if isNotFoundError(err) {
 			response.Diagnostics.AddWarning(
 				"Certificate deployment not found.",
 				fmt.Sprintf(

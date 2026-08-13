@@ -247,6 +247,18 @@ func identityRolesResultForRead(stateRoles types.List, serverRoles []api.Securit
 	return stateRoles
 }
 
+// roleLookupLogMessage builds the tflog.Debug message logged before looking
+// up a declared `roles` entry. roleStr is a declared config value -- not a
+// shape this provider controls -- so it is logged %q-quoted (escaping
+// embedded control characters like \r\n) rather than with %v/%s, so a role
+// string crafted to contain a CRLF sequence can't forge fake log lines under
+// TF_LOG=DEBUG/TRACE (CWE-117 log injection). hclog's plain-text writer
+// emits the message string verbatim with no control-character escaping of
+// its own, so the escaping has to happen here.
+func roleLookupLogMessage(roleStr string) string {
+	return fmt.Sprintf("Looking up role %q in Keyfactor", roleStr)
+}
+
 // resolveDeclaredSecurityRole resolves a single entry from the `roles`
 // attribute against Keyfactor Command. It is shared by Create() and Update()
 // so their role-resolution loops can't drift out of sync with each other.
@@ -433,7 +445,7 @@ func (r resourceSecurityIdentity) Update(
 				return
 			}
 			roleStr := roleVal.Value
-			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", roleStr))
+			tflog.Debug(ctx, roleLookupLogMessage(roleStr))
 			kfRole, roleLookupErr := resolveDeclaredSecurityRole(r.p.client, roleStr, &response.Diagnostics)
 			if roleLookupErr != nil {
 				response.Diagnostics.AddError(
@@ -643,7 +655,7 @@ func (r resourceSecurityIdentity) Create(
 				return
 			}
 			roleStr := roleVal.Value
-			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", roleStr))
+			tflog.Debug(ctx, roleLookupLogMessage(roleStr))
 			kfRole, roleLookupErr := resolveDeclaredSecurityRole(r.p.client, roleStr, &response.Diagnostics)
 			if roleLookupErr != nil {
 				response.Diagnostics.AddError(

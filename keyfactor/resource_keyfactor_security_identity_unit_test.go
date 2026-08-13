@@ -684,6 +684,37 @@ func TestUnitSecurityIdentityResource_UpdateRoleLookupPreservesSpaces(t *testing
 	)
 }
 
+// TestUnitRoleLookupLogMessageEscapesControlCharacters is a regression test
+// for a CWE-117 (log injection) finding: the tflog.Debug message logged
+// before looking up a declared `roles` entry used to be built with
+// `fmt.Sprintf("Looking up role %v in Keyfactor", roleStr)`. roleStr is a
+// declared config value, and %v does no escaping of embedded control
+// characters -- hclog's plain-text writer emits the resulting message
+// verbatim -- so a role string containing an embedded "\r\n" could forge
+// what looks like a second, fake log line under TF_LOG=DEBUG/TRACE. Before
+// this PR, the logged value was always the framework's %q-quoted
+// role.String() form, which escapes exactly this.
+//
+// roleLookupLogMessage is the extracted helper both Update()'s and Create()'s
+// role-lookup loops now call, using %q instead of %v. This drives the actual
+// helper (not a reimplementation of the format string) with a role string
+// containing an embedded CRLF sequence and asserts the result is a single,
+// escaped line: no raw "\r" or "\n" byte reaches the message, and the
+// original control characters are recoverable only via their escaped (%q)
+// form.
+func TestUnitRoleLookupLogMessageEscapesControlCharacters(t *testing.T) {
+	const injected = "Administrators\r\nlevel=error msg=\"fake injected log line\""
+
+	got := roleLookupLogMessage(injected)
+
+	assert.NotContains(t, got, "\r", "the log message must not contain a raw carriage return -- an unescaped CR/LF could be used to forge a fake log line")
+	assert.NotContains(t, got, "\n", "the log message must not contain a raw newline -- an unescaped CR/LF could be used to forge a fake log line")
+	assert.Equal(
+		t, `Looking up role "Administrators\r\nlevel=error msg=\"fake injected log line\"" in Keyfactor`, got,
+		"roleLookupLogMessage must %q-quote roleStr so embedded control characters are escaped, not interpolate it raw via %v/%s",
+	)
+}
+
 // TestUnitRoleIdToInt is a regression test for setIdentityRole's role-ID type
 // switch, which blindly asserted every non-int role identifier to int via a
 // `case string, interface{}: roleId = role.(int)` catch-all. Since

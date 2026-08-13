@@ -44,6 +44,7 @@
 - fix: `keyfactor_security_identity` `Update` no longer clears a role's roles when config doesn't declare the `roles` attribute
 - fix: `keyfactor_security_identity` `Read` now calls Command to detect roles added/removed out-of-band instead of always re-asserting whatever was already in state
 - fix: `keyfactor_security_identity` `Read` no longer overwrites a practitioner's declared role casing or numeric-ID form with Command's canonical role name when the declared and server role sets are otherwise identical, which previously manufactured a diff no apply could resolve; genuinely different role sets still surface as drift
+- fix: `keyfactor_security_identity` a declared `roles` entry that looks like a number (e.g. `"7"`) is now resolved as a Keyfactor role ID first, falling back to a name-based lookup only if no role has that ID (this also still resolves a role whose Name is itself a numeric string, e.g. a role literally named `"123"`, exactly as before). This is a deliberate, opt-in-by-default design, not a silent behavior change: whenever a role is actually resolved via the numeric-ID path, `terraform plan`/`apply` now surfaces a warning identifying that a numeric `roles` entry matched by ID rather than by name, specifically so an existing config with a numeric `roles` entry that previously never resolved (and therefore silently no-op'd on every prior release) doesn't start granting a real, possibly highly-privileged role on a routine provider upgrade without the operator noticing
 
 ## Security Roles
 

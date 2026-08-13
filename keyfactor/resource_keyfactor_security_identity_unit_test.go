@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
@@ -937,42 +938,35 @@ func TestUnitSecurityIdentityResource_CreateFailsOnRoleLookupError(t *testing.T)
 	)
 }
 
-// TestUnitSecurityIdentityResource_UpdateResolvesNumericRoleIdViaIdPath is a
-// regression test for Fix B: the roles attribute's schema Description
-// documents that a declared entry may be a role name OR a numeric role ID,
-// but Create()/Update() always called GetSecurityRole with a Go string, even
-// when its content was purely numeric (e.g. "7"). api.Client.GetSecurityRole
-// type-switches on the Go type of its argument -- `case string:` always does
-// a name-based query (`name -eq "<value>"`), even for a numeric-looking
-// string -- so a declared numeric role ID could never actually resolve; it
-// would look up a role literally named "7" instead of the role whose ID is 7.
+// TestUnitSecurityIdentityResource_UpdateFailsWhenNumericRoleMatchesNeitherIdNorName
+// is a regression test proving the not-found case is unchanged from this
+// resource's behavior for a declared role string that resolves neither by ID
+// nor by name: a numeric roles entry like "7" that matches no role with ID 7
+// AND no role literally named "7" must still fail cleanly, with no warning
+// diagnostic (the ID-path warning is only emitted when the ID lookup itself
+// actually resolves a role -- see
+// TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleIdPathResolvesWithWarning
+// below for that case).
 //
-// This drives Update() end-to-end with roles = ["7"] and asserts the ID-path
-// endpoint (GET /Security/Roles/7) is hit, never the name-query endpoint
-// (GET /Security/Roles?pq.queryString=...) -- failing the test outright if
-// the name-query path is ever reached.
-func TestUnitSecurityIdentityResource_UpdateResolvesNumericRoleIdViaIdPath(t *testing.T) {
+// This drives Update() end-to-end with roles = ["7"] against a mock server
+// where neither the ID-path endpoint (GET /Security/Roles/7, tried first)
+// nor the name-query fallback resolves a role.
+func TestUnitSecurityIdentityResource_UpdateFailsWhenNumericRoleMatchesNeitherIdNorName(t *testing.T) {
 	ctx := context.Background()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/KeyfactorAPI/Security/Roles/7", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Fatalf("unexpected %s request to /KeyfactorAPI/Security/Roles/7 -- the identity is already a member of the role, so no role mutation should be needed", r.Method)
-		}
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"Id":   7,
-			"Name": "RoleSeven",
-			"Identities": []map[string]interface{}{
-				{"AccountName": `KEYFACTOR\\tf-unit-numeric-id`},
-			},
-		})
+		// No role has ID 7 either.
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Message": "Not Found"})
 	})
 	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
-		t.Fatalf(
-			"declared role \"7\" is a numeric role ID and must resolve via the Security/Roles/{id} ID-path lookup, not this name-query endpoint (%s %s)",
-			r.Method, r.URL.String(),
-		)
+		if r.Method != http.MethodGet {
+			t.Fatalf("unexpected %s request to /KeyfactorAPI/Security/Roles -- role lookup for \"7\" must fail (no role is literally named \"7\" and no role has ID 7), so no mutation should ever be attempted", r.Method)
+		}
+		// No role is literally named "7".
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]map[string]interface{}{})
 	})
 	mux.HandleFunc("/KeyfactorAPI/Security/Identities", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -982,9 +976,7 @@ func TestUnitSecurityIdentityResource_UpdateResolvesNumericRoleIdViaIdPath(t *te
 				"AccountName":  `KEYFACTOR\\tf-unit-numeric-id`,
 				"IdentityType": "User",
 				"Valid":        true,
-				"Roles": []map[string]interface{}{
-					{"Id": 7, "Name": "RoleSeven"},
-				},
+				"Roles":        []map[string]interface{}{},
 			},
 		})
 	})
@@ -1032,28 +1024,116 @@ func TestUnitSecurityIdentityResource_UpdateResolvesNumericRoleIdViaIdPath(t *te
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
 
 	r.Update(ctx, req, resp)
-	if resp.Diagnostics.HasError() {
-		t.Fatalf("Update returned unexpected diagnostics: %+v", resp.Diagnostics)
-	}
 
-	var result SecurityIdentity
-	if d := resp.State.Get(ctx, &result); d.HasError() {
-		t.Fatalf("reading back result state: %+v", d)
-	}
-
-	var roles []string
-	for _, e := range result.Roles.Elems {
-		s, ok := e.(types.String)
-		if !ok {
-			t.Fatalf("expected roles element to be types.String, got %T", e)
-		}
-		roles = append(roles, s.Value)
-	}
-
-	assert.Equal(
-		t, []string{"7"}, roles,
-		"Update() must resolve and grant the declared numeric role ID via the ID-path lookup, not fail to resolve it via a doomed name lookup",
+	assert.True(
+		t, resp.Diagnostics.HasError(),
+		"Update() must fail the apply: a numeric roles entry like \"7\" that matches no role by name and no role by ID must still be reported as not found",
 	)
+	assert.Empty(
+		t, resp.Diagnostics.Warnings(),
+		"no ID-fallback warning should be emitted when the ID fallback itself did not resolve a role",
+	)
+}
+
+// TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleIdPathResolvesWithWarning
+// is a regression test for the ID-first design: a declared numeric string
+// (e.g. "7") is tried via the ID-path lookup (GET /Security/Roles/{id})
+// FIRST -- a parseable-int string is more likely intended as a role ID than
+// a literal role name, and the schema has always documented "role IDs" as an
+// accepted form. When that ID lookup resolves a real role,
+// resolveDeclaredSecurityRole must return it AND unconditionally emit a
+// warning diagnostic -- this is the specific, previously-impossible outcome
+// this change enables: a declared numeric string that used to always fail to
+// resolve (every prior release only ever looked up roles by name) can now
+// silently start granting a real, possibly highly-privileged role on nothing
+// more than a routine provider upgrade, purely because Command happens to
+// have a role with that literal numeric ID. The warning surfaces that in
+// `terraform plan`/`apply` output.
+//
+// This drives resolveDeclaredSecurityRole directly against a mock server
+// that never registers the name-query endpoint at all: if a regression
+// caused the name-based lookup to be tried instead of (or before) the
+// ID-path lookup, hitting that unregistered endpoint would surface as a
+// response-decode error, failing the assertions below -- catching a
+// regression to name-first ordering.
+func TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleIdPathResolvesWithWarning(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/7", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id": 7, "Name": "RoleSeven", "Description": "the real role with ID 7",
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	var diags diag.Diagnostics
+	kfRole, err := resolveDeclaredSecurityRole(client, "7", &diags)
+	if !assert.NoError(t, err, "the ID-path lookup must resolve role ID 7 without needing a name-based fallback") {
+		return
+	}
+	if !assert.NotNil(t, kfRole, "resolveDeclaredSecurityRole must not return a nil role when the ID lookup found a genuine match") {
+		return
+	}
+	assert.Equal(t, float64(7), kfRole.Id,
+		"resolveDeclaredSecurityRole must resolve to the role's real ID (7) via the ID-path lookup")
+
+	if !assert.Len(t, diags.Warnings(), 1,
+		"resolving via the ID-path lookup must always emit exactly one warning diagnostic, since it can silently grant a role an existing customer's config previously never resolved") {
+		return
+	}
+	warning := diags.Warnings()[0]
+	assert.Contains(t, warning.Detail(), "7",
+		"the warning must identify the declared value that triggered the ID-path resolution")
+	assert.Contains(t, strings.ToLower(warning.Summary()+" "+warning.Detail()), "numeric",
+		"the warning should make clear the match happened via a numeric ID, not a name match")
+}
+
+// TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericNameFallbackNoWarning
+// is a regression test for the one pre-existing case the ID-first design
+// must not regress: a security role whose display Name is itself a purely
+// numeric string (e.g. a role literally named "123") resolved correctly by
+// name before any numeric-ID resolution existed. Since the ID-path lookup is
+// now tried first for a numeric declaration, that role's real ID (distinct
+// from its Name) may not exist / may not match -- this asserts that when the
+// ID lookup fails (404/not-found), resolveDeclaredSecurityRole falls back to
+// the name-based lookup, resolves the role literally named "123", and emits
+// NO warning, since name-based resolution of a numeric string was already
+// possible pre-this-PR and is not new, surprising behavior.
+func TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericNameFallbackNoWarning(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/123", func(w http.ResponseWriter, r *http.Request) {
+		// No role has ID 123.
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Message": "Not Found"})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		// A role literally named "123" does exist, with a different real ID
+		// (7), reached via the name-based fallback.
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
+			{"Id": 7, "Name": "123", "Description": "a role literally named 123"},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	var diags diag.Diagnostics
+	kfRole, err := resolveDeclaredSecurityRole(client, "123", &diags)
+	if !assert.NoError(t, err, "the name-based fallback must resolve a role literally named \"123\" once the ID lookup fails") {
+		return
+	}
+	if !assert.NotNil(t, kfRole, "resolveDeclaredSecurityRole must not return a nil role when the name fallback found a genuine match") {
+		return
+	}
+	assert.Equal(t, float64(7), kfRole.Id,
+		"resolveDeclaredSecurityRole must resolve to the role's real ID (7) via the name fallback, not fail just because ID 123 doesn't exist")
+	assert.Empty(t, diags.Warnings(),
+		"no warning should be emitted for the name-based fallback -- resolving a numeric string by name was already possible before this PR and is not new, surprising behavior")
 }
 
 // TestUnitSecurityIdentityResource_UpdateRejectsUnverifiedRoleNameMatch is a
@@ -1284,79 +1364,7 @@ func TestUnitSecurityIdentityResource_UpdateSetIdentityRoleFailurePersistsState(
 		"the persisted state must reflect the untouched prior Roles (empty), not the plan's Roles that may not have actually been granted")
 }
 
-// TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericNameFallback
-// is a regression test for Fix E: resolveDeclaredSecurityRole, once it parses
-// a declared role string as an integer, ONLY tried the ID-path lookup with no
-// fallback to a name-based lookup. Before Fix B (the numeric-ID resolution
-// added the previous round) every lookup was name-based, so a security role
-// whose display Name happens to be purely numeric (e.g. a role literally
-// named "123") resolved correctly. Fix E without the fallback regressed that:
-// if no role has ID 123, Create/Update hard-fails even though a role named
-// "123" genuinely exists.
-//
-// This drives resolveDeclaredSecurityRole directly (no Update() plumbing
-// needed) against a mock server where GET /Security/Roles/123 (the ID-path
-// lookup) 404s, but the name-query endpoint resolves a role literally named
-// "123", and asserts the fallback succeeds and returns that role's real ID.
-func TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericNameFallback(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/KeyfactorAPI/Security/Roles/123", func(w http.ResponseWriter, r *http.Request) {
-		// No role has ID 123.
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"Message": "Not Found"})
-	})
-	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
-		// A role literally named "123" does exist, with a different real ID
-		// (7), reached via the name-query fallback.
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode([]map[string]interface{}{
-			{"Id": 7, "Name": "123", "Description": "a role literally named 123"},
-		})
-	})
-	server := httptest.NewTLSServer(mux)
-	defer server.Close()
-
-	client := newCertUpdateMockClient(server)
-
-	kfRole, err := resolveDeclaredSecurityRole(client, "123")
-	if !assert.NoError(t, err, "the name-based fallback must resolve a role literally named \"123\" once the ID lookup fails") {
-		return
-	}
-	if !assert.NotNil(t, kfRole, "resolveDeclaredSecurityRole must not return a nil role when the name fallback found a genuine match") {
-		return
-	}
-	assert.Equal(t, float64(7), kfRole.Id,
-		"resolveDeclaredSecurityRole must resolve to the role's real ID (7) via the name fallback, not fail just because ID 123 doesn't exist")
-}
-
-// TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericFastPath
-// is the companion "no regression in the common case" test for Fix E: when a
-// role genuinely has the declared numeric ID, resolveDeclaredSecurityRole
-// must resolve it via the fast ID-path lookup alone, without ever falling
-// back to (or needing) a name-based query.
-func TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericFastPath(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/KeyfactorAPI/Security/Roles/123", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"Id": 123, "Name": "RoleOneTwoThree", "Description": "the real role with ID 123",
-		})
-	})
-	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
-		t.Fatalf("the ID-path lookup for a genuinely-existing numeric role ID must resolve without ever falling back to the name-query endpoint (%s %s)", r.Method, r.URL.String())
-	})
-	server := httptest.NewTLSServer(mux)
-	defer server.Close()
-
-	client := newCertUpdateMockClient(server)
-
-	kfRole, err := resolveDeclaredSecurityRole(client, "123")
-	if !assert.NoError(t, err) {
-		return
-	}
-	if !assert.NotNil(t, kfRole) {
-		return
-	}
-	assert.Equal(t, float64(123), kfRole.Id,
-		"resolveDeclaredSecurityRole must resolve the genuine numeric-ID role via the fast ID path")
-}
+// Note: the numeric-string-resolves-by-name-fallback scenario (a role
+// literally named "123", e.g. round 3's original case) is covered by
+// TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericNameFallbackNoWarning
+// above, which also asserts no warning is emitted for that fallback path.

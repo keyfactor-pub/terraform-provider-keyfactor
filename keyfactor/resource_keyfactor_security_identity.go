@@ -37,8 +37,12 @@ func (r resourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Schema
 				Description: "An array of role names or numeric role IDs that the identity is attached to. " +
 					"Role names are matched case-insensitively against Keyfactor Command's role names, so a " +
 					"declared spelling that only differs in case from the server is not reported as drift. " +
-					"Omit to leave role membership unmanaged (preserved on update); set [] explicitly to " +
-					"remove all roles.",
+					"A declared entry that parses as an integer is looked up by role ID first, falling back " +
+					"to a name-based lookup only if no role has that ID (this preserves resolving a role " +
+					"whose Name is itself a numeric string, e.g. a role literally named \"123\"). Resolving " +
+					"via the numeric-ID path always surfaces a warning in the plan/apply output, so a match " +
+					"found only by ID -- rather than by name -- is never silent. Omit to leave role " +
+					"membership unmanaged (preserved on update); set [] explicitly to remove all roles.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{
 					tfsdk.UseStateForUnknown(),
 				},
@@ -247,81 +251,98 @@ func identityRolesResultForRead(stateRoles types.List, serverRoles []api.Securit
 // attribute against Keyfactor Command. It is shared by Create() and Update()
 // so their role-resolution loops can't drift out of sync with each other.
 //
-// The roles attribute's schema Description documents that a declared entry
-// may be either a role NAME or a numeric role ID -- identityRolesResultForRead
-// above already recognizes both forms when comparing state to the server's
-// roles on Read. But api.Client.GetSecurityRole(id interface{}) type-switches
-// on the Go type of its argument: `case int:` performs a real
-// Security/Roles/{id} ID-path lookup, while `case string:` ALWAYS performs a
-// name-based query, even when the string's content is purely numeric. Passing
-// a numeric string like "7" straight through as a string therefore never hits
-// the ID-lookup path -- it looks up a role literally NAMED "7" and (almost
-// always) fails to find one, even though a role with ID 7 exists. Parsing the
-// declared string as an integer first and passing it through as an int fixes
-// this by routing it to the real ID-path lookup.
+// Resolution order, for a declared role string that parses cleanly as an
+// integer (e.g. "7") -- a parseable-int string is more likely intended as a
+// role ID than as a literal role name, and the schema has always documented
+// "role IDs" as an accepted form:
 //
-// For the remaining name-based (string) lookups, GetSecurityRole's string
-// branch builds `name -eq "<value>"` PQL with ZERO escaping of the value
-// (keyfactor-go-client v3/api/security.go). Before this resource's roles
-// attribute accepted arbitrary role name strings, a `[^\w]` regex used to
-// strip every non-word character -- including quotes and PQL operators --
-// before the lookup, which accidentally closed off query injection via a
-// role name containing an embedded `"`. That regex was removed because it
-// also mangled legitimate names (e.g. "Power Users" -> "PowerUsers"), but
-// nothing replaced the safeguard it happened to provide: a role string like
-// `Foo" -or name -eq "Administrators` reaches Command's predicate-query
-// parser unescaped, and if Command's parser honors the injected clause,
-// GetSecurityRole could return an unintended (possibly higher-privileged)
-// role. Since the escaping itself isn't fixed here (that's the go-client
-// library's responsibility, out of scope for this provider-side change),
-// this instead verifies the returned role's Name actually matches the
-// declared string -- case-insensitively, consistent with
-// identityRolesResultForRead's role-name matching convention -- before
-// trusting kfRole.Id. A mismatch is treated as unresolved ((nil, nil), same
-// shape as a genuine "not found") so callers' existing not-found handling
-// rejects it rather than silently trusting an unverified query match.
+//  1. The ID-path lookup (api.Client.GetSecurityRole(int), a real
+//     Security/Roles/{id} request) is tried FIRST. This both matches the
+//     more likely intent for a numeric declaration and saves an API call in
+//     the common numeric-ID case.
+//  2. If that ID lookup resolves a real role, this unconditionally appends a
+//     WARNING diagnostic to diags (never silent) before returning it: this
+//     is the specific, previously-impossible outcome this change enables --
+//     a declared numeric string that used to always fail to resolve (every
+//     release before this one only ever looked up roles by name, and a
+//     purely numeric string almost never matches an actual role Name) can
+//     now silently start granting a real, possibly highly-privileged role on
+//     nothing more than a routine provider upgrade, purely because Command
+//     happens to have a role with that literal numeric ID. The warning
+//     surfaces that in `terraform plan`/`apply` output so an operator
+//     notices, without blocking the apply. diags may be nil (defensive;
+//     every real caller passes &response.Diagnostics), in which case the ID
+//     lookup still resolves but no warning can be emitted.
+//  3. If the ID lookup fails (an error, a 404/not-found, or a nil result),
+//     this falls back to the case-insensitive name-based lookup
+//     (resolveDeclaredSecurityRoleByName). This preserves the one
+//     pre-existing case that already worked before any numeric-ID
+//     resolution existed: a role whose Name is itself a numeric string
+//     (e.g. a role literally named "123") always resolved via name lookup,
+//     and still does. NO warning is emitted for this fallback, whether it
+//     succeeds or fails: name-based resolution of a numeric string was
+//     already possible pre-this-PR, so it is not new, surprising behavior.
 //
-// A declared value that parses as an integer is tried via the ID-path lookup
-// first (the common case: a genuine numeric role ID), but that is not the
-// only role a purely-numeric declared string can refer to -- Command allows a
-// role's Name to itself be a numeric string (e.g. a role literally named
-// "123"), which identityRolesResultForRead (used by Read for drift-detection)
-// already accounts for via its own ID-then-name fallback. If the ID lookup
-// doesn't produce a usable role (an error, a 404/not-found, or a nil result),
-// this falls back to the same case-insensitive name-based lookup used for
-// non-numeric declarations, so a role named "123" still resolves instead of
-// hard-failing Create/Update for a role that genuinely exists. Only once BOTH
-// the ID lookup and the name fallback fail to resolve is the declaration
-// treated as not found.
-func resolveDeclaredSecurityRole(client *api.Client, roleStr string) (*api.GetSecurityRoleResponse, error) {
+// A declared string that does not parse as an integer skips straight to the
+// name-based lookup, with no warning, exactly as before.
+//
+// This is unrelated to identityRolesResultForRead (used by Read purely for
+// drift-detection/state-hygiene display -- it never grants or mutates
+// anything), which independently recognizes a declared numeric string as
+// matching a server role by ID when comparing prior state to the server's
+// actual roles.
+func resolveDeclaredSecurityRole(client *api.Client, roleStr string, diags *diag.Diagnostics) (*api.GetSecurityRoleResponse, error) {
 	if id, convErr := strconv.Atoi(roleStr); convErr == nil {
 		idRole, idErr := client.GetSecurityRole(id)
 		if idErr == nil && idRole != nil {
+			if diags != nil {
+				diags.AddWarning(
+					"Role resolved by numeric ID.",
+					fmt.Sprintf(
+						"Declared role '%s' was not found by name; it resolved as Keyfactor role ID %s instead. "+
+							"If this is unexpected, verify this is the role you intended -- a numeric 'roles' entry "+
+							"that previously failed to resolve will now be treated as a role ID.",
+						roleStr, roleStr,
+					),
+				)
+			}
 			return idRole, nil
 		}
-		nameRole, nameErr := resolveDeclaredSecurityRoleByName(client, roleStr)
-		if nameErr == nil && nameRole != nil {
-			return nameRole, nil
-		}
-		// Neither form resolved. Prefer surfacing the ID lookup's error, if
-		// any, since roleStr was declared as a numeric value and the ID path
-		// is the primary lookup for that form; otherwise fall through to
-		// whatever the name-based fallback produced (including a clean (nil,
-		// nil) "not found").
-		if idErr != nil {
-			return nil, idErr
-		}
-		return nameRole, nameErr
+		// ID lookup failed/not-found -- fall back to name lookup. This
+		// preserves the one pre-existing edge case that already worked
+		// before any of this round's changes: a role whose Name is itself a
+		// numeric string (e.g. a role literally named "123") always resolved
+		// via name lookup, and still should -- no warning needed here since
+		// name-based resolution of a numeric string was already possible
+		// before this PR, unlike the ID path.
+		return resolveDeclaredSecurityRoleByName(client, roleStr)
 	}
-
 	return resolveDeclaredSecurityRoleByName(client, roleStr)
 }
 
 // resolveDeclaredSecurityRoleByName performs the case-insensitive name-based
-// lookup and verification described in resolveDeclaredSecurityRole's doc
-// comment. Split out so both the non-numeric declaration path and the
-// numeric-declaration ID-lookup-failed fallback path share the exact same
-// verification logic.
+// lookup and verification that resolveDeclaredSecurityRole delegates to for
+// every declared role string.
+//
+// GetSecurityRole's string branch builds `name -eq "<value>"` PQL with ZERO
+// escaping of the value (keyfactor-go-client v3/api/security.go). Before this
+// resource's roles attribute accepted arbitrary role name strings, a `[^\w]`
+// regex used to strip every non-word character -- including quotes and PQL
+// operators -- before the lookup, which accidentally closed off query
+// injection via a role name containing an embedded `"`. That regex was
+// removed because it also mangled legitimate names (e.g. "Power Users" ->
+// "PowerUsers"), but nothing replaced the safeguard it happened to provide: a
+// role string like `Foo" -or name -eq "Administrators` reaches Command's
+// predicate-query parser unescaped, and if Command's parser honors the
+// injected clause, GetSecurityRole could return an unintended (possibly
+// higher-privileged) role. Since the escaping itself isn't fixed here (that's
+// the go-client library's responsibility, out of scope for this
+// provider-side change), this instead verifies the returned role's Name
+// actually matches the declared string -- case-insensitively, consistent with
+// identityRolesResultForRead's role-name matching convention -- before
+// trusting kfRole.Id. A mismatch is treated as unresolved ((nil, nil), same
+// shape as a genuine "not found") so callers' existing not-found handling
+// rejects it rather than silently trusting an unverified query match.
 func resolveDeclaredSecurityRoleByName(client *api.Client, roleStr string) (*api.GetSecurityRoleResponse, error) {
 	kfRole, err := client.GetSecurityRole(roleStr)
 	if err != nil || kfRole == nil {
@@ -413,7 +434,7 @@ func (r resourceSecurityIdentity) Update(
 			}
 			roleStr := roleVal.Value
 			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", roleStr))
-			kfRole, roleLookupErr := resolveDeclaredSecurityRole(r.p.client, roleStr)
+			kfRole, roleLookupErr := resolveDeclaredSecurityRole(r.p.client, roleStr, &response.Diagnostics)
 			if roleLookupErr != nil {
 				response.Diagnostics.AddError(
 					"Error looking up role on Keyfactor.",
@@ -623,7 +644,7 @@ func (r resourceSecurityIdentity) Create(
 			}
 			roleStr := roleVal.Value
 			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", roleStr))
-			kfRole, roleLookupErr := resolveDeclaredSecurityRole(r.p.client, roleStr)
+			kfRole, roleLookupErr := resolveDeclaredSecurityRole(r.p.client, roleStr, &response.Diagnostics)
 			if roleLookupErr != nil {
 				response.Diagnostics.AddError(
 					"Error looking up role on Keyfactor.",

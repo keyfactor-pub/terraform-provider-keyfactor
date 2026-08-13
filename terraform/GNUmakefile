@@ -43,7 +43,7 @@ RESULTS_FILE  := $(CURDIR)/harness-results.txt
 ## before any release. In particular:
 ##   TestUnitSecurityIdentityResource_CreateFailsOnRoleLookupError
 ##     (Create() silently dropping an unresolvable role instead of failing)
-##   TestUnitSecurityIdentityResource_UpdateResolvesNumericRoleIdViaIdPath
+##   TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleIdPathResolvesWithWarning
 ##     (numeric role IDs never resolving via the name-query lookup)
 ##   TestUnitSecurityIdentityResource_UpdateRejectsUnverifiedRoleNameMatch
 ##     (unescaped PQL role-name query allowing an unverified match through)

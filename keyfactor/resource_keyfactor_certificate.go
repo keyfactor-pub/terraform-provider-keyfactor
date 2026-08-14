@@ -2962,17 +2962,43 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 				PFXArgs.Subject.SubjectCommonName, err.Error(),
 			),
 		)
+		// Resolve the template's numeric ID so the orphan-recovery discriminator
+		// can compare IDs instead of names: Command's certificate record
+		// (TemplateName) always carries the template's DISPLAY name, while
+		// PFXArgs.Template -- the schema's documented, common configuration --
+		// carries the SHORT name. Comparing those two strings directly almost
+		// never matches, which silently defeated recovery for the mainstream
+		// case. A lookup failure here is not fatal: findOrphanedCertificateMatch
+		// falls back to a case-insensitive name comparison when no ID could be
+		// resolved.
+		var expectedTemplateId int
+		if PFXArgs.Template != "" {
+			resolvedId, resolveErr := resolveTemplateIDByName(ctx, r.p.client, PFXArgs.Template)
+			if resolveErr != nil {
+				tflog.Warn(
+					ctx, fmt.Sprintf(
+						"Could not resolve template '%s' to an ID for orphan-recovery matching; falling back to "+
+							"a name comparison: %s",
+						PFXArgs.Template, resolveErr.Error(),
+					),
+				)
+			} else {
+				expectedTemplateId = resolvedId
+			}
+		}
 		orphanCriteria := orphanRecoveryCriteria{
 			CommonName:           PFXArgs.Subject.SubjectCommonName,
 			Subject:              PFXArgs.Subject,
 			SANs:                 PFXArgs.SANs,
 			Template:             PFXArgs.Template,
+			TemplateId:           expectedTemplateId,
 			CertificateAuthority: PFXArgs.CertificateAuthority,
 			Identity:             orphanRecoveryIdentityForClient(r.p.client),
 			EnrollStartTime:      enrollStartTime,
+			EnrollmentPatternId:  PFXArgs.EnrollmentPatternId,
 		}
 		recovered, recoverDiags := recoverOrphanedPFXEnrollment(
-			ctx, r.p.client, orphanCriteria, collectionIdInt, lookupPassword, certificateFormat,
+			ctx, r.p.client, r.p.sdkClient, orphanCriteria, collectionIdInt, lookupPassword, certificateFormat,
 		)
 		if recovered != nil {
 			// Surfaced through diagnostics (not just tflog.Warn, which TF_LOG
@@ -3392,6 +3418,36 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByName(
 		}
 	}
 	return 0, fmt.Errorf("enrollment pattern with name '%s' not found", patternName)
+}
+
+// resolveTemplateIDByName looks up a certificate template's numeric ID by
+// name, accepting either the short name (GetTemplateResponse.CommonName) or
+// the display name (GetTemplateResponse.TemplateName) -- Command's naming is
+// inverted from what the field names suggest (confirmed against a real
+// enrollment/certificate round-trip): CommonName is the short identifier
+// used in enrollment requests (e.g. "Server_tlsServerAuth-1y") and
+// TemplateName is the display name shown in the UI and on certificate
+// records (e.g. "Server (tlsServerAuth-1y)"). Callers may reasonably supply
+// either form, so both are checked.
+//
+// Returns (0, nil) if no template matches by either name -- callers should
+// treat that as "could not resolve," not a hard error, and fall back to a
+// name-based comparison rather than failing the caller's operation outright.
+func resolveTemplateIDByName(ctx context.Context, client *api.Client, templateName string) (int, error) {
+	if templateName == "" || client == nil {
+		return 0, nil
+	}
+	templates, err := client.GetTemplates()
+	if err != nil {
+		return 0, err
+	}
+	for _, t := range templates {
+		if strings.EqualFold(t.CommonName, templateName) || strings.EqualFold(t.TemplateName, templateName) {
+			tflog.Debug(ctx, fmt.Sprintf("Resolved template '%s' to ID %d", templateName, t.Id))
+			return t.Id, nil
+		}
+	}
+	return 0, nil
 }
 
 // LookupEnrollmentPatternIDByTemplateName finds the enrollment pattern for the

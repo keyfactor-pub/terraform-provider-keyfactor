@@ -4,7 +4,45 @@ import (
 	"testing"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/stretchr/testify/assert"
 )
+
+// TestUnitPAMProviderTypeCreateRequestExplicitEmptyDisplayName is a regression
+// test for the bug where an explicit display_name = "" was collapsed with
+// "unset" by a `!= ""` guard, so the user's explicit empty value was dropped
+// from the create request and the server substituted its own default. An
+// explicit empty string must now be sent; a genuinely undeclared (Null)
+// display_name must still be omitted.
+func TestUnitPAMProviderTypeCreateRequestExplicitEmptyDisplayName(t *testing.T) {
+	plan := KeyfactorPAMProviderType{
+		Name: types.String{Value: "tf-unit-pamtype"},
+		Parameters: []KeyfactorPAMProviderTypeParam{
+			{
+				Name:        types.String{Value: "ExplicitEmpty"},
+				DisplayName: types.String{Value: ""}, // explicit empty string
+			},
+			{
+				Name:        types.String{Value: "Unset"},
+				DisplayName: types.String{Null: true}, // never declared
+			},
+		},
+	}
+
+	req := buildPAMProviderTypeCreateRequest(plan)
+
+	if assert.Len(t, req.Parameters, 2) {
+		explicit := req.Parameters[0]
+		assert.True(t, explicit.HasDisplayName(),
+			"explicit display_name = \"\" must be sent, not dropped as if unset")
+		assert.Equal(t, "", explicit.GetDisplayName(),
+			"the sent display name must be the user's explicit empty string")
+
+		unset := req.Parameters[1]
+		assert.False(t, unset.HasDisplayName(),
+			"an undeclared display_name must remain omitted")
+	}
+}
 
 // TestUnitPAMProviderTypeResponseToState_NilParameterFields verifies that when the server omits
 // DisplayName and InstanceLevel on a parameter, the resulting Terraform state values are Null
@@ -50,6 +88,42 @@ func TestUnitPAMProviderTypeResponseToState_NilParameterFields(t *testing.T) {
 	}
 	if p.DataType.Value != 1 {
 		t.Errorf("DataType: expected 1, got %d", p.DataType.Value)
+	}
+}
+
+// TestUnitPAMProviderTypeResponseToState_NilDataType is a regression test for
+// DataType being mapped straight through GetDataType(), which collapses a nil
+// pointer (server omitted the field) to the enum zero value (0) -- a
+// misleading concrete value, since 0 is itself a meaningful
+// CSSCMSDataModelEnumsPamParameterDataType. DisplayName and InstanceLevel on
+// the same struct already null-check their pointer/nullable SDK types;
+// DataType must do the same.
+func TestUnitPAMProviderTypeResponseToState_NilDataType(t *testing.T) {
+	typeID := "abcd-5678"
+	paramID := int32(33)
+
+	param := v1.PAMProviderTypeParameterResponse{
+		Id:       &paramID,
+		DataType: nil, // server omitted DataType
+	}
+	param.Name.Set(strPtr("Host"))
+
+	resp := &v1.PAMProviderTypeResponse{
+		Id:         &typeID,
+		Parameters: []v1.PAMProviderTypeParameterResponse{param},
+	}
+	resp.Name.Set(strPtr("tf-unit-pamtype-nil-datatype"))
+
+	state := pamProviderTypeResponseToState(resp)
+
+	if len(state.Parameters) != 1 {
+		t.Fatalf("expected 1 parameter, got %d", len(state.Parameters))
+	}
+	p := state.Parameters[0]
+
+	if !p.DataType.Null {
+		t.Errorf("DataType: expected Null=true when server omits DataType, got Null=%v Value=%v",
+			p.DataType.Null, p.DataType.Value)
 	}
 }
 

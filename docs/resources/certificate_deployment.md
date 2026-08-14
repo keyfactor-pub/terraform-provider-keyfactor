@@ -4,25 +4,25 @@ page_title: "keyfactor_certificate_deployment Resource - terraform-provider-keyf
 subcategory: ""
 description: |-
   Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
-  API to deploy certificates to "keyfactor_certificate_store" resources.
+  API to deploy certificates to "keyfactorcertificatestore" resources.
   [!IMPORTANT]
   Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules.
-  By default a "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's
+  By default a "keyfactorcertificatedeployment" will not finish successfully until the destination certificate store's
   certificate inventory has been updated to include the deployed certificate.
   The two opt-in attributes change what a successful apply means:
-  | skip_inventory_validation | fail_on_job_failure | Behavior after the job is submitted |
+  | skipinventoryvalidation | failonjob_failure | Behavior after the job is submitted |
   |---|---|---|
   | false (default) | false (default) | Poll the store inventory until the certificate appears (or warn and return if the store has no inventory schedule). |
   | false | true | Poll the orchestrator job and the store inventory together: a failed job fails the run immediately; success still requires the certificate to appear in inventory. Stores with no inventory schedule are validated by job status alone. |
   | true | false | Return as soon as Keyfactor Command accepts the job (fire-and-forget). A green apply does not confirm the certificate reached the store. |
   | true | true | Poll the orchestrator job until it reaches a final result: success completes the resource, failure fails the run. The store inventory is not consulted. |
   [!NOTE]
-  "fail_on_job_failure" requires the Agent Management - Read permission (claim "/agents/management/read/") in Keyfactor
+  "failonjobfailure" requires the Agent Management - Read permission (claim "/agents/management/read/") in Keyfactor
   Command. A job that is never picked up by an orchestrator (e.g. the agent is offline) reports no failure and will
   still be waited on indefinitely. Orchestrator job-history messages surfaced in Terraform diagnostics and logs are
   authored by the orchestrator extension and passed through verbatim, so they may contain infrastructure detail
   (hostnames, paths, internal error text).
-  A resource whose apply failed under "fail_on_job_failure" (for example, a permission error while watching the job)
+  A resource whose apply failed under "failonjobfailure" (for example, a permission error while watching the job)
   still persists tainted state so the deployment is not lost. Destroying that resource still requires the same
   Agent Management - Read permission: destroy submits its own removal job and polls its status the same way Create
   does. Grant the permission before destroying, or remove the resource from state manually
@@ -129,3 +129,5 @@ resource "keyfactor_certificate_deployment" "fast_deployment" {
 ### Read-Only
 
 - `id` (String) A unique identifier for this certificate deployment.
+
+

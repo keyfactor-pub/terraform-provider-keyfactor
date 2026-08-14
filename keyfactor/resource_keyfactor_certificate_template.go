@@ -604,28 +604,32 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"certificate_cleanup_enabled": {
-				Type:        types.BoolType,
-				Optional:    true,
-				Computed:    true,
-				Description: "Whether expired certificate cleanup is enabled (Command v25+).",
+				Type:          types.BoolType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Whether expired certificate cleanup is enabled (Command v25+).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"time_after_expiration": {
-				Type:        types.Int64Type,
-				Optional:    true,
-				Computed:    true,
-				Description: "Time after expiration before cleanup eligibility (Command v25+).",
+				Type:          types.Int64Type,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Time after expiration before cleanup eligibility (Command v25+).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"time_after_expiration_units": {
-				Type:        types.Int64Type,
-				Optional:    true,
-				Computed:    true,
-				Description: "Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months (Command v25+).",
+				Type:          types.Int64Type,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months (Command v25+).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"delete_with_archived_key": {
-				Type:        types.BoolType,
-				Optional:    true,
-				Computed:    true,
-				Description: "Whether to delete certificates with archived keys during cleanup (Command v25+).",
+				Type:          types.BoolType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Whether to delete certificates with archived keys during cleanup (Command v25+).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 		},
 	}, nil
@@ -1083,8 +1087,14 @@ func buildTemplateUpdateRequest(
 	}
 
 	// TemplateRegexes
-	if len(plan.TemplateRegexes) > 0 {
-		var regexes []v1.TemplatesTemplateRegexRequestResponseModel
+	//
+	// Gate on != nil, not len() > 0: an explicit empty list (the user removed
+	// every block) must reach the request as an empty [] so Command clears the
+	// existing entries, whereas a genuinely undeclared (nil) attribute must be
+	// omitted. The SDK's ToMap serializes a non-nil empty slice as [] but omits
+	// a nil slice, so initialize a non-nil (possibly empty) slice here.
+	if plan.TemplateRegexes != nil {
+		regexes := make([]v1.TemplatesTemplateRegexRequestResponseModel, 0, len(plan.TemplateRegexes))
 		for _, rx := range plan.TemplateRegexes {
 			entry := v1.TemplatesTemplateRegexRequestResponseModel{}
 			entry.SetSubjectPart(rx.SubjectPart.Value)
@@ -1101,9 +1111,9 @@ func buildTemplateUpdateRequest(
 		req.TemplateRegexes = regexes
 	}
 
-	// TemplateDefaults
-	if len(plan.TemplateDefaults) > 0 {
-		var defaults []v1.TemplatesTemplateDefaultRequestResponseModel
+	// TemplateDefaults (see TemplateRegexes above: != nil to allow explicit clear)
+	if plan.TemplateDefaults != nil {
+		defaults := make([]v1.TemplatesTemplateDefaultRequestResponseModel, 0, len(plan.TemplateDefaults))
 		for _, def := range plan.TemplateDefaults {
 			entry := v1.TemplatesTemplateDefaultRequestResponseModel{}
 			entry.SetSubjectPart(def.SubjectPart.Value)
@@ -1113,9 +1123,9 @@ func buildTemplateUpdateRequest(
 		req.TemplateDefaults = defaults
 	}
 
-	// EnrollmentFields
-	if len(plan.EnrollmentFields) > 0 {
-		var fields []v1.TemplatesTemplateEnrollmentFieldRequestResponseModel
+	// EnrollmentFields (see TemplateRegexes above: != nil to allow explicit clear)
+	if plan.EnrollmentFields != nil {
+		fields := make([]v1.TemplatesTemplateEnrollmentFieldRequestResponseModel, 0, len(plan.EnrollmentFields))
 		for _, ef := range plan.EnrollmentFields {
 			entry := v1.TemplatesTemplateEnrollmentFieldRequestResponseModel{}
 			if !ef.ID.Null && !ef.ID.Unknown && ef.ID.Value != 0 {
@@ -1137,9 +1147,9 @@ func buildTemplateUpdateRequest(
 		req.EnrollmentFields = fields
 	}
 
-	// MetadataFields
-	if len(plan.MetadataFields) > 0 {
-		var fields []v1.TemplatesTemplateMetadataFieldRequestResponseModel
+	// MetadataFields (see TemplateRegexes above: != nil to allow explicit clear)
+	if plan.MetadataFields != nil {
+		fields := make([]v1.TemplatesTemplateMetadataFieldRequestResponseModel, 0, len(plan.MetadataFields))
 		for _, mf := range plan.MetadataFields {
 			entry := v1.TemplatesTemplateMetadataFieldRequestResponseModel{}
 			if !mf.ID.Null && !mf.ID.Unknown && mf.ID.Value != 0 {

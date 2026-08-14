@@ -419,6 +419,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			"owner_role_name": {
 				Type:     types.StringType,
 				Optional: true,
+				Computed: true,
 				Description: "Optional owner role name. " +
 					"This is required if the certificate template being used requires an owner role to be set during" +
 					" enrollment. Only compatible with Keyfactor Command versions v12.3.0 and later. " +
@@ -441,7 +442,7 @@ Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is req
 > [!IMPORTANT]
 > Only compatible with Keyfactor Command versions v12.3.0 and later.
 `,
-				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"certificate_id": {
 				Type:          types.Int64Type,
@@ -942,36 +943,6 @@ func preserveWriteOnlyEnrollmentFieldsFromState(state CommandCertificate, result
 	result.UseCNAsFriendlyName = state.UseCNAsFriendlyName
 }
 
-// ownerRoleNameForRead implements sentinel stability for owner_role_name's
-// attribute contract: an explicit "" plan/config value declaratively clears
-// the certificate's owner, while omitting the attribute entirely (Null)
-// leaves ownership unmanaged. Command's GET /Certificates response cannot
-// distinguish those two cases -- both report an empty OwnerRoleName -- so
-// this reconstructs the right state value from serverOwnerRoleName (the
-// server's current truth) and priorOwnerRoleName (the attribute's value
-// before this Read):
-//
-//   - A non-empty serverOwnerRoleName always wins and is surfaced as-is, even
-//     over a stale "" sentinel in prior state -- a real owner set out-of-band
-//     (or by this resource's own prior Update) must always be drift-visible.
-//   - An empty serverOwnerRoleName keeps the "" sentinel ONLY if prior state
-//     itself already held it (Known, non-null, ""), so a declared
-//     owner_role_name = "" stays settled against config instead of
-//     collapsing to Null and manufacturing a permanent "" -> null -> ""
-//     diff.
-//   - Otherwise (empty serverOwnerRoleName, prior state Null/Unknown/never
-//     the sentinel), the attribute was never declared/managed -- return
-//     Null.
-func ownerRoleNameForRead(serverOwnerRoleName string, priorOwnerRoleName types.String) types.String {
-	if serverOwnerRoleName != "" {
-		return types.String{Value: serverOwnerRoleName}
-	}
-	if !priorOwnerRoleName.Null && !priorOwnerRoleName.Unknown && priorOwnerRoleName.Value == "" {
-		return types.String{Value: ""}
-	}
-	return types.String{Null: true}
-}
-
 func (r resourceCommandCertificate) Read(
 	ctx context.Context,
 	request tfsdk.ReadResourceRequest,
@@ -1312,14 +1283,15 @@ func (r resourceCommandCertificate) Read(
 		// ownership unmanaged; an explicit "" declaratively clears it. The
 		// wire (Command's GET /Certificates response) cannot distinguish "no
 		// owner" from "the declared clear sentinel" -- both report "" -- so
-		// sentinel stability must be reconstructed here: if the server
+		// sentinel stability (attribute contract item 4, keepStringSentinel in
+		// attribute_contract.go) must be reconstructed here: if the server
 		// reports a real owner, that always wins (drift-visible, even over a
 		// stale sentinel); otherwise, keep state at the "" sentinel only if
 		// prior state itself already held it, and fall back to Null
 		// (unmanaged) otherwise. Without this, an explicit owner_role_name =
 		// "" would collapse straight to Null on every Read, manufacturing a
 		// permanent "" -> null -> "" diff since config still declares "".
-		OwnerRoleName:       ownerRoleNameForRead(serverOwnerRoleName, state.OwnerRoleName),
+		OwnerRoleName:       keepStringSentinel(serverOwnerRoleName, state.OwnerRoleName),
 		EnrollmentPattern:   state.EnrollmentPattern,   // This may be mutated below
 		CertificateTemplate: state.CertificateTemplate, // This may be mutated below
 		NotBefore: types.String{
@@ -1490,15 +1462,15 @@ func certificateOwnerRoleChanged(plan, state CommandCertificate) bool {
 // Known plan value here (never Null/Unknown).
 //
 // An explicit empty string ("") is the declarative "clear ownership"
-// sentinel: per the Keyfactor Command API (PUT /Certificates/{id}/Owner
-// Swagger doc: "If removing the owner, leave both empty"), a request with
-// both NewRoleId and NewRoleName unset clears the certificate's owner --
-// confirmed against a v25.x lab: HTTP 204, subsequent GET shows
-// OwnerRoleId/OwnerRoleName null. api.OwnerRequest's fields are `omitempty`
-// pointers, so &api.OwnerRequest{} serializes to exactly `{}` (a non-nil
-// pointer to an empty string, by contrast, is NOT omitted by encoding/json --
-// omitempty only checks for a nil pointer -- so this must be a genuinely nil
-// field, not `NewRoleName: &""`).
+// sentinel (attribute contract item 3): per the Keyfactor Command API (PUT
+// /Certificates/{id}/Owner Swagger doc: "If removing the owner, leave both
+// empty"), a request with both NewRoleId and NewRoleName unset clears the
+// certificate's owner -- verified live against a v25.5 lab: HTTP 204,
+// subsequent GET shows OwnerRoleId/OwnerRoleName null. api.OwnerRequest's
+// fields are `omitempty` pointers, so &api.OwnerRequest{} serializes to
+// exactly `{}` (a non-nil pointer to an empty string, by contrast, is NOT
+// omitted by encoding/json -- omitempty only checks for a nil pointer -- so
+// this must be a genuinely nil field, not `NewRoleName: &""`).
 //
 // A non-empty value may be either a numeric role ID or a role name; try
 // parsing as an int first and fall back to treating it as a name.
@@ -1762,7 +1734,7 @@ func (r resourceCommandCertificate) Update(
 
 			CertificateFormat: plan.CertificateFormat,
 			EnrollmentPattern: plan.EnrollmentPattern,
-			OwnerRoleName:     plan.OwnerRoleName,
+			OwnerRoleName:     knownStringFromPlan(plan.OwnerRoleName),
 			PFX:               state.PFX,
 			JKS:               state.JKS,
 			Zip:               state.Zip,
@@ -1881,7 +1853,7 @@ func (r resourceCommandCertificate) Update(
 
 			CertificateFormat: plan.CertificateFormat,
 			EnrollmentPattern: plan.EnrollmentPattern,
-			OwnerRoleName:     plan.OwnerRoleName,
+			OwnerRoleName:     knownStringFromPlan(plan.OwnerRoleName),
 			PFX:               state.PFX,
 			JKS:               state.JKS,
 			Zip:               state.Zip,
@@ -3108,7 +3080,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		IsPendingRevocation:  types.Bool{Value: false}, // Newly enrolled certificates are not pending revocation
 		RenewalConfig:        plan.RenewalConfig,
 		CertificateFormat:    plan.CertificateFormat,
-		OwnerRoleName:        plan.OwnerRoleName,
+		OwnerRoleName:        knownStringFromPlan(plan.OwnerRoleName),
 		EnrollmentPattern:    plan.EnrollmentPattern,
 		NotBefore:            types.String{Null: true}, // Not provided in enroll response
 		NotAfter:             types.String{Null: true}, // Not provided in enroll response
@@ -3765,7 +3737,7 @@ func (r resourceCommandCertificate) enrollCSR(
 		RenewalConfig:        plan.RenewalConfig,
 		EnrollmentPattern:    plan.EnrollmentPattern,
 		CertificateFormat:    plan.CertificateFormat,
-		OwnerRoleName:        plan.OwnerRoleName,
+		OwnerRoleName:        knownStringFromPlan(plan.OwnerRoleName),
 		PFX:                  types.String{Null: true}, // Null because CSR enrollment does not provide a PFX
 		JKS:                  types.String{Null: true}, // Null because CSR enrollment does not provide a JKS
 		Zip:                  types.String{Null: true}, // Null because CSR enrollment does not provide a ZIP

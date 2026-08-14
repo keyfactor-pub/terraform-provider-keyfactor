@@ -386,7 +386,56 @@ func mapOAuthSecurityClaimsFromRole(
 			continue
 		}
 
-		provider := *claim.Provider
+		// claim.Provider may be nil when the API omits the sub-object (the same
+		// condition mapOAuthSecurityClaim already guards against, e.g. Command
+		// 25.5.1 + Authentik OIDC). Unlike mapOAuthSecurityClaim (used for
+		// Read/state-mapping of a single claim, where a `local` prior value is
+		// available to fall back to), this function has no prior-value
+		// fallback: it maps EVERY claim on the role from the server's own
+		// just-fetched response, for callers that need to preserve claims
+		// they are not modifying (resource_keyfactor_oauth_security_role.go's
+		// Update, and the attach/detach paths in
+		// resource_keyfactor_oauth_security_role_claim_association.go) across
+		// a full-replace PUT. If the omission is a genuine "no provider"
+		// state, substituting "" is correct; if it is the same server-side
+		// omission bug the comment above references, silently substituting ""
+		// here sends `"ProviderAuthenticationScheme": ""` for a claim that
+		// still has a real provider association, and the PUT is a full
+		// replace -- Command would clear that claim's provider on an
+		// otherwise-unrelated update. There is no reliable way to distinguish
+		// the two cases from inside this function, so surface a warning
+		// instead of masking the risk.
+		var providerAuthScheme *string
+		if claim.Provider != nil {
+			providerAuthScheme = claim.Provider.AuthenticationScheme.Get()
+		} else {
+			claimId := int32(-1)
+			if claim.Id != nil {
+				claimId = *claim.Id
+			}
+			claimType := ""
+			if v := claim.ClaimType.Get(); v != nil {
+				claimType = *v
+			}
+			claimValue := ""
+			if v := claim.ClaimValue.Get(); v != nil {
+				claimValue = *v
+			}
+			diagnostics.AddWarning(
+				"OAuth security claim missing provider association",
+				fmt.Sprintf(
+					"Keyfactor Command returned claim ID %d (type %q, value %q) with no Provider sub-object. "+
+						"This provider is preserving unrelated claims verbatim across a full-replace update, but "+
+						"cannot tell whether this claim genuinely has no provider association or whether Command "+
+						"omitted a real one (a known issue on some Command/identity-provider combinations, e.g. "+
+						"Command 25.5.1 + Authentik OIDC). ProviderAuthenticationScheme will be sent as an empty "+
+						"string for this claim; if it previously had a provider association, this update may clear "+
+						"it. Verify this claim's provider association in Keyfactor Command after applying.",
+					claimId, claimType, claimValue,
+				),
+			)
+		}
+
 		claimTypeEnum, err := kfv2.ParseCSSCMSCoreEnumsClaimType(*claim.ClaimType.Get())
 
 		// This shouldn't happen since the claim type is coming from the API
@@ -402,7 +451,7 @@ func mapOAuthSecurityClaimsFromRole(
 		temp := kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
 			ClaimType:                    *claimTypeEnum,
 			ClaimValue:                   *claim.ClaimValue.Get(),
-			ProviderAuthenticationScheme: *provider.AuthenticationScheme.Get(),
+			ProviderAuthenticationScheme: derefOrEmpty(providerAuthScheme),
 			Description:                  *claim.Description.Get(),
 		}
 		claims = append(claims, temp)
@@ -1887,6 +1936,22 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
+// enumPtrToTfInt64 converts a pointer to an int32-backed SDK enum type (e.g.
+// CSSCMSCoreEnumsEnrollmentType, CSSCMSCoreEnumsKeyRetentionPolicy,
+// CSSCMSDataModelEnumsCertificateCleanupTimeUnits,
+// CSSCMSDataModelEnumsPamParameterDataType) to a types.Int64. A nil pointer
+// (the server omitted the field) becomes Null, rather than the enum's zero
+// value -- zero is itself a valid, meaningful enum value for several of these
+// types, so collapsing "absent" to 0 would be indistinguishable from the
+// server actually returning 0, and could send a false "0" back on a
+// subsequent PUT.
+func enumPtrToTfInt64[T ~int32](v *T) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
+}
+
 // Converts a pointer to a string to a types.String object.
 // If the pointer is nil, it returns a types.String with Null set to true.
 func getStringType(value *string) types.String {
@@ -1894,6 +1959,19 @@ func getStringType(value *string) types.String {
 		return types.String{Value: "", Null: true}
 	}
 	return types.String{Value: *value}
+}
+
+// derefOrEmpty dereferences a *string, returning "" for a nil pointer. Use
+// this directly wherever code needs a plain Go string from an SDK-nullable
+// field and has no use for the Null flag -- e.g. building an SDK request DTO
+// with a plain (non-nullable) string field. getStringType(v).Value is
+// equivalent but round-trips through a types.String purely to throw the Null
+// flag away, which obscures the intent at the call site.
+func derefOrEmpty(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }
 
 // Gets Terraform plan for a given resource type. If there's an error retrieving the state, an error is appended to diagnostics.
@@ -2055,6 +2133,12 @@ func normalizeThumbprint(tp string) string {
 // gone: it is retried once against the paginated list endpoint (a second,
 // independent code path) before giving up. Only if both lookups fail does the
 // function fall back to hint (e.g. the previously-resolved name from state).
+//
+// The "paginated list endpoint" fallback is client.GetStoreContainers(),
+// which walks every page of CertificateStoreContainers server-side (the same
+// PageReturned/ReturnLimit pattern used by GetTemplates for GH issue #172)
+// before returning. This function does not need its own paging loop — it
+// just needs to scan the complete, already-paginated result for containerId.
 //
 // This matters because callers write the returned value into
 // container_name/application_name state via syncApplicationAndContainerName.

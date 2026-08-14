@@ -2934,10 +2934,37 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 				PFXArgs.Subject.SubjectCommonName, err.Error(),
 			),
 		)
+		orphanCriteria := orphanRecoveryCriteria{
+			CommonName:           PFXArgs.Subject.SubjectCommonName,
+			Subject:              PFXArgs.Subject,
+			SANs:                 PFXArgs.SANs,
+			Template:             PFXArgs.Template,
+			CertificateAuthority: PFXArgs.CertificateAuthority,
+			Identity:             orphanRecoveryIdentityForClient(r.p.client),
+			EnrollStartTime:      enrollStartTime,
+		}
 		recovered, recoverDiags := recoverOrphanedPFXEnrollment(
-			ctx, r.p.client, PFXArgs.Subject.SubjectCommonName, enrollStartTime, collectionIdInt, lookupPassword,
+			ctx, r.p.client, orphanCriteria, collectionIdInt, lookupPassword, certificateFormat,
 		)
 		if recovered != nil {
+			// Surfaced through diagnostics (not just tflog.Warn, which TF_LOG
+			// discards by default) so a normal `terraform apply` shows the
+			// operator that state was bound to a heuristically-matched
+			// certificate rather than one observed being created directly.
+			diags.AddWarning(
+				"Adopted a possibly-orphaned certificate after an enrollment timeout",
+				fmt.Sprintf(
+					"PFX enrollment for CN '%s' returned a client-side timeout, but Keyfactor Command had "+
+						"already issued certificate ID %d (subject %q) matching every available discriminator "+
+						"from this request (subject, SANs, template, certificate authority, and requester "+
+						"identity where verifiable). Terraform is adopting it into state instead of retrying "+
+						"enrollment, which would have created a duplicate. This match is heuristic, not a "+
+						"direct observation of enrollment succeeding -- if this certificate is unexpected, "+
+						"verify it in Keyfactor Command.",
+					PFXArgs.Subject.SubjectCommonName, recovered.CertificateInformation.KeyfactorID,
+					formatCertificateSubjectDN(PFXArgs.Subject),
+				),
+			)
 			tflog.Warn(
 				ctx, fmt.Sprintf(
 					"Recovered orphaned certificate %d (CN '%s') after an enrollment timeout; adopting it "+

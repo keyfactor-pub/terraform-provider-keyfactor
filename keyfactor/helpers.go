@@ -1331,10 +1331,33 @@ func recoverOrDownloadCertificate(
 
 // enrollmentTimeoutSkew is subtracted from the enrollment start timestamp when
 // searching for a possibly-orphaned certificate after a client-side timeout.
-// It exists purely to absorb clock skew between this process and the
-// Keyfactor Command server; it does not materially widen the search window
-// enough to catch an unrelated, pre-existing certificate with the same CN.
+// It absorbs clock skew between this process and the Keyfactor Command
+// server; it does not materially widen the search window enough to catch an
+// unrelated, pre-existing certificate with the same CN.
+//
+// NOTE: this is applied to the candidate's ImportDate (when Command's
+// record of the certificate was created), NOT its NotBefore. CAs commonly
+// backdate NotBefore by several minutes to absorb clock skew on the
+// *validating* side (EJBCA's default certificate.validityoffset is -10m;
+// Microsoft ADCS's default ClockSkewMinutes is 10) -- a certificate issued
+// moments after enrollStartTime can easily have a NotBefore many minutes
+// BEFORE enrollStartTime. Using NotBefore as the freshness signal would make
+// it impossible to ever match a genuinely-orphaned certificate issued within
+// that backdating window, which is the common case. ImportDate is a
+// Command-side wall-clock timestamp of when the record was created and does
+// not get backdated by CA policy, so it's the correct freshness signal here.
 const enrollmentTimeoutSkew = 2 * time.Minute
+
+// certificatesListReturnLimitDefault is Keyfactor Command's documented
+// default ReturnLimit for `GET /Certificates` (50) when no explicit page
+// size is requested. keyfactor-go-client's ListCertificates does not
+// currently support requesting a larger page or paginating to completion
+// the way e.g. ListCertificateStoreTypes does (upstream gap -- tracked
+// separately, not fixed here). Until that's addressed, a result set at or
+// above this size must be treated as possibly truncated: the "at most one
+// match" safety property findOrphanedCertificateMatch exists to guarantee
+// cannot be trusted over a page that might not be the whole story.
+const certificatesListReturnLimitDefault = 50
 
 // isTimeoutShapedError reports whether err looks like a client-side timeout
 // rather than a definitive rejection from Keyfactor Command (e.g. a 400/403
@@ -1363,32 +1386,363 @@ func isTimeoutShapedError(err error) bool {
 		strings.Contains(msg, "context deadline exceeded")
 }
 
+// parseCommandTimestamp parses a Keyfactor Command timestamp. Command
+// typically returns RFC3339 with fractional seconds (e.g.
+// "2026-03-07T02:48:19.393Z"), but some endpoints/versions have been seen to
+// omit the fractional part or the "Z" suffix, so a couple of fallback
+// layouts are tried.
+func parseCommandTimestamp(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, fmt.Errorf("empty timestamp")
+	}
+	layouts := []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05"}
+	var lastErr error
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		} else {
+			lastErr = err
+		}
+	}
+	return time.Time{}, lastErr
+}
+
+// orphanRecoveryIdentity holds the identity string(s) that Keyfactor Command
+// might plausibly use to populate a certificate's RequesterName when the
+// enrollment request was made by the identity this provider is
+// authenticated as. Which of these apply depends on the provider's
+// configured auth type (basic/Kerberos vs OAuth), so this is best-effort.
+type orphanRecoveryIdentity struct {
+	// candidates holds lowercased acceptable RequesterName values. An empty
+	// slice means this provider's own identity could not be determined
+	// (e.g. Kerberos, or a future auth type without a username/client ID).
+	candidates []string
+}
+
+// orphanRecoveryIdentityForClient builds the set of identity strings Command
+// might return as RequesterName for requests made by client.
+func orphanRecoveryIdentityForClient(client *api.Client) orphanRecoveryIdentity {
+	if client == nil || client.AuthClient == nil {
+		return orphanRecoveryIdentity{}
+	}
+	cfg := client.AuthClient.GetServerConfig()
+	if cfg == nil {
+		return orphanRecoveryIdentity{}
+	}
+	var candidates []string
+	if cfg.Username != "" {
+		candidates = append(candidates, strings.ToLower(cfg.Username))
+		if cfg.Domain != "" {
+			candidates = append(candidates, strings.ToLower(cfg.Domain+"\\"+cfg.Username))
+			candidates = append(candidates, strings.ToLower(cfg.Domain+"/"+cfg.Username))
+		}
+	}
+	if cfg.ClientID != "" {
+		candidates = append(candidates, strings.ToLower(cfg.ClientID))
+	}
+	return orphanRecoveryIdentity{candidates: candidates}
+}
+
+// matches reports whether requesterName is consistent with this provider's
+// own identity. If either side has nothing to compare (this provider's
+// identity is unknown, or Command didn't return a RequesterName) the
+// discriminator is not applicable and matches returns true -- there's
+// nothing to verify, not a mismatch.
+func (id orphanRecoveryIdentity) matches(requesterName string) bool {
+	if requesterName == "" || len(id.candidates) == 0 {
+		return true
+	}
+	rn := strings.ToLower(requesterName)
+	for _, c := range id.candidates {
+		if c == rn {
+			return true
+		}
+	}
+	return false
+}
+
+// parseSubjectDNAttributes performs a lightweight parse of a comma-separated
+// X.509 subject DN string (e.g. `CN=foo,OU=bar,O=Baz\, Inc,C=US`) into a map
+// of uppercased attribute type -> value, honoring backslash-escaped commas.
+// It does not attempt full RFC 4514 parsing (multi-valued RDNs, hex-encoded
+// values, etc.) -- Keyfactor Command's IssuedDN values are simple
+// comma-separated "TYPE=value" pairs in practice. "S" is normalized to "ST"
+// (both are used for state/province across CA vendors). Returns nil if dn
+// yields no attributes, so callers can fail closed instead of silently
+// treating an unparsable DN as a match.
+func parseSubjectDNAttributes(dn string) map[string]string {
+	dn = strings.TrimSpace(dn)
+	if dn == "" {
+		return nil
+	}
+	var parts []string
+	var cur strings.Builder
+	escaped := false
+	for _, r := range dn {
+		switch {
+		case escaped:
+			cur.WriteRune(r)
+			escaped = false
+		case r == '\\':
+			escaped = true
+		case r == ',':
+			parts = append(parts, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	parts = append(parts, cur.String())
+
+	attrs := map[string]string{}
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		eq := strings.Index(p, "=")
+		if eq <= 0 {
+			continue
+		}
+		key := strings.ToUpper(strings.TrimSpace(p[:eq]))
+		if key == "S" {
+			key = "ST"
+		}
+		attrs[key] = strings.TrimSpace(p[eq+1:])
+	}
+	if len(attrs) == 0 {
+		return nil
+	}
+	return attrs
+}
+
+// orphanRecoverySubjectMatches reports whether candidateDN (a candidate
+// certificate's IssuedDN) is consistent with the non-CN subject fields
+// actually populated in the original enrollment request. CN itself is
+// checked separately (against the dedicated IssuedCN field, which is more
+// reliable than parsing it back out of the DN). Only fields the request
+// populated are evaluated -- a field never sent is not a discriminator. If
+// the request populated at least one such field but candidateDN cannot be
+// parsed at all, that is treated as "cannot verify" and rejected.
+func orphanRecoverySubjectMatches(candidateDN string, expected *api.CertificateSubject) bool {
+	if expected == nil {
+		return true
+	}
+	fields := map[string]string{
+		"O":  expected.SubjectOrganization,
+		"OU": expected.SubjectOrganizationalUnit,
+		"L":  expected.SubjectLocality,
+		"ST": expected.SubjectState,
+		"C":  expected.SubjectCountry,
+	}
+	anySet := false
+	for _, v := range fields {
+		if v != "" {
+			anySet = true
+			break
+		}
+	}
+	if !anySet {
+		return true
+	}
+	attrs := parseSubjectDNAttributes(candidateDN)
+	if attrs == nil {
+		return false
+	}
+	for key, want := range fields {
+		if want == "" {
+			continue
+		}
+		if got, ok := attrs[key]; !ok || !strings.EqualFold(got, want) {
+			return false
+		}
+	}
+	return true
+}
+
+// SAN "Type" values as returned in GetCertificateResponse.SubjectAltNameElements,
+// per the Keyfactor Command API reference (these mirror the ASN.1 GeneralName
+// CHOICE tag numbers): 2 = dNSName, 6 = uniformResourceIdentifier, 7 = iPAddress.
+const (
+	sanTypeDNS = 2
+	sanTypeURI = 6
+	sanTypeIP  = 7
+)
+
+// orphanRecoverySANsMatch reports whether a candidate certificate's
+// SubjectAltNameElements are consistent with the SANs actually submitted in
+// the original enrollment request. Only SAN types the request populated are
+// evaluated (e.g. this provider does not currently submit IPv6 SANs, so that
+// type is never a discriminator); when a type WAS populated, the candidate's
+// set of values for that type must match it exactly (no fewer, no more).
+func orphanRecoverySANsMatch(candidateSANs []SubjectAltNameElement, expected *api.SANs) bool {
+	if expected == nil {
+		return true
+	}
+	if len(expected.DNS) > 0 && !sanSetEquals(expected.DNS, candidateSANs, sanTypeDNS, true) {
+		return false
+	}
+	if len(expected.IP4) > 0 && !sanSetEquals(expected.IP4, candidateSANs, sanTypeIP, false) {
+		return false
+	}
+	if len(expected.URI) > 0 && !sanSetEquals(expected.URI, candidateSANs, sanTypeURI, false) {
+		return false
+	}
+	return true
+}
+
+// SubjectAltNameElement is a minimal, decoupled mirror of
+// api.SubjectAltNameElements{Type, Value} used so orphanRecoverySANsMatch
+// doesn't have to import the full SDK type into its signature.
+type SubjectAltNameElement struct {
+	Type  int
+	Value string
+}
+
+func sanSetEquals(expected []string, actual []SubjectAltNameElement, sanType int, caseInsensitive bool) bool {
+	got := map[string]bool{}
+	for _, el := range actual {
+		if el.Type != sanType {
+			continue
+		}
+		v := el.Value
+		if caseInsensitive {
+			v = strings.ToLower(v)
+		}
+		got[v] = true
+	}
+	if len(got) != len(expected) {
+		return false
+	}
+	for _, v := range expected {
+		if caseInsensitive {
+			v = strings.ToLower(v)
+		}
+		if !got[v] {
+			return false
+		}
+	}
+	return true
+}
+
+// orphanRecoveryTemplateMatches reports whether a candidate's TemplateName is
+// consistent with the template actually submitted in the original enrollment
+// request. expectedTemplate is empty when the request used an enrollment
+// pattern instead of a template name (Command resolves the template
+// server-side in that case, and the request never sent one) -- Template is
+// then simply not a discriminator for this Create attempt.
+func orphanRecoveryTemplateMatches(candidateTemplate, expectedTemplate string) bool {
+	if expectedTemplate == "" {
+		return true
+	}
+	return strings.EqualFold(candidateTemplate, expectedTemplate)
+}
+
+// orphanRecoveryCAMatches reports whether a candidate's
+// CertificateAuthorityName is consistent with the certificate_authority
+// actually submitted in the original enrollment request. Command returns CA
+// names as "hostname\\LogicalName" (Microsoft CAs) or a full CA URL followed
+// by "\\LogicalName" (EJBCA), while expectedCA is normally just the logical
+// name a user supplies -- mirrors the normalization already applied when
+// populating certificate_authority in Read (see
+// resource_keyfactor_certificate.go). expectedCA is empty when the request
+// didn't pin a CA (Command auto-selects one matching the template/pattern),
+// in which case CA is not a discriminator.
+func orphanRecoveryCAMatches(candidateCA, expectedCA string) bool {
+	if expectedCA == "" {
+		return true
+	}
+	if strings.EqualFold(candidateCA, expectedCA) {
+		return true
+	}
+	lowerCA, lowerExpected := strings.ToLower(candidateCA), strings.ToLower(expectedCA)
+	return strings.HasSuffix(lowerCA, "\\"+lowerExpected) || strings.HasSuffix(lowerCA, "\\\\"+lowerExpected)
+}
+
+// orphanRecoveryCriteria bundles the enrollment request's identifying
+// attributes used to strictly narrow a set of ListCertificates results down
+// to (at most) the single certificate this Create attempt actually produced
+// before timing out.
+//
+// Every discriminator the request actually populated MUST match the
+// candidate exactly (see the per-field orphanRecovery*Matches helpers for
+// exactly what "match" means for each). A discriminator the request did NOT
+// populate (e.g. Template when an enrollment pattern was used, or
+// CertificateAuthority when Command was left to auto-select) is not
+// evaluated at all -- there's nothing to verify it against. That is
+// different from a discriminator that WAS populated but whose candidate data
+// can't confirm it (e.g. a subject field we sent but the candidate's
+// IssuedDN can't be parsed): that is treated as "cannot verify" and fails
+// closed, rejecting the candidate.
+//
+// Residual risk (documented, not eliminated): a concurrent enrollment of the
+// IDENTICAL subject, SANs, template, CA, and requester identity within the
+// same freshness window as the timed-out request would still be
+// indistinguishable from the genuine orphan. This is considered acceptable
+// because it requires the same account to be enrolling the exact same
+// certificate twice, concurrently -- a materially narrower and less likely
+// condition than "any certificate with this CN issued recently", which is
+// what this replaces.
+type orphanRecoveryCriteria struct {
+	CommonName           string
+	Subject              *api.CertificateSubject
+	SANs                 *api.SANs
+	Template             string
+	CertificateAuthority string
+	Identity             orphanRecoveryIdentity
+	EnrollStartTime      time.Time
+}
+
 // findOrphanedCertificateMatch narrows a set of search results (already
 // filtered server-side by CN via ListCertificates' "subject" query) down to
 // the single certificate that is plausibly the one this Create attempted to
-// enroll before timing out: same CN (defense in depth in case the server-side
-// filter is ever looser than expected) and issued at or after
-// enrollStartTime, allowing enrollmentTimeoutSkew of clock-skew tolerance.
+// enroll before timing out, per criteria (see orphanRecoveryCriteria for the
+// exact matching rules and documented residual risk).
 //
 // Returns the single match, or an error describing why adoption isn't safe
-// (zero matches, or more than one -- ambiguous, so we refuse to guess).
+// (zero matches, more than one -- ambiguous, so we refuse to guess -- or a
+// result set large enough that the server may have truncated it).
 func findOrphanedCertificateMatch(
 	certs []api.GetCertificateResponse,
-	commonName string,
-	enrollStartTime time.Time,
+	criteria orphanRecoveryCriteria,
 ) (*api.GetCertificateResponse, error) {
-	threshold := enrollStartTime.Add(-enrollmentTimeoutSkew)
+	if len(certs) >= certificatesListReturnLimitDefault {
+		return nil, fmt.Errorf(
+			"Keyfactor Command returned %d certificates matching CN '%s', at or above the API's default page "+
+				"size (%d); this SDK version cannot request a larger page or paginate to completion, so "+
+				"additional matches beyond this page cannot be ruled out -- refusing to guess which one (if any) "+
+				"this Create attempted to enroll",
+			len(certs), criteria.CommonName, certificatesListReturnLimitDefault,
+		)
+	}
+
+	threshold := criteria.EnrollStartTime.Add(-enrollmentTimeoutSkew)
 	var candidates []api.GetCertificateResponse
 	for _, cert := range certs {
-		if !strings.EqualFold(cert.IssuedCN, commonName) {
+		if !strings.EqualFold(cert.IssuedCN, criteria.CommonName) {
 			continue
 		}
-		notBefore, parseErr := time.Parse(time.RFC3339, cert.NotBefore)
-		if parseErr != nil {
-			// Fall back to a looser layout some Command versions have used.
-			notBefore, parseErr = time.Parse("2006-01-02T15:04:05", cert.NotBefore)
+		importDate, parseErr := parseCommandTimestamp(cert.ImportDate)
+		if parseErr != nil || importDate.Before(threshold) {
+			continue
 		}
-		if parseErr == nil && notBefore.Before(threshold) {
+		if !orphanRecoverySubjectMatches(cert.IssuedDN, criteria.Subject) {
+			continue
+		}
+		sanElements := make([]SubjectAltNameElement, 0, len(cert.SubjectAltNameElements))
+		for _, el := range cert.SubjectAltNameElements {
+			sanElements = append(sanElements, SubjectAltNameElement{Type: el.Type, Value: el.Value})
+		}
+		if !orphanRecoverySANsMatch(sanElements, criteria.SANs) {
+			continue
+		}
+		if !orphanRecoveryTemplateMatches(cert.TemplateName, criteria.Template) {
+			continue
+		}
+		if !orphanRecoveryCAMatches(cert.CertificateAuthorityName, criteria.CertificateAuthority) {
+			continue
+		}
+		if !criteria.Identity.matches(cert.RequesterName) {
 			continue
 		}
 		candidates = append(candidates, cert)
@@ -1397,8 +1751,9 @@ func findOrphanedCertificateMatch(
 	switch len(candidates) {
 	case 0:
 		return nil, fmt.Errorf(
-			"no certificate matching CN '%s' issued on or after %s was found in Keyfactor Command",
-			commonName, enrollStartTime.UTC().Format(time.RFC3339),
+			"no certificate matching the enrollment request (CN '%s', issued on or after %s) was found in "+
+				"Keyfactor Command",
+			criteria.CommonName, criteria.EnrollStartTime.UTC().Format(time.RFC3339),
 		)
 	case 1:
 		return &candidates[0], nil
@@ -1408,32 +1763,92 @@ func findOrphanedCertificateMatch(
 			ids = append(ids, fmt.Sprintf("%d", c.Id))
 		}
 		return nil, fmt.Errorf(
-			"%d certificates matching CN '%s' issued on or after %s were found in Keyfactor Command "+
-				"(ids: %s) -- cannot safely determine which one this Create attempted to enroll",
-			len(candidates), commonName, enrollStartTime.UTC().Format(time.RFC3339), strings.Join(ids, ", "),
+			"%d certificates matching the enrollment request (CN '%s', issued on or after %s) were found in "+
+				"Keyfactor Command (ids: %s) -- cannot safely determine which one this Create attempted to enroll",
+			len(candidates), criteria.CommonName, criteria.EnrollStartTime.UTC().Format(time.RFC3339),
+			strings.Join(ids, ", "),
 		)
 	}
+}
+
+// orphanRecoveryWireFormat maps a PFX-enrollment certificateFormat value to
+// the format string that should actually be requested from Command's
+// Certificates/Recover endpoint. This intentionally does NOT reuse
+// effectiveCertificateFormat: that helper normalizes ""/"STORE" to "PEM" for
+// the Read/Import recovery path, but enrollPFXV2's own result-building
+// switch (see certificateFormat handling below) treats "STORE"
+// (DEFAULT_CERTIFICATE_ENROLLMENT_FORMAT) identically to explicit "PFX" --
+// requesting "PEM" instead would silently change which Command endpoint
+// behavior orphan recovery exercises for the common (unset-format) case.
+func orphanRecoveryWireFormat(certificateFormat string) string {
+	switch certificateFormat {
+	case "JKS":
+		return "JKS"
+	case "ZIP":
+		return "ZIP"
+	default:
+		// "PFX", DEFAULT_CERTIFICATE_ENROLLMENT_FORMAT ("STORE"), or anything
+		// else falls back to requesting PFX, mirroring enrollPFXV2's
+		// `case "PFX", DEFAULT_CERTIFICATE_ENROLLMENT_FORMAT:` branch.
+		return "PFX"
+	}
+}
+
+// formatCertificateSubjectDN renders the non-empty fields of subject as a
+// display-only "CN=...,OU=...,O=...,L=...,ST=...,C=..." string, for use in
+// diagnostics messages. It is not intended to be byte-for-byte identical to
+// how Command or any particular CA renders the same subject.
+func formatCertificateSubjectDN(subject *api.CertificateSubject) string {
+	if subject == nil {
+		return ""
+	}
+	var parts []string
+	add := func(attr, value string) {
+		if value != "" {
+			parts = append(parts, fmt.Sprintf("%s=%s", attr, value))
+		}
+	}
+	add("CN", subject.SubjectCommonName)
+	add("OU", subject.SubjectOrganizationalUnit)
+	add("O", subject.SubjectOrganization)
+	add("L", subject.SubjectLocality)
+	add("ST", subject.SubjectState)
+	add("C", subject.SubjectCountry)
+	return strings.Join(parts, ",")
 }
 
 // recoverOrphanedPFXEnrollment attempts to recover from a client-side timeout
 // during PFX enrollment by searching Keyfactor Command for a certificate that
 // the timed-out request may have actually created server-side, and if
-// exactly one match is found, recovering its private key material so the
-// caller can adopt it into state instead of returning an error (which would
-// otherwise cause the next apply to enroll a duplicate certificate).
+// findOrphanedCertificateMatch identifies exactly one certificate matching
+// every discriminator available from the original request (see
+// orphanRecoveryCriteria), recovering its key material so the caller can
+// adopt it into state instead of returning an error (which would otherwise
+// cause the next apply to enroll a duplicate certificate).
 //
-// lookupPassword must be the same password submitted in the original (timed
-// out) enrollment request -- Command uses it to encrypt the PFX response, so
-// recovery only succeeds if it matches.
+// The certificate's key material is fetched from Command's
+// Certificates/Recover endpoint in certificateFormat (PFX/JKS/ZIP), matching
+// what a non-timeout enrollment in that format would have produced.
+//
+// lookupPassword controls how Command ENCRYPTS/packages the recovered
+// response -- it is not an authorization check and does NOT gate which
+// certificate can be recovered. Any password Command accepts for the
+// request succeeds regardless of what password (if any) was used for the
+// original enrollment; Recover is authorization-gated by the caller's
+// Command RBAC permissions, not by password matching. All of the safety
+// here comes from findOrphanedCertificateMatch's strict, multi-discriminator
+// matching having already identified the correct certificate -- not from
+// this password.
 func recoverOrphanedPFXEnrollment(
 	ctx context.Context,
 	client *api.Client,
-	commonName string,
-	enrollStartTime time.Time,
+	criteria orphanRecoveryCriteria,
 	collectionId int,
 	lookupPassword string,
+	certificateFormat string,
 ) (*api.EnrollResponseV2, diag.Diagnostics) {
 	diags := diag.Diagnostics{}
+	commonName := criteria.CommonName
 
 	tflog.Debug(ctx, fmt.Sprintf("Searching Keyfactor Command for a possibly-orphaned certificate matching CN '%s'", commonName))
 	certs, listErr := client.ListCertificates(map[string]string{"subject": commonName})
@@ -1445,7 +1860,7 @@ func recoverOrphanedPFXEnrollment(
 		return nil, diags
 	}
 
-	match, matchErr := findOrphanedCertificateMatch(certs, commonName, enrollStartTime)
+	match, matchErr := findOrphanedCertificateMatch(certs, criteria)
 	if matchErr != nil {
 		diags.AddError(
 			"Could not safely recover from enrollment timeout",
@@ -1454,11 +1869,27 @@ func recoverOrphanedPFXEnrollment(
 		return nil, diags
 	}
 
-	tflog.Debug(ctx, fmt.Sprintf("Found orphaned certificate %d matching CN '%s'; recovering private key material", match.Id, commonName))
-	_, _, _, rawBytes, recoverDiags := recoverPrivateKeyFromKeyfactorCommand(
-		ctx, match.Id, collectionId, lookupPassword, client, "PFX",
+	effectiveFmt := orphanRecoveryWireFormat(certificateFormat)
+	tflog.Debug(
+		ctx, fmt.Sprintf(
+			"Found orphaned certificate %d matching CN '%s'; recovering private key material in %s format",
+			match.Id, commonName, effectiveFmt,
+		),
 	)
-	if recoverDiags.HasError() || rawBytes == nil || *rawBytes == "" {
+	_, _, _, rawBytes, recoverDiags := recoverPrivateKeyFromKeyfactorCommand(
+		ctx, match.Id, collectionId, lookupPassword, client, effectiveFmt,
+	)
+
+	// For binary formats (PFX/JKS/ZIP), non-empty rawBytes is success even if
+	// recoverDiags carries an error: keyfactor-go-client's RecoverCertificate
+	// only special-cases "PFX"/"jks" formats (bundled together); "ZIP" falls
+	// through to its default branch, which always attempts a PKCS#12 decode
+	// of the raw response and returns that decode error ALONGSIDE the
+	// (perfectly valid, just non-PKCS#12) rawBytes for a ZIP payload. This
+	// mirrors the same tolerance recoverOrDownloadCertificate already applies.
+	binaryFormat := effectiveFmt == "PFX" || effectiveFmt == "JKS" || effectiveFmt == "ZIP"
+	recoverySucceeded := rawBytes != nil && *rawBytes != "" && (binaryFormat || !recoverDiags.HasError())
+	if !recoverySucceeded {
 		diags.AddError(
 			"Found orphaned certificate but could not recover its private key",
 			fmt.Sprintf(

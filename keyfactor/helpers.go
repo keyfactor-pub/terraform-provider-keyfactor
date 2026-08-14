@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	mathRand "math/rand"
@@ -1277,6 +1278,162 @@ func recoverOrDownloadCertificate(
 	}
 
 	return leafPEM, chainPEM, pKeyPEM, rawBytes, diags
+}
+
+// enrollmentTimeoutSkew is subtracted from the enrollment start timestamp when
+// searching for a possibly-orphaned certificate after a client-side timeout.
+// It exists purely to absorb clock skew between this process and the
+// Keyfactor Command server; it does not materially widen the search window
+// enough to catch an unrelated, pre-existing certificate with the same CN.
+const enrollmentTimeoutSkew = 2 * time.Minute
+
+// isTimeoutShapedError reports whether err looks like a client-side timeout
+// rather than a definitive rejection from Keyfactor Command (e.g. a 400/403
+// response, which should NOT trigger orphan-recovery since nothing was
+// created server-side). It covers:
+//   - context.DeadlineExceeded (context-based timeouts)
+//   - any error implementing net.Error with Timeout() == true (covers both
+//     "net/http: timeout awaiting response headers" and the http.Client's
+//     own "Client.Timeout exceeded while awaiting headers")
+//   - a couple of well-known substrings as a fallback for wrapped errors that
+//     don't preserve the net.Error interface across error-wrapping boundaries
+func isTimeoutShapedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "timeout awaiting response headers") ||
+		strings.Contains(msg, "Client.Timeout exceeded") ||
+		strings.Contains(msg, "context deadline exceeded")
+}
+
+// findOrphanedCertificateMatch narrows a set of search results (already
+// filtered server-side by CN via ListCertificates' "subject" query) down to
+// the single certificate that is plausibly the one this Create attempted to
+// enroll before timing out: same CN (defense in depth in case the server-side
+// filter is ever looser than expected) and issued at or after
+// enrollStartTime, allowing enrollmentTimeoutSkew of clock-skew tolerance.
+//
+// Returns the single match, or an error describing why adoption isn't safe
+// (zero matches, or more than one -- ambiguous, so we refuse to guess).
+func findOrphanedCertificateMatch(
+	certs []api.GetCertificateResponse,
+	commonName string,
+	enrollStartTime time.Time,
+) (*api.GetCertificateResponse, error) {
+	threshold := enrollStartTime.Add(-enrollmentTimeoutSkew)
+	var candidates []api.GetCertificateResponse
+	for _, cert := range certs {
+		if !strings.EqualFold(cert.IssuedCN, commonName) {
+			continue
+		}
+		notBefore, parseErr := time.Parse(time.RFC3339, cert.NotBefore)
+		if parseErr != nil {
+			// Fall back to a looser layout some Command versions have used.
+			notBefore, parseErr = time.Parse("2006-01-02T15:04:05", cert.NotBefore)
+		}
+		if parseErr == nil && notBefore.Before(threshold) {
+			continue
+		}
+		candidates = append(candidates, cert)
+	}
+
+	switch len(candidates) {
+	case 0:
+		return nil, fmt.Errorf(
+			"no certificate matching CN '%s' issued on or after %s was found in Keyfactor Command",
+			commonName, enrollStartTime.UTC().Format(time.RFC3339),
+		)
+	case 1:
+		return &candidates[0], nil
+	default:
+		ids := make([]string, 0, len(candidates))
+		for _, c := range candidates {
+			ids = append(ids, fmt.Sprintf("%d", c.Id))
+		}
+		return nil, fmt.Errorf(
+			"%d certificates matching CN '%s' issued on or after %s were found in Keyfactor Command "+
+				"(ids: %s) -- cannot safely determine which one this Create attempted to enroll",
+			len(candidates), commonName, enrollStartTime.UTC().Format(time.RFC3339), strings.Join(ids, ", "),
+		)
+	}
+}
+
+// recoverOrphanedPFXEnrollment attempts to recover from a client-side timeout
+// during PFX enrollment by searching Keyfactor Command for a certificate that
+// the timed-out request may have actually created server-side, and if
+// exactly one match is found, recovering its private key material so the
+// caller can adopt it into state instead of returning an error (which would
+// otherwise cause the next apply to enroll a duplicate certificate).
+//
+// lookupPassword must be the same password submitted in the original (timed
+// out) enrollment request -- Command uses it to encrypt the PFX response, so
+// recovery only succeeds if it matches.
+func recoverOrphanedPFXEnrollment(
+	ctx context.Context,
+	client *api.Client,
+	commonName string,
+	enrollStartTime time.Time,
+	collectionId int,
+	lookupPassword string,
+) (*api.EnrollResponseV2, diag.Diagnostics) {
+	diags := diag.Diagnostics{}
+
+	tflog.Debug(ctx, fmt.Sprintf("Searching Keyfactor Command for a possibly-orphaned certificate matching CN '%s'", commonName))
+	certs, listErr := client.ListCertificates(map[string]string{"subject": commonName})
+	if listErr != nil {
+		diags.AddError(
+			"Could not search for orphaned certificate after enrollment timeout",
+			fmt.Sprintf("Searching Keyfactor Command for CN '%s' failed: %s", commonName, listErr.Error()),
+		)
+		return nil, diags
+	}
+
+	match, matchErr := findOrphanedCertificateMatch(certs, commonName, enrollStartTime)
+	if matchErr != nil {
+		diags.AddError(
+			"Could not safely recover from enrollment timeout",
+			matchErr.Error(),
+		)
+		return nil, diags
+	}
+
+	tflog.Debug(ctx, fmt.Sprintf("Found orphaned certificate %d matching CN '%s'; recovering private key material", match.Id, commonName))
+	_, _, _, rawBytes, recoverDiags := recoverPrivateKeyFromKeyfactorCommand(
+		ctx, match.Id, collectionId, lookupPassword, client, "PFX",
+	)
+	if recoverDiags.HasError() || rawBytes == nil || *rawBytes == "" {
+		diags.AddError(
+			"Found orphaned certificate but could not recover its private key",
+			fmt.Sprintf(
+				"Certificate %d matching CN '%s' exists in Keyfactor Command, but recovering its private key "+
+					"material failed. It cannot be safely adopted automatically; import it manually with "+
+					"`terraform import` once you've confirmed its enrollment password.",
+				match.Id, commonName,
+			),
+		)
+		diags.Append(recoverDiags...)
+		return nil, diags
+	}
+
+	return &api.EnrollResponseV2{
+		CertificateInformation: api.CertificateInformation{
+			SerialNumber:       match.SerialNumber,
+			IssuerDN:           match.IssuerDN,
+			Thumbprint:         match.Thumbprint,
+			KeyfactorID:        match.Id,
+			KeyfactorRequestID: match.CertRequestId,
+			PKCS12Blob:         *rawBytes,
+			RequestDisposition: "ISSUED",
+		},
+	}, diags
 }
 
 // logInitialCertificateFields logs common certificate fields.

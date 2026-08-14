@@ -2947,7 +2947,50 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 	tflog.Debug(ctx, fmt.Sprintf("PFXArgs: %s", string(jsonData)))
 	tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))
 	tflog.Debug(ctx, "Calling EnrollPFXV2.")
+	enrollStartTime := time.Now().UTC()
 	enrollResponse, err := r.p.client.EnrollPFXV2(PFXArgs)
+	if err != nil && isTimeoutShapedError(err) {
+		// The client-side request timed out, but Command may have completed the
+		// enrollment server-side before the response reached us. Blindly
+		// returning this error would cause the next apply to enroll AGAIN,
+		// piling up duplicate certificates on every retry. Attempt to recover
+		// the orphaned certificate (if any) and adopt it instead.
+		tflog.Warn(
+			ctx, fmt.Sprintf(
+				"PFX enrollment for '%s' returned a timeout-shaped error (%s); attempting to recover a "+
+					"possibly-orphaned certificate from Keyfactor Command before failing.",
+				PFXArgs.Subject.SubjectCommonName, err.Error(),
+			),
+		)
+		recovered, recoverDiags := recoverOrphanedPFXEnrollment(
+			ctx, r.p.client, PFXArgs.Subject.SubjectCommonName, enrollStartTime, collectionIdInt, lookupPassword,
+		)
+		if recovered != nil {
+			tflog.Warn(
+				ctx, fmt.Sprintf(
+					"Recovered orphaned certificate %d (CN '%s') after an enrollment timeout; adopting it "+
+						"instead of retrying enrollment, which would have created a duplicate.",
+					recovered.CertificateInformation.KeyfactorID, PFXArgs.Subject.SubjectCommonName,
+				),
+			)
+			enrollResponse = recovered
+			err = nil
+		} else {
+			diags.Append(recoverDiags...)
+			diags.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+				fmt.Sprintf(
+					"Could not create certificate %s on Keyfactor: %s. This looks like a client-side timeout; "+
+						"the enrollment may have succeeded on the server despite it. Check Keyfactor Command for "+
+						"a certificate matching CN '%s' issued on or after %s, and use `terraform import` to "+
+						"adopt it if found, rather than re-applying (which may create a duplicate).",
+					PFXArgs.Subject.SubjectCommonName, err.Error(), PFXArgs.Subject.SubjectCommonName,
+					enrollStartTime.Format(time.RFC3339),
+				),
+			)
+			return nil, diags
+		}
+	}
 	if err != nil {
 		tflog.Error(ctx, "No response from Keyfactor Command after PFX enrollment.")
 		diags.AddError(

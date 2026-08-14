@@ -890,8 +890,16 @@ func (r resourceCommandCertificate) Create(
 	} else { //Enroll PFX
 		tflog.Debug(ctx, "Calling enrollPFXV2()")
 		result, pfxErr := r.enrollPFXV2(ctx, &plan)
-		if pfxErr.HasError() {
+		// Append unconditionally (mirroring the CSR branch above) so a
+		// successful-but-warning-carrying result -- e.g. the orphan-recovery
+		// "adopted a possibly-orphaned certificate" warning -- is not silently
+		// dropped: Diagnostics.HasError() is only true for SeverityError, so
+		// checking it before appending would discard any warning-only diags on
+		// the non-error path.
+		if len(pfxErr) > 0 {
 			response.Diagnostics.Append(pfxErr...)
+		}
+		if pfxErr.HasError() {
 			return
 		}
 

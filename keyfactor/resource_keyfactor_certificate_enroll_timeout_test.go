@@ -38,6 +38,7 @@ import (
 	auth_providers "github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
 	api "github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	pkcs12 "github.com/spbsoluble/go-pkcs12"
 )
@@ -1323,5 +1324,103 @@ func TestUnitEnrollPFX_TimeoutRecovery_HardCapStillRefusesPathologicalResultSet(
 	}
 	if result != nil {
 		t.Fatalf("expected nil result, got %+v", result)
+	}
+}
+
+// TestUnitKeyfactorCertificateResourceCreate_PFX_OrphanRecoveryWarningReachesResponseDiagnostics
+// is the F3 regression test. It drives the FULL Create() method (not just
+// enrollPFXV2's return value, which resource_keyfactor_certificate_enroll_timeout_test.go's
+// earlier tests -- e.g. TestUnitEnrollPFX_TimeoutRecovery_WarningSurfacedInDiagnostics
+// -- already cover, and which is exactly why the bug this test targets
+// escaped notice) and asserts the orphan-adoption warning actually lands in
+// response.Diagnostics.
+//
+// Before the fix, Create's PFX branch only appended enrollPFXV2's returned
+// diagnostics inside an `if pfxErr.HasError()` guard. Diagnostics.HasError()
+// is only true for SeverityError, so on a successful recovery (err == nil,
+// diags containing only an AddWarning) that guard is never entered and the
+// warning is silently dropped -- a real `terraform apply` would show a clean
+// "Creation complete" with zero indication that a private-key-bearing
+// certificate was heuristically adopted, defeating the entire point of that
+// warning existing.
+func TestUnitKeyfactorCertificateResourceCreate_PFX_OrphanRecoveryWarningReachesResponseDiagnostics(t *testing.T) {
+	const (
+		cn       = "tf-unit-create-warning-propagation.example.com"
+		password = "TestPassword123!"
+	)
+
+	leaf, leafKey := buildSelfSignedLeaf(t, cn)
+	pfxDER, err := pkcs12.Encode(rand.Reader, leafKey, leaf, nil, password)
+	if err != nil {
+		t.Fatalf("pkcs12.Encode: %v", err)
+	}
+	pfxB64 := base64.StdEncoding.EncodeToString(pfxDER)
+
+	orphan := realisticOrphanCert(7777, cn, "SomeTemplate", time.Now().UTC())
+	orphan.Thumbprint = "AABBCCDDEEFF00112233445566778899AABBCCDD"
+	orphan.SerialNumber = "01"
+	orphan.IssuerDN = "CN=Test Root CA"
+
+	var enrollAttempts int
+	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, []api.GetCertificateResponse{orphan}, pfxB64))
+	defer srv.Close()
+
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
+
+	ctx := context.Background()
+	schema, sDiags := resourceCommandCertificateType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	nullList := types.List{ElemType: types.StringType, Null: true}
+	nullMap := types.Map{ElemType: types.StringType, Null: true}
+	plan := CommandCertificate{
+		CommonName:          types.String{Value: cn},
+		CSR:                 types.String{Null: true},
+		KeyPassword:         types.String{Value: password},
+		CertificateTemplate: types.String{Value: "SomeTemplate"},
+		EnrollmentPattern:   types.String{Null: true},
+		CertificateFormat:   types.String{Null: true},
+		DNSSANs:             nullList,
+		IPSANs:              nullList,
+		URISANs:             nullList,
+		Metadata:            nullMap,
+		CollectionId:        types.Int64{Value: 0},
+		ExpiryWarningDays:   types.Int64{Null: true},
+	}
+
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+
+	req := tfsdk.CreateResourceRequest{Plan: planObj}
+	resp := &tfsdk.CreateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Create(ctx, req, resp)
+
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("expected Create to succeed (a warning, not an error) for a successful orphan recovery, got: %+v", resp.Diagnostics)
+	}
+	if enrollAttempts != 1 {
+		t.Fatalf("expected exactly 1 enrollment attempt (no blind retry), got %d", enrollAttempts)
+	}
+
+	var found bool
+	for _, w := range resp.Diagnostics.Warnings() {
+		if strings.Contains(w.Detail(), fmt.Sprintf("%d", orphan.Id)) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf(
+			"expected Create's response.Diagnostics to carry the orphan-adoption warning naming certificate %d "+
+				"-- this is the F3 bug: enrollPFXV2's warning-only diagnostics were dropped because Create only "+
+				"appended them inside an `if pfxErr.HasError()` guard, and HasError() is false for a "+
+				"warning-only Diagnostics. Got diagnostics: %+v",
+			orphan.Id, resp.Diagnostics,
+		)
 	}
 }

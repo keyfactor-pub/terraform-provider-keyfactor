@@ -2,6 +2,11 @@ module github.com/keyfactor-pub/terraform-provider-keyfactor
 
 go 1.25.0
 
+// TODO(fix/request-timeout-plumbing): the three Keyfactor deps below are bumped
+// to not-yet-tagged RC versions that fix Server.ClientTimeout being dropped
+// (github.com/Keyfactor/keyfactor-auth-client-go#51). Once those tags are cut
+// upstream, remove the local `replace` directives further down in this file
+// and re-run `go mod tidy`.
 require (
 	github.com/Keyfactor/keyfactor-auth-client-go v1.5.0
 	github.com/Keyfactor/keyfactor-go-client-sdk/v24 v24.1.1

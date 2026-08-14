@@ -30,11 +30,13 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	auth_providers "github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
 	api "github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	pkcs12 "github.com/spbsoluble/go-pkcs12"
@@ -69,10 +71,13 @@ func (t *timeoutOnPathRoundTripper) RoundTrip(req *http.Request) (*http.Response
 	return t.inner.RoundTrip(req)
 }
 
-// newTimeoutMockClient builds an api.Client wired to srv, whose requests to
-// any path containing timeoutPathSubstr are intercepted and turned into a
-// synthetic timeout error before ever reaching srv.
-func newTimeoutMockClient(t *testing.T, srv *httptest.Server, timeoutPathSubstr string, callCount *int) *api.Client {
+// newTimeoutMockClient builds an api.Client (legacy) and a *keyfactor.APIClient
+// (v24 SDK, used by the F4 paginated orphan search) both wired to srv, whose
+// requests to any path containing timeoutPathSubstr are intercepted and
+// turned into a synthetic timeout error before ever reaching srv.
+func newTimeoutMockClient(
+	t *testing.T, srv *httptest.Server, timeoutPathSubstr string, callCount *int,
+) (*api.Client, *keyfactor.APIClient) {
 	t.Helper()
 	tlsClient := srv.Client()
 	tlsClient.Transport = &timeoutOnPathRoundTripper{
@@ -82,7 +87,14 @@ func newTimeoutMockClient(t *testing.T, srv *httptest.Server, timeoutPathSubstr 
 		timeoutPathSubstr: timeoutPathSubstr,
 		callCount:         callCount,
 	}
-	auth := &mockLeafAuth{
+	// The legacy api.Client and the v24 SDK client disagree on the shape of
+	// auth_providers.Server.Host: api.Client wants a scheme-prefixed URL plus
+	// a separate APIPath (mirrors newCertAPIMockAuthConfig in
+	// test_helpers_test.go), while the SDK client wants a bare "host:port"
+	// with no scheme and folds APIPath into its own default (mirrors
+	// newSDKMockAuthConfig). Both share the same tlsClient/RoundTripper so
+	// the timeout injection applies to either client's requests.
+	legacyAuth := &mockLeafAuth{
 		client: tlsClient,
 		server: &auth_providers.Server{
 			Host:          srv.URL,
@@ -90,8 +102,15 @@ func newTimeoutMockClient(t *testing.T, srv *httptest.Server, timeoutPathSubstr 
 			SkipTLSVerify: true,
 		},
 	}
+	sdkAuth := &mockLeafAuth{
+		client: tlsClient,
+		server: &auth_providers.Server{
+			Host:          strings.TrimPrefix(srv.URL, "https://"),
+			SkipTLSVerify: true,
+		},
+	}
 	ctx := context.Background()
-	return api.NewKeyfactorClientWithAuth(auth, &ctx)
+	return api.NewKeyfactorClientWithAuth(legacyAuth, &ctx), keyfactor.NewAPIClientWithAuth(sdkAuth)
 }
 
 // buildSelfSignedLeaf creates a minimal self-signed leaf certificate and key
@@ -162,6 +181,41 @@ func realisticOrphanCert(id int, commonName, templateName string, issuedAt time.
 	}
 }
 
+// certsToSDKSearchJSON marshals certs the way these mock handlers need to for
+// the GET .../Certificates search response, EXCEPT it drops two legacy
+// api.GetCertificateResponse fields whose JSON shape doesn't line up with the
+// v24 SDK's CertificatesCertificateRetrievalResponse (what
+// searchCertificatesForOrphanRecovery -- the F4 fix -- now actually decodes
+// the search response into): PrincipalId (string on the legacy struct,
+// NullableInt32 on the SDK struct) and RevocationEffDate (empty string when
+// unset on the legacy struct, but NullableTime -- via time.Time's stock
+// UnmarshalJSON -- on the SDK struct, which rejects ""). Neither field is
+// read by any orphan-recovery discriminator, so dropping them from these
+// test fixtures' wire representation doesn't weaken any assertion; without
+// this, every one of these mock responses would fail to decode on the
+// client side now that the search goes through the SDK client instead of
+// the legacy client's ListCertificates.
+func certsToSDKSearchJSON(t *testing.T, certs []api.GetCertificateResponse) []byte {
+	t.Helper()
+	raw, err := json.Marshal(certs)
+	if err != nil {
+		t.Fatalf("marshal certs: %v", err)
+	}
+	var generic []map[string]interface{}
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		t.Fatalf("re-decode certs as generic JSON: %v", err)
+	}
+	for _, m := range generic {
+		delete(m, "PrincipalId")
+		delete(m, "RevocationEffDate")
+	}
+	body, err := json.Marshal(generic)
+	if err != nil {
+		t.Fatalf("re-marshal sanitized certs: %v", err)
+	}
+	return body
+}
+
 // certSearchAndRecoverHandler returns an http.HandlerFunc that serves:
 //   - GET  .../Certificates (search, no id/Recover suffix) -> certsToReturn as JSON
 //   - POST .../Certificates/Recover                        -> {"PFX": pfxB64}
@@ -171,10 +225,7 @@ func realisticOrphanCert(id int, commonName, templateName string, issuedAt time.
 //     mean the "timeout" was never actually simulated.
 func certSearchAndRecoverHandler(t *testing.T, certsToReturn []api.GetCertificateResponse, pfxB64 string) http.HandlerFunc {
 	t.Helper()
-	searchBody, err := json.Marshal(certsToReturn)
-	if err != nil {
-		t.Fatalf("marshal search response: %v", err)
-	}
+	searchBody := certsToSDKSearchJSON(t, certsToReturn)
 	recoverBody, err := json.Marshal(map[string]string{"PFX": pfxB64, "FileName": "cert.pfx"})
 	if err != nil {
 		t.Fatalf("marshal recover response: %v", err)
@@ -228,8 +279,8 @@ func TestUnitEnrollPFX_TimeoutRecovery_AdoptsSingleMatch(t *testing.T) {
 	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, []api.GetCertificateResponse{orphan}, pfxB64))
 	defer srv.Close()
 
-	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
-	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
 	plan := newMinimalPFXPlan(commonName, password)
 
 	ctx := context.Background()
@@ -270,8 +321,8 @@ func TestUnitEnrollPFX_TimeoutRecovery_ZeroMatches(t *testing.T) {
 	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, []api.GetCertificateResponse{}, ""))
 	defer srv.Close()
 
-	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
-	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
 	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
 
 	ctx := context.Background()
@@ -315,8 +366,8 @@ func TestUnitEnrollPFX_TimeoutRecovery_MultipleMatches(t *testing.T) {
 	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, dupes, ""))
 	defer srv.Close()
 
-	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
-	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
 	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
 
 	ctx := context.Background()
@@ -343,8 +394,8 @@ func TestUnitEnrollPFX_TimeoutRecovery_IgnoresOlderCertificate(t *testing.T) {
 	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, []api.GetCertificateResponse{stale}, ""))
 	defer srv.Close()
 
-	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
-	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
 	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
 
 	ctx := context.Background()
@@ -387,8 +438,9 @@ func TestUnitEnrollPFX_NonTimeoutErrorNotRecovered(t *testing.T) {
 	}
 	ctx := context.Background()
 	client := api.NewKeyfactorClientWithAuth(auth, &ctx)
+	sdkClient := keyfactor.NewAPIClientWithAuth(auth)
 
-	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
 	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
 
 	result, diags := r.enrollPFXV2(ctx, plan)
@@ -431,8 +483,8 @@ func TestUnitEnrollPFX_TimeoutRecovery_RejectsWrongCertificateSameCN(t *testing.
 	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, []api.GetCertificateResponse{wrongCert}, pfxB64))
 	defer srv.Close()
 
-	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
-	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
 	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
 
 	ctx := context.Background()
@@ -475,8 +527,8 @@ func TestUnitEnrollPFX_TimeoutRecovery_WarningSurfacedInDiagnostics(t *testing.T
 	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, []api.GetCertificateResponse{orphan}, pfxB64))
 	defer srv.Close()
 
-	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
-	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
 	plan := newMinimalPFXPlan(commonName, password)
 
 	ctx := context.Background()
@@ -515,10 +567,7 @@ func certSearchAndRecoverHandlerCapturingFormat(
 	gotFormat *string,
 ) http.HandlerFunc {
 	t.Helper()
-	searchBody, err := json.Marshal(certsToReturn)
-	if err != nil {
-		t.Fatalf("marshal search response: %v", err)
-	}
+	searchBody := certsToSDKSearchJSON(t, certsToReturn)
 	recoverBody, err := json.Marshal(map[string]string{"PFX": recoverPayloadB64, "FileName": "cert.bin"})
 	if err != nil {
 		t.Fatalf("marshal recover response: %v", err)
@@ -568,8 +617,8 @@ func TestUnitEnrollPFX_TimeoutRecovery_JKSFormatThreaded(t *testing.T) {
 	)
 	defer srv.Close()
 
-	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
-	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
 	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
 	plan.CertificateFormat = types.String{Value: "JKS"}
 
@@ -621,8 +670,8 @@ func TestUnitEnrollPFX_TimeoutRecovery_ZIPFormatThreadedWithDecodeTolerance(t *t
 	)
 	defer srv.Close()
 
-	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
-	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
 	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
 	plan.CertificateFormat = types.String{Value: "ZIP"}
 
@@ -661,16 +710,26 @@ func TestUnitFindOrphanedCertificateMatch_StrictDiscriminators(t *testing.T) {
 		SubjectCountry:            "US",
 	}
 	baseSANs := &api.SANs{DNS: []string{"alt.example.com"}}
+	// Template/TemplateId intentionally use a SHORT name + resolved ID, while
+	// matchingCert below carries the corresponding DISPLAY name (as Command's
+	// certificate record always does) plus the SAME ID -- an identical-string
+	// fixture on both sides (as this test previously used) can't catch a
+	// regression back to comparing TemplateName strings directly (see F1:
+	// orphanRecoveryTemplateMatches now compares TemplateId when available,
+	// exactly because the request's short name almost never equals Command's
+	// TemplateName display value).
 	baseCriteria := orphanRecoveryCriteria{
 		CommonName:           commonName,
 		Subject:              baseSubject,
 		SANs:                 baseSANs,
-		Template:             "WebServer",
+		Template:             "WebServer_shortname",
+		TemplateId:           42,
 		CertificateAuthority: "IssuingCA1",
 		EnrollStartTime:      now,
 	}
 
-	matchingCert := realisticOrphanCert(1, commonName, "WebServer", now.Add(10*time.Second))
+	matchingCert := realisticOrphanCert(1, commonName, "Web Server (Enhanced)", now.Add(10*time.Second))
+	matchingCert.TemplateId = 42
 	matchingCert.IssuedDN = "CN=" + commonName + ",OU=Engineering,O=Example Corp,C=US"
 	matchingCert.CertificateAuthorityName = `ca-host.example.com\IssuingCA1`
 	matchingCert.SubjectAltNameElements = []api.SubjectAltNameElements{
@@ -693,9 +752,9 @@ func TestUnitFindOrphanedCertificateMatch_StrictDiscriminators(t *testing.T) {
 			},
 		},
 		{
-			name: "different template",
+			name: "different template (by ID -- name comparison alone would miss this)",
 			mutate: func(c api.GetCertificateResponse) api.GetCertificateResponse {
-				c.TemplateName = "DifferentTemplate"
+				c.TemplateId = 99
 				return c
 			},
 		},
@@ -739,6 +798,64 @@ func TestUnitFindOrphanedCertificateMatch_StrictDiscriminators(t *testing.T) {
 	}
 }
 
+// TestUnitFindOrphanedCertificateMatch_ShortNameVsDisplayNameTemplate is the
+// F1 regression test, using the EXACT real string pair recorded in
+// testdata/cassettes/certificate_resource_pfx_template_only.yaml: an
+// enrollment request configured with certificate_template =
+// "Server_tlsServerAuth-1y" (the schema's documented, common short-name
+// form, and what PFXArgs.Template actually carries) produces a certificate
+// whose TemplateName comes back from Command as "Server (tlsServerAuth-1y)"
+// (the display name). Before the fix, orphanRecoveryTemplateMatches compared
+// those two strings directly and NEVER matched for this -- the mainstream,
+// cassette-covered, template-only-no-pattern -- case, so recovery silently
+// never fired and every timeout on this path degraded straight back to the
+// duplicate-certificate bug. Resolving the short name to Command's numeric
+// TemplateId (4 in the cassette) and comparing IDs fixes it regardless of
+// which name form either side is expressed in.
+func TestUnitFindOrphanedCertificateMatch_ShortNameVsDisplayNameTemplate(t *testing.T) {
+	const (
+		commonName          = "tf-unit-pfx-tplonly-456775000.example.com"
+		shortTemplateName   = "Server_tlsServerAuth-1y" // PFXArgs.Template / certificate_template, per the cassette
+		displayTemplateName = "Server (tlsServerAuth-1y)"
+		templateId          = 4 // cassette's Templates[].Id / GetCertificateResponse.TemplateId
+	)
+	now := time.Now().UTC()
+
+	cert := realisticOrphanCert(3806, commonName, displayTemplateName, now)
+	cert.TemplateId = templateId
+
+	// Without a resolved TemplateId (old behavior, or a failed lookup),
+	// comparing the request's short name directly against Command's display
+	// name never matches -- reproducing the original bug.
+	criteriaNameOnly := orphanRecoveryCriteria{
+		CommonName:      commonName,
+		Template:        shortTemplateName,
+		EnrollStartTime: now,
+	}
+	if _, err := findOrphanedCertificateMatch([]api.GetCertificateResponse{cert}, criteriaNameOnly); err == nil {
+		t.Fatal(
+			"expected a name-only comparison between the short enrollment-request name and Command's display " +
+				"name to fail to match (this is the bug F1 fixes by preferring ID-based comparison) -- if this " +
+				"now succeeds, orphanRecoveryTemplateMatches's fallback path silently changed",
+		)
+	}
+
+	// With the resolved TemplateId (what enrollPFXV2 now does via
+	// resolveTemplateIDByName before building orphanRecoveryCriteria), the
+	// same short-name request correctly matches the display-named candidate.
+	criteriaWithId := criteriaNameOnly
+	criteriaWithId.TemplateId = templateId
+	match, err := findOrphanedCertificateMatch([]api.GetCertificateResponse{cert}, criteriaWithId)
+	if err != nil {
+		t.Fatalf(
+			"expected ID-based template matching to succeed for the short-name-vs-display-name case, got: %v", err,
+		)
+	}
+	if match.Id != cert.Id {
+		t.Errorf("matched wrong certificate: got id %d, want %d", match.Id, cert.Id)
+	}
+}
+
 // TestUnitFindOrphanedCertificateMatch_RequesterIdentityMismatch is a
 // focused F2 unit test covering the requester-identity discriminator: a
 // candidate whose RequesterName doesn't match the identity this provider is
@@ -766,47 +883,445 @@ func TestUnitFindOrphanedCertificateMatch_RequesterIdentityMismatch(t *testing.T
 	}
 }
 
-// TestUnitFindOrphanedCertificateMatch_TruncatedResultSet is the F3
-// regression test: ListCertificates has no page-size/ReturnLimit control in
-// this SDK version, and Command's documented default ReturnLimit for
-// GET /Certificates is 50. A result set at or above that size must never be
-// treated as "the whole story" -- even when every discriminator happens to
-// narrow it down to exactly one candidate, additional matches beyond the
-// (possibly) truncated page cannot be ruled out.
-func TestUnitFindOrphanedCertificateMatch_TruncatedResultSet(t *testing.T) {
-	const commonName = "tf-unit-truncated.example.com"
+// TestUnitFindOrphanedCertificateMatch_PatternBasedPath_TightenedFreshnessWindow
+// is an F2 regression test: when Template and CertificateAuthority are both
+// unavailable as discriminators (weakSignalPath -- the mainstream v25+
+// enrollment-pattern path, where Template is deliberately blanked and CA is
+// commonly left unset), CommonName + freshness + requester identity are
+// carrying more of the narrowing burden than in the template/CA-populated
+// path, so the freshness window is tightened from enrollmentTimeoutSkew (2m)
+// to enrollmentTimeoutSkewTightened (30s). A candidate 90 seconds stale sits
+// inside the old (2-minute) window but outside the tightened one: it must be
+// REJECTED when Template/CA are both empty, but still ACCEPTED when either
+// one is populated (the discriminator-rich path keeps the wider margin).
+func TestUnitFindOrphanedCertificateMatch_PatternBasedPath_TightenedFreshnessWindow(t *testing.T) {
+	const commonName = "tf-unit-pattern-based-freshness.example.com"
 	now := time.Now().UTC()
 
-	// Build exactly certificatesListReturnLimitDefault (50) results. Only
-	// ONE of them (the last) actually satisfies the template discriminator --
-	// if truncation weren't accounted for, this would otherwise look like a
-	// safe, unique match.
-	var certs []api.GetCertificateResponse
-	for i := 0; i < certificatesListReturnLimitDefault; i++ {
-		certs = append(certs, realisticOrphanCert(i+1, commonName, "WrongTemplate", now))
-	}
-	certs[len(certs)-1].TemplateName = "RightTemplate"
+	// 90s stale: inside enrollmentTimeoutSkew (2m) but outside
+	// enrollmentTimeoutSkewTightened (30s).
+	borderline := realisticOrphanCert(1, commonName, "", now.Add(-90*time.Second))
 
-	criteria := orphanRecoveryCriteria{
+	patternBasedCriteria := orphanRecoveryCriteria{
 		CommonName:      commonName,
-		Template:        "RightTemplate",
 		EnrollStartTime: now,
+		// Template and CertificateAuthority intentionally left blank -- this
+		// is the enrollment-pattern path (see orphanRecoveryCriteria).
+	}
+	if _, err := findOrphanedCertificateMatch([]api.GetCertificateResponse{borderline}, patternBasedCriteria); err == nil {
+		t.Fatal(
+			"expected the tightened freshness window to reject a 90s-stale candidate in the pattern-based path " +
+				"(Template and CertificateAuthority both empty), but it was accepted",
+		)
 	}
 
-	if _, err := findOrphanedCertificateMatch(certs, criteria); err == nil {
-		t.Fatal("expected a truncation-shaped ambiguity error for a full page of results, got a confident match")
-	} else if !strings.Contains(err.Error(), "page") {
-		t.Errorf("expected the error to explain the truncation risk, got: %v", err)
+	// Sanity: the SAME candidate, at the SAME staleness, is accepted once
+	// Template is populated -- proving the tightening is scoped to the
+	// weak-signal path and doesn't regress the discriminator-rich path.
+	templatePopulatedCriteria := patternBasedCriteria
+	templatePopulatedCriteria.Template = "SomeTemplate"
+	borderlineWithTemplate := borderline
+	borderlineWithTemplate.TemplateName = "SomeTemplate"
+	if _, err := findOrphanedCertificateMatch(
+		[]api.GetCertificateResponse{borderlineWithTemplate}, templatePopulatedCriteria,
+	); err != nil {
+		t.Fatalf(
+			"expected the untightened (2-minute) window to still accept the same 90s-stale candidate once "+
+				"Template is populated, got: %v", err,
+		)
 	}
+}
 
-	// Sanity: one fewer result (below the page-size threshold) is NOT
-	// treated as possibly truncated, and the single genuine match succeeds.
-	certsBelowLimit := certs[1:] // 49 results, still contains the one RightTemplate match
-	match, err := findOrphanedCertificateMatch(certsBelowLimit, criteria)
+// certSearchRecoverAndContextHandler is like certSearchAndRecoverHandler, but
+// also serves GET .../Certificates/{id} (no query string -- matching what
+// GetCertificateContext sends when called with only Id set) from
+// contextResponses, keyed by certificate ID. Used by the F2
+// EnrollmentPatternId-confirmation tests: that lookup goes through the
+// LEGACY api.Client (GetCertificateContext), which decodes directly into
+// api.GetCertificateResponse, so -- unlike the SDK-client search responses
+// elsewhere in this file -- these bodies do NOT need certsToSDKSearchJSON's
+// field sanitization.
+func certSearchRecoverAndContextHandler(
+	t *testing.T,
+	searchCerts []api.GetCertificateResponse,
+	contextResponses map[int]api.GetCertificateResponse,
+	pfxB64 string,
+) http.HandlerFunc {
+	t.Helper()
+	searchBody := certsToSDKSearchJSON(t, searchCerts)
+	recoverBody, err := json.Marshal(map[string]string{"PFX": pfxB64, "FileName": "cert.pfx"})
 	if err != nil {
-		t.Fatalf("expected a confident match below the page-size threshold, got error: %v", err)
+		t.Fatalf("marshal recover response: %v", err)
 	}
-	if match.Id != certs[len(certs)-1].Id {
-		t.Errorf("matched wrong certificate: got id %d, want %d", match.Id, certs[len(certs)-1].Id)
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		trimmed := strings.TrimRight(r.URL.Path, "/")
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "Certificates/Recover"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(recoverBody)
+		case r.Method == http.MethodGet && strings.HasSuffix(trimmed, "Certificates"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(searchBody)
+		case r.Method == http.MethodGet && strings.Contains(trimmed, "Certificates/"):
+			idStr := trimmed[strings.LastIndex(trimmed, "/")+1:]
+			id, convErr := strconv.Atoi(idStr)
+			if convErr != nil {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{}`))
+				return
+			}
+			certCtx, ok := contextResponses[id]
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"Message":"not found"}`))
+				return
+			}
+			body, marshalErr := json.Marshal(certCtx)
+			if marshalErr != nil {
+				t.Fatalf("marshal context response: %v", marshalErr)
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(body)
+		case strings.Contains(r.URL.Path, "Enrollment/PFX"):
+			t.Errorf("Enrollment/PFX reached the mock server -- the timeout RoundTripper should have intercepted it")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_EnrollmentPatternIdMismatchRejected
+// is an F2 regression test: in the pattern-based path (weakSignalPath), the
+// sole surviving candidate is cross-checked against the enrollment pattern
+// this request actually resolved, via a follow-up GetCertificateContext call
+// (25.1.0+ Command exposes EnrollmentPatternId there). An explicit
+// disagreement must be rejected outright, even though CN/freshness/requester
+// all matched.
+func TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_EnrollmentPatternIdMismatchRejected(t *testing.T) {
+	const (
+		commonName = "tf-unit-pattern-mismatch.example.com"
+		password   = "TestPassword123!"
+	)
+	now := time.Now().UTC()
+	orphan := realisticOrphanCert(4242, commonName, "", now)
+
+	var enrollAttempts int
+	srv := httptest.NewTLSServer(certSearchRecoverAndContextHandler(
+		t,
+		[]api.GetCertificateResponse{orphan},
+		map[int]api.GetCertificateResponse{4242: {Id: 4242, EnrollmentPatternId: 2}}, // request resolved pattern 1
+		"", // Recover must never be reached -- rejected before that point
+	))
+	defer srv.Close()
+
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
+	plan := newMinimalPFXPlan(commonName, password)
+	plan.EnrollmentPattern = types.String{Value: "1"} // numeric ID -> no pattern-lookup network call needed
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if !diags.HasError() {
+		t.Fatal(
+			"expected an error: the candidate's EnrollmentPatternId (2) disagrees with the request's resolved " +
+				"enrollment pattern (1)",
+		)
+	}
+	if result != nil {
+		t.Fatalf("expected nil result for an enrollment-pattern disagreement, got %+v", result)
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_EnrollmentPatternIdAgreementSucceeds
+// is the F2 sanity counterpart: when the candidate's EnrollmentPatternId
+// agrees with the request's resolved pattern, recovery succeeds.
+func TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_EnrollmentPatternIdAgreementSucceeds(t *testing.T) {
+	const (
+		commonName = "tf-unit-pattern-agreement.example.com"
+		password   = "TestPassword123!"
+	)
+	leaf, leafKey := buildSelfSignedLeaf(t, commonName)
+	pfxDER, err := pkcs12.Encode(rand.Reader, leafKey, leaf, nil, password)
+	if err != nil {
+		t.Fatalf("pkcs12.Encode: %v", err)
+	}
+	pfxB64 := base64.StdEncoding.EncodeToString(pfxDER)
+
+	now := time.Now().UTC()
+	orphan := realisticOrphanCert(5252, commonName, "", now)
+
+	var enrollAttempts int
+	srv := httptest.NewTLSServer(certSearchRecoverAndContextHandler(
+		t,
+		[]api.GetCertificateResponse{orphan},
+		map[int]api.GetCertificateResponse{5252: {Id: 5252, EnrollmentPatternId: 1}}, // agrees
+		pfxB64,
+	))
+	defer srv.Close()
+
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
+	plan := newMinimalPFXPlan(commonName, password)
+	plan.EnrollmentPattern = types.String{Value: "1"}
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if diags.HasError() {
+		t.Fatalf("expected recovery to succeed when EnrollmentPatternId agrees, got: %v", diags)
+	}
+	if result == nil {
+		t.Fatal("expected a non-nil result")
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_UnknownEnrollmentPatternIdNotRejected
+// is the F2 "cannot verify" case: a pre-25.1 Command server (or any response
+// that simply omits EnrollmentPatternId) means the confirmation signal isn't
+// available -- that must NOT be treated as a mismatch. Recovery proceeds on
+// the already-tightened freshness window alone, per the documented residual
+// risk.
+func TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_UnknownEnrollmentPatternIdNotRejected(t *testing.T) {
+	const (
+		commonName = "tf-unit-pattern-unknown.example.com"
+		password   = "TestPassword123!"
+	)
+	leaf, leafKey := buildSelfSignedLeaf(t, commonName)
+	pfxDER, err := pkcs12.Encode(rand.Reader, leafKey, leaf, nil, password)
+	if err != nil {
+		t.Fatalf("pkcs12.Encode: %v", err)
+	}
+	pfxB64 := base64.StdEncoding.EncodeToString(pfxDER)
+
+	now := time.Now().UTC()
+	orphan := realisticOrphanCert(6363, commonName, "", now)
+
+	var enrollAttempts int
+	srv := httptest.NewTLSServer(certSearchRecoverAndContextHandler(
+		t,
+		[]api.GetCertificateResponse{orphan},
+		map[int]api.GetCertificateResponse{6363: {Id: 6363}}, // EnrollmentPatternId omitted (pre-25.1 server)
+		pfxB64,
+	))
+	defer srv.Close()
+
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
+	plan := newMinimalPFXPlan(commonName, password)
+	plan.EnrollmentPattern = types.String{Value: "1"}
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if diags.HasError() {
+		t.Fatalf("expected recovery to succeed when EnrollmentPatternId cannot be verified, got: %v", diags)
+	}
+	if result == nil {
+		t.Fatal("expected a non-nil result")
+	}
+}
+
+// certPaginatedSearchAndRecoverHandler is like certSearchAndRecoverHandler,
+// but the GET .../Certificates search response is genuinely paginated
+// according to the PageReturned/ReturnLimit query parameters the v24 SDK
+// client sends (see searchCertificatesForOrphanRecovery in helpers.go),
+// slicing allCerts into pages of certificatesOrphanSearchPageSize. Used by
+// the F4 regression tests below to prove the fix: a CN-scoped result set
+// larger than a single page is now followed to completion via real
+// pagination, instead of the old guard that refused outright the moment a
+// single page came back full.
+func certPaginatedSearchAndRecoverHandler(t *testing.T, allCerts []api.GetCertificateResponse, pfxB64 string) http.HandlerFunc {
+	t.Helper()
+	recoverBody, err := json.Marshal(map[string]string{"PFX": pfxB64, "FileName": "cert.pfx"})
+	if err != nil {
+		t.Fatalf("marshal recover response: %v", err)
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "Certificates/Recover"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(recoverBody)
+		case r.Method == http.MethodGet && strings.HasSuffix(strings.TrimRight(r.URL.Path, "/"), "Certificates"):
+			page, convErr := strconv.Atoi(r.URL.Query().Get("PageReturned"))
+			if convErr != nil || page < 1 {
+				page = 1
+			}
+			start := (page - 1) * certificatesOrphanSearchPageSize
+			end := start + certificatesOrphanSearchPageSize
+			var pageCerts []api.GetCertificateResponse
+			if start < len(allCerts) {
+				if end > len(allCerts) {
+					end = len(allCerts)
+				}
+				pageCerts = allCerts[start:end]
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(certsToSDKSearchJSON(t, pageCerts))
+		case strings.Contains(r.URL.Path, "Enrollment/PFX"):
+			t.Errorf("Enrollment/PFX reached the mock server -- the timeout RoundTripper should have intercepted it")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_PaginatesPastOldTruncationGuard_AdoptsSingleMatch
+// is the F4 regression test for scenario (a): the OLD guard refused
+// PERMANENTLY and UNCONDITIONALLY the instant a single, un-paginated page of
+// CN-scoped search results came back at Command's default page size (50) --
+// true even when a documented, supported setting (revoke_on_destroy = false,
+// or renewal_config.revoke_on_renew = false) leaves many past certificates
+// for a repeatedly-cycled CN active and unexpired. This reproduces exactly
+// that shape (59 stale, wrong-template "noise" certificates plus one fresh,
+// correctly-templated genuine orphan -- 60 total, past the old 50-result
+// guard) and asserts recovery now succeeds by paginating to completion
+// instead of refusing outright.
+func TestUnitEnrollPFX_TimeoutRecovery_PaginatesPastOldTruncationGuard_AdoptsSingleMatch(t *testing.T) {
+	const (
+		commonName = "tf-unit-many-prior-certs.example.com"
+		password   = "TestPassword123!"
+	)
+
+	leaf, leafKey := buildSelfSignedLeaf(t, commonName)
+	pfxDER, err := pkcs12.Encode(rand.Reader, leafKey, leaf, nil, password)
+	if err != nil {
+		t.Fatalf("pkcs12.Encode: %v", err)
+	}
+	pfxB64 := base64.StdEncoding.EncodeToString(pfxDER)
+
+	now := time.Now().UTC()
+	var certs []api.GetCertificateResponse
+	for i := 0; i < 59; i++ {
+		// Stale (48h old) and off-template -- filtered out by the existing
+		// discriminators regardless, but their SHEER COUNT is what the old
+		// guard choked on before ever reaching that discriminator logic.
+		certs = append(certs, realisticOrphanCert(i+1, commonName, "WrongTemplate", now.Add(-48*time.Hour)))
+	}
+	genuine := realisticOrphanCert(999, commonName, "SomeTemplate", now)
+	certs = append(certs, genuine) // 60 total, spanning 2 pages of 50
+
+	var enrollAttempts int
+	srv := httptest.NewTLSServer(certPaginatedSearchAndRecoverHandler(t, certs, pfxB64))
+	defer srv.Close()
+
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
+	plan := newMinimalPFXPlan(commonName, password)
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if diags.HasError() {
+		t.Fatalf(
+			"expected the >50-total-but-one-real-match case to succeed via full pagination -- this is exactly "+
+				"the revoke_on_destroy=false CI-cycling scenario the old single-page guard permanently broke -- "+
+				"got: %v", diags,
+		)
+	}
+	if result == nil {
+		t.Fatal("expected a non-nil result")
+	}
+	if result.CertificateId.Value != 999 {
+		t.Errorf(
+			"result.CertificateId = %d, want 999 (the sole genuine match, only findable via full pagination)",
+			result.CertificateId.Value,
+		)
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_PaginatesFully_StillRejectsAmbiguousMatch
+// is the F4 regression test for scenario (b): even after paginating a
+// CN-scoped result set to completion, a genuine ambiguity (two candidates
+// that both satisfy every discriminator) must still be refused -- pagination
+// fixes truncation-shaped false refusals, it must not weaken the existing
+// "more than one candidate means refuse" safety property.
+func TestUnitEnrollPFX_TimeoutRecovery_PaginatesFully_StillRejectsAmbiguousMatch(t *testing.T) {
+	const commonName = "tf-unit-paginated-ambiguous.example.com"
+	now := time.Now().UTC()
+
+	var certs []api.GetCertificateResponse
+	for i := 0; i < 55; i++ {
+		certs = append(certs, realisticOrphanCert(i+1, commonName, "WrongTemplate", now.Add(-48*time.Hour)))
+	}
+	// Two fresh, correctly-templated candidates spread across the tail of the
+	// paginated result set -- genuinely ambiguous even once the complete set
+	// is considered.
+	certs = append(
+		certs,
+		realisticOrphanCert(9001, commonName, "SomeTemplate", now),
+		realisticOrphanCert(9002, commonName, "SomeTemplate", now),
+	)
+
+	var enrollAttempts int
+	srv := httptest.NewTLSServer(certPaginatedSearchAndRecoverHandler(t, certs, ""))
+	defer srv.Close()
+
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
+	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if !diags.HasError() {
+		t.Fatal("expected an error: two candidates remain ambiguous even after full pagination")
+	}
+	if result != nil {
+		t.Fatalf("expected nil result for an ambiguous multi-match, got %+v", result)
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_HardCapStillRefusesPathologicalResultSet
+// proves certificatesOrphanSearchHardCap still bounds the pagination loop:
+// a CN-scoped search that never terminates naturally (every page comes back
+// completely full) must eventually refuse rather than paginate forever.
+func TestUnitEnrollPFX_TimeoutRecovery_HardCapStillRefusesPathologicalResultSet(t *testing.T) {
+	const commonName = "tf-unit-hardcap.example.com"
+	now := time.Now().UTC()
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(strings.TrimRight(r.URL.Path, "/"), "Certificates"):
+			var page []api.GetCertificateResponse
+			for i := 0; i < certificatesOrphanSearchPageSize; i++ {
+				page = append(page, realisticOrphanCert(i+1, commonName, "SomeTemplate", now))
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(certsToSDKSearchJSON(t, page))
+		case strings.Contains(r.URL.Path, "Enrollment/PFX"):
+			t.Errorf("Enrollment/PFX reached the mock server -- the timeout RoundTripper should have intercepted it")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}
+
+	var enrollAttempts int
+	srv := httptest.NewTLSServer(http.HandlerFunc(handler))
+	defer srv.Close()
+
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
+	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if !diags.HasError() {
+		t.Fatal("expected the hard cap to refuse a pathologically large, never-terminating result set")
+	}
+	if result != nil {
+		t.Fatalf("expected nil result, got %+v", result)
 	}
 }

@@ -1348,16 +1348,48 @@ func recoverOrDownloadCertificate(
 // not get backdated by CA policy, so it's the correct freshness signal here.
 const enrollmentTimeoutSkew = 2 * time.Minute
 
-// certificatesListReturnLimitDefault is Keyfactor Command's documented
-// default ReturnLimit for `GET /Certificates` (50) when no explicit page
-// size is requested. keyfactor-go-client's ListCertificates does not
-// currently support requesting a larger page or paginating to completion
-// the way e.g. ListCertificateStoreTypes does (upstream gap -- tracked
-// separately, not fixed here). Until that's addressed, a result set at or
-// above this size must be treated as possibly truncated: the "at most one
-// match" safety property findOrphanedCertificateMatch exists to guarantee
-// cannot be trusted over a page that might not be the whole story.
-const certificatesListReturnLimitDefault = 50
+// enrollmentTimeoutSkewTightened is used instead of enrollmentTimeoutSkew
+// when neither Template nor CertificateAuthority is available as a
+// discriminator for this request (orphanRecoveryCriteria.weakSignalPath --
+// the mainstream v25+ enrollment-pattern path). CommonName, freshness, and
+// requester identity are carrying more of the load in that path, so the
+// freshness window is narrowed accordingly: 2 minutes of skew tolerance is
+// reasonable when it's one signal among six, but leaves an unnecessarily
+// wide gap for colliding with a genuinely unrelated, concurrent enrollment
+// of the same CN by the same requester when it's one of only three. 30
+// seconds still comfortably absorbs realistic clock skew between this
+// process and Command (the scenario enrollmentTimeoutSkew exists for) while
+// meaningfully narrowing that collision window.
+const enrollmentTimeoutSkewTightened = 30 * time.Second
+
+// certificatesOrphanSearchPageSize is the page size requested on each call
+// when paginating Command's GET /Certificates to build the COMPLETE,
+// CN-scoped candidate set for orphan-certificate recovery (see
+// searchCertificatesForOrphanRecovery). It matches Command's own documented
+// default ReturnLimit for the endpoint; there's no benefit to requesting a
+// different size since every page is now followed to completion.
+const certificatesOrphanSearchPageSize = 50
+
+// certificatesOrphanSearchHardCap bounds how many CN-scoped candidates
+// orphan recovery will collect via pagination before refusing to guess.
+//
+// This replaces an earlier, much narrower guard that refused whenever a
+// SINGLE unpaginated page of results hit Command's default ReturnLimit (50)
+// -- true even when a documented, supported provider setting
+// (revoke_on_destroy = false, or renewal_config.revoke_on_renew = false)
+// left many past certificates for a repeatedly-cycled CN active and
+// unexpired (they're never revoked), or when the same CN was also issued by
+// a non-Terraform source (ACME, an orchestrator, another team). Once that
+// count reached 50, recovery was refused PERMANENTLY and UNCONDITIONALLY for
+// that CN, degrading straight back into the duplicate-certificate bug this
+// mechanism exists to fix -- and it could never self-heal, since every
+// enrollment retry added another duplicate.
+//
+// Now that the full CN-scoped result set is paginated to completion instead
+// of trusting a single page, this cap only fires for a pathologically large
+// number of same-CN certificates, where continuing to scan stops being a
+// reasonable thing to do during an interactive apply.
+const certificatesOrphanSearchHardCap = 1000
 
 // isTimeoutShapedError reports whether err looks like a client-side timeout
 // rather than a definitive rejection from Keyfactor Command (e.g. a 400/403
@@ -1625,17 +1657,36 @@ func sanSetEquals(expected []string, actual []SubjectAltNameElement, sanType int
 	return true
 }
 
-// orphanRecoveryTemplateMatches reports whether a candidate's TemplateName is
+// orphanRecoveryTemplateMatches reports whether a candidate's template is
 // consistent with the template actually submitted in the original enrollment
-// request. expectedTemplate is empty when the request used an enrollment
+// request. expectedTemplateName is empty when the request used an enrollment
 // pattern instead of a template name (Command resolves the template
 // server-side in that case, and the request never sent one) -- Template is
 // then simply not a discriminator for this Create attempt.
-func orphanRecoveryTemplateMatches(candidateTemplate, expectedTemplate string) bool {
-	if expectedTemplate == "" {
+//
+// Command's certificate record (GetCertificateResponse.TemplateName) always
+// carries the template's DISPLAY name (e.g. "Server (tlsServerAuth-1y)"),
+// while the enrollment request -- and the schema's documented, common
+// configuration -- sends the SHORT name (e.g. "Server_tlsServerAuth-1y").
+// Comparing those two strings directly therefore almost never matches for
+// the mainstream case, silently defeating recovery. When the caller was
+// able to resolve expectedTemplateName to a numeric template ID (see
+// resolveTemplateIDByName), IDs are compared instead -- that's unambiguous
+// regardless of which name form either side uses. If resolution wasn't
+// possible (lookup failed, or the template couldn't be found by that name),
+// fall back to a name comparison, but do so case-insensitively without
+// assuming which form either side is in; this is weaker than the ID-based
+// check but still strictly better than requiring an exact string match
+// between two fields that are documented to use different naming
+// conventions.
+func orphanRecoveryTemplateMatches(candidateTemplateId int, candidateTemplateName string, expectedTemplateId int, expectedTemplateName string) bool {
+	if expectedTemplateName == "" {
 		return true
 	}
-	return strings.EqualFold(candidateTemplate, expectedTemplate)
+	if expectedTemplateId > 0 && candidateTemplateId > 0 {
+		return candidateTemplateId == expectedTemplateId
+	}
+	return strings.EqualFold(candidateTemplateName, expectedTemplateName)
 }
 
 // orphanRecoveryCAMatches reports whether a candidate's
@@ -1660,9 +1711,9 @@ func orphanRecoveryCAMatches(candidateCA, expectedCA string) bool {
 }
 
 // orphanRecoveryCriteria bundles the enrollment request's identifying
-// attributes used to strictly narrow a set of ListCertificates results down
-// to (at most) the single certificate this Create attempt actually produced
-// before timing out.
+// attributes used to strictly narrow a set of search results down to (at
+// most) the single certificate this Create attempt actually produced before
+// timing out.
 //
 // Every discriminator the request actually populated MUST match the
 // candidate exactly (see the per-field orphanRecovery*Matches helpers for
@@ -1675,6 +1726,23 @@ func orphanRecoveryCAMatches(candidateCA, expectedCA string) bool {
 // IssuedDN can't be parsed): that is treated as "cannot verify" and fails
 // closed, rejecting the candidate.
 //
+// Honest accounting of the mainstream v25+ enrollment-pattern path: when an
+// enrollment pattern resolves (see enrollPFXV2), Template is deliberately
+// blanked before the request is sent (Command resolves it server-side from
+// the pattern), and CertificateAuthority is commonly left unset too
+// (Optional+Computed, auto-selected). In that path Template and
+// CertificateAuthority are NOT usable discriminators -- there is nothing the
+// request sent for them to be checked against -- leaving CommonName,
+// ImportDate freshness, Subject/SANs (when the plan populated them), and
+// requester identity (when derivable) as what's actually available. Two
+// mitigations narrow the residual exposure this leaves for that path
+// specifically (see findOrphanedCertificateMatch and
+// recoverOrphanedPFXEnrollment): the freshness window is tightened when
+// Template and CertificateAuthority are both empty, and -- when Command's
+// certificate record exposes it (25.1.0+) -- the resolved EnrollmentPatternId
+// for this request is cross-checked against the sole surviving candidate as
+// an extra, out-of-band confirmation.
+//
 // Residual risk (documented, not eliminated): a concurrent enrollment of the
 // IDENTICAL subject, SANs, template, CA, and requester identity within the
 // same freshness window as the timed-out request would still be
@@ -1682,41 +1750,58 @@ func orphanRecoveryCAMatches(candidateCA, expectedCA string) bool {
 // because it requires the same account to be enrolling the exact same
 // certificate twice, concurrently -- a materially narrower and less likely
 // condition than "any certificate with this CN issued recently", which is
-// what this replaces.
+// what this replaces. That residual window is widest precisely in the
+// pattern-based path described above, which is why it gets the additional
+// mitigations rather than relying on the same margins as the
+// template/CA-populated path.
 type orphanRecoveryCriteria struct {
 	CommonName           string
 	Subject              *api.CertificateSubject
 	SANs                 *api.SANs
 	Template             string
+	TemplateId           int
 	CertificateAuthority string
 	Identity             orphanRecoveryIdentity
 	EnrollStartTime      time.Time
+	// EnrollmentPatternId is the enrollment pattern ID resolved for this
+	// request (0 if none was used/resolved). Used as an additional
+	// post-match confirmation signal in the pattern-based path -- see
+	// recoverOrphanedPFXEnrollment.
+	EnrollmentPatternId int
+}
+
+// weakSignalPath reports whether neither Template nor CertificateAuthority
+// is available as a discriminator for this request -- the mainstream v25+
+// enrollment-pattern path (see orphanRecoveryCriteria doc comment). This
+// governs which findOrphanedCertificateMatch/recoverOrphanedPFXEnrollment
+// mitigations apply.
+func (c orphanRecoveryCriteria) weakSignalPath() bool {
+	return c.Template == "" && c.CertificateAuthority == ""
 }
 
 // findOrphanedCertificateMatch narrows a set of search results (already
-// filtered server-side by CN via ListCertificates' "subject" query) down to
-// the single certificate that is plausibly the one this Create attempted to
-// enroll before timing out, per criteria (see orphanRecoveryCriteria for the
-// exact matching rules and documented residual risk).
+// filtered server-side by CN, and paginated to completion -- see
+// searchCertificatesForOrphanRecovery) down to the single certificate that is
+// plausibly the one this Create attempted to enroll before timing out, per
+// criteria (see orphanRecoveryCriteria for the exact matching rules and
+// documented residual risk).
 //
 // Returns the single match, or an error describing why adoption isn't safe
-// (zero matches, more than one -- ambiguous, so we refuse to guess -- or a
-// result set large enough that the server may have truncated it).
+// (zero matches, or more than one -- ambiguous, so we refuse to guess).
 func findOrphanedCertificateMatch(
 	certs []api.GetCertificateResponse,
 	criteria orphanRecoveryCriteria,
 ) (*api.GetCertificateResponse, error) {
-	if len(certs) >= certificatesListReturnLimitDefault {
-		return nil, fmt.Errorf(
-			"Keyfactor Command returned %d certificates matching CN '%s', at or above the API's default page "+
-				"size (%d); this SDK version cannot request a larger page or paginate to completion, so "+
-				"additional matches beyond this page cannot be ruled out -- refusing to guess which one (if any) "+
-				"this Create attempted to enroll",
-			len(certs), criteria.CommonName, certificatesListReturnLimitDefault,
-		)
+	skew := enrollmentTimeoutSkew
+	if criteria.weakSignalPath() {
+		// Template and CertificateAuthority aren't usable discriminators for
+		// this request (see orphanRecoveryCriteria doc comment) -- CN,
+		// freshness, and requester identity are carrying more of the load, so
+		// tighten the freshness window rather than relying on the same
+		// margin as the template/CA-populated path.
+		skew = enrollmentTimeoutSkewTightened
 	}
-
-	threshold := criteria.EnrollStartTime.Add(-enrollmentTimeoutSkew)
+	threshold := criteria.EnrollStartTime.Add(-skew)
 	var candidates []api.GetCertificateResponse
 	for _, cert := range certs {
 		if !strings.EqualFold(cert.IssuedCN, criteria.CommonName) {
@@ -1736,7 +1821,7 @@ func findOrphanedCertificateMatch(
 		if !orphanRecoverySANsMatch(sanElements, criteria.SANs) {
 			continue
 		}
-		if !orphanRecoveryTemplateMatches(cert.TemplateName, criteria.Template) {
+		if !orphanRecoveryTemplateMatches(cert.TemplateId, cert.TemplateName, criteria.TemplateId, criteria.Template) {
 			continue
 		}
 		if !orphanRecoveryCAMatches(cert.CertificateAuthorityName, criteria.CertificateAuthority) {
@@ -1817,6 +1902,97 @@ func formatCertificateSubjectDN(subject *api.CertificateSubject) string {
 	return strings.Join(parts, ",")
 }
 
+// sdkCertToLegacyCertificateResponse adapts a v24 SDK
+// CertificatesCertificateRetrievalResponse (from the paginated GET
+// /Certificates request built by searchCertificatesForOrphanRecovery) into
+// the legacy api.GetCertificateResponse shape findOrphanedCertificateMatch's
+// discriminators already operate on. Carries forward every field they read:
+// Id, IssuedCN, IssuedDN, ImportDate, TemplateId, TemplateName,
+// CertificateAuthorityName, RequesterName, SubjectAltNameElements, plus
+// Thumbprint/SerialNumber/IssuerDN/CertRequestId (used when building the
+// adopted EnrollResponseV2 after a match is found).
+func sdkCertToLegacyCertificateResponse(c kfv1.CertificatesCertificateRetrievalResponse) api.GetCertificateResponse {
+	var sans []api.SubjectAltNameElements
+	for _, el := range c.GetSubjectAltNameElements() {
+		sans = append(sans, api.SubjectAltNameElements{
+			Id:    int(el.GetId()),
+			Value: el.GetValue(),
+			Type:  int(el.GetType()),
+		})
+	}
+	var importDate string
+	if t := c.GetImportDate(); !t.IsZero() {
+		importDate = t.UTC().Format(time.RFC3339Nano)
+	}
+	return api.GetCertificateResponse{
+		Id:                       int(c.GetId()),
+		Thumbprint:               c.GetThumbprint(),
+		SerialNumber:             c.GetSerialNumber(),
+		IssuedDN:                 c.GetIssuedDN(),
+		IssuedCN:                 c.GetIssuedCN(),
+		ImportDate:               importDate,
+		IssuerDN:                 c.GetIssuerDN(),
+		TemplateId:               int(c.GetTemplateId()),
+		TemplateName:             c.GetTemplateName(),
+		CertificateAuthorityName: c.GetCertificateAuthorityName(),
+		RequesterName:            c.GetRequesterName(),
+		CertRequestId:            int(c.GetCertRequestId()),
+		SubjectAltNameElements:   sans,
+	}
+}
+
+// searchCertificatesForOrphanRecovery pages through Command's GET
+// /Certificates (via the vendored v24 SDK client, which exposes
+// PageReturned/ReturnLimit pagination that the legacy api.Client's
+// ListCertificates does not) scoped server-side to IssuedCN, collecting the
+// COMPLETE matching result set -- up to certificatesOrphanSearchHardCap --
+// instead of trusting a single, possibly-truncated page. See
+// certificatesOrphanSearchHardCap for why a single-page truncation guard was
+// not an acceptable long-term answer here. Mirrors the ReturnLimit/
+// PageReturned pagination pattern already used by
+// getSecurityPermissionSetByName.
+func searchCertificatesForOrphanRecovery(
+	ctx context.Context,
+	sdkClient *keyfactor.APIClient,
+	commonName string,
+) ([]api.GetCertificateResponse, error) {
+	if sdkClient == nil || sdkClient.V1 == nil {
+		return nil, fmt.Errorf("keyfactor SDK client is not configured")
+	}
+
+	query := fmt.Sprintf(`IssuedCN -eq "%s"`, commonName)
+	var all []api.GetCertificateResponse
+	for page := int32(1); ; page++ {
+		tflog.Debug(ctx, fmt.Sprintf("Querying orphan-recovery candidates for CN '%s', page %d", commonName, page))
+		results, _, err := sdkClient.V1.CertificateApi.NewGetCertificatesRequest(ctx).
+			QueryString(query).
+			PageReturned(page).
+			ReturnLimit(certificatesOrphanSearchPageSize).
+			Execute()
+		if err != nil {
+			return nil, fmt.Errorf("searching Keyfactor Command for CN %q (page %d): %w", commonName, page, err)
+		}
+
+		for _, r := range results {
+			all = append(all, sdkCertToLegacyCertificateResponse(r))
+		}
+
+		if len(all) > certificatesOrphanSearchHardCap {
+			return nil, fmt.Errorf(
+				"Keyfactor Command returned more than %d certificates matching CN %q across a fully-paginated "+
+					"search; refusing to guess which one (if any) this Create attempted to enroll",
+				certificatesOrphanSearchHardCap, commonName,
+			)
+		}
+
+		if len(results) < certificatesOrphanSearchPageSize {
+			// Last page -- fewer results than requested means there's no more.
+			break
+		}
+	}
+	return all, nil
+}
+
 // recoverOrphanedPFXEnrollment attempts to recover from a client-side timeout
 // during PFX enrollment by searching Keyfactor Command for a certificate that
 // the timed-out request may have actually created server-side, and if
@@ -1842,6 +2018,7 @@ func formatCertificateSubjectDN(subject *api.CertificateSubject) string {
 func recoverOrphanedPFXEnrollment(
 	ctx context.Context,
 	client *api.Client,
+	sdkClient *keyfactor.APIClient,
 	criteria orphanRecoveryCriteria,
 	collectionId int,
 	lookupPassword string,
@@ -1851,7 +2028,7 @@ func recoverOrphanedPFXEnrollment(
 	commonName := criteria.CommonName
 
 	tflog.Debug(ctx, fmt.Sprintf("Searching Keyfactor Command for a possibly-orphaned certificate matching CN '%s'", commonName))
-	certs, listErr := client.ListCertificates(map[string]string{"subject": commonName})
+	certs, listErr := searchCertificatesForOrphanRecovery(ctx, sdkClient, commonName)
 	if listErr != nil {
 		diags.AddError(
 			"Could not search for orphaned certificate after enrollment timeout",
@@ -1867,6 +2044,42 @@ func recoverOrphanedPFXEnrollment(
 			matchErr.Error(),
 		)
 		return nil, diags
+	}
+
+	// F2 pattern-based-path hardening: when Template and CertificateAuthority
+	// were both unavailable as discriminators (weakSignalPath -- see
+	// orphanRecoveryCriteria), CommonName, freshness, and requester identity
+	// did the narrowing above. If this request resolved a specific enrollment
+	// pattern and Command's certificate record exposes EnrollmentPatternId
+	// (25.1.0+), cross-check it against the sole surviving candidate as an
+	// extra, independent confirmation. An explicit disagreement (both sides
+	// non-zero and different) is rejected outright. A server that doesn't
+	// return the field at all (pre-25.1, or this specific candidate omitted
+	// it) means "cannot verify" -- not a mismatch -- so recovery proceeds on
+	// the already-tightened freshness window alone, consistent with this
+	// path's documented residual risk.
+	if criteria.weakSignalPath() && criteria.EnrollmentPatternId > 0 && client != nil {
+		ctxCert, ctxErr := client.GetCertificateContext(&api.GetCertificateContextArgs{Id: match.Id})
+		if ctxErr != nil {
+			tflog.Warn(
+				ctx, fmt.Sprintf(
+					"Could not fetch full certificate context for %d to confirm its enrollment pattern; proceeding "+
+						"without that additional confirmation: %s",
+					match.Id, ctxErr.Error(),
+				),
+			)
+		} else if ctxCert != nil && ctxCert.EnrollmentPatternId > 0 && ctxCert.EnrollmentPatternId != criteria.EnrollmentPatternId {
+			diags.AddError(
+				"Could not safely recover from enrollment timeout",
+				fmt.Sprintf(
+					"Certificate %d matches CN '%s' and every other available discriminator, but was issued under "+
+						"enrollment pattern %d, not the requested pattern %d -- refusing to adopt a certificate "+
+						"that disagrees with the enrollment pattern this request actually used.",
+					match.Id, commonName, ctxCert.EnrollmentPatternId, criteria.EnrollmentPatternId,
+				),
+			)
+			return nil, diags
+		}
 	}
 
 	effectiveFmt := orphanRecoveryWireFormat(certificateFormat)

@@ -1400,6 +1400,29 @@ type orphanRecoveryIdentity struct {
 	// slice means this provider's own identity could not be determined
 	// (e.g. Kerberos, or a future auth type without a username/client ID).
 	candidates []string
+
+	// permanentlyUnavailable is true when candidates is empty AND that
+	// emptiness is a KNOWN, structural property of the configured auth mode
+	// -- not just an incidental "nothing relevant happened to be configured"
+	// case. Kerberos authentication via a credential cache
+	// (kerberos_ccache) without an explicit kerberos_username is the one
+	// confirmed case today (F3, round 3): keyfactor-auth-client-go's
+	// CommandAuthConfigKerberos.ValidateAuthConfig never requires or derives
+	// Username for that combination, so GetServerConfig().Username is ALWAYS
+	// empty for every request made under this auth mode -- even though the
+	// gokrb5 client it builds via client.NewFromCCache actually has the real
+	// principal available internally (Client.Credentials.UserName()/
+	// Domain()); it is simply never surfaced through GetServerConfig(). The
+	// correct fix is upstream in keyfactor-auth-client-go (populate Username
+	// from the ccache's default principal there); independently re-parsing
+	// the ccache file from this provider would duplicate that auth-layer's
+	// responsibility in the wrong module, for what is -- even when it works
+	// -- only a best-effort discriminator. Until that lands,
+	// findOrphanedCertificateMatch treats this as reduced confidence
+	// (tightened freshness window, matching weakSignalPath's treatment)
+	// rather than silently conflating "not populated" with "nothing to
+	// verify" the way matches() does for the ordinary empty-candidates case.
+	permanentlyUnavailable bool
 }
 
 // orphanRecoveryIdentityForClient builds the set of identity strings Command
@@ -1423,7 +1446,14 @@ func orphanRecoveryIdentityForClient(client *api.Client) orphanRecoveryIdentity 
 	if cfg.ClientID != "" {
 		candidates = append(candidates, strings.ToLower(cfg.ClientID))
 	}
-	return orphanRecoveryIdentity{candidates: candidates}
+	// Kerberos-via-credential-cache without an explicit kerberos_username is
+	// a KNOWN case where candidates will ALWAYS be empty -- see
+	// permanentlyUnavailable's doc comment. This is distinct from other auth
+	// modes where an empty candidates slice just means nothing relevant
+	// happened to be configured for THIS request.
+	permanentlyUnavailable := len(candidates) == 0 &&
+		strings.EqualFold(cfg.AuthType, "kerberos") && cfg.KerberosCCache != ""
+	return orphanRecoveryIdentity{candidates: candidates, permanentlyUnavailable: permanentlyUnavailable}
 }
 
 // matches reports whether requesterName is consistent with this provider's
@@ -1694,6 +1724,23 @@ func orphanRecoveryCAMatches(candidateCA, expectedCA string) bool {
 // for this request is cross-checked against the sole surviving candidate as
 // an extra, out-of-band confirmation.
 //
+// Requester-identity discriminator gap for Kerberos-via-credential-cache
+// (F3, round 3): when this provider authenticates via kerberos_ccache
+// without an explicit kerberos_username, the client's own username can NEVER
+// be determined from GetServerConfig() (see
+// orphanRecoveryIdentity.permanentlyUnavailable) -- this is a permanent,
+// structural gap for that auth mode specifically, not the ordinary
+// "nothing to compare" case every other auth mode can also hit incidentally.
+// The requester-identity check is one of the few discriminators still
+// meaningful in the weak-signal path above, so this narrows that path's
+// residual margin further for Kerberos-ccache users specifically. Mitigation:
+// findOrphanedCertificateMatch tightens the freshness window for this case
+// exactly as it does for the Template/CertificateAuthority-blank path, even
+// outside that path. The proper fix -- populating Username from the ccache's
+// principal upstream in keyfactor-auth-client-go -- is out of scope here (see
+// permanentlyUnavailable's doc comment for why); this is a documented,
+// deliberate mitigation of a known gap, not a silent one.
+//
 // Residual risk (documented, not eliminated): a concurrent enrollment of the
 // IDENTICAL subject, SANs, template, CA, and requester identity within the
 // same freshness window as the timed-out request would still be
@@ -1744,16 +1791,33 @@ func findOrphanedCertificateMatch(
 	criteria orphanRecoveryCriteria,
 ) (*api.GetCertificateResponse, error) {
 	skew := enrollmentTimeoutSkew
-	if criteria.weakSignalPath() {
+	if criteria.weakSignalPath() || criteria.Identity.permanentlyUnavailable {
 		// Template and CertificateAuthority aren't usable discriminators for
 		// this request (see orphanRecoveryCriteria doc comment) -- CN,
 		// freshness, and requester identity are carrying more of the load, so
 		// tighten the freshness window rather than relying on the same
-		// margin as the template/CA-populated path.
+		// margin as the template/CA-populated path. The same tightening
+		// applies whenever the requester-identity discriminator itself is
+		// known to be structurally unavailable for this request's auth mode
+		// (see orphanRecoveryIdentity.permanentlyUnavailable -- e.g.
+		// Kerberos-via-credential-cache without an explicit username), even
+		// OUTSIDE the Template/CertificateAuthority-blank path, since that
+		// request is also missing a discriminator other configurations would
+		// have.
 		skew = enrollmentTimeoutSkewTightened
 	}
 	threshold := criteria.EnrollStartTime.Add(-skew)
 	var candidates []api.GetCertificateResponse
+	// seenCandidateIds dedups by certificate Id (F1 hardening, round 3):
+	// defense in depth against a duplicate row appearing in certs (e.g. if a
+	// certificate for this exact CN was inserted while
+	// searchCertificatesForOrphanRecovery's multi-page walk was in flight,
+	// shifting an already-returned row across a page boundary despite the
+	// stable Id-ascending sort that function now requests). Without this, two
+	// identical entries for the SAME certificate would trivially satisfy
+	// every discriminator below and trip the len(candidates) > 1 "ambiguous"
+	// refusal, spuriously refusing an otherwise-uniquely-recoverable orphan.
+	seenCandidateIds := map[int]bool{}
 	for _, cert := range certs {
 		if !strings.EqualFold(cert.IssuedCN, criteria.CommonName) {
 			continue
@@ -1781,6 +1845,10 @@ func findOrphanedCertificateMatch(
 		if !criteria.Identity.matches(cert.RequesterName) {
 			continue
 		}
+		if seenCandidateIds[cert.Id] {
+			continue
+		}
+		seenCandidateIds[cert.Id] = true
 		candidates = append(candidates, cert)
 	}
 
@@ -1902,6 +1970,23 @@ func sdkCertToLegacyCertificateResponse(c kfv1.CertificatesCertificateRetrievalR
 // not an acceptable long-term answer here. Mirrors the ReturnLimit/
 // PageReturned pagination pattern already used by
 // getSecurityPermissionSetByName.
+//
+// F1 hardening (round 3): the request explicitly sorts by Id ascending. Id is
+// Command's auto-incrementing primary key -- unique and monotonically
+// increasing -- so it gives offset-based PageReturned/ReturnLimit pagination
+// a deterministic, stable total order across pages. Without an explicit sort,
+// Command's default ordering is not guaranteed stable call-to-call; if a new
+// certificate for this exact CN is imported WHILE this multi-page search is
+// in flight, unsorted offset-based pagination can shift an already-returned
+// row across a page boundary, causing it to be fetched (and counted) twice.
+// Sorting by Id specifically (rather than e.g. ImportDate) also avoids
+// tie-breaking ambiguity: a newly-inserted row always sorts after every row
+// already seen by an in-progress page walk, so it can never be inserted
+// "behind" the pagination cursor and shift a previously-returned row forward.
+// findOrphanedCertificateMatch additionally deduplicates by Id as defense in
+// depth, in case a duplicate row still appears despite the stable sort (e.g.
+// against a Command version/configuration that doesn't honor SortField for
+// this endpoint).
 func searchCertificatesForOrphanRecovery(
 	ctx context.Context,
 	sdkClient *keyfactor.APIClient,
@@ -1919,6 +2004,8 @@ func searchCertificatesForOrphanRecovery(
 			QueryString(query).
 			PageReturned(page).
 			ReturnLimit(certificatesOrphanSearchPageSize).
+			SortField("Id").
+			SortAscending(kfv1.KEYFACTORCOMMONQUERYABLEEXTENSIONSSORTORDER__0).
 			Execute()
 		if err != nil {
 			return nil, fmt.Errorf("searching Keyfactor Command for CN %q (page %d): %w", commonName, page, err)
@@ -2009,16 +2096,41 @@ func recoverOrphanedPFXEnrollment(
 	// it) means "cannot verify" -- not a mismatch -- so recovery proceeds on
 	// the already-tightened freshness window alone, consistent with this
 	// path's documented residual risk.
+	//
+	// Round 3 (F2) hardening: a FAILED confirmation call (ctxErr != nil --
+	// transient network error, rate limiting, anything) is deliberately NOT
+	// treated the same as "the field is absent" above. "Absent" is an
+	// expected, steady-state shape (older Command versions never send this
+	// field at all); an API error is a one-off failure of a check that, had
+	// it succeeded, could have confirmed OR refuted the match. Silently
+	// falling back to tflog.Warn-only and proceeding on the freshness-only
+	// signal alone would degrade EXACTLY the confirmation this weak-signal
+	// path added this check to get, with no operator-visible record
+	// distinguishing "the check ran and passed" from "the check errored and
+	// was skipped" -- an auditor reviewing `terraform apply` output could not
+	// tell the difference. Given this path's discriminators are already
+	// thin, fail closed instead: refuse the adoption and surface a distinct,
+	// explicit diagnostic. The cost of a spurious refusal here is a retried
+	// apply; the cost of a wrong fail-open adoption is Terraform state bound
+	// to the wrong certificate's private key material.
 	if criteria.weakSignalPath() && criteria.EnrollmentPatternId > 0 && client != nil {
 		ctxCert, ctxErr := client.GetCertificateContext(&api.GetCertificateContextArgs{Id: match.Id})
 		if ctxErr != nil {
-			tflog.Warn(
-				ctx, fmt.Sprintf(
-					"Could not fetch full certificate context for %d to confirm its enrollment pattern; proceeding "+
-						"without that additional confirmation: %s",
-					match.Id, ctxErr.Error(),
+			diags.AddError(
+				"Could not safely recover from enrollment timeout",
+				fmt.Sprintf(
+					"Certificate %d matches CN '%s' and every other available discriminator, but this request used "+
+						"an enrollment pattern with Template and CertificateAuthority both unavailable as "+
+						"discriminators, so confirming the candidate's enrollment pattern (expected %d) against "+
+						"Command's own record of it is relied on more heavily here. That confirmation could NOT be "+
+						"performed -- fetching full certificate context for %d failed: %s. Refusing to adopt this "+
+						"certificate on the weaker freshness-only signal alone; retry the apply once the underlying "+
+						"error clears, or import certificate %d manually with `terraform import` after confirming "+
+						"it is the one this request enrolled.",
+					match.Id, commonName, criteria.EnrollmentPatternId, match.Id, ctxErr.Error(), match.Id,
 				),
 			)
+			return nil, diags
 		} else if ctxCert != nil && ctxCert.EnrollmentPatternId > 0 && ctxCert.EnrollmentPatternId != criteria.EnrollmentPatternId {
 			diags.AddError(
 				"Could not safely recover from enrollment timeout",

@@ -2,13 +2,8 @@ module github.com/keyfactor-pub/terraform-provider-keyfactor
 
 go 1.25.0
 
-// TODO(fix/request-timeout-plumbing): the three Keyfactor deps below are bumped
-// to not-yet-tagged RC versions that fix Server.ClientTimeout being dropped
-// (github.com/Keyfactor/keyfactor-auth-client-go#51). Once those tags are cut
-// upstream, remove the local `replace` directives further down in this file
-// and re-run `go mod tidy`.
 require (
-	github.com/Keyfactor/keyfactor-auth-client-go v1.6.0-rc.1
+	github.com/Keyfactor/keyfactor-auth-client-go v1.6.0-rc.2
 	github.com/Keyfactor/keyfactor-go-client-sdk/v24 v24.1.2-rc.1
 	github.com/Keyfactor/keyfactor-go-client/v3 v3.6.0-rc.1
 	github.com/hashicorp/terraform-plugin-framework v0.10.0
@@ -97,14 +92,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
-
-// The three replace directives below point at local dev worktrees and MUST
-// be dropped (with `go mod tidy` re-run) once the corresponding vX.Y.Z-rc.1
-// tags are actually cut and pushed for keyfactor-auth-client-go,
-// keyfactor-go-client/v3, and keyfactor-go-client-sdk/v24. They exist only so
-// `go build`/`go test` work locally against unpublished SDK fixes.
-replace github.com/Keyfactor/keyfactor-auth-client-go => /tmp/kf-worktrees/kfc-auth
-
-replace github.com/Keyfactor/keyfactor-go-client/v3 => /tmp/kf-worktrees/keyfactor-go-client/v3
-
-replace github.com/Keyfactor/keyfactor-go-client-sdk/v24 => /tmp/kf-worktrees/keyfactor-go-client-sdk/v24

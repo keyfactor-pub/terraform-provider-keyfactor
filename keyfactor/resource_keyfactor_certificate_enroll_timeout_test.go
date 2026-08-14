@@ -382,6 +382,45 @@ func TestUnitEnrollPFX_TimeoutRecovery_MultipleMatches(t *testing.T) {
 	}
 }
 
+// TestUnitFindOrphanedCertificateMatch_DeduplicatesSameIdAcrossPages is the
+// F1 (round 3) regression test for the dedup half of the fix:
+// searchCertificatesForOrphanRecovery's pagination can -- despite the
+// companion Id-ascending sort fix -- still surface the SAME certificate row
+// twice in the concatenated result set if a certificate for this exact CN is
+// inserted while a multi-page search is in flight (e.g. the last row of page
+// N reappears, shifted, as the first row of page N+1). Before the fix,
+// findOrphanedCertificateMatch had no dedup: two structurally-identical
+// entries for the same certificate trivially satisfy every discriminator and
+// trip the len(candidates) > 1 "ambiguous" refusal, spuriously refusing an
+// otherwise-uniquely-recoverable orphan. The fix dedups by certificate Id.
+func TestUnitFindOrphanedCertificateMatch_DeduplicatesSameIdAcrossPages(t *testing.T) {
+	const commonName = "tf-unit-dedup-across-pages.example.com"
+	now := time.Now().UTC()
+
+	genuine := realisticOrphanCert(999, commonName, "SomeTemplate", now)
+	// Simulate the exact symptom unsorted/racing offset-based pagination can
+	// produce under concurrent writes: the SAME certificate row appears
+	// twice in the fully-paginated, concatenated result set.
+	certsWithDuplicate := []api.GetCertificateResponse{genuine, genuine}
+
+	criteria := orphanRecoveryCriteria{
+		CommonName:      commonName,
+		Template:        "SomeTemplate",
+		EnrollStartTime: now,
+	}
+
+	match, err := findOrphanedCertificateMatch(certsWithDuplicate, criteria)
+	if err != nil {
+		t.Fatalf(
+			"expected a certificate Id appearing twice in the paginated result set to collapse to a single "+
+				"candidate, not trigger a spurious ambiguous-match refusal, got: %v", err,
+		)
+	}
+	if match.Id != genuine.Id {
+		t.Errorf("matched wrong certificate: got id %d, want %d", match.Id, genuine.Id)
+	}
+}
+
 // TestUnitEnrollPFX_TimeoutRecovery_IgnoresOlderCertificate verifies that a
 // pre-existing certificate with the same CN but issued BEFORE the enroll
 // attempt started is not mistaken for the orphaned one -- it should be
@@ -884,6 +923,123 @@ func TestUnitFindOrphanedCertificateMatch_RequesterIdentityMismatch(t *testing.T
 	}
 }
 
+// TestUnitOrphanRecoveryIdentityForClient_KerberosCCacheWithoutUsername_MarkedPermanentlyUnavailable
+// is the F3 (round 3) regression test for the auth-config-detection half of
+// the fix: keyfactor-auth-client-go's CommandAuthConfigKerberos never
+// requires or populates Username when authenticating via kerberos_ccache
+// without an explicit kerberos_username, so GetServerConfig().Username is
+// ALWAYS empty for that auth mode -- a permanent, structural gap, not the
+// ordinary "nothing relevant happened to be configured" case every other
+// auth mode can also hit incidentally. orphanRecoveryIdentityForClient must
+// distinguish the two so callers can treat this case as reduced confidence
+// rather than silently treating "not populated" as "nothing to verify".
+func TestUnitOrphanRecoveryIdentityForClient_KerberosCCacheWithoutUsername_MarkedPermanentlyUnavailable(t *testing.T) {
+	ctx := context.Background()
+
+	kerberosCCacheAuth := &mockLeafAuth{
+		client: &http.Client{},
+		server: &auth_providers.Server{
+			AuthType:       "kerberos",
+			KerberosCCache: "/tmp/krb5cc_1000",
+			// Username intentionally left blank -- the kerberos_ccache-
+			// without-kerberos_username case this fix covers.
+		},
+	}
+	kerberosClient := api.NewKeyfactorClientWithAuth(kerberosCCacheAuth, &ctx)
+
+	identity := orphanRecoveryIdentityForClient(kerberosClient)
+	if len(identity.candidates) != 0 {
+		t.Fatalf("expected no identity candidates for Kerberos-ccache auth without a username, got %v", identity.candidates)
+	}
+	if !identity.permanentlyUnavailable {
+		t.Fatal(
+			"expected the identity discriminator to be marked permanentlyUnavailable for Kerberos-ccache auth " +
+				"without an explicit username -- this is a KNOWN structural gap, not an incidental " +
+				"'nothing configured' case, and must be handled as reduced confidence rather than a silent no-op",
+		)
+	}
+
+	// Sanity: a DIFFERENT auth mode with no username configured is NOT this
+	// known-structural case and must not be flagged permanentlyUnavailable.
+	basicAuth := &mockLeafAuth{
+		client: &http.Client{},
+		server: &auth_providers.Server{AuthType: "basic"},
+	}
+	basicClient := api.NewKeyfactorClientWithAuth(basicAuth, &ctx)
+	basicIdentity := orphanRecoveryIdentityForClient(basicClient)
+	if basicIdentity.permanentlyUnavailable {
+		t.Error("expected non-Kerberos-ccache auth with no username configured to NOT be flagged permanentlyUnavailable")
+	}
+
+	// Sanity: Kerberos WITH an explicit username populates candidates
+	// normally and is not flagged permanentlyUnavailable.
+	kerberosWithUsernameAuth := &mockLeafAuth{
+		client: &http.Client{},
+		server: &auth_providers.Server{
+			AuthType:       "kerberos",
+			KerberosCCache: "/tmp/krb5cc_1000",
+			Username:       "svc-terraform",
+		},
+	}
+	kerberosWithUsernameClient := api.NewKeyfactorClientWithAuth(kerberosWithUsernameAuth, &ctx)
+	kerberosWithUsernameIdentity := orphanRecoveryIdentityForClient(kerberosWithUsernameClient)
+	if kerberosWithUsernameIdentity.permanentlyUnavailable {
+		t.Error("expected Kerberos-ccache auth WITH an explicit username to NOT be flagged permanentlyUnavailable")
+	}
+	if len(kerberosWithUsernameIdentity.candidates) == 0 {
+		t.Error("expected Kerberos-ccache auth WITH an explicit username to populate identity candidates normally")
+	}
+}
+
+// TestUnitFindOrphanedCertificateMatch_KerberosCCacheIdentityUnavailable_TightensFreshnessEvenWithTemplateAndCA
+// is the F3 (round 3) regression test proving the mitigation is a real,
+// active behavior change and not a documentation-only no-op: when the
+// requester-identity discriminator is known permanently unavailable
+// (Kerberos-ccache without a username), findOrphanedCertificateMatch must
+// tighten the freshness window to enrollmentTimeoutSkewTightened even when
+// Template and CertificateAuthority are BOTH populated -- i.e. even OUTSIDE
+// weakSignalPath, since this request is independently missing a
+// discriminator other configurations would have.
+func TestUnitFindOrphanedCertificateMatch_KerberosCCacheIdentityUnavailable_TightensFreshnessEvenWithTemplateAndCA(t *testing.T) {
+	const commonName = "tf-unit-kerberos-ccache-identity.example.com"
+	now := time.Now().UTC()
+
+	// 90s stale: inside enrollmentTimeoutSkew (2m) but outside
+	// enrollmentTimeoutSkewTightened (30s).
+	borderline := realisticOrphanCert(1, commonName, "SomeTemplate", now.Add(-90*time.Second))
+	borderline.CertificateAuthorityName = `ca-host.example.com\IssuingCA1`
+
+	richDiscriminatorCriteria := orphanRecoveryCriteria{
+		CommonName:           commonName,
+		EnrollStartTime:      now,
+		Template:             "SomeTemplate",
+		CertificateAuthority: "IssuingCA1",
+	}
+
+	// Baseline: Template and CertificateAuthority are BOTH populated (not
+	// weakSignalPath) and the identity discriminator is simply not in play
+	// (zero value, not the Kerberos-ccache case) -- the untightened
+	// (2-minute) window applies and the 90s-stale candidate is accepted.
+	if _, err := findOrphanedCertificateMatch([]api.GetCertificateResponse{borderline}, richDiscriminatorCriteria); err != nil {
+		t.Fatalf("expected the discriminator-rich path to accept a 90s-stale candidate, got: %v", err)
+	}
+
+	// Same request, same staleness, but the requester-identity discriminator
+	// is now known permanently unavailable (Kerberos-ccache without a
+	// username) -- this must tighten the freshness window even though
+	// Template/CertificateAuthority are populated.
+	kerberosCriteria := richDiscriminatorCriteria
+	kerberosCriteria.Identity = orphanRecoveryIdentity{permanentlyUnavailable: true}
+	if _, err := findOrphanedCertificateMatch([]api.GetCertificateResponse{borderline}, kerberosCriteria); err == nil {
+		t.Fatal(
+			"expected the tightened freshness window to reject a 90s-stale candidate once the requester-identity " +
+				"discriminator is known permanently unavailable (Kerberos-ccache without username), even with " +
+				"Template/CertificateAuthority both populated -- if this now succeeds, the F3 mitigation silently " +
+				"stopped applying",
+		)
+	}
+}
+
 // TestUnitFindOrphanedCertificateMatch_PatternBasedPath_TightenedFreshnessWindow
 // is an F2 regression test: when Template and CertificateAuthority are both
 // unavailable as discriminators (weakSignalPath -- the mainstream v25+
@@ -1127,6 +1283,79 @@ func TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_UnknownEnrollmentPattern
 	}
 }
 
+// TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_EnrollmentPatternIdCrossCheckErrorRefusesAdoption
+// is the F2 (round 3) regression test: a FAILED GetCertificateContext
+// cross-check call (as opposed to a successful call whose response simply
+// omits EnrollmentPatternId -- the "cannot verify" case covered by
+// TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_UnknownEnrollmentPatternIdNotRejected
+// above) must NOT be silently treated the same way. Before the fix, an
+// errored confirmation call only logged a tflog.Warn (invisible without
+// TF_LOG) and proceeded to adopt on the freshness-only signal alone --
+// silently degrading to a weaker safety level than round 2 established for
+// exactly this weak-signal path, with no operator-visible record
+// distinguishing "the check ran and passed" from "the check errored and was
+// skipped". The fix fails closed: refuse the adoption with a diagnostic that
+// explicitly names the failed compensating control, distinct from both the
+// generic "adopted" success warning and the "disagreement" rejection.
+func TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_EnrollmentPatternIdCrossCheckErrorRefusesAdoption(t *testing.T) {
+	const (
+		commonName = "tf-unit-pattern-crosscheck-error.example.com"
+		password   = "TestPassword123!"
+	)
+	now := time.Now().UTC()
+	orphan := realisticOrphanCert(7070, commonName, "", now)
+
+	var enrollAttempts int
+	srv := httptest.NewTLSServer(certSearchRecoverAndContextHandler(
+		t,
+		[]api.GetCertificateResponse{orphan},
+		// contextResponses intentionally omits 7070 entirely -- simulating a
+		// FAILED GetCertificateContext call (404/error), not a successful
+		// call whose response simply lacks EnrollmentPatternId.
+		map[int]api.GetCertificateResponse{},
+		"", // Recover must never be reached -- refused before that point
+	))
+	defer srv.Close()
+
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
+	plan := newMinimalPFXPlan(commonName, password)
+	plan.EnrollmentPattern = types.String{Value: "1"}
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if !diags.HasError() {
+		t.Fatal("expected an error: the EnrollmentPatternId cross-check call itself failed and must not fail open")
+	}
+	if result != nil {
+		t.Fatalf("expected nil result when the compensating cross-check errors, got %+v", result)
+	}
+
+	var found bool
+	for _, d := range diags.Errors() {
+		if strings.Contains(d.Detail(), "could NOT be performed") {
+			found = true
+		}
+		// This must be a DISTINCT diagnostic from both the generic
+		// "adopted" success warning text and the "issued under enrollment
+		// pattern ... not the requested pattern" disagreement-rejection
+		// text -- an operator must be able to tell this apart from either.
+		if strings.Contains(d.Detail(), "adopting it into state instead of retrying") {
+			t.Error("cross-check-error diagnostic must not reuse the success/adoption warning text")
+		}
+		if strings.Contains(d.Detail(), "not the requested pattern") {
+			t.Error("cross-check-error diagnostic must not reuse the explicit-disagreement rejection text")
+		}
+	}
+	if !found {
+		t.Errorf(
+			"expected the error diagnostic to explicitly name the failed compensating control, got: %v",
+			diags.Errors(),
+		)
+	}
+}
+
 // certPaginatedSearchAndRecoverHandler is like certSearchAndRecoverHandler,
 // but the GET .../Certificates search response is genuinely paginated
 // according to the PageReturned/ReturnLimit query parameters the v24 SDK
@@ -1324,6 +1553,142 @@ func TestUnitEnrollPFX_TimeoutRecovery_HardCapStillRefusesPathologicalResultSet(
 	}
 	if result != nil {
 		t.Fatalf("expected nil result, got %+v", result)
+	}
+}
+
+// certPaginatedSearchOverlapHandler is like certPaginatedSearchAndRecoverHandler,
+// but simulates the exact under-concurrent-writes hazard F1 (round 3) fixes:
+// unsorted, offset-based pagination can return the SAME row shifted across a
+// page boundary when a new row is inserted for the same CN while a
+// multi-page search is in flight. Page 1 returns allCerts[:pageSize]; page 2
+// returns just allCerts[pageSize-1] again -- i.e. the LAST row of page 1
+// reappears as the FIRST (and only) row of page 2, exactly like an
+// offset-based query re-fetching a row that shifted position after a new row
+// was inserted ahead of it. It also records the SortField/SortAscending
+// query parameters Command actually received, so a test can confirm the
+// companion mitigation (requesting a stable, deterministic sort) is applied,
+// not just that the dedup safety net catches the symptom.
+func certPaginatedSearchOverlapHandler(
+	t *testing.T,
+	allCerts []api.GetCertificateResponse,
+	pfxB64 string,
+	gotSortField, gotSortAscending *string,
+) http.HandlerFunc {
+	t.Helper()
+	if len(allCerts) != certificatesOrphanSearchPageSize {
+		t.Fatalf("test setup: certPaginatedSearchOverlapHandler expects exactly %d certs, got %d", certificatesOrphanSearchPageSize, len(allCerts))
+	}
+	recoverBody, err := json.Marshal(map[string]string{"PFX": pfxB64, "FileName": "cert.pfx"})
+	if err != nil {
+		t.Fatalf("marshal recover response: %v", err)
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "Certificates/Recover"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(recoverBody)
+		case r.Method == http.MethodGet && strings.HasSuffix(strings.TrimRight(r.URL.Path, "/"), "Certificates"):
+			if gotSortField != nil {
+				*gotSortField = r.URL.Query().Get("SortField")
+			}
+			if gotSortAscending != nil {
+				*gotSortAscending = r.URL.Query().Get("SortAscending")
+			}
+			page, convErr := strconv.Atoi(r.URL.Query().Get("PageReturned"))
+			if convErr != nil || page < 1 {
+				page = 1
+			}
+			var pageCerts []api.GetCertificateResponse
+			switch page {
+			case 1:
+				pageCerts = allCerts
+			default:
+				pageCerts = []api.GetCertificateResponse{allCerts[len(allCerts)-1]}
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(certsToSDKSearchJSON(t, pageCerts))
+		case strings.Contains(r.URL.Path, "Enrollment/PFX"):
+			t.Errorf("Enrollment/PFX reached the mock server -- the timeout RoundTripper should have intercepted it")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_DuplicateCandidateAcrossPagesDoesNotTriggerAmbiguousMatch
+// is the full end-to-end F1 (round 3) regression test, covering both halves
+// of the fix together: (a) searchCertificatesForOrphanRecovery must request a
+// stable, deterministic sort (SortField=Id, with an explicit direction) so
+// offset-based pagination is consistent under concurrent writes, and (b)
+// findOrphanedCertificateMatch must dedup by certificate Id as defense in
+// depth. Without either half, this reproduces exactly the "double-counted
+// candidate causes a spurious ambiguous-match refusal" bug: the sole genuine
+// orphan (the last row of page 1) reappears as the sole row of page 2, and a
+// pre-fix implementation would see it as TWO candidates and refuse to adopt.
+func TestUnitEnrollPFX_TimeoutRecovery_DuplicateCandidateAcrossPagesDoesNotTriggerAmbiguousMatch(t *testing.T) {
+	const (
+		commonName = "tf-unit-duplicate-across-pages.example.com"
+		password   = "TestPassword123!"
+	)
+
+	leaf, leafKey := buildSelfSignedLeaf(t, commonName)
+	pfxDER, err := pkcs12.Encode(rand.Reader, leafKey, leaf, nil, password)
+	if err != nil {
+		t.Fatalf("pkcs12.Encode: %v", err)
+	}
+	pfxB64 := base64.StdEncoding.EncodeToString(pfxDER)
+
+	now := time.Now().UTC()
+	var certs []api.GetCertificateResponse
+	for i := 0; i < certificatesOrphanSearchPageSize-1; i++ {
+		certs = append(certs, realisticOrphanCert(i+1, commonName, "WrongTemplate", now.Add(-48*time.Hour)))
+	}
+	genuine := realisticOrphanCert(999, commonName, "SomeTemplate", now)
+	certs = append(certs, genuine) // last row of the full page-1 batch
+
+	var enrollAttempts int
+	var gotSortField, gotSortAscending string
+	srv := httptest.NewTLSServer(
+		certPaginatedSearchOverlapHandler(t, certs, pfxB64, &gotSortField, &gotSortAscending),
+	)
+	defer srv.Close()
+
+	client, sdkClient := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client, sdkClient: sdkClient}}
+	plan := newMinimalPFXPlan(commonName, password)
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if diags.HasError() {
+		t.Fatalf(
+			"expected the duplicate-row-across-pages case (simulating a concurrent write during a multi-page "+
+				"orphan search) to resolve to a single candidate, not an ambiguous-match refusal, got: %v", diags,
+		)
+	}
+	if result == nil {
+		t.Fatal("expected a non-nil result")
+	}
+	if result.CertificateId.Value != 999 {
+		t.Errorf("result.CertificateId = %d, want 999", result.CertificateId.Value)
+	}
+	if enrollAttempts != 1 {
+		t.Fatalf("expected exactly 1 enrollment attempt, got %d", enrollAttempts)
+	}
+	if gotSortField != "Id" {
+		t.Errorf(
+			"searchCertificatesForOrphanRecovery did not request a stable SortField=Id (got %q) -- without a "+
+				"deterministic sort, offset-based pagination is not guaranteed consistent across pages under "+
+				"concurrent writes",
+			gotSortField,
+		)
+	}
+	if gotSortAscending == "" {
+		t.Error("expected an explicit SortAscending direction to be requested alongside SortField=Id")
 	}
 }
 

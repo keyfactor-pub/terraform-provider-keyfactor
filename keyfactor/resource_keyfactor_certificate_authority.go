@@ -2277,11 +2277,32 @@ func validateCAScheduleAttributes(ctx context.Context, cfg KeyfactorCertificateA
 		// *_daily_time; skip the time-of-day parse for it, since it is not
 		// meant to be a timestamp at all.
 		if dailyKnown && p.daily.Value != "" {
-			if _, err := time.Parse(caDailyTimeLayout, p.daily.Value); err != nil {
+			if parsed, err := time.Parse(caDailyTimeLayout, p.daily.Value); err != nil {
 				diags.AddAttributeError(
 					path.Root(p.dailyAttr),
 					fmt.Sprintf("Invalid %s value", p.dailyAttr),
 					fmt.Sprintf("%s must be a UTC time-of-day formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), or \"\" to clear the schedule; got %q: %s", p.dailyAttr, p.daily.Value, err.Error()),
+				)
+			} else if canonical := parsed.Format(caDailyTimeLayout); canonical != p.daily.Value {
+				// time.Parse(caDailyTimeLayout, ...) is lenient on field width
+				// (e.g. "7:00:00" parses fine), but Command's GET always echoes
+				// back the zero-padded canonical spelling ("07:00:00") -- see
+				// scheduleToState's use of Format(caDailyTimeLayout). A
+				// non-canonical spelling therefore plans and applies
+				// successfully but guarantees "Provider produced inconsistent
+				// result after apply" on every single apply (planned "7:00:00"
+				// vs. applied "07:00:00"). Rejecting the non-canonical spelling
+				// here, before plan/apply ever runs, is simpler and more honest
+				// than trying to preserve an arbitrary user spelling
+				// server-side. See full-review round 2 finding #2.
+				diags.AddAttributeError(
+					path.Root(p.dailyAttr),
+					fmt.Sprintf("Non-canonical %s value", p.dailyAttr),
+					fmt.Sprintf(
+						"%s must be zero-padded \"HH:MM:SS\"; got %q, which Command's API will echo back as %q on every "+
+							"read, permanently disagreeing with the configured value. Use %q instead.",
+						p.dailyAttr, p.daily.Value, canonical, canonical,
+					),
 				)
 			}
 		}
@@ -2304,11 +2325,24 @@ func validateCAScheduleAttributes(ctx context.Context, cfg KeyfactorCertificateA
 				}
 			}
 			if p.weeklyTime.Value != "" {
-				if _, err := time.Parse(caDailyTimeLayout, p.weeklyTime.Value); err != nil {
+				if parsed, err := time.Parse(caDailyTimeLayout, p.weeklyTime.Value); err != nil {
 					diags.AddAttributeError(
 						path.Root(p.weeklyTimeAttr),
 						fmt.Sprintf("Invalid %s value", p.weeklyTimeAttr),
 						fmt.Sprintf("%s must be a UTC time-of-day formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), or \"\" to clear the schedule; got %q: %s", p.weeklyTimeAttr, p.weeklyTime.Value, err.Error()),
+					)
+				} else if canonical := parsed.Format(caDailyTimeLayout); canonical != p.weeklyTime.Value {
+					// Same non-canonical-spelling rejection as the Daily
+					// variant above, and for the same reason (Command always
+					// echoes the zero-padded spelling on read).
+					diags.AddAttributeError(
+						path.Root(p.weeklyTimeAttr),
+						fmt.Sprintf("Non-canonical %s value", p.weeklyTimeAttr),
+						fmt.Sprintf(
+							"%s must be zero-padded \"HH:MM:SS\"; got %q, which Command's API will echo back as %q on every "+
+								"read, permanently disagreeing with the configured value. Use %q instead.",
+							p.weeklyTimeAttr, p.weeklyTime.Value, canonical, canonical,
+						),
 					)
 				}
 			}

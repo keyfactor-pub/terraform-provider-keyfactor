@@ -141,6 +141,27 @@ func newMinimalPFXPlan(commonName, keyPassword string) *CommandCertificate {
 	}
 }
 
+// realisticOrphanCert builds a Command-realistic GetCertificateResponse for
+// orphan-recovery tests: ImportDate reflects issuedAt (when Command recorded
+// the certificate -- the correct freshness signal, see enrollmentTimeoutSkew
+// in helpers.go) but NotBefore is backdated ~10 minutes from issuedAt,
+// mirroring real CA behavior (EJBCA's default certificate.validityoffset is
+// -10m; Microsoft ADCS's default ClockSkewMinutes is 10). A certificate
+// fixture that sets NotBefore == ImportDate (as earlier tests here did)
+// cannot catch a regression back to filtering on NotBefore, since real CAs
+// never produce that shape.
+func realisticOrphanCert(id int, commonName, templateName string, issuedAt time.Time) api.GetCertificateResponse {
+	return api.GetCertificateResponse{
+		Id:           id,
+		IssuedCN:     commonName,
+		IssuedDN:     fmt.Sprintf("CN=%s", commonName),
+		TemplateName: templateName,
+		ImportDate:   issuedAt.UTC().Format(time.RFC3339Nano),
+		NotBefore:    issuedAt.Add(-10 * time.Minute).UTC().Format(time.RFC3339),
+		NotAfter:     issuedAt.Add(365 * 24 * time.Hour).UTC().Format(time.RFC3339),
+	}
+}
+
 // certSearchAndRecoverHandler returns an http.HandlerFunc that serves:
 //   - GET  .../Certificates (search, no id/Recover suffix) -> certsToReturn as JSON
 //   - POST .../Certificates/Recover                        -> {"PFX": pfxB64}
@@ -197,15 +218,11 @@ func TestUnitEnrollPFX_TimeoutRecovery_AdoptsSingleMatch(t *testing.T) {
 	}
 	pfxB64 := base64.StdEncoding.EncodeToString(pfxDER)
 
-	orphan := api.GetCertificateResponse{
-		Id:            777,
-		IssuedCN:      commonName,
-		Thumbprint:    "AABBCCDDEEFF00112233445566778899AABBCCDD",
-		SerialNumber:  "01",
-		IssuerDN:      "CN=Test Root CA",
-		NotBefore:     time.Now().UTC().Format(time.RFC3339),
-		CertRequestId: 999,
-	}
+	orphan := realisticOrphanCert(777, commonName, "SomeTemplate", time.Now().UTC())
+	orphan.Thumbprint = "AABBCCDDEEFF00112233445566778899AABBCCDD"
+	orphan.SerialNumber = "01"
+	orphan.IssuerDN = "CN=Test Root CA"
+	orphan.CertRequestId = 999
 
 	var enrollAttempts int
 	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, []api.GetCertificateResponse{orphan}, pfxB64))
@@ -288,10 +305,10 @@ func TestUnitEnrollPFX_TimeoutRecovery_ZeroMatches(t *testing.T) {
 func TestUnitEnrollPFX_TimeoutRecovery_MultipleMatches(t *testing.T) {
 	const commonName = "tf-unit-timeout-ambiguous.example.com"
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now().UTC()
 	dupes := []api.GetCertificateResponse{
-		{Id: 111, IssuedCN: commonName, NotBefore: now},
-		{Id: 222, IssuedCN: commonName, NotBefore: now},
+		realisticOrphanCert(111, commonName, "SomeTemplate", now),
+		realisticOrphanCert(222, commonName, "SomeTemplate", now),
 	}
 
 	var enrollAttempts int
@@ -320,11 +337,7 @@ func TestUnitEnrollPFX_TimeoutRecovery_MultipleMatches(t *testing.T) {
 func TestUnitEnrollPFX_TimeoutRecovery_IgnoresOlderCertificate(t *testing.T) {
 	const commonName = "tf-unit-timeout-stale-match.example.com"
 
-	stale := api.GetCertificateResponse{
-		Id:        333,
-		IssuedCN:  commonName,
-		NotBefore: time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339),
-	}
+	stale := realisticOrphanCert(333, commonName, "SomeTemplate", time.Now().UTC().Add(-24*time.Hour))
 
 	var enrollAttempts int
 	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, []api.GetCertificateResponse{stale}, ""))
@@ -385,5 +398,415 @@ func TestUnitEnrollPFX_NonTimeoutErrorNotRecovered(t *testing.T) {
 	}
 	if result != nil {
 		t.Fatalf("expected nil result, got %+v", result)
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_RejectsWrongCertificateSameCN is the F2
+// regression test. The original implementation identified a candidate by CN
+// + freshness ONLY, so a DIFFERENT certificate sharing the requested CN --
+// e.g. an unrelated concurrent enrollment for the same hostname -- could be
+// silently adopted: its private key exported into Terraform state and
+// revoked on destroy. Every other discriminator available from the original
+// request (subject, template, CA, SANs, requester identity) must now also
+// match, or Create must fall back to the original timeout error rather than
+// guess.
+func TestUnitEnrollPFX_TimeoutRecovery_RejectsWrongCertificateSameCN(t *testing.T) {
+	const commonName = "tf-unit-wrong-cert.example.com"
+
+	leaf, leafKey := buildSelfSignedLeaf(t, commonName)
+	pfxDER, err := pkcs12.Encode(rand.Reader, leafKey, leaf, nil, "TestPassword123!")
+	if err != nil {
+		t.Fatalf("pkcs12.Encode: %v", err)
+	}
+	pfxB64 := base64.StdEncoding.EncodeToString(pfxDER)
+
+	// wrongCert shares the requested CN and is fresh enough to pass the
+	// freshness check, but was issued off a DIFFERENT template than what
+	// newMinimalPFXPlan requests ("SomeTemplate") -- e.g. a concurrent,
+	// unrelated enrollment for the same hostname.
+	wrongCert := realisticOrphanCert(555, commonName, "UnrelatedTemplate", time.Now().UTC())
+	wrongCert.IssuedDN = "CN=" + commonName + ",O=Some Unrelated Org"
+
+	var enrollAttempts int
+	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, []api.GetCertificateResponse{wrongCert}, pfxB64))
+	defer srv.Close()
+
+	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if !diags.HasError() {
+		t.Fatal(
+			"expected an error -- the only matching-CN certificate was issued off a different template " +
+				"and must not be adopted",
+		)
+	}
+	if result != nil {
+		t.Fatalf(
+			"SECURITY: adopted certificate id %d, which never matched the enrollment request's template/subject; got result %+v",
+			wrongCert.Id, result,
+		)
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_WarningSurfacedInDiagnostics is the F5
+// regression test: the only prior record of a successful adoption was
+// tflog.Warn, which `terraform apply` does not display unless TF_LOG is set.
+// A successful recovery must also add an operator-visible warning
+// diagnostic that names the adopted certificate.
+func TestUnitEnrollPFX_TimeoutRecovery_WarningSurfacedInDiagnostics(t *testing.T) {
+	const (
+		commonName = "tf-unit-timeout-warning.example.com"
+		password   = "TestPassword123!"
+	)
+	leaf, leafKey := buildSelfSignedLeaf(t, commonName)
+	pfxDER, err := pkcs12.Encode(rand.Reader, leafKey, leaf, nil, password)
+	if err != nil {
+		t.Fatalf("pkcs12.Encode: %v", err)
+	}
+	pfxB64 := base64.StdEncoding.EncodeToString(pfxDER)
+
+	orphan := realisticOrphanCert(888, commonName, "SomeTemplate", time.Now().UTC())
+
+	var enrollAttempts int
+	srv := httptest.NewTLSServer(certSearchAndRecoverHandler(t, []api.GetCertificateResponse{orphan}, pfxB64))
+	defer srv.Close()
+
+	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	plan := newMinimalPFXPlan(commonName, password)
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if diags.HasError() {
+		t.Fatalf("expected a successful (warning, not error) recovery, got: %v", diags)
+	}
+	if result == nil {
+		t.Fatal("expected a non-nil result")
+	}
+
+	var found bool
+	for _, w := range diags.Warnings() {
+		if strings.Contains(w.Detail(), "888") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a warning diagnostic naming the adopted certificate ID (888), got: %v", diags.Warnings())
+	}
+}
+
+// certSearchAndRecoverHandlerCapturingFormat is like
+// certSearchAndRecoverHandler but also records the "x-certificateformat"
+// header Command received on the Recover call, exposed via gotFormat. It
+// returns recoverPayloadB64 verbatim in the "PFX" JSON field regardless of
+// what format was requested -- Command would return format-appropriate
+// bytes in that field, but for these tests the important assertion is which
+// format was actually requested (F6/F7), and that non-PKCS#12-shaped bytes
+// still pass through into the right result field.
+func certSearchAndRecoverHandlerCapturingFormat(
+	t *testing.T,
+	certsToReturn []api.GetCertificateResponse,
+	recoverPayloadB64 string,
+	gotFormat *string,
+) http.HandlerFunc {
+	t.Helper()
+	searchBody, err := json.Marshal(certsToReturn)
+	if err != nil {
+		t.Fatalf("marshal search response: %v", err)
+	}
+	recoverBody, err := json.Marshal(map[string]string{"PFX": recoverPayloadB64, "FileName": "cert.bin"})
+	if err != nil {
+		t.Fatalf("marshal recover response: %v", err)
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "Certificates/Recover"):
+			if gotFormat != nil {
+				*gotFormat = r.Header.Get("x-certificateformat")
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(recoverBody)
+		case r.Method == http.MethodGet && strings.HasSuffix(strings.TrimRight(r.URL.Path, "/"), "Certificates"):
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(searchBody)
+		case strings.Contains(r.URL.Path, "Enrollment/PFX"):
+			t.Errorf("Enrollment/PFX reached the mock server -- the timeout RoundTripper should have intercepted it")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_JKSFormatThreaded is the F6 regression
+// test: recoverOrphanedPFXEnrollment used to hardcode "PFX" when recovering
+// the orphaned certificate's key material regardless of the resource's
+// actual certificate_format. For certificate_format = "JKS" that meant state
+// ended up holding a base64 PKCS#12 blob in the JKS field -- silently wrong
+// for any downstream keytool/Java consumer. The format actually requested
+// from Command must match certificate_format.
+func TestUnitEnrollPFX_TimeoutRecovery_JKSFormatThreaded(t *testing.T) {
+	const commonName = "tf-unit-timeout-jks.example.com"
+	// Not a real JKS keystore -- just distinguishable bytes standing in for
+	// "whatever Command would return for a JKS-format Recover request".
+	jksPayload := base64.StdEncoding.EncodeToString([]byte("not-a-real-jks-keystore-but-distinguishable"))
+
+	orphan := realisticOrphanCert(444, commonName, "SomeTemplate", time.Now().UTC())
+
+	var enrollAttempts int
+	var gotFormat string
+	srv := httptest.NewTLSServer(
+		certSearchAndRecoverHandlerCapturingFormat(t, []api.GetCertificateResponse{orphan}, jksPayload, &gotFormat),
+	)
+	defer srv.Close()
+
+	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
+	plan.CertificateFormat = types.String{Value: "JKS"}
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if diags.HasError() {
+		t.Fatalf("expected a successful JKS recovery (non-empty rawBytes is success for binary formats), got: %v", diags)
+	}
+	if result == nil {
+		t.Fatal("expected a non-nil result")
+	}
+	if gotFormat != "JKS" {
+		t.Errorf("Certificates/Recover was called with certificateFormat %q, want %q -- format was not threaded through", gotFormat, "JKS")
+	}
+	if result.JKS.Value != jksPayload {
+		t.Errorf("result.JKS = %q, want the raw JKS payload %q", result.JKS.Value, jksPayload)
+	}
+	// PFX/Zip are not populated by the JKS branch (pre-existing, unrelated to
+	// this fix) -- the important assertion is that neither field ends up
+	// holding the JKS payload/wrong content.
+	if result.Zip.Value == jksPayload {
+		t.Errorf("result.Zip should not contain the JKS payload, got %q", result.Zip.Value)
+	}
+	if result.PFX.Value == jksPayload {
+		t.Errorf("result.PFX should not contain the JKS payload, got %q", result.PFX.Value)
+	}
+}
+
+// TestUnitEnrollPFX_TimeoutRecovery_ZIPFormatThreadedWithDecodeTolerance is
+// the F7 regression test, covering the reviewer-flagged incomplete-fix trap:
+// keyfactor-go-client's RecoverCertificate has no "ZIP" case in its format
+// switch, so it falls through to the default branch, which always attempts
+// a PKCS#12 decode of the raw response and returns that decode error
+// ALONGSIDE the (perfectly valid, just non-PKCS#12) rawBytes for a ZIP
+// payload. Non-empty rawBytes must still count as success for a binary
+// format here, exactly like the existing recoverOrDownloadCertificate
+// tolerance -- otherwise every ZIP-format timeout recovery would fail.
+func TestUnitEnrollPFX_TimeoutRecovery_ZIPFormatThreadedWithDecodeTolerance(t *testing.T) {
+	const commonName = "tf-unit-timeout-zip.example.com"
+	zipPayload := base64.StdEncoding.EncodeToString([]byte("PK\x03\x04-not-a-real-zip-but-distinguishable"))
+
+	orphan := realisticOrphanCert(556, commonName, "SomeTemplate", time.Now().UTC())
+
+	var enrollAttempts int
+	var gotFormat string
+	srv := httptest.NewTLSServer(
+		certSearchAndRecoverHandlerCapturingFormat(t, []api.GetCertificateResponse{orphan}, zipPayload, &gotFormat),
+	)
+	defer srv.Close()
+
+	client := newTimeoutMockClient(t, srv, "Enrollment/PFX", &enrollAttempts)
+	r := resourceCommandCertificate{p: provider{configured: true, client: client}}
+	plan := newMinimalPFXPlan(commonName, "TestPassword123!")
+	plan.CertificateFormat = types.String{Value: "ZIP"}
+
+	ctx := context.Background()
+	result, diags := r.enrollPFXV2(ctx, plan)
+
+	if diags.HasError() {
+		t.Fatalf(
+			"expected the PKCS#12-decode-error-with-valid-rawBytes case to be tolerated for ZIP, got: %v", diags,
+		)
+	}
+	if result == nil {
+		t.Fatal("expected a non-nil result")
+	}
+	if gotFormat != "ZIP" {
+		t.Errorf("Certificates/Recover was called with certificateFormat %q, want %q -- format was not threaded through", gotFormat, "ZIP")
+	}
+	if result.Zip.Value != zipPayload {
+		t.Errorf("result.Zip = %q, want the raw ZIP payload %q", result.Zip.Value, zipPayload)
+	}
+}
+
+// TestUnitFindOrphanedCertificateMatch_StrictDiscriminators is a focused F2
+// unit test directly exercising findOrphanedCertificateMatch's discriminator
+// logic: a certificate that would previously have matched on CN + freshness
+// alone must now also match on subject, template, certificate authority,
+// and SANs, or be rejected.
+func TestUnitFindOrphanedCertificateMatch_StrictDiscriminators(t *testing.T) {
+	const commonName = "tf-unit-strict-match.example.com"
+	now := time.Now().UTC()
+
+	baseSubject := &api.CertificateSubject{
+		SubjectCommonName:         commonName,
+		SubjectOrganization:       "Example Corp",
+		SubjectOrganizationalUnit: "Engineering",
+		SubjectCountry:            "US",
+	}
+	baseSANs := &api.SANs{DNS: []string{"alt.example.com"}}
+	baseCriteria := orphanRecoveryCriteria{
+		CommonName:           commonName,
+		Subject:              baseSubject,
+		SANs:                 baseSANs,
+		Template:             "WebServer",
+		CertificateAuthority: "IssuingCA1",
+		EnrollStartTime:      now,
+	}
+
+	matchingCert := realisticOrphanCert(1, commonName, "WebServer", now.Add(10*time.Second))
+	matchingCert.IssuedDN = "CN=" + commonName + ",OU=Engineering,O=Example Corp,C=US"
+	matchingCert.CertificateAuthorityName = `ca-host.example.com\IssuingCA1`
+	matchingCert.SubjectAltNameElements = []api.SubjectAltNameElements{
+		{Type: sanTypeDNS, Value: "alt.example.com"},
+	}
+
+	if _, err := findOrphanedCertificateMatch([]api.GetCertificateResponse{matchingCert}, baseCriteria); err != nil {
+		t.Fatalf("expected matchingCert to satisfy every discriminator, got error: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(api.GetCertificateResponse) api.GetCertificateResponse
+	}{
+		{
+			name: "different organization in subject DN",
+			mutate: func(c api.GetCertificateResponse) api.GetCertificateResponse {
+				c.IssuedDN = "CN=" + commonName + ",OU=Engineering,O=Some Other Org,C=US"
+				return c
+			},
+		},
+		{
+			name: "different template",
+			mutate: func(c api.GetCertificateResponse) api.GetCertificateResponse {
+				c.TemplateName = "DifferentTemplate"
+				return c
+			},
+		},
+		{
+			name: "different certificate authority",
+			mutate: func(c api.GetCertificateResponse) api.GetCertificateResponse {
+				c.CertificateAuthorityName = `ca-host.example.com\OtherCA`
+				return c
+			},
+		},
+		{
+			name: "different SAN value",
+			mutate: func(c api.GetCertificateResponse) api.GetCertificateResponse {
+				c.SubjectAltNameElements = []api.SubjectAltNameElements{{Type: sanTypeDNS, Value: "different.example.com"}}
+				return c
+			},
+		},
+		{
+			name: "SAN missing entirely",
+			mutate: func(c api.GetCertificateResponse) api.GetCertificateResponse {
+				c.SubjectAltNameElements = nil
+				return c
+			},
+		},
+		{
+			name: "unparsable subject DN when subject fields must be verified",
+			mutate: func(c api.GetCertificateResponse) api.GetCertificateResponse {
+				c.IssuedDN = "not a valid dn at all"
+				return c
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wrong := tt.mutate(matchingCert)
+			if _, err := findOrphanedCertificateMatch([]api.GetCertificateResponse{wrong}, baseCriteria); err == nil {
+				t.Fatalf("expected %q to be rejected (fail closed), but it was accepted as a match", tt.name)
+			}
+		})
+	}
+}
+
+// TestUnitFindOrphanedCertificateMatch_RequesterIdentityMismatch is a
+// focused F2 unit test covering the requester-identity discriminator: a
+// candidate whose RequesterName doesn't match the identity this provider is
+// authenticated as must be rejected, even though Command did return
+// requester information.
+func TestUnitFindOrphanedCertificateMatch_RequesterIdentityMismatch(t *testing.T) {
+	const commonName = "tf-unit-requester-mismatch.example.com"
+	now := time.Now().UTC()
+	cert := realisticOrphanCert(1, commonName, "", now)
+	cert.RequesterName = "someone-else@example.com"
+
+	criteria := orphanRecoveryCriteria{
+		CommonName:      commonName,
+		EnrollStartTime: now,
+		Identity:        orphanRecoveryIdentity{candidates: []string{"expected-service-account"}},
+	}
+	if _, err := findOrphanedCertificateMatch([]api.GetCertificateResponse{cert}, criteria); err == nil {
+		t.Fatal("expected a requester-identity mismatch to be rejected")
+	}
+
+	// Sanity: a matching identity (case-insensitively) succeeds.
+	cert.RequesterName = "Expected-Service-Account"
+	if _, err := findOrphanedCertificateMatch([]api.GetCertificateResponse{cert}, criteria); err != nil {
+		t.Fatalf("expected a matching requester identity to succeed, got: %v", err)
+	}
+}
+
+// TestUnitFindOrphanedCertificateMatch_TruncatedResultSet is the F3
+// regression test: ListCertificates has no page-size/ReturnLimit control in
+// this SDK version, and Command's documented default ReturnLimit for
+// GET /Certificates is 50. A result set at or above that size must never be
+// treated as "the whole story" -- even when every discriminator happens to
+// narrow it down to exactly one candidate, additional matches beyond the
+// (possibly) truncated page cannot be ruled out.
+func TestUnitFindOrphanedCertificateMatch_TruncatedResultSet(t *testing.T) {
+	const commonName = "tf-unit-truncated.example.com"
+	now := time.Now().UTC()
+
+	// Build exactly certificatesListReturnLimitDefault (50) results. Only
+	// ONE of them (the last) actually satisfies the template discriminator --
+	// if truncation weren't accounted for, this would otherwise look like a
+	// safe, unique match.
+	var certs []api.GetCertificateResponse
+	for i := 0; i < certificatesListReturnLimitDefault; i++ {
+		certs = append(certs, realisticOrphanCert(i+1, commonName, "WrongTemplate", now))
+	}
+	certs[len(certs)-1].TemplateName = "RightTemplate"
+
+	criteria := orphanRecoveryCriteria{
+		CommonName:      commonName,
+		Template:        "RightTemplate",
+		EnrollStartTime: now,
+	}
+
+	if _, err := findOrphanedCertificateMatch(certs, criteria); err == nil {
+		t.Fatal("expected a truncation-shaped ambiguity error for a full page of results, got a confident match")
+	} else if !strings.Contains(err.Error(), "page") {
+		t.Errorf("expected the error to explain the truncation risk, got: %v", err)
+	}
+
+	// Sanity: one fewer result (below the page-size threshold) is NOT
+	// treated as possibly truncated, and the single genuine match succeeds.
+	certsBelowLimit := certs[1:] // 49 results, still contains the one RightTemplate match
+	match, err := findOrphanedCertificateMatch(certsBelowLimit, criteria)
+	if err != nil {
+		t.Fatalf("expected a confident match below the page-size threshold, got error: %v", err)
+	}
+	if match.Id != certs[len(certs)-1].Id {
+		t.Errorf("matched wrong certificate: got id %d, want %d", match.Id, certs[len(certs)-1].Id)
 	}
 }

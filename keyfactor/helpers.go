@@ -1971,22 +1971,35 @@ func sdkCertToLegacyCertificateResponse(c kfv1.CertificatesCertificateRetrievalR
 // PageReturned pagination pattern already used by
 // getSecurityPermissionSetByName.
 //
-// F1 hardening (round 3): the request explicitly sorts by Id ascending. Id is
-// Command's auto-incrementing primary key -- unique and monotonically
+// F1 hardening (round 3): the request explicitly sorts by the certificate's
+// auto-incrementing primary key ascending -- unique and monotonically
 // increasing -- so it gives offset-based PageReturned/ReturnLimit pagination
 // a deterministic, stable total order across pages. Without an explicit sort,
 // Command's default ordering is not guaranteed stable call-to-call; if a new
 // certificate for this exact CN is imported WHILE this multi-page search is
 // in flight, unsorted offset-based pagination can shift an already-returned
 // row across a page boundary, causing it to be fetched (and counted) twice.
-// Sorting by Id specifically (rather than e.g. ImportDate) also avoids
-// tie-breaking ambiguity: a newly-inserted row always sorts after every row
-// already seen by an in-progress page walk, so it can never be inserted
-// "behind" the pagination cursor and shift a previously-returned row forward.
-// findOrphanedCertificateMatch additionally deduplicates by Id as defense in
-// depth, in case a duplicate row still appears despite the stable sort (e.g.
-// against a Command version/configuration that doesn't honor SortField for
-// this endpoint).
+// Sorting by the primary key specifically (rather than e.g. ImportDate) also
+// avoids tie-breaking ambiguity: a newly-inserted row always sorts after
+// every row already seen by an in-progress page walk, so it can never be
+// inserted "behind" the pagination cursor and shift a previously-returned row
+// forward. findOrphanedCertificateMatch additionally deduplicates by Id as
+// defense in depth, in case a duplicate row still appears despite the stable
+// sort (e.g. against a Command version/configuration that doesn't honor
+// SortField for this endpoint).
+//
+// The sort field name is "CertId", NOT "Id" -- confirmed against a live
+// Command instance (kfclab) 2026-08-16: Command's /Certificates SortField
+// validates its value against the endpoint's own PQL-sortable field names,
+// which do NOT include the response JSON's "Id" property name, only "CertId"
+// (Command rejects "Id" outright with HTTP 400 "Invalid sort field: Id.").
+// An earlier version of this code used "Id" and was only ever exercised
+// against permissive mock servers (this file's TestUnitEnrollPFX_* suite)
+// that don't validate SortField the way real Command does, so the 400 was
+// never caught until a live-lab run. "CertId" returns the identical
+// certificate set/ordering as "Id" would have (same underlying column; see
+// the live-lab request/response captured in the PR this comment shipped
+// with) -- this is a field-name fix only, not a behavior change.
 func searchCertificatesForOrphanRecovery(
 	ctx context.Context,
 	sdkClient *keyfactor.APIClient,
@@ -2004,7 +2017,7 @@ func searchCertificatesForOrphanRecovery(
 			QueryString(query).
 			PageReturned(page).
 			ReturnLimit(certificatesOrphanSearchPageSize).
-			SortField("Id").
+			SortField("CertId").
 			SortAscending(kfv1.KEYFACTORCOMMONQUERYABLEEXTENSIONSSORTORDER__0).
 			Execute()
 		if err != nil {

@@ -1622,7 +1622,7 @@ func certPaginatedSearchOverlapHandler(
 // TestUnitEnrollPFX_TimeoutRecovery_DuplicateCandidateAcrossPagesDoesNotTriggerAmbiguousMatch
 // is the full end-to-end F1 (round 3) regression test, covering both halves
 // of the fix together: (a) searchCertificatesForOrphanRecovery must request a
-// stable, deterministic sort (SortField=Id, with an explicit direction) so
+// stable, deterministic sort (SortField=CertId, with an explicit direction) so
 // offset-based pagination is consistent under concurrent writes, and (b)
 // findOrphanedCertificateMatch must dedup by certificate Id as defense in
 // depth. Without either half, this reproduces exactly the "double-counted
@@ -1679,16 +1679,90 @@ func TestUnitEnrollPFX_TimeoutRecovery_DuplicateCandidateAcrossPagesDoesNotTrigg
 	if enrollAttempts != 1 {
 		t.Fatalf("expected exactly 1 enrollment attempt, got %d", enrollAttempts)
 	}
-	if gotSortField != "Id" {
+	if gotSortField != "CertId" {
 		t.Errorf(
-			"searchCertificatesForOrphanRecovery did not request a stable SortField=Id (got %q) -- without a "+
+			"searchCertificatesForOrphanRecovery did not request a stable SortField=CertId (got %q) -- without a "+
 				"deterministic sort, offset-based pagination is not guaranteed consistent across pages under "+
 				"concurrent writes",
 			gotSortField,
 		)
 	}
 	if gotSortAscending == "" {
-		t.Error("expected an explicit SortAscending direction to be requested alongside SortField=Id")
+		t.Error("expected an explicit SortAscending direction to be requested alongside SortField=CertId")
+	}
+}
+
+// TestUnitSearchCertificatesForOrphanRecovery_UsesCommandValidSortField is a
+// live-lab-discovered regression test (2026-08-16, against kfclab): a real
+// Command instance validates the SortField query parameter against the
+// /Certificates endpoint's own PQL-sortable field names, which do NOT
+// include "Id" (Command's response body DOES call the field "Id", but the
+// queryable/sortable name for it is "CertId") -- Command rejects "Id" with
+// HTTP 400 "Invalid sort field: Id.". Every existing orphan-recovery unit
+// test in this file used a permissive mock server that accepts ANY
+// SortField value, so this 400 was invisible to the entire TestUnit* suite
+// and was only caught by running the orphaned-PFX-recovery path against a
+// live lab for the first time. This test's mock server reproduces Command's
+// real validation behavior (reject anything but the known-valid field
+// names) instead of accepting everything, so a future regression back to
+// "Id" (or any other invalid field name) fails here without needing a live
+// lab.
+func TestUnitSearchCertificatesForOrphanRecovery_UsesCommandValidSortField(t *testing.T) {
+	const commonName = "tf-unit-validates-sortfield.example.com"
+
+	// Mirrors the exact set Command accepts for GET /Certificates?SortField=
+	// on kfclab (confirmed live 2026-08-16): CertId, IssuedCN, IssuedDate,
+	// IssuerDN, and "" (unset) all returned HTTP 200; "Id" and
+	// "CertificateId" both returned HTTP 400.
+	validSortFields := map[string]bool{
+		"":           true,
+		"CertId":     true,
+		"IssuedCN":   true,
+		"IssuedDate": true,
+		"IssuerDN":   true,
+	}
+
+	orphan := realisticOrphanCert(1, commonName, "SomeTemplate", time.Now().UTC())
+	searchBody := certsToSDKSearchJSON(t, []api.GetCertificateResponse{orphan})
+
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet && strings.HasSuffix(strings.TrimRight(r.URL.Path, "/"), "Certificates") {
+			sortField := r.URL.Query().Get("SortField")
+			if !validSortFields[sortField] {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(fmt.Sprintf(
+					`{"ErrorCode":"0xA011004A","Message":"Invalid sort field: %s."}`, sortField,
+				)))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(searchBody)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	sdkAuth := &mockLeafAuth{
+		client: srv.Client(),
+		server: &auth_providers.Server{
+			Host:          strings.TrimPrefix(srv.URL, "https://"),
+			SkipTLSVerify: true,
+		},
+	}
+	sdkClient := keyfactor.NewAPIClientWithAuth(sdkAuth)
+
+	results, err := searchCertificatesForOrphanRecovery(context.Background(), sdkClient, commonName)
+	if err != nil {
+		t.Fatalf(
+			"searchCertificatesForOrphanRecovery failed against a mock server that validates SortField the way "+
+				"real Command does -- this means the hardcoded SortField value is invalid: %v", err,
+		)
+	}
+	if len(results) != 1 || results[0].Id != orphan.Id {
+		t.Fatalf("expected exactly 1 result with Id %d, got %+v", orphan.Id, results)
 	}
 }
 

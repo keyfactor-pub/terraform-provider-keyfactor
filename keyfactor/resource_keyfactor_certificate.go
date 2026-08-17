@@ -1745,10 +1745,16 @@ func (r resourceCommandCertificate) Update(
 			CertificateAuthority: knownStringFromPlan(plan.CertificateAuthority),
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
-			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
-			FriendlyName:         state.FriendlyName,
-			CollectionId:         plan.CollectionId,
-			ExpiryWarningDays:    plan.ExpiryWarningDays,
+			// friendly_name/use_cn_as_friendly_name are plain Optional (not Computed)
+			// attributes: Terraform's plan has already resolved their final value from
+			// config before Update ever runs, so the provider has no discretion here.
+			// Using state.X served the OLD value whenever config changed or removed
+			// these fields, disagreeing with Terraform's own plan and producing
+			// "provider produced inconsistent result after apply".
+			UseCNAsFriendlyName: plan.UseCNAsFriendlyName,
+			FriendlyName:        plan.FriendlyName,
+			CollectionId:        plan.CollectionId,
+			ExpiryWarningDays:   plan.ExpiryWarningDays,
 			IsExpired: types.Bool{
 				Value: expired,
 			},
@@ -1864,10 +1870,16 @@ func (r resourceCommandCertificate) Update(
 			CertificateAuthority: state.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
-			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
-			FriendlyName:         state.FriendlyName,
-			CollectionId:         plan.CollectionId,
-			ExpiryWarningDays:    plan.ExpiryWarningDays,
+			// friendly_name/use_cn_as_friendly_name are plain Optional (not Computed)
+			// attributes: Terraform's plan has already resolved their final value from
+			// config before Update ever runs, so the provider has no discretion here.
+			// Using state.X served the OLD value whenever config changed or removed
+			// these fields, disagreeing with Terraform's own plan and producing
+			// "provider produced inconsistent result after apply".
+			UseCNAsFriendlyName: plan.UseCNAsFriendlyName,
+			FriendlyName:        plan.FriendlyName,
+			CollectionId:        plan.CollectionId,
+			ExpiryWarningDays:   plan.ExpiryWarningDays,
 			IsExpired: types.Bool{
 				Value: expired,
 			},
@@ -2341,9 +2353,16 @@ func (r resourceCommandCertificate) ImportState(
 		CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(certificateIdInt), Null: isNullId(certificateIdInt)},
-		CollectionId:        state.CollectionId,
-		FriendlyName:        state.FriendlyName,
-		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
+		// collection_id, friendly_name, and use_cn_as_friendly_name have no
+		// server-side recoverable value during import (state is always a fresh
+		// zero-valued struct here, not a prior import). Setting them from state.X
+		// would produce a KNOWN zero value (0/""/false) rather than an explicit
+		// null, which disagrees with the null Update() writes for these attributes
+		// once config doesn't set them -- causing "provider produced inconsistent
+		// result after apply" on the very first reconcile apply after import.
+		CollectionId:        types.Int64{Null: true},
+		FriendlyName:        types.String{Null: true},
+		UseCNAsFriendlyName: types.Bool{Null: true},
 		RequestId:           types.Int64{Value: int64(requestId), Null: isNullId(requestId)},
 		ExpiryWarningDays:   types.Int64{Null: true},  // write-only; isNullId(0)==true means not set
 		IsExpired:           types.Bool{Value: false}, // Set to false as we just enrolled the certificate

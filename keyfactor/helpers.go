@@ -2822,6 +2822,19 @@ func getStringType(value *string) types.String {
 	return types.String{Value: *value}
 }
 
+// derefOrEmpty dereferences a *string, returning "" for a nil pointer. Use
+// this wherever code needs a plain Go string from an SDK-nullable field and
+// has no use for the Null flag -- e.g. building an SDK request DTO with a
+// plain (non-nullable) string field. A raw `*value` on a field the server
+// can legitimately return as null (Name/Description/PermissionSetId on a
+// security role response, for example) panics the whole provider process.
+func derefOrEmpty(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
 // Gets Terraform plan for a given resource type. If there's an error retrieving the state, an error is appended to diagnostics.
 func getPlan[T any](ctx context.Context, plan *tfsdk.Plan, diagnostics *diag.Diagnostics) (*T, bool) {
 	var result T

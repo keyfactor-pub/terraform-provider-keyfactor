@@ -156,5 +156,21 @@ waits for the deployed certificate to appear in the target store's inventory bef
 completing. Previously, `tls_secret` and `opaque_secret` required a
 `skip_inventory_validation = true` workaround because the k8s-orchestrator extension's
 Management (Add) job for these two store types silently failed to write the K8s Secret's
-data while still reporting `Result: Success` in Command's JobHistory. That bug is fixed
-upstream: https://github.com/Keyfactor/k8s-orchestrator/issues/91
+data while still reporting `Result: Success` in Command's JobHistory
+([Keyfactor/k8s-orchestrator#91](https://github.com/Keyfactor/k8s-orchestrator/issues/91)).
+
+That issue is still **open upstream** as of this writing — its fix
+([PR #92](https://github.com/Keyfactor/k8s-orchestrator/pull/92)) has not merged to
+`main` and has not shipped in a GA release; it is only present in the prerelease tags
+`2.0.1-rc.0`, `2.0.1-rc.1`, and `2.0.1-rc.2`. GA `2.0.0` does **not** include the fix.
+This demo's own lab happens to run a local dev build with the fix already applied,
+which is why `tls_secret`/`opaque_secret` inventory verification passes there — that is
+a property of this specific lab's orchestrator build, not a guarantee for readers running
+against their own agent. If inventory verification hangs or fails for these two store
+types in your environment, confirm your K8S orchestrator build includes the #91 fix
+(a `2.0.1-rc.*` prerelease or later) before assuming a provider bug.
+
+Also note: `certificate_alias` and `overwrite` must **not** be set on `tls_secret` /
+`opaque_secret` — Command's `CertificateStoreTypes` metadata marks `CustomAliasAllowed`
+as `Forbidden` for K8STLSSecr and K8SSecret, and supplying either field causes Command
+to reject the deploy request outright (before any orchestrator job is dispatched).

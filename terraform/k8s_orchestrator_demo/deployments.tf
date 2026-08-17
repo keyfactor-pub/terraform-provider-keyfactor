@@ -26,12 +26,11 @@ resource "keyfactor_certificate" "demo" {
 # read-only — the Add operation is not supported by this store type.
 #
 # Alias format per store type (from k8s-orchestrator docs):
-#   K8STLSSecr  — alias is the backing secret's name. The k8s-orchestrator extension
-#                 requires overwrite=true whenever the backing secret already holds
-#                 data (i.e. on every redeploy after the first) and, per Command's own
-#                 validation, overwrite=true requires an alias that Command already
-#                 tracks in the store's inventory. This demo sets both explicitly so
-#                 repeated applies stay idempotent.
+#   K8STLSSecr  — Command's own CertificateStoreTypes metadata marks this store type
+#                 CustomAliasAllowed = "Forbidden": supplying certificate_alias (or
+#                 overwrite) is invalid and Command rejects the deploy request before
+#                 any orchestrator job is dispatched. The cert is placed into the
+#                 store's backing secret by store path alone — no alias needed.
 #   K8SSecret   — same as K8STLSSecr.
 #   K8SJKS      — "<CertificateDataFieldName>/<keystore-alias>"
 #                 CertificateDataFieldName defaults to "jks" when not set.
@@ -44,29 +43,16 @@ resource "keyfactor_certificate" "demo" {
 resource "keyfactor_certificate_deployment" "tls_secret" {
   certificate_id       = keyfactor_certificate.demo.certificate_id
   certificate_store_id = keyfactor_certificate_store.k8s_tls_secret.id
-  # K8STLSSecr: alias is the K8S secret name; Command already tracks "tf-demo-tls-secret"
-  # as the store's inventoried alias, so overwrite=true is required (and valid) to
-  # redeploy onto the existing backing secret.
-  certificate_alias = "tf-demo-tls-secret"
-  overwrite         = true
-  #
-  # Full inventory-based verification (the default apply behavior): the resource waits
-  # for the deployed certificate to appear in the store's inventory before completing.
-  # Previously worked around via skip_inventory_validation = true because the
-  # k8s-orchestrator extension's Management (Add) job silently failed to write the K8s
-  # Secret while still reporting Result: Success. Fixed upstream:
-  # https://github.com/Keyfactor/k8s-orchestrator/issues/91
+  # K8STLSSecr: no certificate_alias / overwrite here — see the CustomAliasAllowed
+  # note above. This resource uses full inventory-based verification (the default
+  # apply behavior): the resource waits for the deployed certificate to appear in
+  # the store's inventory before completing.
 }
 
 resource "keyfactor_certificate_deployment" "opaque_secret" {
   certificate_id       = keyfactor_certificate.demo.certificate_id
   certificate_store_id = keyfactor_certificate_store.k8s_opaque_secret.id
   # K8SSecret: same pattern as tls_secret above.
-  certificate_alias = "tf-demo-opaque-secret"
-  overwrite         = true
-  #
-  # Full inventory-based verification (the default apply behavior) — see the tls_secret
-  # resource above; same fixed upstream issue applied to K8SSecret as well.
 }
 
 resource "keyfactor_certificate_deployment" "jks" {

@@ -381,6 +381,7 @@ func (r resourceCommandCertificateDeployment) Create(
 				certificateAlias,
 			),
 		)
+		return
 	}
 
 	//sans := plan.SANs
@@ -652,6 +653,7 @@ func (r resourceCommandCertificateDeployment) Update(
 				certificateAlias,
 			),
 		)
+		return
 	}
 
 	vErr := validateDeployment(

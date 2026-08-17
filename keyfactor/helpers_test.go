@@ -6,6 +6,7 @@ import (
 
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -253,6 +254,85 @@ func TestAddOAuthSecurityClaimToRole(t *testing.T) {
 	})
 }
 
+// TestUnitMapOAuthSecurityClaimsFromRole_NilProviderDoesNotPanic is the
+// red/green regression test for the nil-pointer dereference in
+// mapOAuthSecurityClaimsFromRole: `provider := *claim.Provider` dereferenced
+// the Provider sub-object unconditionally, even though it is documented as
+// nilable (the exact same "API omits the sub-object" scenario already handled
+// defensively in mapOAuthSecurityClaim, e.g. Command 25.5.1 + Authentik OIDC).
+// A role whose claim omits Provider crashes the provider mid-apply during
+// Create()/Delete()/Update() of keyfactor_oauth_security_role and
+// keyfactor_oauth_security_role_claim_association, all of which call this
+// function to rebuild the claims list before a PUT.
+func TestUnitMapOAuthSecurityClaimsFromRole_NilProviderDoesNotPanic(t *testing.T) {
+	ctx := context.Background()
+
+	claimType := "OAuthSubject"
+	claimValue := "test-subject"
+	description := "a claim with no Provider sub-object"
+
+	remoteState := &kfv2.SecuritySecurityRolesSecurityRoleResponse{
+		Id: ptr(int32(99)),
+		Claims: []kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse{
+			{
+				Id:          ptr(int32(1)),
+				Description: *kfv2.NewNullableString(&description),
+				ClaimType:   *kfv2.NewNullableString(&claimType),
+				ClaimValue:  *kfv2.NewNullableString(&claimValue),
+				Provider:    nil, // the exact condition this test reproduces
+			},
+		},
+	}
+
+	var diagnostics diag.Diagnostics
+	var result *[]kfv2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest
+	var ok bool
+
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("mapOAuthSecurityClaimsFromRole panicked (nil-deref regression): %v", rec)
+			}
+		}()
+		result, ok = mapOAuthSecurityClaimsFromRole(ctx, &diagnostics, remoteState, nil)
+	}()
+
+	if !ok {
+		t.Fatalf("expected mapOAuthSecurityClaimsFromRole to succeed, got diagnostics: %+v", diagnostics)
+	}
+	if diagnostics.HasError() {
+		t.Fatalf("expected no diagnostic errors, got: %+v", diagnostics)
+	}
+	if result == nil || len(*result) != 1 {
+		t.Fatalf("expected exactly one mapped claim, got: %+v", result)
+	}
+
+	mapped := (*result)[0]
+	assert.Equal(t, kfv2.CSSCMSCOREENUMSCLAIMTYPE_OAuthSubject, mapped.ClaimType)
+	assert.Equal(t, claimValue, mapped.ClaimValue)
+	assert.Equal(t, description, mapped.Description)
+	// No Provider sub-object was present on the remote claim, so the
+	// authentication scheme has no known value: it must degrade to the
+	// zero-value "" (matching getStringType's null-safe convention used
+	// elsewhere in this file), never panic.
+	assert.Equal(t, "", mapped.ProviderAuthenticationScheme)
+
+	// Silently substituting "" here is itself a corruption risk on the
+	// full-replace PUT this feeds (see the doc comment on
+	// mapOAuthSecurityClaimsFromRole): if Command omitted Provider due to the
+	// known bug rather than the claim genuinely having none, this update
+	// would clear a real provider association. A warning must surface so the
+	// risk is visible instead of masked.
+	foundWarning := false
+	for _, d := range diagnostics.Warnings() {
+		if d.Summary() == "OAuth security claim missing provider association" {
+			foundWarning = true
+			break
+		}
+	}
+	assert.True(t, foundWarning, "expected a warning diagnostic flagging the missing Provider sub-object, got: %+v", diagnostics)
+}
+
 func TestNormalizeSerialNumber(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -333,4 +413,72 @@ func TestNormalizePEMLineEndings(t *testing.T) {
 			assert.NotContains(t, result, "\r", "result must contain no carriage return characters")
 		})
 	}
+}
+
+// TestUnitEnumPtrToTfInt64 covers the generic helper that replaced four
+// near-identical 5-line hand-rolled converters (enrollmentTypePtrToTfInt64
+// and keyRetentionPtrToTfInt64 in resource_keyfactor_certificate_authority.go,
+// cleanupTimeUnitsPtrToTfInt64 in the same file, and
+// pamParameterDataTypePtrToTfInt64 in resource_keyfactor_pam_provider_type.go)
+// -- a pure refactor with no intended behavior change. Nil must map to Null
+// (not the enum's zero value, which is itself meaningful for several of
+// these enums), and a non-nil pointer must carry its value through as an
+// int64.
+func TestUnitEnumPtrToTfInt64(t *testing.T) {
+	type fakeEnum int32
+
+	t.Run("nil pointer maps to Null", func(t *testing.T) {
+		got := enumPtrToTfInt64[fakeEnum](nil)
+		assert.True(t, got.Null, "expected Null=true for a nil enum pointer")
+	})
+
+	t.Run("non-nil pointer carries its value, including the enum zero value", func(t *testing.T) {
+		zero := fakeEnum(0)
+		got := enumPtrToTfInt64(&zero)
+		assert.False(t, got.Null, "expected Null=false for a non-nil pointer, even when the pointee is the enum zero value")
+		assert.Equal(t, int64(0), got.Value)
+
+		five := fakeEnum(5)
+		got = enumPtrToTfInt64(&five)
+		assert.False(t, got.Null)
+		assert.Equal(t, int64(5), got.Value)
+	})
+
+	t.Run("thin wrappers around real SDK enum types still delegate correctly", func(t *testing.T) {
+		// Exercises the actual call sites' types, not just the generic
+		// helper directly -- guards against a future edit accidentally
+		// reintroducing divergent behavior in one of the wrappers.
+		assert.True(t, enrollmentTypePtrToTfInt64(nil).Null)
+		assert.True(t, keyRetentionPtrToTfInt64(nil).Null)
+		assert.True(t, cleanupTimeUnitsPtrToTfInt64(nil).Null)
+		assert.True(t, pamParameterDataTypePtrToTfInt64(nil).Null)
+
+		et := kfv1.CSSCMSCoreEnumsEnrollmentType(2)
+		assert.Equal(t, int64(2), enrollmentTypePtrToTfInt64(&et).Value)
+
+		kr := kfv1.CSSCMSCoreEnumsKeyRetentionPolicy(3)
+		assert.Equal(t, int64(3), keyRetentionPtrToTfInt64(&kr).Value)
+
+		ctu := kfv1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits(1)
+		assert.Equal(t, int64(1), cleanupTimeUnitsPtrToTfInt64(&ctu).Value)
+
+		dt := kfv1.CSSCMSDataModelEnumsPamParameterDataType(4)
+		assert.Equal(t, int64(4), pamParameterDataTypePtrToTfInt64(&dt).Value)
+	})
+}
+
+// TestUnitDerefOrEmpty covers the plain-string dereference helper that
+// replaced the getStringType(v).Value idiom (a Terraform-state conversion
+// helper being used purely to discard its Null flag) at 7 call sites across
+// helpers.go and resource_keyfactor_oauth_security_role_claim_association.go.
+// No behavior change: nil still maps to "", and a non-nil pointer's value
+// still passes through unchanged.
+func TestUnitDerefOrEmpty(t *testing.T) {
+	assert.Equal(t, "", derefOrEmpty(nil))
+
+	s := "hello"
+	assert.Equal(t, "hello", derefOrEmpty(&s))
+
+	empty := ""
+	assert.Equal(t, "", derefOrEmpty(&empty))
 }

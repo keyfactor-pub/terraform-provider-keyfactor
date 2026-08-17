@@ -356,6 +356,44 @@ type providerData struct {
 	KerberosDisablePAFXFast types.Bool   `tfsdk:"kerberos_disable_pafxfast"`
 }
 
+// resolveClientTimeout implements the documented precedence for the client
+// timeout: provider config (`request_timeout`) > environment variable
+// (auth_providers.EnvKeyfactorClientTimeout) > auth_providers.DefaultClientTimeout.
+// It returns the resolved timeout, a message describing how it was resolved
+// (for logging), and whether that message should be logged as a warning
+// (invalid/unparseable env var) rather than at debug level.
+//
+// This is a standalone, directly-testable function specifically because a
+// previous inline version of this logic had a dead-code branch: the
+// condition `!envVarSet || (configValue > 0)` is true whenever the env var is
+// unset regardless of configValue, so the "nothing configured" branch (which
+// applied the default) was unreachable, and an unset/zero configValue with an
+// unset env var silently produced a timeout of 0 instead of the documented
+// default. (In practice, keyfactor-auth-client-go's ValidateAuthConfig()
+// happens to re-apply the default whenever HttpClientTimeout <= 0, which
+// masked the bug from being externally observable -- but the dead code and a
+// separate bug logging the raw, unparsed env var string instead of the
+// effective timeout were real and are covered by TestUnitResolveClientTimeout.)
+func resolveClientTimeout(configValue int64, envVarStr string, envVarSet bool) (timeout int64, logMsg string, isWarning bool) {
+	if configValue > 0 {
+		return configValue, "Using client timeout from provider configuration", false
+	}
+	if envVarSet {
+		parsedTimeout, pErr := strconv.ParseInt(envVarStr, 10, 64)
+		if pErr != nil || parsedTimeout <= 0 {
+			return auth_providers.DefaultClientTimeout, fmt.Sprintf(
+				"invalid value %q for `%s`, using default of %d",
+				envVarStr, auth_providers.EnvKeyfactorClientTimeout, auth_providers.DefaultClientTimeout,
+			), true
+		}
+		return parsedTimeout, "Using client timeout from environment variables", false
+	}
+	return auth_providers.DefaultClientTimeout, fmt.Sprintf(
+		"No client timeout configured via `request_timeout` or `%s`, using default of %d",
+		auth_providers.EnvKeyfactorClientTimeout, auth_providers.DefaultClientTimeout,
+	), false
+}
+
 func (p *provider) getServerConfig(c *providerData, ctx context.Context) (*auth_providers.Server, diag.Diagnostics) {
 
 	LogFunctionEntry(ctx, "getServerConfig")
@@ -397,23 +435,14 @@ func (p *provider) getServerConfig(c *providerData, ctx context.Context) (*auth_
 
 	tflog.Debug(ctx, "Resolving command client timeout from environment variables")
 	clientTimeoutStr, tOk := os.LookupEnv(auth_providers.EnvKeyfactorClientTimeout)
-	var clientTimeout int64
-	if !tOk || (c.RequestTimeout.Value > 0) {
-		tflog.Debug(ctx, "Using client timeout from provider configuration")
-		clientTimeout = c.RequestTimeout.Value
-	} else if tOk {
-		tflog.Debug(ctx, "Using client timeout from environment variables")
-		clientTimeout, _ = strconv.ParseInt(clientTimeoutStr, 10, 64)
+	clientTimeout, timeoutLog, timeoutIsWarning := resolveClientTimeout(c.RequestTimeout.Value, clientTimeoutStr, tOk)
+	if timeoutIsWarning {
+		tflog.Warn(ctx, timeoutLog)
 	} else {
-		tflog.Warn(
-			ctx, fmt.Sprintf(
-				"invalid value for `client_timeout` using default of %d",
-				auth_providers.DefaultClientTimeout,
-			),
-		)
-		clientTimeout = auth_providers.DefaultClientTimeout
+		tflog.Debug(ctx, timeoutLog)
 	}
-	ctx = tflog.SetField(ctx, "client_timeout", clientTimeoutStr)
+	// Log the effective timeout actually used, not the raw (possibly unset/invalid) env var string.
+	ctx = tflog.SetField(ctx, "client_timeout", clientTimeout)
 
 	tflog.Debug(ctx, "Resolving CA cert path from environment variables")
 	caCert, caOk := os.LookupEnv(auth_providers.EnvKeyfactorCACert)

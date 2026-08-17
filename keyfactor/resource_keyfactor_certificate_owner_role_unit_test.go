@@ -151,9 +151,9 @@ func TestUnitOwnerChangeRequestForPlan_NameIsRoleName(t *testing.T) {
 // prior state -- an out-of-band (or this resource's own prior Update) owner
 // change must always be drift-visible.
 func TestUnitOwnerRoleNameForRead_ServerValueAlwaysWins(t *testing.T) {
-	got := ownerRoleNameForRead("AdministratorsRole", types.String{Value: ""})
+	got := keepStringSentinel("AdministratorsRole", types.String{Value: ""})
 	if got.Null || got.Value != "AdministratorsRole" {
-		t.Errorf("ownerRoleNameForRead(server=%q, prior=\"\") = %+v, want Known \"AdministratorsRole\"", "AdministratorsRole", got)
+		t.Errorf("keepStringSentinel(server=%q, prior=\"\") = %+v, want Known \"AdministratorsRole\"", "AdministratorsRole", got)
 	}
 }
 
@@ -164,12 +164,12 @@ func TestUnitOwnerRoleNameForRead_ServerValueAlwaysWins(t *testing.T) {
 // this, a config that still declares owner_role_name = "" would see a
 // perpetual "" -> null -> "" diff on every plan.
 func TestUnitOwnerRoleNameForRead_SentinelStaysStable(t *testing.T) {
-	got := ownerRoleNameForRead("", types.String{Value: ""})
+	got := keepStringSentinel("", types.String{Value: ""})
 	if got.Null {
-		t.Fatalf("ownerRoleNameForRead(server=\"\", prior=\"\" sentinel) = %+v, want Known \"\" (sentinel preserved), got Null", got)
+		t.Fatalf("keepStringSentinel(server=\"\", prior=\"\" sentinel) = %+v, want Known \"\" (sentinel preserved), got Null", got)
 	}
 	if got.Value != "" {
-		t.Errorf("ownerRoleNameForRead(server=\"\", prior=\"\" sentinel).Value = %q, want \"\"", got.Value)
+		t.Errorf("keepStringSentinel(server=\"\", prior=\"\" sentinel).Value = %q, want \"\"", got.Value)
 	}
 }
 
@@ -178,17 +178,17 @@ func TestUnitOwnerRoleNameForRead_SentinelStaysStable(t *testing.T) {
 // reports no owner, Read leaves it Null -- the attribute stays unmanaged
 // rather than acquiring a "" sentinel it was never given.
 func TestUnitOwnerRoleNameForRead_UndeclaredStaysNull(t *testing.T) {
-	got := ownerRoleNameForRead("", types.String{Null: true})
+	got := keepStringSentinel("", types.String{Null: true})
 	if !got.Null {
-		t.Errorf("ownerRoleNameForRead(server=\"\", prior=Null) = %+v, want Null", got)
+		t.Errorf("keepStringSentinel(server=\"\", prior=Null) = %+v, want Null", got)
 	}
 }
 
 // TestUnitOwnerRoleNameForRead_UnknownStaysNull covers the Unknown prior
 // case (e.g. first Read immediately after Create) the same way as Null.
 func TestUnitOwnerRoleNameForRead_UnknownStaysNull(t *testing.T) {
-	got := ownerRoleNameForRead("", types.String{Unknown: true})
+	got := keepStringSentinel("", types.String{Unknown: true})
 	if !got.Null {
-		t.Errorf("ownerRoleNameForRead(server=\"\", prior=Unknown) = %+v, want Null", got)
+		t.Errorf("keepStringSentinel(server=\"\", prior=Unknown) = %+v, want Null", got)
 	}
 }

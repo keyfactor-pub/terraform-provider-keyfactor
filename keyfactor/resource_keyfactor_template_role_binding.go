@@ -153,6 +153,10 @@ func (r resourceCertificateTemplateRoleBinding) Read(
 	diags = state.TemplateNames.ElementsAs(ctx, &templateNames, true)
 	kfTemplates, err := kfClient.GetTemplates()
 	if err != nil {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_TEMPLATE_READ,
+			"There was an error getting templates from Keyfactor Command: "+err.Error(),
+		)
 		return
 	}
 	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)
@@ -161,6 +165,16 @@ func (r resourceCertificateTemplateRoleBinding) Read(
 	if response.Diagnostics.HasError() {
 		return
 	}
+
+	// Re-check actual attachment against the fresh API response. Previously
+	// Read() only verified that each stored template name still EXISTED
+	// (verifyTemplateNames) and then wrote back the unchanged prior state, so a
+	// role detached from a template out-of-band (outside Terraform) was never
+	// detected -- Read() reported stale "still attached" success instead of
+	// drift. templateNamesStillAttached drops any name whose template no
+	// longer lists roleName as an allowed requester.
+	attachedNames := templateNamesStillAttached(kfTemplates, roleName, templateNames)
+	state.TemplateNames = types.List{ElemType: types.StringType, Elems: convertStringArrayToTerraform(attachedNames)}
 
 	hid := fmt.Sprintf("%v%v", roleName, templateNames)
 	ctx = tflog.SetField(ctx, "role_binding_id", hid)
@@ -171,6 +185,34 @@ func (r resourceCertificateTemplateRoleBinding) Read(
 	if response.Diagnostics.HasError() {
 		return
 	}
+}
+
+// templateNamesStillAttached filters templateNames down to the subset whose
+// template still lists roleName as an allowed requester in the
+// freshly-fetched kfTemplates (the same UseAllowedRequesters/AllowedRequesters
+// fields findTemplateRoleAttachments uses). A template that no longer has
+// UseAllowedRequesters enabled, or no longer lists roleName, is dropped --
+// that is real server-side drift (the role was detached out-of-band).
+func templateNamesStillAttached(kfTemplates []api.GetTemplateResponse, roleName string, templateNames []string) []string {
+	var attached []string
+	for _, name := range templateNames {
+		for _, template := range kfTemplates {
+			if !strings.EqualFold(template.CommonName, name) {
+				continue
+			}
+			if !template.UseAllowedRequesters {
+				break
+			}
+			for _, r := range template.AllowedRequesters {
+				if r == roleName {
+					attached = append(attached, name)
+					break
+				}
+			}
+			break
+		}
+	}
+	return attached
 }
 
 func (r resourceCertificateTemplateRoleBinding) Update(

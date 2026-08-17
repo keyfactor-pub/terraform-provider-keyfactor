@@ -56,6 +56,11 @@ import-all:
 	  fi; \
 	done < _import_pairs.txt
 
+## reconcile: Apply after import to reconcile fields not returned by the API.
+## Should produce no further changes.
+reconcile:
+	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
+
 ## drift-check: Plan after import — should show "No changes"
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
@@ -113,6 +118,10 @@ lab-update:
 lab-import-all:
 	$(LAB_ENV) $(MAKE) import-all
 
+## lab-reconcile: Reconcile after import (re-apply to settle fields not returned by the API)
+lab-reconcile:
+	$(LAB_ENV) $(MAKE) reconcile
+
 ## lab-drift-check: Drift-check using lab credentials
 lab-drift-check:
 	$(LAB_ENV) $(MAKE) drift-check
@@ -121,8 +130,8 @@ lab-drift-check:
 lab-destroy:
 	$(LAB_ENV) $(MAKE) destroy
 
-## lifecycle: Full lifecycle: apply → update (apply+plan) → import-all → apply (reconcile) → drift-check → destroy
-lifecycle: lab-apply lab-update lab-import-all lab-apply lab-drift-check lab-destroy
+## lifecycle: Full lifecycle: apply → update (apply+plan) → import-all → reconcile → drift-check → destroy
+lifecycle: lab-apply lab-update lab-import-all lab-reconcile lab-drift-check lab-destroy
 
-.PHONY: build init validate plan apply import-all drift-check destroy clean all demo-no-destroy \
-        lab-plan lab-apply lab-update lab-import-all lab-drift-check lab-destroy lifecycle
+.PHONY: build init validate plan apply import-all reconcile drift-check destroy clean all demo-no-destroy \
+        lab-plan lab-apply lab-update lab-import-all lab-reconcile lab-drift-check lab-destroy lifecycle

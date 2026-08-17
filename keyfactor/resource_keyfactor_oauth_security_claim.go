@@ -102,15 +102,13 @@ func (r resourceOAuthSecurityClaim) Read(
 
 	remoteState, httpReq, err := req.Execute()
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
-
-	if httpReq != nil && httpReq.StatusCode == 404 {
-		tflog.Info(ctx, fmt.Sprintf("OAuth Security Claim %d not found in remote system. Removing from state", claimId))
-		response.State.RemoveResource(ctx)
-		return
-	}
-
 	if err != nil {
+		if httpReq != nil && httpReq.StatusCode == 404 {
+			tflog.Info(ctx, fmt.Sprintf("OAuth Security Claim %d not found in remote system. Removing from state", claimId))
+			response.State.RemoveResource(ctx)
+			return
+		}
+
 		var body []byte
 		if httpReq != nil {
 			defer httpReq.Body.Close()
@@ -122,6 +120,10 @@ func (r resourceOAuthSecurityClaim) Read(
 			fmt.Sprintf("Could not read OAuth security claim ID %d, unexpected error: %s. Details %s ", claimId, err.Error(), string(body)),
 		)
 		return
+	}
+
+	if httpReq != nil {
+		tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 	}
 
 	var result = mapOAuthSecurityClaim(ctx, remoteState, state)

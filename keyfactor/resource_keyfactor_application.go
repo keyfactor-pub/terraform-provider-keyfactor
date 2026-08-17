@@ -177,7 +177,23 @@ func buildApplicationSchedule(state KeyfactorApplication) *api.ApplicationSchedu
 			ExactlyOnce: &api.ApplicationScheduleDaily{Time: state.ScheduleExactlyOnce.Value},
 		}
 	}
-	return nil
+	// No schedule_* attribute is active in the plan. Return the SDK-documented
+	// empty-object "disable" payload rather than a bare nil.
+	//
+	// UpdateApplication performs a *full replacement* of the application (see
+	// its doc comment in keyfactor-go-client/v3/api/application.go), and
+	// ApplicationUpdateRequest.Schedule is `json:"Schedule,omitempty"`. Returning
+	// nil therefore omits the Schedule field from the PUT body entirely, leaving
+	// the server free to preserve a real prior schedule on an otherwise unrelated
+	// Update — which then disagrees with the plan (which declared no schedule)
+	// and trips the framework's "inconsistent result after apply" check. Because
+	// the endpoint fully replaces the resource there is no way to "omit to
+	// preserve"; the ApplicationSchedule doc documents that the empty object is
+	// the disable ("Off") signal, so send it explicitly. This applies equally
+	// whether the schedule_* fields are genuinely undeclared (all null) or
+	// explicitly zeroed — both mean "no schedule" for these Optional-only
+	// attributes and must resolve to the same disable payload.
+	return &api.ApplicationSchedule{}
 }
 
 // flattenApplicationSchedule converts an API schedule object into Terraform schedule fields.

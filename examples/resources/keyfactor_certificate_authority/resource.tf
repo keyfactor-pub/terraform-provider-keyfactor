@@ -18,6 +18,13 @@ resource "keyfactor_certificate_authority" "ejbca" {
   full_scan_interval_minutes        = 60
   incremental_scan_interval_minutes = 10
 
+  # Alternative schedule variants (mutually exclusive with *_interval_minutes
+  # per schedule): a once-daily time-of-day --
+  #   full_scan_daily_time = "07:00:00"
+  # -- or a weekly days+time pair, both attributes required together --
+  threshold_check_weekly_days = ["Monday", "Thursday"]
+  threshold_check_weekly_time = "07:00:00"
+
   token_url     = "https://auth.example.com/oauth2/token"
   client_id     = "my-client-id"
   client_secret = var.ejbca_client_secret

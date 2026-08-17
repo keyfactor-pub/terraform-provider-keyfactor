@@ -63,6 +63,7 @@
 - fix: `keyfactor_certificate_store` `Update` no longer silently clears an existing container/application assignment when config doesn't declare it. Fixes [#175](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/175)
 - fix: `keyfactor_certificate_store` container/application name lookup now retries instead of nulling the name on a single transient lookup failure
 - fix: `keyfactor_certificate_store` `store_type` no longer reads back as Command's display name after import, which was forcing every imported store into a spurious destroy+recreate. Fixes [#196](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/196)
+- fix: `keyfactor_certificate_store` `Update` always re-resolves the container/application name by ID after a successful update instead of trusting a locally-resolved name, preventing a same-apply state mismatch if Command's canonical name differs (case/whitespace normalization, or an out-of-band rename)
 
 ## Certificate Store Types
 
@@ -76,11 +77,13 @@
 ### Features
 
 - feat: `keyfactor_certificate_authority` now supports Daily scan schedules via new `full_scan_daily_time`, `incremental_scan_daily_time`, and `threshold_check_daily_time` attributes (format `"HH:MM:SS"`), alongside the existing interval-based schedules. Fixes [#193](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/193)
+- feat: `keyfactor_certificate_authority` now also supports Weekly scan schedules via new `full_scan_weekly_days`/`full_scan_weekly_time` (and the `incremental_scan`/`threshold_check` equivalents) — a co-required pair (declaring one without the other is a plan-time error), mutually exclusive with both the interval and Daily variants. `*_weekly_days` is a list of exact, case-sensitive day names (`Sunday`..`Saturday`); `*_weekly_days = []` together with `*_weekly_time = ""` declaratively clears the schedule, matching the Interval/Daily sentinels. Closes [#185](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/185): Command v25.5 sends a Weekly schedule's `Days` as day-name strings (e.g. `"Monday"`) rather than integers, which the previously-vendored SDK could not deserialize at all — `Read` would fail outright on any CA with a live Weekly schedule
 
 ### Fixes
 
 - fix: `keyfactor_certificate_authority` no longer silently clears a Daily-shaped scan schedule on every apply
 - fix: switching a scan schedule between its Interval and Daily variant in one apply no longer fails
+- fix: `Update` no longer clears a live Weekly/Monthly/ExactlyOnce/Immediate-shaped schedule (variants this provider has no dedicated attributes for) when a schedule pair is left entirely undeclared in config — it now does a read-modify-write, fetching the CA's current schedule immediately before the PUT and copying it through verbatim for any undeclared pair
 - fix: `key_retention = "2"` no longer produces an inconsistent-result error on apply. Fixes [#191](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/191)
 - fix: destroying a client-certificate-auth CA no longer fails with an OAuth/client-certificate field conflict. Fixes [#194](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/194)
 - fix: switching a CA between OAuth and client-certificate authentication in one apply no longer fails
@@ -88,13 +91,16 @@
 - fix: auth-certificate metadata (`auth_certificate_issued_dn`/`_issuer_dn`/`_thumbprint`) now reads as `null` instead of an empty string when no auth certificate is configured
 - fix: `enforce_unique_dn` and `new_end_entity_on_renew_and_reissue` can no longer both be `true`, and `new_end_entity_on_renew_and_reissue = false` is now rejected for HTTPS CAs, both caught at plan time instead of failing on apply
 - fix: `allowed_enrollment_types`/`use_allowed_requesters`/`allowed_requesters` are no longer rejected just because `standalone = false`
-- fix: the new `*_daily_time` attributes now reject a non-zero-padded hour at plan time instead of accepting a value that would fail on every later apply
+- fix: the new `*_daily_time`/`*_weekly_time` attributes now reject a non-zero-padded hour at plan time instead of accepting a value that would fail on every later apply
+- fix: schedule decisions (declared-and-managed, preserved-from-state, sentinel-carried-forward) are now logged at debug/warn level, naming which of `full_scan`/`incremental_scan`/`threshold_check` was affected
 - docs: `explicit_password`, `auth_certificate`, `auth_certificate_password`, and `client_secret` now note that removing them from config clears the credential on the next apply
 
 ## Chores
 
 - chore(deps): `keyfactor-go-client/v3` bumped to `v3.6.0-rc.0` (from `v3.5.6` GA) — changes `UpdateTemplateArg.KeyUsage` from `*bool` to `*int` to match Command's actual int-bitmask wire format for `PUT /Templates`; final GA of this provider must pin a go-client GA once `v3.6.0` is cut
+- chore(deps): `keyfactor-go-client-sdk/v24` bumped to `v24.1.2-rc.0` — `SystemDayOfWeek.UnmarshalJSON` now accepts a day-name string (e.g. `"Monday"`) in addition to the original integer form, fixing #185
 - chore(deps): security bumps resolving all 15 open Dependabot alerts (7 critical, 3 high, 5 moderate): `golang.org/x/crypto` v0.47.0 → v0.52.0 (SSH auth-bypass/DoS advisories incl. GHSA-vgwf-h737-ff37, GHSA-jppx-rxg9-jmrx), `google.golang.org/grpc` v1.79.3 → v1.82.1 (GHSA-hrxh-6v49-42gf xDS RBAC/HTTP2), `golang.org/x/net` v0.49.0 → v0.55.0 (HTML parser DoS), plus transitive `x/sys`/`x/text`/`x/tools`/`protobuf` updates. All indirect dependencies; no Terraform plugin framework or Keyfactor client changes. Minimum Go toolchain moves 1.24 → 1.25 (required by the updated dependencies)
+- chore: extended the pair-aware schedule-variant plan modifier (`pairedVariantModifier` in `keyfactor/attribute_contract.go`) from a two-way (Interval/Daily) to a three-way (Interval/Daily/Weekly) mutual-exclusion group
 - chore(test): add a real-Terraform release-test harness (`terraform/`, `make -C terraform harness`) that runs every resource through `plan → apply → import → drift-check → destroy` against a live Command instance; used to find and verify every fix above
 
 # v2.9.1

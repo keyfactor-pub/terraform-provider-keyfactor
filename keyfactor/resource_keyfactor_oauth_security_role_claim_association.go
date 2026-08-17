@@ -80,15 +80,13 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Read(
 
 	remoteState, httpReq, err := req.Execute()
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
-
-	if httpReq.StatusCode == 404 {
-		tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing role claim association from state", roleId))
-		response.State.RemoveResource(ctx)
-		return
-	}
-
 	if err != nil {
+		if httpReq != nil && httpReq.StatusCode == 404 {
+			tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing role claim association from state", roleId))
+			response.State.RemoveResource(ctx)
+			return
+		}
+
 		response.Diagnostics.AddError(
 			"Unknown OAuth security role error.",
 			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. "+err.Error(), roleId),
@@ -96,6 +94,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Read(
 
 		return
 	}
+
+	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 
 	// See if the claim is associated with the role
 	remoteClaimFound := false
@@ -199,15 +199,18 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 
 	_, httpResp, err := updateReq.Execute()
 
-	if httpResp.StatusCode == 404 {
-		tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
-		response.State.RemoveResource(ctx)
-		return
-	}
-
 	if err != nil {
-		defer httpResp.Body.Close()
-		body, _ := io.ReadAll(httpResp.Body)
+		if httpResp != nil && httpResp.StatusCode == 404 {
+			tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+			response.State.RemoveResource(ctx)
+			return
+		}
+
+		var body []byte
+		if httpResp != nil {
+			defer httpResp.Body.Close()
+			body, _ = io.ReadAll(httpResp.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error updating security role claim association.",
@@ -271,7 +274,6 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security claim ID %d...", claimId))
 
 	remoteClaimState, httpReq, err := claimRequest.Execute()
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -281,6 +283,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 		return
 	}
+
+	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 
 	existingClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteRoleState, nil)
 	if !ok {
@@ -325,8 +329,11 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 	_, httpResp, err = updateReq.Execute()
 	if err != nil {
-		defer httpResp.Body.Close()
-		body, _ := io.ReadAll(httpResp.Body)
+		var body []byte
+		if httpResp != nil {
+			defer httpResp.Body.Close()
+			body, _ = io.ReadAll(httpResp.Body)
+		}
 
 		response.Diagnostics.AddError(
 			"Error creating security role claim association.",

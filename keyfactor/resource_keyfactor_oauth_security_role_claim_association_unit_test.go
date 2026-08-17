@@ -256,6 +256,62 @@ func TestUnitOAuthSecurityRoleClaimAssociation_DeleteTransportErrorDoesNotPanic(
 	}
 }
 
+// TestUnitOAuthSecurityRoleClaimAssociation_ReadTransportErrorDoesNotPanic is
+// the Read-path counterpart to the Create/Delete transport-error regressions
+// above: Read() dereferenced httpReq.StatusCode (both in the tflog.Debug call
+// and the `== 404` check) before checking `err != nil`. On a transport-level
+// failure (DNS/connection-refused/TLS failure) the generated SDK's callAPI
+// returns a nil *http.Response alongside the error, and Execute() passes that
+// nil response straight through — dereferencing .StatusCode on it crashed the
+// entire provider process instead of surfacing a Terraform diagnostic.
+func TestUnitOAuthSecurityRoleClaimAssociation_ReadTransportErrorDoesNotPanic(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		roleId  int32 = 47
+		claimId int32 = 11
+	)
+
+	sdkClient := newOAuthRoleClaimAssocUnreachableClient()
+
+	schema, sDiags := resourceOAuthSecurityRoleClaimAssociationType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	state := OAuthSecurityRoleClaimAssociation{
+		ID:      types.String{Value: fmt.Sprintf("%d/%d", roleId, claimId)},
+		RoleID:  types.Int64{Value: int64(roleId)},
+		ClaimID: types.Int64{Value: int64(claimId)},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceOAuthSecurityRoleClaimAssociation{p: provider{configured: true, sdkClient: sdkClient}}
+
+	req := tfsdk.ReadResourceRequest{State: stateObj}
+	resp := &tfsdk.ReadResourceResponse{State: stateObj}
+
+	// The whole point of this regression test: Read must NOT panic (and must
+	// NOT crash the provider process) when the role GET fails at the
+	// transport level.
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				t.Fatalf("Read panicked (nil httpReq transport-error regression): %v", rec)
+			}
+		}()
+		r.Read(ctx, req, resp)
+	}()
+
+	if !resp.Diagnostics.HasError() {
+		t.Fatalf("expected Read to fail with a diagnostic on a transport-level error, got no diagnostics")
+	}
+}
+
 // TestUnitOAuthSecurityRoleClaimAssociation_CreateClaimGetErrorDoesNotPanic is
 // the red/green regression test for the fall-through bug in
 // resourceOAuthSecurityRoleClaimAssociation.Create: when the security-claim

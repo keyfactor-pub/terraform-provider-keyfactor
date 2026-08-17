@@ -46,6 +46,21 @@ export TF_VAR_certificate_template="AnyCA_lab-role"
 > the HTTP client timeout to 10 minutes. Without this the default 60-second timeout
 > will cause `rsa_8192` to fail.
 
+> **⚠ RSA-8192 intermittent `ContentLength` failure:** Separately from the timeout
+> above, the initial `rsa_8192` enrollment attempt has been observed to fail with
+> `http: ContentLength=160 with Body length 0` even with `KEYFACTOR_CLIENT_TIMEOUT`
+> raised (reproduced identically on two attempts, 2026-08-17). Command completes the
+> enrollment server-side despite the client-side failure — confirmed via direct API
+> query against the lab, with orphaned certificate IDs 364, 367, and 369 observed and
+> left in place as acceptable lab noise, not cleaned up. A retry (e.g. re-running
+> `make lab-update` or `make apply` again) succeeds. This is a known lab/environment
+> issue, not a code bug, and is not currently investigated further here. Note: this
+> symptom is superficially similar to the client-side-timeout shape that the
+> orphaned-PFX-recovery feature (`isTimeoutShapedError` in `keyfactor/helpers.go`)
+> already detects and recovers from, but a `ContentLength` mismatch does not match any
+> of that function's checks, so this case is NOT currently auto-recovered — a possible
+> gap for future investigation, not addressed here.
+
 ## Files
 
 | File | Purpose |

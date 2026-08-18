@@ -179,6 +179,21 @@ func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, declared
 	return arg
 }
 
+// securityIdentitiesToRoleConfig converts a role's current server-reported
+// Identities (api.SecurityIdentity, as returned by GetSecurityRole) into the
+// []api.SecurityRoleIdentityConfig shape UpdateSecurityRoleArg.Identities
+// expects, so Update() can resend a role's existing identity bindings
+// unchanged. Mirrors the identical conversion already done in
+// addIdentityToRole / removeIdentityFromRole (see
+// resource_keyfactor_security_identity.go).
+func securityIdentitiesToRoleConfig(identities []api.SecurityIdentity) *[]api.SecurityRoleIdentityConfig {
+	result := make([]api.SecurityRoleIdentityConfig, len(identities))
+	for i, identity := range identities {
+		result[i] = api.SecurityRoleIdentityConfig{AccountName: identity.AccountName}
+	}
+	return &result
+}
+
 // permissionSetsEqual compares two permission slices as sets — order-
 // insensitive, but case-SENSITIVE (Command permission strings are
 // case-sensitive, e.g. "Certificates:Read").
@@ -286,6 +301,38 @@ func (r resourceSecurityRole) Update(
 	roleId := state.ID.Value
 	tflog.SetField(ctx, "id", roleId)
 
+	// Command's PUT /Security/Roles is a full-replace endpoint -- Identities
+	// is a *[]T `json:"Identities,omitempty"` field on CreateSecurityRoleArg
+	// (embedded in UpdateSecurityRoleArg), exactly the same shape as
+	// Permissions, and subject to the identical clear-on-omit behavior
+	// documented on buildSecurityRoleUpdateArg above. Unlike Permissions,
+	// though, keyfactor_security_role has no `identities` attribute in its
+	// schema at all -- identities are only ever attached to a role
+	// out-of-band (directly in Command, or via keyfactor_security_identity's
+	// addIdentityToRole/removeIdentityFromRole helpers in
+	// resource_keyfactor_security_identity.go) -- so there is no
+	// Terraform-state-tracked value to fall back on here. The only source of
+	// truth is a fresh server read, fetched and resent unchanged: the exact
+	// pattern addIdentityToRole/removeIdentityFromRole already use to avoid
+	// this same clear-on-omit trap. Without this, applying ANY unrelated
+	// change to this resource (permissions, description) would silently wipe
+	// every identity/group bound to the role, with no diagnostic.
+	remoteRole, err := r.p.client.GetSecurityRole(int(roleId))
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Error reading role from Keyfactor.",
+			fmt.Sprintf("Unable to read role '%s' (id %v) from Keyfactor before update: ", state.Name.Value, roleId)+err.Error(),
+		)
+		return
+	}
+	if remoteRole == nil {
+		response.Diagnostics.AddError(
+			"Error reading role from Keyfactor.",
+			fmt.Sprintf("Role '%s' (id %v) not found on Keyfactor while preparing update.", state.Name.Value, roleId),
+		)
+		return
+	}
+
 	// Generate API request body from plan. state.Permissions is passed so that
 	// when config.Permissions is undeclared, buildSecurityRoleUpdateArg can
 	// resend the role's current permissions explicitly rather than omitting
@@ -293,6 +340,7 @@ func (r resourceSecurityRole) Update(
 	// is absent, it does not treat absence as "leave unchanged" (see
 	// buildSecurityRoleUpdateArg's doc comment).
 	updateArg := buildSecurityRoleUpdateArg(ctx, plan, config.Permissions, state.Permissions, int(roleId))
+	updateArg.Identities = securityIdentitiesToRoleConfig(remoteRole.Identities)
 
 	remoteState, err := r.p.client.UpdateSecurityRole(updateArg)
 	if err != nil {

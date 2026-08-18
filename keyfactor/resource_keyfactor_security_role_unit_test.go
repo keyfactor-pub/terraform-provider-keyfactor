@@ -99,6 +99,19 @@ func TestUnitSecurityRoleResource_UpdatePreservesPlanPermissionsOrder(t *testing
 	ctx := context.Background()
 
 	mux := http.NewServeMux()
+	// Update() now calls GetSecurityRole first to preserve the role's
+	// existing Identities across the update (see securityIdentitiesToRoleConfig's
+	// doc comment) -- this GET must be mocked or Update() fails before it
+	// ever reaches the PUT below.
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/5", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role",
+			"Description": "Unit test role",
+			"Permissions": []string{"Certificates:EditMetadata", "Certificates:Read"},
+		})
+	})
 	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		// Server returns permissions alphabetically sorted -- a different
@@ -196,6 +209,19 @@ func TestUnitSecurityRoleResource_UpdateSurfacesRealServerDrift(t *testing.T) {
 	ctx := context.Background()
 
 	mux := http.NewServeMux()
+	// Update() now calls GetSecurityRole first to preserve the role's
+	// existing Identities across the update (see securityIdentitiesToRoleConfig's
+	// doc comment) -- this GET must be mocked or Update() fails before it
+	// ever reaches the PUT below.
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/5", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role",
+			"Description": "Unit test role",
+			"Permissions": []string{"Certificates:Read", "Certificates:EditMetadata"},
+		})
+	})
 	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		// Server drops "Certificates:EditMetadata" -- simulating Command
@@ -653,6 +679,19 @@ func TestUnitSecurityRoleResource_UpdatePreservesPermissionsWhenConfigOmitsThem(
 	ctx := context.Background()
 
 	mux := http.NewServeMux()
+	// Update() now calls GetSecurityRole first to preserve the role's
+	// existing Identities across the update (see securityIdentitiesToRoleConfig's
+	// doc comment) -- this GET must be mocked or Update() fails before it
+	// ever reaches the PUT below.
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/5", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role-preserve",
+			"Description": "Original description",
+			"Permissions": []string{"Certificates:Read"},
+		})
+	})
 	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Permissions *[]string `json:"Permissions"`
@@ -753,5 +792,147 @@ func TestUnitSecurityRoleResource_UpdatePreservesPermissionsWhenConfigOmitsThem(
 	assert.Equal(
 		t, []string{"Certificates:Read"}, gotPermissions,
 		"Update() must write exactly the planned permissions into state when config omits the attribute -- Terraform Core already committed to this planned value, so any divergence is an inconsistent-result-after-apply error",
+	)
+}
+
+// TestUnitSecurityRoleResource_UpdatePreservesIdentities is a regression test
+// for buildSecurityRoleUpdateArg/Update() never setting
+// UpdateSecurityRoleArg.Identities. UpdateSecurityRoleArg embeds
+// CreateSecurityRoleArg, whose Identities field is
+// `*[]SecurityRoleIdentityConfig` with `json:"Identities,omitempty"`
+// (vendor/github.com/Keyfactor/keyfactor-go-client/v3/api/security_models.go)
+// -- exactly the same *[]T `omitempty` shape as Permissions. Command's PUT
+// /Security/Roles is a confirmed full-replace endpoint (see
+// buildSecurityRoleUpdateArg's doc comment above for the Permissions case,
+// confirmed live against a real Command instance): leaving Identities
+// nil/omitted on the PUT body clears every identity/group bound to the role
+// server-side, it does not mean "leave unchanged".
+//
+// keyfactor_security_role has no `identities` attribute in its schema at all
+// (see GetSchema above) -- identities are only ever attached to a role
+// out-of-band, e.g. directly in Command or via keyfactor_security_identity's
+// addIdentityToRole/removeIdentityFromRole helpers
+// (resource_keyfactor_security_identity.go), which already fetch-and-resend
+// the role's Identities on every single add/remove for exactly this reason.
+// Before this fix, applying ANY unrelated change to keyfactor_security_role
+// (permissions, description) via Update() silently wiped every identity bound
+// to that role, with zero logging or diagnostic.
+//
+// This exercises the real Update() path against a mock Command server that:
+//  1. responds to the pre-update GetSecurityRole call with two identities
+//     already bound to the role;
+//  2. captures the PUT request body's Identities field and asserts it is
+//     non-nil and contains both pre-existing identities, for an update that
+//     only changes Description (permissions and identities are untouched by
+//     config).
+func TestUnitSecurityRoleResource_UpdatePreservesIdentities(t *testing.T) {
+	ctx := context.Background()
+
+	var capturedIdentities *[]struct {
+		AccountName string `json:"AccountName"`
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/5", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Role already has two identities bound to it out-of-band -- Update()
+		// must preserve both across an unrelated (description-only) change.
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role-identities",
+			"Description": "Original description",
+			"Permissions": []string{"Certificates:Read"},
+			"Identities": []map[string]interface{}{
+				{"AccountName": "CORP\\ExistingUser", "IdentityType": "User"},
+				{"AccountName": "CORP\\ExistingGroup", "IdentityType": "Group"},
+			},
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Identities *[]struct {
+				AccountName string `json:"AccountName"`
+			} `json:"Identities"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		capturedIdentities = body.Identities
+
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role-identities",
+			"Description": "Updated description, unrelated to identities",
+			"Permissions": []string{"Certificates:Read"},
+			"Identities": []map[string]interface{}{
+				{"AccountName": "CORP\\ExistingUser", "IdentityType": "User"},
+				{"AccountName": "CORP\\ExistingGroup", "IdentityType": "Group"},
+			},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	permissions := types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "Certificates:Read"},
+	}}
+
+	state := SecurityRole{
+		ID:          types.Int64{Value: 5},
+		Name:        types.String{Value: "tf-unit-role-identities"},
+		Description: types.String{Value: "Original description"},
+		Permissions: permissions,
+	}
+
+	// Only Description changes -- permissions and identities are untouched by
+	// this update, exactly like a practitioner tweaking one unrelated field.
+	plan := state
+	plan.Description = types.String{Value: "Updated description, unrelated to identities"}
+
+	config := plan
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
+
+	r := resourceSecurityRole{p: provider{configured: true, client: client}}
+
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	if !assert.NotNil(t, capturedIdentities,
+		"Update() must send a non-nil Identities field on the PUT body -- an omitted/null Identities key clears every identity bound to the role server-side (Command's PUT /Security/Roles is a full-replace endpoint), and this resource has no `identities` schema attribute to have declared them in the first place") {
+		return
+	}
+
+	var gotAccountNames []string
+	for _, id := range *capturedIdentities {
+		gotAccountNames = append(gotAccountNames, id.AccountName)
+	}
+
+	assert.ElementsMatch(
+		t, []string{"CORP\\ExistingUser", "CORP\\ExistingGroup"}, gotAccountNames,
+		"Update() must resend the role's pre-existing identities unchanged on every update, or an unrelated change (here, Description only) silently wipes every identity/group bound to the role",
 	)
 }

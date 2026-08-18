@@ -91,13 +91,21 @@ func (r resourceSecurityRole) Read(
 		// of erroring, so Terraform plans a re-create. Any other error (5xx,
 		// auth, network) still fails Read.
 		if isNotFoundError(err) {
-			tflog.Info(ctx, fmt.Sprintf("Security role '%s' (id %v) not found on Keyfactor, removing from state", roleName, roleId))
+			// roleName is logged %q-quoted (escaping embedded control
+			// characters like \r\n) rather than with %s, so a role name
+			// crafted to contain a CRLF sequence can't forge fake log lines
+			// under TF_LOG=INFO (CWE-117 log injection); see the identical
+			// rationale on roleLookupLogMessage in
+			// resource_keyfactor_security_identity.go. roleId is a numeric
+			// types.Int64 value, not attacker-controlled text, so it is left
+			// as %v.
+			tflog.Info(ctx, fmt.Sprintf("Security role %q (id %v) not found on Keyfactor, removing from state", roleName, roleId))
 			response.State.RemoveResource(ctx)
 			return
 		}
 		response.Diagnostics.AddError(
 			"Error reading role from Keyfactor.",
-			fmt.Sprintf("Unknown error while trying to read role '%s' (id %v) on Keyfactor. Read failed. ", roleName, roleId)+err.Error(),
+			fmt.Sprintf("Unknown error while trying to read role %q (id %v) on Keyfactor. Read failed. ", roleName, roleId)+err.Error(),
 		)
 		return
 	}
@@ -106,7 +114,7 @@ func (r resourceSecurityRole) Read(
 		// (its string-lookup branch falls off the loop with no match and
 		// returns nil, nil with no error at all) -- treat it identically to
 		// the 404 case above.
-		tflog.Info(ctx, fmt.Sprintf("Security role '%s' (id %v) not found on Keyfactor, removing from state", roleName, roleId))
+		tflog.Info(ctx, fmt.Sprintf("Security role %q (id %v) not found on Keyfactor, removing from state", roleName, roleId))
 		response.State.RemoveResource(ctx)
 		return
 	}
@@ -136,8 +144,8 @@ func (r resourceSecurityRole) Read(
 // user declare this attribute" (see the call site in Update() -- this must be
 // request.Config.Permissions, not request.Plan.Permissions, now that
 // permissions is Optional+Computed; see permissionsResultForUpdate's doc
-// comment for why), and the role's current state permissions to fall back to
-// when the attribute is undeclared.
+// comment for why), and a permissions value to fall back to when the
+// attribute is undeclared.
 //
 // Command's PUT /Security/Roles is a full-replace endpoint, NOT a merge
 // patch: confirmed live against a real Command instance, a PUT body that
@@ -148,11 +156,18 @@ func (r resourceSecurityRole) Read(
 // handling server-side.) So leaving the Permissions field nil/omitted on the
 // request can never mean "leave unchanged" for this endpoint; the only way to
 // preserve the role's existing permissions across an Update that omits
-// `permissions` from config is to resend them explicitly from state.
+// `permissions` from config is to resend them explicitly.
 //
 // A Null declaredPermissions value means the user omitted the attribute, so
-// statePermissions (the role's last-known permissions) is sent instead. An
-// explicit empty list is a real clear signal and is sent as `[]`.
+// statePermissions is sent instead. Despite the parameter name (kept for
+// signature stability), the caller must pass a fresh-from-server permissions
+// value here, NOT Terraform's prior state -- state can be stale relative to
+// the live server (e.g. an out-of-band permission change made directly in
+// Command, or a plan applied with -refresh=false), and sending it would
+// silently revert a real permission change back to the stale value on any
+// unrelated Update. See the call site in Update() for the fresh value this
+// is sourced from. An explicit empty list is a real clear signal and is sent
+// as `[]`.
 func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, declaredPermissions types.List, statePermissions types.List, roleId int) *api.UpdateSecurityRoleArg {
 	arg := &api.UpdateSecurityRoleArg{
 		Id: roleId,
@@ -333,13 +348,21 @@ func (r resourceSecurityRole) Update(
 		return
 	}
 
-	// Generate API request body from plan. state.Permissions is passed so that
-	// when config.Permissions is undeclared, buildSecurityRoleUpdateArg can
-	// resend the role's current permissions explicitly rather than omitting
-	// the field -- Command's PUT endpoint clears permissions when the field
-	// is absent, it does not treat absence as "leave unchanged" (see
-	// buildSecurityRoleUpdateArg's doc comment).
-	updateArg := buildSecurityRoleUpdateArg(ctx, plan, config.Permissions, state.Permissions, int(roleId))
+	// Generate API request body from plan. remoteRole.Permissions -- the
+	// fresh server read fetched two lines above (the same call already used
+	// to source Identities below) -- is passed as the fallback so that when
+	// config.Permissions is undeclared, buildSecurityRoleUpdateArg can resend
+	// the role's current permissions explicitly rather than omitting the
+	// field -- Command's PUT endpoint clears permissions when the field is
+	// absent, it does not treat absence as "leave unchanged" (see
+	// buildSecurityRoleUpdateArg's doc comment). Terraform's prior state
+	// (state.Permissions) is deliberately NOT used here: it can be stale
+	// relative to the live server, and resending a stale value would
+	// silently revert a real out-of-band permission change on any Update
+	// that only touches an unrelated field (e.g. description) -- the same
+	// staleness trap the fresh GetSecurityRole call above was added to avoid
+	// for Identities.
+	updateArg := buildSecurityRoleUpdateArg(ctx, plan, config.Permissions, permissionsToTfList(remoteRole.Permissions), int(roleId))
 	updateArg.Identities = securityIdentitiesToRoleConfig(remoteRole.Identities)
 
 	remoteState, err := r.p.client.UpdateSecurityRole(updateArg)

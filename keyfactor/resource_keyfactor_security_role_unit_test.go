@@ -936,3 +936,135 @@ func TestUnitSecurityRoleResource_UpdatePreservesIdentities(t *testing.T) {
 		"Update() must resend the role's pre-existing identities unchanged on every update, or an unrelated change (here, Description only) silently wipes every identity/group bound to the role",
 	)
 }
+
+// TestUnitSecurityRoleResource_UpdateUsesFreshPermissionsNotStaleState is a
+// regression test for Update() falling back to Terraform's prior state
+// (state.Permissions) instead of the fresh server read already fetched via
+// GetSecurityRole (remoteRole.Permissions, the same call Update() uses to
+// preserve Identities two lines below -- see securityIdentitiesToRoleConfig's
+// call site) when config.Permissions is undeclared.
+//
+// Terraform's prior state can be stale relative to the live server: an
+// out-of-band permission change made directly in Command, or a plan applied
+// with -refresh=false, means state.Permissions no longer matches what the
+// server actually has. Falling back to state.Permissions in that situation
+// means an Update that only touches an unrelated field (here, Description)
+// silently reverts the real out-of-band permission change back to the stale
+// value via Command's full-replace PUT -- the exact same class of bug this
+// function was already fixed to avoid for Identities.
+//
+// This test deliberately makes state.Permissions (stale) and the
+// GetSecurityRole mock's response (fresh) report DIFFERENT permission sets,
+// with config omitting permissions entirely. It asserts the PUT body's
+// Permissions matches the fresh server read, not the stale prior state.
+func TestUnitSecurityRoleResource_UpdateUsesFreshPermissionsNotStaleState(t *testing.T) {
+	ctx := context.Background()
+
+	var capturedPermissions *[]string
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles/5", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// Fresh server read reports a permission that was added out-of-band
+		// (directly in Command) since Terraform's prior state was last
+		// written -- "Certificates:EditMetadata" is NOT in state below.
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role-freshness",
+			"Description": "Original description",
+			"Permissions": []string{"Certificates:Read", "Certificates:EditMetadata"},
+		})
+	})
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Permissions *[]string `json:"Permissions"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		capturedPermissions = body.Permissions
+
+		permissions := []string{}
+		if body.Permissions != nil {
+			permissions = *body.Permissions
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role-freshness",
+			"Description": "Updated description, unrelated to permissions",
+			"Permissions": permissions,
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	// Terraform's prior state is stale -- it only knows about
+	// "Certificates:Read", missing the "Certificates:EditMetadata"
+	// permission that was added out-of-band and is now reflected in the
+	// fresh GetSecurityRole response above.
+	stalePermissions := types.List{ElemType: types.StringType, Elems: []attr.Value{
+		types.String{Value: "Certificates:Read"},
+	}}
+
+	state := SecurityRole{
+		ID:          types.Int64{Value: 5},
+		Name:        types.String{Value: "tf-unit-role-freshness"},
+		Description: types.String{Value: "Original description"},
+		Permissions: stalePermissions,
+	}
+
+	// The plan is what UseStateForUnknownModifier produces: the prior
+	// state's (stale) permissions copied forward. Only Description changes.
+	plan := state
+	plan.Description = types.String{Value: "Updated description, unrelated to permissions"}
+
+	// The config is what the practitioner actually wrote: permissions is
+	// genuinely absent (Null).
+	config := SecurityRole{
+		ID:          state.ID,
+		Name:        state.Name,
+		Description: plan.Description,
+		Permissions: types.List{Null: true, ElemType: types.StringType},
+	}
+
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &state); d.HasError() {
+		t.Fatalf("test setup: state.Set returned diagnostics: %+v", d)
+	}
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+	configPlan := tfsdk.Plan{Schema: schema}
+	if d := configPlan.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configPlan.Raw}
+
+	r := resourceSecurityRole{p: provider{configured: true, client: client}}
+
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planObj, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned unexpected diagnostics: %+v", resp.Diagnostics)
+	}
+
+	if !assert.NotNil(t, capturedPermissions,
+		"Update() must send a non-nil Permissions field on the PUT body when config omits the attribute") {
+		return
+	}
+
+	assert.ElementsMatch(
+		t, []string{"Certificates:Read", "Certificates:EditMetadata"}, *capturedPermissions,
+		"Update() must fall back to the fresh GetSecurityRole read (remoteRole.Permissions) when config omits permissions, not Terraform's stale prior state -- otherwise an unrelated Update (here, Description only) silently reverts a real out-of-band permission change back to the stale value",
+	)
+}

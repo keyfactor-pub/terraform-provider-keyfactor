@@ -115,7 +115,12 @@ func (r resourceSecurityIdentity) Read(
 		//	break
 		//}
 		if accountName == identity.AccountName {
-			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %s", accountName))
+			// accountName is logged %q-quoted (escaping embedded control
+			// characters like \r\n) rather than with %s, so an account name
+			// crafted to contain a CRLF sequence can't forge fake log lines
+			// under TF_LOG=INFO (CWE-117 log injection); see the identical
+			// rationale on roleLookupLogMessage in this file.
+			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %q", accountName))
 
 			// identityRolesResultForRead builds the roles list from the
 			// freshly-fetched identity.Roles when it genuinely differs from
@@ -735,7 +740,12 @@ func (r resourceSecurityIdentity) ImportState(
 	identityExists := false
 	for _, identity := range identities {
 		if accountName == identity.AccountName {
-			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %s", accountName))
+			// accountName is logged %q-quoted (escaping embedded control
+			// characters like \r\n) rather than with %s, so an account name
+			// crafted to contain a CRLF sequence can't forge fake log lines
+			// under TF_LOG=INFO (CWE-117 log injection); see the identical
+			// rationale on roleLookupLogMessage in this file.
+			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %q", accountName))
 			identityExists = true
 			// identityRolesCanonical builds the same (server canonical role
 			// name, ElemType String) types.List this loop used to build

@@ -334,16 +334,18 @@ func (r resourceSecurityRole) Update(
 	// every identity/group bound to the role, with no diagnostic.
 	remoteRole, err := r.p.client.GetSecurityRole(int(roleId))
 	if err != nil {
+		// %q-quoted for the same CWE-117 reason as Read() above.
 		response.Diagnostics.AddError(
 			"Error reading role from Keyfactor.",
-			fmt.Sprintf("Unable to read role '%s' (id %v) from Keyfactor before update: ", state.Name.Value, roleId)+err.Error(),
+			fmt.Sprintf("Unable to read role %q (id %v) from Keyfactor before update: ", state.Name.Value, roleId)+err.Error(),
 		)
 		return
 	}
 	if remoteRole == nil {
+		// %q-quoted for the same CWE-117 reason as Read() above.
 		response.Diagnostics.AddError(
 			"Error reading role from Keyfactor.",
-			fmt.Sprintf("Role '%s' (id %v) not found on Keyfactor while preparing update.", state.Name.Value, roleId),
+			fmt.Sprintf("Role %q (id %v) not found on Keyfactor while preparing update.", state.Name.Value, roleId),
 		)
 		return
 	}
@@ -367,9 +369,10 @@ func (r resourceSecurityRole) Update(
 
 	remoteState, err := r.p.client.UpdateSecurityRole(updateArg)
 	if err != nil {
+		// %q-quoted for the same CWE-117 reason as Read() above.
 		response.Diagnostics.AddError(
 			"Identity role update error.",
-			fmt.Sprintf("Error updating identity role '%s': "+err.Error(), plan.Name.Value),
+			fmt.Sprintf("Error updating identity role %q: "+err.Error(), plan.Name.Value),
 		)
 		return
 	}

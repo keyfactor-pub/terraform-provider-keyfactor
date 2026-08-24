@@ -163,7 +163,12 @@ func TestIntKeyfactorCertificateDataSource(t *testing.T) {
 	enrollmentPattern := discoverEnrollmentPattern(t, client)
 	var certConfig string
 	if enrollmentPattern != "" {
-		certConfig = testAccCertPFXConfigEnrollmentPattern(enrollmentPattern, ca, cn)
+		// Don't pass the independently-discovered CA here: the enrollment
+		// pattern implies its own compatible CA, and on multi-backend labs
+		// discoverCA() may return a CA from a different tenant than the one
+		// backing the enrollment pattern, which Command rejects with a
+		// "configuration tenant is mismatched" error.
+		certConfig = testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn)
 	} else {
 		templateName := discoverTemplate(t, client)
 		certConfig = testAccCertPFXConfig(templateName, ca, cn)

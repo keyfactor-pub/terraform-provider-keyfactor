@@ -33,6 +33,7 @@ import (
 	circlEd448 "github.com/cloudflare/circl/sign/ed448"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
@@ -405,9 +406,16 @@ func discoverStoreTypeByID(t *testing.T, client *api.Client, storeTypeID int) st
 }
 
 // discoverOAuthAuthScheme returns an OAuth authentication scheme name.
-// Checks KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME env var first.
-// Falls back to "System" which is always present in OAuth-enabled Command instances.
-func discoverOAuthAuthScheme(t *testing.T) string {
+// Checks KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME env var first,
+// then falls back to querying Command's /IdentityProviders API for an
+// enabled OAuth identity provider and using its AuthenticationScheme.
+//
+// The built-in "System" scheme is NOT guaranteed to exist on every
+// OAuth-enabled Command instance: labs backed by an external OIDC provider
+// (e.g. Authentik) may have no "System" scheme at all, and Command returns
+// a 404 for it. Querying the identity providers directly works against any
+// OAuth-enabled Command instance without manual env var configuration.
+func discoverOAuthAuthScheme(t *testing.T, client *api.Client) string {
 	t.Helper()
 
 	if scheme := os.Getenv("KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME"); scheme != "" {
@@ -415,9 +423,27 @@ func discoverOAuthAuthScheme(t *testing.T) string {
 		return scheme
 	}
 
-	// "System" is the built-in authentication scheme in Command OAuth installations
-	t.Logf("Using default OAuth auth scheme: System")
-	return "System"
+	sdkClient := keyfactor.NewAPIClientWithAuth(client.AuthClient)
+	providers, _, err := sdkClient.V1.IdentityProviderApi.
+		NewGetIdentityProvidersRequest(context.Background()).
+		Execute()
+	if err != nil {
+		t.Skipf("Failed to list identity providers for OAuth auth scheme discovery: %s", err)
+	}
+
+	for _, p := range providers {
+		if p.GetAuthenticationEnabled() && p.GetAuthenticationScheme() != "" {
+			t.Logf(
+				"Discovered OAuth auth scheme: %s (identity provider: %s)",
+				p.GetAuthenticationScheme(),
+				p.GetDisplayName(),
+			)
+			return p.GetAuthenticationScheme()
+		}
+	}
+
+	t.Skip("No enabled OAuth identity providers available in the lab for auth scheme discovery")
+	return ""
 }
 
 // discoverApplication returns the name of an existing certificate store

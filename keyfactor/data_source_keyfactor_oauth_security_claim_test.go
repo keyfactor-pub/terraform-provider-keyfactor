@@ -53,7 +53,7 @@ func TestUnitKeyfactorOAuthSecurityClaimDataSource(t *testing.T) {
 	var claimValue, authScheme string
 	if os.Getenv("RECORD_CASSETTES") == "1" {
 		claimValue = fmt.Sprintf("tf-unit-claim-ds-%d", time.Now().UnixNano()%1000000000)
-		authScheme = discoverOAuthAuthScheme(t)
+		authScheme = discoverOAuthAuthScheme(t, newTestClient(t))
 		writeOAuthClaimRecordTestParams(cassettePath, oauthClaimRecordTestParams{
 			ClaimValue: claimValue,
 			AuthScheme: authScheme,
@@ -115,9 +115,9 @@ func testAccDataSourceKeyfactorOAuthSecurityClaim(resourceName string, claimType
 // ---------------------------------------------------------------------------
 
 func TestIntKeyfactorOAuthSecurityClaimDataSource(t *testing.T) {
-	testAccIntegrationPreCheck(t)
+	client := testAccIntegrationPreCheck(t)
 
-	authScheme := discoverOAuthAuthScheme(t)
+	authScheme := discoverOAuthAuthScheme(t, client)
 	claimType := "OAuthSubject"
 	claimValue := acctest.RandomWithPrefix("tf-int-claim-ds")
 

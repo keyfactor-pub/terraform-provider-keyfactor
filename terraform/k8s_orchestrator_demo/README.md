@@ -153,8 +153,8 @@ terraform import keyfactor_certificate_store.k8s_tls_secret "xxxxxxxx-xxxx-xxxx-
 All `keyfactor_certificate_deployment` resources in this demo, including `tls_secret` and
 `opaque_secret` (K8STLSSecr / K8SSecret), use full inventory-based verification: `apply`
 waits for the deployed certificate to appear in the target store's inventory before
-completing. Previously, `tls_secret` and `opaque_secret` required a
-`skip_inventory_validation = true` workaround because the k8s-orchestrator extension's
-Management (Add) job for these two store types silently failed to write the K8s Secret's
-data while still reporting `Result: Success` in Command's JobHistory. That bug is fixed
-upstream: https://github.com/Keyfactor/k8s-orchestrator/issues/91
+completing. This previously required a workaround for `tls_secret` and `opaque_secret`
+because the k8s-orchestrator extension's Management (Add) job for these two store types
+silently failed to write the K8s Secret's data while still reporting `Result: Success`
+in Command's JobHistory. That bug is fixed upstream:
+https://github.com/Keyfactor/k8s-orchestrator/issues/91

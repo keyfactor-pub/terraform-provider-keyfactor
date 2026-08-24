@@ -25,19 +25,3 @@ resource "keyfactor_certificate_deployment" "ca_cert_deployment" {
   }
 }
 
-# Deploy without waiting for the store inventory to confirm the deployment.
-# The apply completes as soon as Keyfactor Command accepts the management job,
-# and fails early if the orchestrator reports that the job failed.
-# fail_on_job_failure requires the Agent Management - Read permission
-# (claim /agents/management/read/) in Keyfactor Command.
-resource "keyfactor_certificate_deployment" "fast_deployment" {
-  certificate_id       = data.keyfactor_certificate.ca_cert.certificate_id
-  certificate_store_id = data.keyfactor_certificate_store.my_cert_store.id
-  certificate_alias    = data.keyfactor_certificate.ca_cert.thumbprint
-
-  # Do not poll the store inventory after submitting the deployment/removal job.
-  skip_inventory_validation = true
-  # Fail the run if the orchestrator job reports a final failure result.
-  fail_on_job_failure = true
-}
-

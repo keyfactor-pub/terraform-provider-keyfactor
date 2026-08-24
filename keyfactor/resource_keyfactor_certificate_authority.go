@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -401,65 +400,30 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				},
 			},
 
-			// --- Schedules (flat interval minutes, or daily time-of-day) ---
+			// --- Schedules (interval minutes) ---
 			// Command represents each of these three schedules as one of several mutually
 			// exclusive variants (Interval, Daily, Weekly, Monthly, ExactlyOnce, Immediate);
-			// this provider currently models the two variants seen in practice, Interval and
-			// Daily. Setting both the *_interval_minutes and *_daily_time attribute for the
-			// same schedule at once is invalid and rejected at plan time (ValidateConfig).
+			// this provider currently models the Interval variant only.
 			"full_scan_interval_minutes": {
-				Type:        types.Int64Type,
-				Optional:    true,
-				Computed:    true,
-				Description: "Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with full_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{
-					scheduleSiblingModifier{siblingPath: path.Root("full_scan_daily_time"), nullValue: types.Int64{Null: true}},
-				},
-			},
-			"full_scan_daily_time": {
-				Type:        types.StringType,
-				Optional:    true,
-				Computed:    true,
-				Description: "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily full synchronization schedule for this certificate authority. Mutually exclusive with full_scan_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{
-					scheduleSiblingModifier{siblingPath: path.Root("full_scan_interval_minutes"), nullValue: types.String{Null: true}},
-				},
+				Type:          types.Int64Type,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"incremental_scan_interval_minutes": {
-				Type:        types.Int64Type,
-				Optional:    true,
-				Computed:    true,
-				Description: "Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with incremental_scan_daily_time. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{
-					scheduleSiblingModifier{siblingPath: path.Root("incremental_scan_daily_time"), nullValue: types.Int64{Null: true}},
-				},
-			},
-			"incremental_scan_daily_time": {
-				Type:        types.StringType,
-				Optional:    true,
-				Computed:    true,
-				Description: "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily incremental synchronization schedule for this certificate authority. Mutually exclusive with incremental_scan_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{
-					scheduleSiblingModifier{siblingPath: path.Root("incremental_scan_interval_minutes"), nullValue: types.String{Null: true}},
-				},
+				Type:          types.Int64Type,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"threshold_check_interval_minutes": {
-				Type:        types.Int64Type,
-				Optional:    true,
-				Computed:    true,
-				Description: "Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Mutually exclusive with threshold_check_daily_time.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{
-					scheduleSiblingModifier{siblingPath: path.Root("threshold_check_daily_time"), nullValue: types.Int64{Null: true}},
-				},
-			},
-			"threshold_check_daily_time": {
-				Type:        types.StringType,
-				Optional:    true,
-				Computed:    true,
-				Description: "UTC time-of-day, formatted \"HH:MM:SS\" (e.g. \"07:00:00\"), that sets a once-daily threshold monitoring check schedule on this CA. Mutually exclusive with threshold_check_interval_minutes. Command only preserves the time-of-day component and rewrites the date anchor server-side, so only \"HH:MM:SS\" is accepted -- a full timestamp can never round-trip.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{
-					scheduleSiblingModifier{siblingPath: path.Root("threshold_check_interval_minutes"), nullValue: types.String{Null: true}},
-				},
+				Type:          types.Int64Type,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Interval in minutes for the threshold monitoring check schedule on this CA. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 
 			// --- Write-only control flags ---
@@ -578,15 +542,13 @@ type KeyfactorCertificateAuthority struct {
 	Scope        types.String `tfsdk:"scope"`
 	Audience     types.String `tfsdk:"audience"`
 
-	// Schedules. Each of the three below can be represented server-side as either
-	// an Interval schedule or a Daily (time-of-day) schedule -- mutually exclusive
-	// per pair, enforced by ValidateConfig.
-	FullScanIntervalMinutes        types.Int64  `tfsdk:"full_scan_interval_minutes"`
-	FullScanDailyTime              types.String `tfsdk:"full_scan_daily_time"`
-	IncrementalScanIntervalMinutes types.Int64  `tfsdk:"incremental_scan_interval_minutes"`
-	IncrementalScanDailyTime       types.String `tfsdk:"incremental_scan_daily_time"`
-	ThresholdCheckIntervalMinutes  types.Int64  `tfsdk:"threshold_check_interval_minutes"`
-	ThresholdCheckDailyTime        types.String `tfsdk:"threshold_check_daily_time"`
+	// Schedules. Command can represent each of these three schedules
+	// server-side as one of several variants (Interval, Daily, Weekly,
+	// Monthly, ExactlyOnce, Immediate); this provider currently models the
+	// Interval variant only.
+	FullScanIntervalMinutes        types.Int64 `tfsdk:"full_scan_interval_minutes"`
+	IncrementalScanIntervalMinutes types.Int64 `tfsdk:"incremental_scan_interval_minutes"`
+	ThresholdCheckIntervalMinutes  types.Int64 `tfsdk:"threshold_check_interval_minutes"`
 
 	// Write-only control flags
 	ForceSave types.Bool `tfsdk:"force_save"`
@@ -681,17 +643,16 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 	}
 
 	// Schedules. Command represents FullScan/IncrementalScan/ThresholdCheck as a
-	// KeyfactorSchedule that can be Interval-shaped OR Daily-shaped (among other
-	// variants not yet modeled here: Weekly/Monthly/ExactlyOnce/Immediate -- see
-	// GH issue #185 for the Weekly case specifically). A Daily-shaped schedule
-	// must NOT collapse to Null here: Null is indistinguishable from "no schedule
-	// configured at all," and buildCARequest would then omit the field entirely
+	// KeyfactorSchedule that can be Interval-shaped (among other variants not
+	// yet modeled here: Daily/Weekly/Monthly/ExactlyOnce/Immediate -- see GH
+	// issue #185 for the Weekly case specifically). An unmodeled variant
+	// collapses to Null here, which is indistinguishable from "no schedule
+	// configured at all" -- buildCARequest would then omit the field entirely
 	// on the next PUT, which Command's full-replace semantics interpret as
-	// "clear this schedule" -- silently wiping a real, live Daily scan schedule
-	// server-side on every subsequent apply.
-	state.FullScanIntervalMinutes, state.FullScanDailyTime = scheduleToState(resp.FullScan)
-	state.IncrementalScanIntervalMinutes, state.IncrementalScanDailyTime = scheduleToState(resp.IncrementalScan)
-	state.ThresholdCheckIntervalMinutes, state.ThresholdCheckDailyTime = scheduleToState(resp.ThresholdCheck)
+	// "clear this schedule."
+	state.FullScanIntervalMinutes = scheduleToState(resp.FullScan)
+	state.IncrementalScanIntervalMinutes = scheduleToState(resp.IncrementalScan)
+	state.ThresholdCheckIntervalMinutes = scheduleToState(resp.ThresholdCheck)
 
 	// force_save is write-only; always null from server reads.
 	state.ForceSave = types.Bool{Null: true}
@@ -699,75 +660,37 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 	return state
 }
 
-// caDailyTimeLayout is the Go reference-time layout for the *_daily_time
-// attributes: a bare UTC time-of-day, "HH:MM:SS" (e.g. "07:00:00"). Command's
-// GET echoes back the exact time-of-day it was given but rewrites the date
-// component to the current date (confirmed live against the Command API), so
-// any date/offset information in the wire format would be pure noise that
-// can never round-trip -- only the time-of-day is meaningful. A full RFC3339
-// timestamp (the original, pre-fix wire format) can therefore never survive
-// a Read/Create/Update response comparison intact: every apply would see a
-// "changed" date component even though nothing about the schedule actually
-// changed. See GH issue #193 / dev-harness Gap A.
-const caDailyTimeLayout = "15:04:05"
-
 // scheduleToState converts a Command KeyfactorSchedule (as returned for FullScan,
-// IncrementalScan, or ThresholdCheck) into the pair of Terraform attribute values used
-// to represent it: an Interval-shaped *_interval_minutes value and a Daily-shaped
-// *_daily_time value. Command's schedule is a tagged union -- at most one variant is
-// populated at a time -- so at most one of the two returned values will be non-null.
+// IncrementalScan, or ThresholdCheck) into the Terraform attribute value used to
+// represent its Interval-shaped variant, *_interval_minutes.
 //
-// Both values come back Null when the schedule is nil (no schedule configured) or
-// when it holds a variant this provider does not yet model (Weekly, Monthly,
-// ExactlyOnce, Immediate). That is a known, narrower gap than the Daily-collapse bug
-// this function fixes: an unmodeled variant still reads as "no schedule," so an
-// Update() that doesn't touch this attribute pair would omit it from the PUT and
-// clear it -- see GH issue #185 for Weekly specifically, which the vendored SDK
-// cannot even deserialize (SystemDayOfWeek expects an int; Command returns day-name
-// strings), so a targeted fix would need to land in the SDK, not here.
-func scheduleToState(sched *v1.KeyfactorCommonSchedulingKeyfactorSchedule) (types.Int64, types.String) {
-	interval := types.Int64{Null: true}
-	daily := types.String{Null: true}
-	if sched == nil {
-		return interval, daily
+// The returned value comes back Null when the schedule is nil (no schedule
+// configured) or when it holds a variant this provider does not yet model
+// (Daily, Weekly, Monthly, ExactlyOnce, Immediate). An unmodeled variant still
+// reads as "no schedule," so an Update() that doesn't touch this attribute
+// would omit it from the PUT and clear it -- see GH issue #185 for Weekly
+// specifically, which the vendored SDK cannot even deserialize (SystemDayOfWeek
+// expects an int; Command returns day-name strings), so a targeted fix would
+// need to land in the SDK, not here.
+func scheduleToState(sched *v1.KeyfactorCommonSchedulingKeyfactorSchedule) types.Int64 {
+	if sched == nil || sched.Interval == nil {
+		return types.Int64{Null: true}
 	}
-	if sched.Interval != nil {
-		interval = types.Int64{Value: int64(sched.Interval.GetMinutes())}
-	}
-	if sched.Daily != nil && sched.Daily.Time != nil {
-		daily = types.String{Value: sched.Daily.Time.UTC().Format(caDailyTimeLayout)}
-	}
-	return interval, daily
+	return types.Int64{Value: int64(sched.Interval.GetMinutes())}
 }
 
-// buildSchedule constructs a Command KeyfactorSchedule from a plan/state pair of
-// Interval and Daily attribute values. The two representations are mutually exclusive
-// (enforced at plan time by resourceCertificateAuthority.ValidateConfig), so only one
-// of intervalMinutes/dailyTime is expected to be known; if both are somehow known,
-// intervalMinutes takes precedence. Returns (nil, nil) when neither is known, matching
-// the "omit the field from the request" semantics buildCARequest relies on elsewhere.
-// dailyTime is parsed as a bare UTC time-of-day (caDailyTimeLayout) and anchored to a
-// fixed, arbitrary date -- Command rewrites the date component to the current date
-// server-side regardless of what is sent (confirmed live), so a fixed anchor keeps
-// this function deterministic without affecting the schedule actually applied.
-func buildSchedule(intervalMinutes types.Int64, dailyTime types.String) (*v1.KeyfactorCommonSchedulingKeyfactorSchedule, error) {
+// buildSchedule constructs a Command KeyfactorSchedule from a plan/state
+// Interval attribute value. Returns nil when the value is not known, matching
+// the "omit the field from the request" semantics buildCARequest relies on
+// elsewhere.
+func buildSchedule(intervalMinutes types.Int64) *v1.KeyfactorCommonSchedulingKeyfactorSchedule {
 	if !intervalMinutes.Null && !intervalMinutes.Unknown {
 		minutes := int32(intervalMinutes.Value)
 		return &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
 			Interval: &v1.KeyfactorCommonSchedulingModelsIntervalModel{Minutes: &minutes},
-		}, nil
-	}
-	if !dailyTime.Null && !dailyTime.Unknown {
-		t, err := time.Parse(caDailyTimeLayout, dailyTime.Value)
-		if err != nil {
-			return nil, fmt.Errorf("invalid daily time %q: %w", dailyTime.Value, err)
 		}
-		anchored := time.Date(2000, 1, 1, t.Hour(), t.Minute(), t.Second(), 0, time.UTC)
-		return &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
-			Daily: &v1.KeyfactorCommonSchedulingModelsTimeModel{Time: &anchored},
-		}, nil
 	}
-	return nil, nil
+	return nil
 }
 
 func nullableInt32ToTfInt64(v v1.NullableInt32) types.Int64 {
@@ -934,32 +857,16 @@ func buildCARequest(ctx context.Context, plan KeyfactorCertificateAuthority) (v1
 	setStringIfKnown(&req, plan.Scope, func(v string) { req.SetScope(v) })
 	setStringIfKnown(&req, plan.Audience, func(v string) { req.SetAudience(v) })
 
-	// Schedules. Each of FullScan/IncrementalScan/ThresholdCheck can be represented
-	// as either an Interval or a Daily schedule (mutually exclusive per pair,
-	// enforced by ValidateConfig at plan time). buildSchedule returns nil for a
-	// pair that is entirely null/unknown, which -- per Command's full-replace PUT
-	// semantics -- omits the field from the request and clears it server-side;
-	// preserveCAUpdateFields (called from Update before this function runs) is
-	// what prevents that from happening on an update that simply didn't declare
-	// the attribute.
-	fullScan, err := buildSchedule(plan.FullScanIntervalMinutes, plan.FullScanDailyTime)
-	if err != nil {
-		diags.AddAttributeError(path.Root("full_scan_daily_time"), "Invalid full_scan schedule", err.Error())
-	} else {
-		req.FullScan = fullScan
-	}
-	incrementalScan, err := buildSchedule(plan.IncrementalScanIntervalMinutes, plan.IncrementalScanDailyTime)
-	if err != nil {
-		diags.AddAttributeError(path.Root("incremental_scan_daily_time"), "Invalid incremental_scan schedule", err.Error())
-	} else {
-		req.IncrementalScan = incrementalScan
-	}
-	thresholdCheck, err := buildSchedule(plan.ThresholdCheckIntervalMinutes, plan.ThresholdCheckDailyTime)
-	if err != nil {
-		diags.AddAttributeError(path.Root("threshold_check_daily_time"), "Invalid threshold_check schedule", err.Error())
-	} else {
-		req.ThresholdCheck = thresholdCheck
-	}
+	// Schedules. Each of FullScan/IncrementalScan/ThresholdCheck is represented
+	// as an Interval schedule. buildSchedule returns nil when the attribute is
+	// null/unknown, which -- per Command's full-replace PUT semantics -- omits
+	// the field from the request and clears it server-side; an update that
+	// simply didn't declare the attribute relies on Optional+Computed with
+	// UseStateForUnknown to carry the prior state value forward so this does
+	// not happen.
+	req.FullScan = buildSchedule(plan.FullScanIntervalMinutes)
+	req.IncrementalScan = buildSchedule(plan.IncrementalScanIntervalMinutes)
+	req.ThresholdCheck = buildSchedule(plan.ThresholdCheckIntervalMinutes)
 
 	// Command rejects a request that carries populated fields for both CA auth
 	// variants (OAuth vs. client-certificate) at once. Since buildCARequest is
@@ -1085,178 +992,6 @@ func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCert
 	}
 }
 
-// declaredInConfig reports whether an attribute was actually written in the
-// user's HCL config, as opposed to being merely Null after plan modifiers ran.
-// request.Config is never touched by plan modifiers (unlike request.Plan), so
-// it is the only signal available in Update() that survives a plan modifier
-// resolving an "undeclared" attribute to something other than a literal Null
-// -- which is exactly what happens here: an undeclared *_interval_minutes or
-// *_daily_time is resolved by UseStateForUnknown to the PRIOR STATE value
-// (usually non-null), not to Null, so checking plan.X.Null would almost never
-// fire and would miss the very case preserveCAUpdateFields exists to handle.
-func declaredInConfig(v interface{ IsNull() bool }) bool {
-	return !v.IsNull()
-}
-
-// preserveCAUpdateFields reconciles the three schedule attribute pairs
-// (full_scan, incremental_scan, threshold_check -- each Interval XOR Daily) on
-// plan against what the user actually declared in config, for an Update().
-//
-// Each pair's *_interval_minutes and *_daily_time attributes are
-// Optional+Computed with a UseStateForUnknown plan modifier, so the
-// terraform-plugin-framework automatically resolves an UNDECLARED attribute's
-// plan value to that attribute's prior STATE value before this function ever
-// runs. That default behavior is correct when NEITHER member of a pair is
-// declared in config (there's nothing left to reconcile: both plan values
-// already equal their prior state values). It is WRONG when the user is
-// switching schedule variants -- e.g. declaring full_scan_daily_time for the
-// first time while leaving full_scan_interval_minutes undeclared. In that
-// case UseStateForUnknown independently carries the OLD
-// full_scan_interval_minutes value forward from state, so without this
-// function the plan would end up with BOTH members of the pair non-null at
-// once: the newly-declared Daily value AND the stale Interval value
-// resurrected from state. buildSchedule would have to arbitrarily pick one,
-// and Read after apply would return only the Daily-shaped schedule, nulling
-// the resurrected Interval value back out of state -- an inconsistent result
-// after apply.
-//
-// Reconciliation, per pair, keyed on config (not plan):
-//   - Neither variant declared in config: leave plan untouched. UseStateForUnknown
-//     already carried the correct prior-state value(s) forward.
-//   - Exactly one variant declared in config: that declared variant is the new,
-//     authoritative one. Force the OTHER (sibling) attribute to explicit Null on
-//     the plan so it does not resurrect a stale value from state and does not
-//     reach buildSchedule.
-//   - Both declared in config: rejected earlier by ValidateConfig; not reachable
-//     here in practice, but this function is a no-op for that case regardless
-//     (each branch below only fires when exactly one side is declared).
-func preserveCAUpdateFields(plan *KeyfactorCertificateAuthority, config KeyfactorCertificateAuthority) {
-	reconcileSchedule := func(planInterval *types.Int64, planDaily *types.String, configInterval types.Int64, configDaily types.String) {
-		intervalDeclared := declaredInConfig(configInterval)
-		dailyDeclared := declaredInConfig(configDaily)
-		switch {
-		case intervalDeclared && !dailyDeclared:
-			*planDaily = types.String{Null: true}
-		case dailyDeclared && !intervalDeclared:
-			*planInterval = types.Int64{Null: true}
-		}
-		// Neither declared, or (unreachable) both declared: leave plan as-is.
-	}
-	reconcileSchedule(&plan.FullScanIntervalMinutes, &plan.FullScanDailyTime, config.FullScanIntervalMinutes, config.FullScanDailyTime)
-	reconcileSchedule(&plan.IncrementalScanIntervalMinutes, &plan.IncrementalScanDailyTime, config.IncrementalScanIntervalMinutes, config.IncrementalScanDailyTime)
-	reconcileSchedule(&plan.ThresholdCheckIntervalMinutes, &plan.ThresholdCheckDailyTime, config.ThresholdCheckIntervalMinutes, config.ThresholdCheckDailyTime)
-}
-
-// scheduleSiblingModifier is the plan-time half of schedule variant-switch
-// reconciliation (the other half is preserveCAUpdateFields, which only runs
-// inside Update() -- see its doc comment for why that alone is NOT
-// sufficient). Full-review round 1 finding #2:
-//
-// All six schedule attributes were Optional+Computed with only a bare
-// tfsdk.UseStateForUnknown(). Consider a CA in state with
-// full_scan_interval_minutes=60 (no full_scan_daily_time), where config
-// switches to declaring only full_scan_daily_time: core's proposed plan
-// keeps full_scan_interval_minutes at its prior state value BEFORE any
-// plan modifier runs (Computed + null config -> marked Unknown), and a bare
-// UseStateForUnknown then pins that Unknown straight back to the OLD known
-// value (60) -- it has no way to know a sibling attribute is taking over.
-// The recorded plan therefore has BOTH full_scan_interval_minutes=60 AND
-// full_scan_daily_time="<new>" at once. preserveCAUpdateFields nulls the
-// stale sibling, but only in Update()'s own LOCAL plan copy, long after
-// PlanResourceChange already recorded the plan Terraform core will compare
-// the final applied state against -- so the update succeeds server-side,
-// but Terraform then hard-fails with "Provider produced inconsistent result
-// after apply: .full_scan_interval_minutes: was cty.NumberIntVal(60), but
-// now null" on every single variant switch, in both directions, for all
-// three pairs.
-//
-// This modifier fixes it AT PLAN TIME by reading the SIBLING attribute's
-// CONFIG value (the same req.Config.GetAttribute pattern
-// displayNameFollowsFriendlyNameModifier uses to read a related attribute's
-// config) before falling back to UseStateForUnknown semantics:
-//   - Sibling declared (known) in config: this attribute's own config must be
-//     null (Modify only ever reaches the Unknown-plan branch for a
-//     null-configured Computed attribute), so the sibling is taking over --
-//     null this attribute's plan instead of resurrecting its stale prior
-//     state value.
-//   - Sibling itself Unknown (depends on some other not-yet-known value):
-//     conservatively leave this attribute Unknown too, deferring the
-//     decision to apply time rather than guessing.
-//   - Sibling also null/undeclared: ordinary UseStateForUnknown semantics --
-//     carry this attribute's own prior state value forward.
-//
-// preserveCAUpdateFields remains in place as a defensive no-op / safety net
-// for the neither-variant-declared case it already handled correctly; with
-// this modifier the variant-switch case it existed for is resolved before
-// Update() ever runs.
-//
-// This hand-ports the concept (not the code) of PR #182's unmerged
-// `pairedWith` modifier on fix/ca-schedule-daily-variant.
-type scheduleSiblingModifier struct {
-	siblingPath path.Path
-	nullValue   attr.Value
-}
-
-func (m scheduleSiblingModifier) Description(_ context.Context) string {
-	return "Uses the prior state value unless the sibling schedule variant is declared in config, in which case the plan is nulled so the new variant can take over cleanly."
-}
-
-func (m scheduleSiblingModifier) MarkdownDescription(ctx context.Context) string {
-	return m.Description(ctx)
-}
-
-func (m scheduleSiblingModifier) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
-	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
-		return
-	}
-	if !resp.AttributePlan.IsUnknown() {
-		return
-	}
-	if req.AttributeConfig.IsUnknown() {
-		return
-	}
-
-	var siblingConfig attr.Value
-	if diags := req.Config.GetAttribute(ctx, m.siblingPath, &siblingConfig); diags.HasError() {
-		// Conservative fallback: behave like plain UseStateForUnknown.
-		if !req.AttributeState.IsUnknown() {
-			resp.AttributePlan = req.AttributeState
-		}
-		return
-	}
-
-	switch {
-	case siblingConfig == nil:
-		// No usable sibling value -- fall through to default
-		// UseStateForUnknown semantics below.
-	case siblingConfig.IsUnknown():
-		// Cannot yet tell whether the sibling variant is taking over (it
-		// depends on some other not-yet-known value this apply) -- be
-		// conservative and leave this attribute Unknown too, rather than
-		// guessing and risking the same inconsistent-result class this
-		// modifier exists to prevent.
-		return
-	case !siblingConfig.IsNull():
-		// Sibling variant is declared in config and taking over this apply.
-		// This attribute's own config is null (guaranteed by reaching this
-		// point: AttributeConfig isn't itself Unknown, and a Computed
-		// attribute's plan only becomes Unknown when its own config is
-		// null) -- so do not resurrect this attribute's stale prior-state
-		// value onto the plan.
-		resp.AttributePlan = m.nullValue
-		return
-	}
-
-	// Sibling also null/undeclared: ordinary UseStateForUnknown semantics.
-	// Mirrors tfsdk.UseStateForUnknownModifier's own IsNull guard (there is
-	// nothing to preserve if the prior state itself is null) -- full-review
-	// round 4 finding #1's cheap-to-add note on this tail.
-	if req.AttributeState.IsNull() || req.AttributeState.IsUnknown() {
-		return
-	}
-	resp.AttributePlan = req.AttributeState
-}
-
 // caOAuthTriggerPaths and caCertAuthTriggerPaths are the shared trigger-path
 // sets for authVariantSiblingModifier, hoisted out of the schema's seven
 // call sites (three cert-metadata attributes x caOAuthTriggerPaths, four
@@ -1274,12 +1009,11 @@ var (
 
 // authVariantSiblingModifier is the plan-time half of certificate-authority
 // auth-variant switch reconciliation -- the OAuth<->client-certificate
-// counterpart of scheduleSiblingModifier above (see its doc comment for the
-// shared terraform-plugin-framework v0.10 mechanism this works around: a
-// Computed attribute whose own config is null is marked Unknown at plan
-// time, and a bare tfsdk.UseStateForUnknown then pins that Unknown straight
-// back to the stale prior-state value with no notion that a sibling
-// attribute is taking over).
+// counterpart of the terraform-plugin-framework v0.10 mechanism this works
+// around: a Computed attribute whose own config is null is marked Unknown at
+// plan time, and a bare tfsdk.UseStateForUnknown then pins that Unknown
+// straight back to the stale prior-state value with no notion that a sibling
+// attribute is taking over.
 //
 // token_url/client_id/scope/audience (OAuth) are Optional+Computed, and
 // auth_certificate_issued_dn/issuer_dn/thumbprint (client-certificate auth
@@ -1295,8 +1029,8 @@ var (
 // after apply" on every single auth-variant switch, in both directions.
 // Full-review round 3 finding.
 //
-// Unlike a schedule pair's single 1:1 sibling, this is a group relationship:
-// an OAuth attribute's switch-away signal is auth_certificate alone becoming
+// This is a group relationship, not a single 1:1 sibling: an OAuth
+// attribute's switch-away signal is auth_certificate alone becoming
 // genuinely configured, while a cert-metadata attribute's switch-away signal
 // is ANY of the four OAuth attributes becoming genuinely configured -- hence
 // a slice of trigger paths rather than one. "Genuinely configured" reuses
@@ -1309,8 +1043,7 @@ var (
 // any config that declares both variants at once with a genuinely non-empty
 // value, so a variant-switch config only ever declares the incoming variant
 // -- the "multiple triggers fire for the same attribute" case is therefore
-// unreachable in practice, mirroring scheduleSiblingModifier's own note on
-// the equivalent both-declared situation for schedule pairs.
+// unreachable in practice.
 //
 // unknownTriggerPaths (full-review round 4 finding #1) fixes a second gap:
 // the three cert-metadata attributes' triggerPaths only cover the OUTGOING
@@ -1445,12 +1178,8 @@ func (m authVariantSiblingModifier) Modify(ctx context.Context, req tfsdk.Modify
 	resp.AttributePlan = req.AttributeState
 }
 
-// ValidateConfig rejects two classes of invalid schedule configuration before
-// plan/apply ever runs: declaring both the Interval and Daily variant of the
-// same schedule pair at once (ambiguous -- buildSchedule would otherwise have
-// to silently pick one), and declaring a *_daily_time value that isn't a
-// parseable RFC3339 timestamp (buildSchedule would otherwise fail deep inside
-// Create/Update with a less actionable error).
+// ValidateConfig rejects config-time constraint violations before plan/apply
+// ever runs -- see validateCAConfigConstraints for the checks performed.
 func (r resourceCertificateAuthority) ValidateConfig(ctx context.Context, request tfsdk.ValidateResourceConfigRequest, response *tfsdk.ValidateResourceConfigResponse) {
 	LogFunctionEntry(ctx, "resourceCertificateAuthority.ValidateConfig")
 
@@ -1459,67 +1188,6 @@ func (r resourceCertificateAuthority) ValidateConfig(ctx context.Context, reques
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
-	}
-
-	type schedulePair struct {
-		name         string
-		intervalPath string
-		dailyPath    string
-		interval     types.Int64
-		daily        types.String
-	}
-	pairs := []schedulePair{
-		{"full_scan", "full_scan_interval_minutes", "full_scan_daily_time", config.FullScanIntervalMinutes, config.FullScanDailyTime},
-		{"incremental_scan", "incremental_scan_interval_minutes", "incremental_scan_daily_time", config.IncrementalScanIntervalMinutes, config.IncrementalScanDailyTime},
-		{"threshold_check", "threshold_check_interval_minutes", "threshold_check_daily_time", config.ThresholdCheckIntervalMinutes, config.ThresholdCheckDailyTime},
-	}
-	for _, p := range pairs {
-		intervalDeclared := declaredInConfig(p.interval)
-		dailyDeclared := declaredInConfig(p.daily)
-		if intervalDeclared && dailyDeclared {
-			response.Diagnostics.AddAttributeError(
-				path.Root(p.dailyPath),
-				"Conflicting schedule configuration",
-				fmt.Sprintf(
-					"%s and %s are mutually exclusive representations of the %s schedule; declare at most one of them.",
-					p.intervalPath, p.dailyPath, p.name,
-				),
-			)
-		}
-		if dailyDeclared && !p.daily.Unknown {
-			parsed, err := time.Parse(caDailyTimeLayout, p.daily.Value)
-			if err != nil {
-				response.Diagnostics.AddAttributeError(
-					path.Root(p.dailyPath),
-					"Invalid daily schedule time",
-					fmt.Sprintf("%s must be a UTC time-of-day formatted \"HH:MM:SS\" (e.g. \"07:00:00\"); got %q: %s", p.dailyPath, p.daily.Value, err.Error()),
-				)
-			} else if canonical := parsed.Format(caDailyTimeLayout); canonical != p.daily.Value {
-				// time.Parse("15:04:05", ...) is lenient on field width (e.g.
-				// "7:00:00" parses fine), but Command's GET always echoes the
-				// zero-padded canonical spelling ("07:00:00") -- see
-				// scheduleToState's use of Format(caDailyTimeLayout). A
-				// non-canonical spelling therefore plans and applies
-				// successfully but guarantees a "Provider produced
-				// inconsistent result after apply" on every single apply
-				// (planned "7:00:00" vs. applied "07:00:00"), since nothing
-				// preserves the user's original spelling the way
-				// preserveKeyRetentionRepresentation does for key_retention.
-				// Rejecting the non-canonical spelling here, before plan/apply
-				// ever runs, is simpler and more honest than trying to
-				// preserve an arbitrary user spelling server-side. See
-				// full-review round 2 finding #2.
-				response.Diagnostics.AddAttributeError(
-					path.Root(p.dailyPath),
-					"Non-canonical daily schedule time",
-					fmt.Sprintf(
-						"%s must be zero-padded \"HH:MM:SS\"; got %q, which Command's API will echo back as %q on every "+
-							"read, permanently disagreeing with the configured value. Use %q instead.",
-						p.dailyPath, p.daily.Value, canonical, canonical,
-					),
-				)
-			}
-		}
 	}
 
 	response.Diagnostics.Append(validateCAConfigConstraints(config)...)
@@ -1570,10 +1238,10 @@ const caHTTPSType = 1
 // rather than guessing at a client-side constraint that already proved wrong
 // once for the sibling attribute sharing the identical doc language.
 //
-// Every check here follows the same declaredInConfig-style discipline as the
-// schedule validation above: a null or unknown value is never an error,
-// since config-time validation cannot resolve a value that isn't known yet
-// (e.g. standalone referencing another resource's not-yet-known output), and
+// Every check here follows the same discipline: a null or unknown value is
+// never an error, since config-time validation cannot resolve a value that
+// isn't known yet (e.g. standalone referencing another resource's not-yet-known
+// output), and
 // ValidateConfig only ever sees Config, never Plan/State. Only an explicitly
 // configured, known violation is rejected. Factored out of ValidateConfig so
 // it can be unit tested directly against a KeyfactorCertificateAuthority
@@ -1749,13 +1417,6 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 		return
 	}
 
-	var config KeyfactorCertificateAuthority
-	diags = request.Config.Get(ctx, &config)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
-		return
-	}
-
 	id, err := strconv.Atoi(state.ID.Value)
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -1766,14 +1427,6 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 	}
 
 	tflog.Info(ctx, fmt.Sprintf("Updating certificate authority ID %d", id))
-
-	// Reconcile the schedule attribute pairs against config before building the
-	// request -- see preserveCAUpdateFields for why plan alone (even after
-	// UseStateForUnknown resolves it) is not sufficient here: an update that
-	// declares neither variant of a pair must preserve whichever variant prior
-	// state holds, and an update that switches variants must not resurrect the
-	// sibling that UseStateForUnknown otherwise carries forward from state.
-	preserveCAUpdateFields(&plan, config)
 
 	updateReq, buildDiags := buildCARequest(ctx, plan)
 	response.Diagnostics.Append(buildDiags...)
@@ -1846,11 +1499,8 @@ func (r resourceCertificateAuthority) Delete(ctx context.Context, request tfsdk.
 			tflog.Info(ctx, fmt.Sprintf("CA %d has periodic tasks; clearing scan schedules before delete", id))
 			clearState := state
 			clearState.FullScanIntervalMinutes = types.Int64{Null: true}
-			clearState.FullScanDailyTime = types.String{Null: true}
 			clearState.IncrementalScanIntervalMinutes = types.Int64{Null: true}
-			clearState.IncrementalScanDailyTime = types.String{Null: true}
 			clearState.ThresholdCheckIntervalMinutes = types.Int64{Null: true}
-			clearState.ThresholdCheckDailyTime = types.String{Null: true}
 			clearReq, clearBuildDiags := buildCARequest(ctx, clearState)
 			response.Diagnostics.Append(clearBuildDiags...)
 			if response.Diagnostics.HasError() {

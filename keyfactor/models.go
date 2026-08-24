@@ -279,17 +279,15 @@ type CertificateAutoRenewConfig struct {
 
 // CommandCertificateDeployment represents a deployment of a certificate to a store.
 type CommandCertificateDeployment struct {
-	ID                      types.String `tfsdk:"id"`                        // ID represents the unique identifier for the certificate deployment resource.
-	CertificateId           types.Int64  `tfsdk:"certificate_id"`            // CertificateId represents the unique identifier for the certificate being deployed.
-	CertificateAlias        types.String `tfsdk:"certificate_alias"`         // CertificateAlias specifies the alias for the certificate being deployed in the store.
-	StoreId                 types.String `tfsdk:"certificate_store_id"`      // ID of the store where the certificate is deployed.
-	KeyPassword             types.String `tfsdk:"key_password"`              // KeyPassword represents the password for the private key associated with the certificate being deployed.
-	JobParameters           types.Map    `tfsdk:"job_parameters"`            // JobParameters represents additional parameters for the certificate deployment job as a map of key-value pairs.
-	Overwrite               types.Bool   `tfsdk:"overwrite"`                 // Overwrite specifies whether an existing certificate should be overwritten during deployment.
-	Redeploy                types.Bool   `tfsdk:"redeploy"`                  // Redeploy specifies whether a certificate should be redeployed to the store during the deployment process.
-	SkipRemoval             types.Bool   `tfsdk:"skip_removal"`              // SkipRemoval specifies whether the removal of the certificate from the store should be skipped during undeployment.
-	SkipInventoryValidation types.Bool   `tfsdk:"skip_inventory_validation"` // SkipInventoryValidation disables the post-submit store inventory polling for deploy and undeploy operations.
-	FailOnJobFailure        types.Bool   `tfsdk:"fail_on_job_failure"`       // FailOnJobFailure fails the operation when a tracked orchestrator job reports a terminal failure result.
+	ID               types.String `tfsdk:"id"`                   // ID represents the unique identifier for the certificate deployment resource.
+	CertificateId    types.Int64  `tfsdk:"certificate_id"`       // CertificateId represents the unique identifier for the certificate being deployed.
+	CertificateAlias types.String `tfsdk:"certificate_alias"`    // CertificateAlias specifies the alias for the certificate being deployed in the store.
+	StoreId          types.String `tfsdk:"certificate_store_id"` // ID of the store where the certificate is deployed.
+	KeyPassword      types.String `tfsdk:"key_password"`         // KeyPassword represents the password for the private key associated with the certificate being deployed.
+	JobParameters    types.Map    `tfsdk:"job_parameters"`       // JobParameters represents additional parameters for the certificate deployment job as a map of key-value pairs.
+	Overwrite        types.Bool   `tfsdk:"overwrite"`            // Overwrite specifies whether an existing certificate should be overwritten during deployment.
+	Redeploy         types.Bool   `tfsdk:"redeploy"`             // Redeploy specifies whether a certificate should be redeployed to the store during the deployment process.
+	SkipRemoval      types.Bool   `tfsdk:"skip_removal"`         // SkipRemoval specifies whether the removal of the certificate from the store should be skipped during undeployment.
 }
 
 // CSRCertificate represents a certificate provisioned via a CSR in Keyfactor.

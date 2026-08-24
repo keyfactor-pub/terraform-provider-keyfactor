@@ -12,32 +12,26 @@ provider "keyfactor" {}
 # ---------------------------------------------------------------------------
 # keyfactor_certificate_authority CA schedule lifecycle validation.
 #
-# SCHEMA HISTORY: this demo was originally written against a Daily CA scan
-# schedule variant model (full_scan_daily_time et al, referenced by PRs
-# #173/#182/#184). That variant model was absent from the released v2.9.1
-# schema -- confirmed 2026-08-07 -- so the demo was temporarily rewritten to
-# exercise only the flat interval-minutes fields. Fixes #193/#194 (verified
-# 2026-08-08 against a locally-built fix/harness-bugs provider) restored the
-# Daily variant as *_daily_time attributes (full_scan_daily_time,
-# incremental_scan_daily_time, threshold_check_daily_time), each mutually
-# exclusive with its *_interval_minutes sibling and enforced by
-# ValidateConfig. This demo now exercises:
+# SCHEMA: this release only models the Interval-shaped variant of Command's
+# FullScan/IncrementalScan/ThresholdCheck schedules (full_scan_interval_minutes,
+# incremental_scan_interval_minutes, threshold_check_interval_minutes). A
+# Daily/Weekly/Monthly/ExactlyOnce/Immediate-shaped schedule is not modeled by
+# the provider and reads back as null (see scheduleToState in
+# resource_keyfactor_certificate_authority.go), which is indistinguishable
+# from "no schedule configured" -- an Update() that doesn't touch that
+# attribute will therefore omit it from the PUT and Command's full-replace
+# semantics clear it. This demo exercises:
 #   1. full_scan_interval_minutes declared + changed (in-place update)
 #   2. threshold_check_interval_minutes left UNDECLARED (not just null --
 #      fully absent from the resource body) so it stays "unmanaged" per the
 #      attribute contract, and must survive verbatim across an unrelated
-#      update (monitor_thresholds toggle) if it's ever set out-of-band
-#      (step3), including when the out-of-band value is Daily-shaped, not
-#      just Interval-shaped (step4 -- this is the #193 fix: pre-fix, a
-#      Daily-shaped schedule read back as null and got silently wiped by the
-#      very next unrelated apply)
-#   3. threshold_check_daily_time declared directly via Terraform config
-#      (step6) -- testing whether the new Daily variant round-trips when
-#      actually managed declaratively, not just preserved when set
-#      out-of-band. It now takes a bare UTC time-of-day, "HH:MM:SS", instead
-#      of a full RFC3339 timestamp -- see the resource block below and
-#      step6-apply-daily's header for the date-normalization fix.
-#   4. import round-trip + drift-check
+#      update (monitor_thresholds toggle) if it's ever set out-of-band via
+#      the API with an Interval shape (step3), while an out-of-band
+#      Daily-shaped value (step4) demonstrates the known unmodeled-variant
+#      gap above -- the schedule is expected to be wiped by the very next
+#      unrelated apply, and a Weekly-shaped value (step5) additionally
+#      crashes deserialization (SDK issue #185)
+#   3. import round-trip + drift-check
 #
 # Creates a brand-new, deliberately unreachable CA record (force_save=true
 # bypasses Command's connectivity test on create/update) instead of touching
@@ -82,32 +76,10 @@ resource "keyfactor_certificate_authority" "demo" {
 
   # threshold_check_interval_minutes is intentionally NEVER declared here
   # (fully absent, not just null) so it stays permanently
-  # "undeclared/unmanaged" -- this is what lets step5 seed an out-of-band
-  # value and prove it survives an unrelated update (monitor_thresholds
-  # toggle) verbatim.
-  #
-  # threshold_check_daily_time, by contrast, IS declared -- via a variable
-  # that defaults to null. A `var.x = null` reference is indistinguishable
-  # from a fully-absent attribute in the raw config the provider sees (both
-  # produce a null config value), so this does not disturb the
-  # undeclared/unmanaged behavior above at all when the var is left at its
-  # default. Setting TF_VAR_threshold_check_daily_time to a bare UTC
-  # time-of-day, "HH:MM:SS" (see step6-* in GNUmakefile), is what exercises
-  # the new full_scan_daily_time/incremental_scan_daily_time/
-  # threshold_check_daily_time attribute pair declaratively.
-  #
-  # HISTORY: the attribute originally round-tripped a full RFC3339
-  # timestamp, which never worked -- Command normalizes a Daily schedule's
-  # Time to a server-side DATE (the date the schedule was written) while
-  # preserving only the user-supplied time-of-day, so any declared date
-  # other than "today" always came back changed and Terraform correctly
-  # flagged "Provider produced inconsistent result after apply" (confirmed
-  # live against kfclab, 2026-08-08). The fix changes the attribute's wire
-  # format to a bare "HH:MM:SS" time-of-day (caDailyTimeLayout in
-  # resource_keyfactor_certificate_authority.go): the date component is
-  # dropped entirely rather than round-tripped, so Command's server-side
-  # date rewrite is no longer observable as drift. See step6-apply-daily.
-  threshold_check_daily_time = var.threshold_check_daily_time
+  # "undeclared/unmanaged" -- this is what lets step3/step4 seed an
+  # out-of-band value and prove it survives (Interval shape, step3) or fails
+  # to survive (Daily shape, step4 -- known unmodeled-variant gap, see
+  # header above) an unrelated update (monitor_thresholds toggle) verbatim.
 }
 
 output "ca_id" {
@@ -128,9 +100,4 @@ output "incremental_scan_interval_minutes" {
 output "threshold_check_interval_minutes" {
   description = "threshold_check_interval_minutes as read back into state (undeclared in config; should reflect whatever exists server-side, including out-of-band values)."
   value       = keyfactor_certificate_authority.demo.threshold_check_interval_minutes
-}
-
-output "threshold_check_daily_time" {
-  description = "threshold_check_daily_time as read back into state. Null unless TF_VAR_threshold_check_daily_time is set (see GNUmakefile step6-*)."
-  value       = keyfactor_certificate_authority.demo.threshold_check_daily_time
 }

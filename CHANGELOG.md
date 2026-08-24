@@ -1,4 +1,4 @@
-# v2.10.0
+# v2.9.2
 
 ## Template Role Bindings
 
@@ -24,18 +24,9 @@
 
 ## Certificate Deployments
 
-### Features
-
-- feat: `keyfactor_certificate_deployment` new optional `skip_inventory_validation` attribute — skips the post-submit store-inventory polling on both deploy and destroy (fire-and-forget). The single-pass duplicate-deployment pre-check and Update drift repair still run. Note that a green apply then no longer confirms the certificate reached the store; combine with `fail_on_job_failure` for job-level confirmation
-- feat: `keyfactor_certificate_deployment` new optional `fail_on_job_failure` attribute — tracks the orchestrator job(s) created by the add/remove operations via `GET /OrchestratorJobs/JobHistory` and fails the Terraform run with the orchestrator's message when a job reaches a final failure result. Jobs that fail but will be retried by Command (`CompletedWillRetry`) are waited on until a final result. Stores with no inventory schedule (previously submitted with zero validation) are validated by job status when this flag is set. Requires the Agent Management - Read permission (claim `/agents/management/read/`) in Keyfactor Command
-
 ### Fixes
 
 - fix: `keyfactor_certificate_deployment` Create's deployment-validation failure diagnostic reported the wrong error message (the initial pre-check result instead of the validation error)
-- fix: `keyfactor_certificate_deployment` Update and Delete now probe the destination store's inventory schedule before starting a `fail_on_job_failure` inventory-based wait, matching Create's behavior — previously a schedule-less store could never satisfy the inventory check, causing the wait to poll indefinitely instead of falling back to job-status-only validation
-- fix: `keyfactor_certificate_deployment` Create now persists resource state when a `fail_on_job_failure` job-status wait fails (e.g. a permission error or an orchestrator job failure) — the management job was already submitted to Keyfactor Command, so a subsequent apply now sees a tainted resource in state instead of blindly resubmitting a brand-new job every run (note: destroying the now-tainted resource still requires the same Agent Management - Read permission, since Delete submits its own Remove job and polls its status)
-- fix: `keyfactor_certificate_deployment` orchestrator job status Acknowledged (Status=4) is now treated as a terminal result, like Completed, when evaluating `fail_on_job_failure` job history — previously a job that settled on Acknowledged as its latest history entry would poll forever
-- fix: `keyfactor_certificate_deployment` the `fail_on_job_failure` orchestrator `JobHistory` lookup now sorts descending by `JobHistoryId` with an explicit return limit, instead of relying on the server's undocumented default page size/sort, so the "latest" job history entry is determined deterministically even for jobs with many retry attempts
 
 ## Security Identities
 
@@ -73,14 +64,8 @@
 
 ## Certificate Authorities
 
-### Features
-
-- feat: `keyfactor_certificate_authority` now supports Daily scan schedules via new `full_scan_daily_time`, `incremental_scan_daily_time`, and `threshold_check_daily_time` attributes (format `"HH:MM:SS"`), alongside the existing interval-based schedules. Fixes [#193](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/193)
-
 ### Fixes
 
-- fix: `keyfactor_certificate_authority` no longer silently clears a Daily-shaped scan schedule on every apply
-- fix: switching a scan schedule between its Interval and Daily variant in one apply no longer fails
 - fix: `key_retention = "2"` no longer produces an inconsistent-result error on apply. Fixes [#191](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/191)
 - fix: destroying a client-certificate-auth CA no longer fails with an OAuth/client-certificate field conflict. Fixes [#194](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/194)
 - fix: switching a CA between OAuth and client-certificate authentication in one apply no longer fails
@@ -88,7 +73,6 @@
 - fix: auth-certificate metadata (`auth_certificate_issued_dn`/`_issuer_dn`/`_thumbprint`) now reads as `null` instead of an empty string when no auth certificate is configured
 - fix: `enforce_unique_dn` and `new_end_entity_on_renew_and_reissue` can no longer both be `true`, and `new_end_entity_on_renew_and_reissue = false` is now rejected for HTTPS CAs, both caught at plan time instead of failing on apply
 - fix: `allowed_enrollment_types`/`use_allowed_requesters`/`allowed_requesters` are no longer rejected just because `standalone = false`
-- fix: the new `*_daily_time` attributes now reject a non-zero-padded hour at plan time instead of accepting a value that would fail on every later apply
 - docs: `explicit_password`, `auth_certificate`, `auth_certificate_password`, and `client_secret` now note that removing them from config clears the credential on the next apply
 
 ## Chores

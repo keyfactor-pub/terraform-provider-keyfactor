@@ -202,11 +202,8 @@ func TestUnitCADeleteClearScheduleFallbackDoesNotConflictAuthVariants(t *testing
 	// Mirrors Delete()'s clear-schedules-before-delete fallback exactly.
 	clearState := state
 	clearState.FullScanIntervalMinutes = types.Int64{Null: true}
-	clearState.FullScanDailyTime = types.String{Null: true}
 	clearState.IncrementalScanIntervalMinutes = types.Int64{Null: true}
-	clearState.IncrementalScanDailyTime = types.String{Null: true}
 	clearState.ThresholdCheckIntervalMinutes = types.Int64{Null: true}
-	clearState.ThresholdCheckDailyTime = types.String{Null: true}
 
 	req, diags := buildCARequest(ctx, clearState)
 	if diags.HasError() {
@@ -251,9 +248,7 @@ func TestUnitCADeleteClearScheduleFallbackDoesNotConflictAuthVariants(t *testing
 //
 // The fix adds a ValidateConfig-time cross-field check
 // (validateCAConfigConstraints) rejecting both variants declared with a
-// genuinely non-empty value at once, mirroring the schedule-pair mutual-
-// exclusion check already added in this same file for the analogous
-// full_scan_interval_minutes/full_scan_daily_time-style conflict.
+// genuinely non-empty value at once.
 // ---------------------------------------------------------------------------
 
 // TestUnitCAValidateConfigRejectsBothAuthVariantsDeclared is the direct

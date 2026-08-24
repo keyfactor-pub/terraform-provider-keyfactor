@@ -52,9 +52,9 @@ resource "keyfactor_certificate_deployment" "tls_secret" {
   #
   # Full inventory-based verification (the default apply behavior): the resource waits
   # for the deployed certificate to appear in the store's inventory before completing.
-  # Previously worked around via skip_inventory_validation = true because the
-  # k8s-orchestrator extension's Management (Add) job silently failed to write the K8s
-  # Secret while still reporting Result: Success. Fixed upstream:
+  # This previously required a workaround because the k8s-orchestrator extension's
+  # Management (Add) job silently failed to write the K8s Secret while still reporting
+  # Result: Success. Fixed upstream:
   # https://github.com/Keyfactor/k8s-orchestrator/issues/91
 }
 

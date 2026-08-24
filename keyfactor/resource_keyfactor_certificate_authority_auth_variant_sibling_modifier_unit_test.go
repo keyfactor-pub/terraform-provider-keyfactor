@@ -25,10 +25,7 @@ import (
 // over). clearAuthVariant then strips those same fields from the PUT at
 // apply time (issue #194), and the server's post-switch representation
 // zeroes them out, so Terraform core hard-errors comparing the pinned
-// stale plan value against the cleared final state -- the exact mechanism
-// scheduleSiblingModifier already fixes for the three schedule pairs
-// (resource_keyfactor_certificate_authority_schedule_sibling_modifier_unit_test.go),
-// left unhandled for the auth-variant pair.
+// stale plan value against the cleared final state.
 //
 // The fix (authVariantSiblingModifier, resource_keyfactor_certificate_authority.go)
 // reads the OTHER variant's trigger attribute(s) from CONFIG at plan time and
@@ -257,8 +254,7 @@ func TestUnitCAAuthVariantSiblingModifierLeavesUnknownWhenTriggerItselfUnknown(t
 
 	// Build a config whose auth_certificate is Unknown by round-tripping a
 	// plan with an Unknown value through the schema, then reusing the Raw
-	// representation as Config -- mirroring scheduleSiblingModifier's own
-	// test technique.
+	// representation as Config.
 	config := blankCAConfig()
 	p := tfsdk.Plan{Schema: schema}
 	if d := p.Set(ctx, &config); d.HasError() {
@@ -294,10 +290,10 @@ func TestUnitCAAuthVariantSiblingModifierLeavesUnknownWhenTriggerItselfUnknown(t
 }
 
 // TestUnitCAAuthVariantSiblingModifierNoOpWhenSelfDeclared documents (and
-// locks in) the early-return guard shared with tfsdk.UseStateForUnknownModifier
-// and scheduleSiblingModifier: when this attribute's OWN plan is already
-// known (because config declared it directly), the modifier must not touch
-// it at all -- it only ever intervenes on an Unknown plan.
+// locks in) the early-return guard shared with tfsdk.UseStateForUnknownModifier:
+// when this attribute's OWN plan is already known (because config declared
+// it directly), the modifier must not touch it at all -- it only ever
+// intervenes on an Unknown plan.
 func TestUnitCAAuthVariantSiblingModifierNoOpWhenSelfDeclared(t *testing.T) {
 	t.Parallel()
 

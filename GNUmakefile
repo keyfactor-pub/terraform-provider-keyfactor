@@ -300,9 +300,10 @@ testunit-ca:
 KEYFACTOR_ENV_FILE ?= ~/.env_kfclab
 KEYFACTOR_K8S_CREDENTIALS_FILE ?= $(HOME)/GolandProjects/terraform-keyfactor-provider-testing/examples/certs/deployment/k8s-creds.json
 
-# Integration test timeout; override with `make testint-check INT_TIMEOUT=180m`.
-# The full suite runs ~117m and occasionally exceeds the 120m default.
-INT_TIMEOUT ?= 120m
+# Integration test timeout; override with `make testint-check INT_TIMEOUT=600m`.
+# kfclab has ~5s per-request latency; the full 62-test suite needs ~8h there.
+# The retired int25-4-1 lab ran the suite in ~117m.
+INT_TIMEOUT ?= 480m
 
 testint:
 	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_ACC=1 go test ./keyfactor/ -run "TestInt" -v $(TESTARGS) -timeout $(INT_TIMEOUT)

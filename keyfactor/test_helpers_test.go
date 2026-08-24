@@ -193,8 +193,9 @@ func discoverCA(t *testing.T, client *api.Client) string {
 
 // discoverEnrollmentPattern returns an enrollment pattern name.
 // Checks KEYFACTOR_ENROLLMENT_PATTERN env var first, then discovers from the lab.
-// Prefers the "Default" pattern if present. Returns empty string if enrollment
-// patterns are not available (pre-v25).
+// Prefers the "Default" pattern if present, then a TemplateDefault pattern that
+// isn't backed by a short-lived "lab-role" issuer (see kfclab note below).
+// Returns empty string if enrollment patterns are not available (pre-v25).
 func discoverEnrollmentPattern(t *testing.T, client *api.Client) string {
 	t.Helper()
 
@@ -223,12 +224,32 @@ func discoverEnrollmentPattern(t *testing.T, client *api.Client) string {
 		}
 	}
 
-	// Fall back to first pattern with TemplateDefault set
+	// Among TemplateDefault patterns, avoid short-lived "lab-role" backends: on
+	// kfclab, "Lab - AnyCA (lab-role)" is backed by an OpenBao PKI role with a
+	// TTL short enough that certificates enrolled through it can appear expired
+	// (is_expired=true) within the few minutes a test takes to enroll and read
+	// them back. "Lab - AnyCA (lab-root-role)" (or any other pattern whose name
+	// doesn't contain "lab-role") uses a longer-lived backend and is safe for
+	// tests that assert on certificate validity shortly after enrollment.
+	var fallbackTemplateDefault string
+	var fallbackTemplateDefaultID int
 	for _, p := range patterns {
-		if p.TemplateDefault {
-			t.Logf("Discovered enrollment pattern (template default): %s (ID: %d)", p.Name, p.ID)
+		if !p.TemplateDefault {
+			continue
+		}
+		lower := strings.ToLower(p.Name)
+		if strings.Contains(lower, "root") || !strings.Contains(lower, "lab-role") {
+			t.Logf("Discovered enrollment pattern (template default, non-short-lived): %s (ID: %d)", p.Name, p.ID)
 			return p.Name
 		}
+		if fallbackTemplateDefault == "" {
+			fallbackTemplateDefault = p.Name
+			fallbackTemplateDefaultID = p.ID
+		}
+	}
+	if fallbackTemplateDefault != "" {
+		t.Logf("Discovered enrollment pattern (template default): %s (ID: %d)", fallbackTemplateDefault, fallbackTemplateDefaultID)
+		return fallbackTemplateDefault
 	}
 
 	t.Logf("Discovered enrollment pattern: %s (ID: %d)", patterns[0].Name, patterns[0].ID)
@@ -1564,12 +1585,20 @@ resource "keyfactor_certificate" "test" {
 // testAccCertPFXConfigEnrollmentPatternNoCA generates HCL for a PFX certificate
 // resource test using an enrollment pattern without specifying certificate_authority.
 // Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+//
+// use_cn_as_friendly_name is explicitly disabled: some AnyCA gateway backends
+// (e.g. kfclab's AnyCA/OpenBao tenant) reject CustomFriendlyName on enrollment
+// with "Friendly Name is not allowed" unless the gateway is separately
+// configured to allow it. The provider defaults use_cn_as_friendly_name to
+// true for backwards compatibility, so tests that don't care about the
+// friendly name value must opt out explicitly.
 func testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn string) string {
 	return fmt.Sprintf(`
 resource "keyfactor_certificate" "test" {
   common_name                      = "%s"
   certificate_enrollment_pattern   = "%s"
   key_password                     = "Tftest123456"
+  use_cn_as_friendly_name          = false
 }
 `, cn, enrollmentPattern)
 }

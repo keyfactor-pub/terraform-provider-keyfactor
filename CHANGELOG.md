@@ -78,7 +78,10 @@
 ## Chores
 
 - chore(deps): `keyfactor-go-client/v3` bumped to `v3.6.0-rc.0` (from `v3.5.6` GA) — changes `UpdateTemplateArg.KeyUsage` from `*bool` to `*int` to match Command's actual int-bitmask wire format for `PUT /Templates`; final GA of this provider must pin a go-client GA once `v3.6.0` is cut
-- chore(deps): security bumps resolving all 15 open Dependabot alerts (7 critical, 3 high, 5 moderate): `golang.org/x/crypto` v0.47.0 → v0.52.0 (SSH auth-bypass/DoS advisories incl. GHSA-vgwf-h737-ff37, GHSA-jppx-rxg9-jmrx), `google.golang.org/grpc` v1.79.3 → v1.82.1 (GHSA-hrxh-6v49-42gf xDS RBAC/HTTP2), `golang.org/x/net` v0.49.0 → v0.55.0 (HTML parser DoS), plus transitive `x/sys`/`x/text`/`x/tools`/`protobuf` updates. All indirect dependencies; no Terraform plugin framework or Keyfactor client changes. Minimum Go toolchain moves 1.24 → 1.25 (required by the updated dependencies)
+- chore(deps): `golang.org/x/crypto` `v0.47.0 → v0.52.0` 
+- chore(deps): `google.golang.org/grpc` `v1.79.3 → v1.82.1` 
+- chore(deps): `golang.org/x/net` `v0.49.0 → v0.55.0`, plus transitive `x/sys`/`x/text`/`x/tools`/`protobuf` updates. All indirect dependencies.
+- chore(deps): Minimum Go toolchain moves `1.24 → 1.25` (required by the updated dependencies)
 - chore(test): add a real-Terraform release-test harness (`terraform/`, `make -C terraform harness`) that runs every resource through `plan → apply → import → drift-check → destroy` against a live Command instance; used to find and verify every fix above
 
 # v2.9.1

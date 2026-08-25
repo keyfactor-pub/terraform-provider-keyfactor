@@ -168,7 +168,7 @@ func (r resourceSecurityRole) Read(
 // unrelated Update. See the call site in Update() for the fresh value this
 // is sourced from. An explicit empty list is a real clear signal and is sent
 // as `[]`.
-func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, declaredPermissions types.List, statePermissions types.List, roleId int) *api.UpdateSecurityRoleArg {
+func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, declaredPermissions types.List, statePermissions types.List, roleId int) (*api.UpdateSecurityRoleArg, diag.Diagnostics) {
 	arg := &api.UpdateSecurityRoleArg{
 		Id: roleId,
 		CreateSecurityRoleArg: api.CreateSecurityRoleArg{
@@ -183,15 +183,19 @@ func buildSecurityRoleUpdateArg(ctx context.Context, plan SecurityRole, declared
 	}
 
 	permissions := []string{}
+	var diags diag.Diagnostics
 	if !permsSource.Null && !permsSource.Unknown {
-		permsSource.ElementsAs(ctx, &permissions, false)
+		diags = permsSource.ElementsAs(ctx, &permissions, false)
+		if diags.HasError() {
+			return nil, diags
+		}
 	}
 	if permissions == nil {
 		permissions = []string{}
 	}
 	sort.Strings(permissions)
 	arg.Permissions = &permissions
-	return arg
+	return arg, diags
 }
 
 // securityIdentitiesToRoleConfig converts a role's current server-reported
@@ -364,7 +368,11 @@ func (r resourceSecurityRole) Update(
 	// that only touches an unrelated field (e.g. description) -- the same
 	// staleness trap the fresh GetSecurityRole call above was added to avoid
 	// for Identities.
-	updateArg := buildSecurityRoleUpdateArg(ctx, plan, config.Permissions, permissionsToTfList(remoteRole.Permissions), int(roleId))
+	updateArg, diags2 := buildSecurityRoleUpdateArg(ctx, plan, config.Permissions, permissionsToTfList(remoteRole.Permissions), int(roleId))
+	response.Diagnostics.Append(diags2...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	updateArg.Identities = securityIdentitiesToRoleConfig(remoteRole.Identities)
 
 	remoteState, err := r.p.client.UpdateSecurityRole(updateArg)
@@ -464,11 +472,24 @@ func (r resourceSecurityRole) Create(
 	ctx = tflog.SetField(ctx, "role_name", roleName)
 	tflog.Info(ctx, "Creating Keyfactor security identity resource")
 
-	var permissions []string
-	diags = plan.Permissions.ElementsAs(ctx, &permissions, false)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
-		return
+	// permissions is Optional+Computed: when the user omits it from config,
+	// plan.Permissions arrives Unknown (there's no prior state yet for
+	// UseStateForUnknown to copy forward from during Create). ElementsAs on
+	// an Unknown or Null list returns an error diagnostic, so guard the call
+	// and leave permissions as an explicit empty slice (not nil) in that
+	// case instead of erroring out of Create entirely -- a nil slice, even
+	// wrapped in the non-nil *[]string below, still marshals as JSON "null"
+	// (encoding/json only omits/collapses on the pointer, not the slice
+	// itself), which is the same clear-vs-omit trap documented on
+	// buildSecurityRoleUpdateArg; an explicit []string{} marshals as "[]",
+	// matching a freshly-created role's true "no permissions declared" state.
+	permissions := []string{}
+	if !plan.Permissions.Unknown && !plan.Permissions.Null {
+		diags = plan.Permissions.ElementsAs(ctx, &permissions, false)
+		response.Diagnostics.Append(diags...)
+		if response.Diagnostics.HasError() {
+			return
+		}
 	}
 	sort.Strings(permissions)
 

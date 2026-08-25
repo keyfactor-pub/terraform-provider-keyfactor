@@ -1713,7 +1713,7 @@ func (r resourceCommandCertificate) Update(
 			if err != nil {
 				response.Diagnostics.AddError(
 					"Certificate metadata update error.",
-					fmt.Sprintf("Could not update cert '%s''s metadata on Keyfactor: "+err.Error(), state.ID.Value),
+					fmt.Sprintf("Could not update cert '%s''s metadata on Keyfactor: ", state.ID.Value)+err.Error(),
 				)
 				return
 			}
@@ -1831,7 +1831,7 @@ func (r resourceCommandCertificate) Update(
 			if err != nil {
 				response.Diagnostics.AddError(
 					"Certificate metadata update error.",
-					fmt.Sprintf("Could not update cert '%s''s metadata on Keyfactor: "+err.Error(), state.ID.Value),
+					fmt.Sprintf("Could not update cert '%s''s metadata on Keyfactor: ", state.ID.Value)+err.Error(),
 				)
 				return
 			}
@@ -2114,7 +2114,7 @@ func (r resourceCommandCertificate) Delete(
 			tflog.Error(ctx, fmt.Sprintf("Error revoking certificate '%d' on Keyfactor Command", certificateIdInt))
 			response.Diagnostics.AddError(
 				"Certificate revocation error.",
-				fmt.Sprintf("Keyfactor Command could not revoke cert '%s' : "+err.Error(), state.ID.Value),
+				fmt.Sprintf("Keyfactor Command could not revoke cert '%s' : ", state.ID.Value)+err.Error(),
 			)
 			return
 		}

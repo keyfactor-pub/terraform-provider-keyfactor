@@ -74,7 +74,7 @@ func (r dataSourceSecurityRole) Read(ctx context.Context, request tfsdk.ReadData
 	}
 
 	if err != nil {
-		response.Diagnostics.AddError("Unknown role error.", fmt.Sprintf("Unknown error while trying to import role '%v' on Keyfactor. Read failed. "+err.Error(), roleId))
+		response.Diagnostics.AddError("Unknown role error.", fmt.Sprintf("Unknown error while trying to import role '%v' on Keyfactor. Read failed. ", roleId)+err.Error())
 		return
 	}
 

@@ -91,7 +91,7 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Read(
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Unknown OAuth security role error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. "+err.Error(), roleId),
+			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
 		)
 
 		return
@@ -171,7 +171,7 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Unknown OAuth security role error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. "+err.Error(), roleId),
+			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
 		)
 
 		return
@@ -259,7 +259,7 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Unknown OAuth security role error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. "+err.Error(), roleId),
+			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
 		)
 
 		return
@@ -276,7 +276,7 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Unknown OAuth security claim error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security claim ID %d from Keyfactor. Read failed. "+err.Error(), claimId),
+			fmt.Sprintf("Unknown error while trying to import OAuth security claim ID %d from Keyfactor. Read failed. ", claimId)+err.Error(),
 		)
 	}
 

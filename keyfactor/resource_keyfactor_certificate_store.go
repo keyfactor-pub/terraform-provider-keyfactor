@@ -887,7 +887,7 @@ func (r resourceCertificateStore) Delete(
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Certificate store delete error.",
-			fmt.Sprintf("Could not delete certificate store '%s' on Keyfactor: "+err.Error(), certificateStoreId),
+			fmt.Sprintf("Could not delete certificate store '%s' on Keyfactor: ", certificateStoreId)+err.Error(),
 		)
 		return
 	}
@@ -1000,7 +1000,7 @@ func (r resourceCertificateStore) ImportState(
 		if err != nil {
 			response.Diagnostics.AddError(
 				ERR_SUMMARY_CERT_STORE_READ,
-				fmt.Sprintf("Error reading certificate store '%s': "+err.Error(), certificateStoreId),
+				fmt.Sprintf("Error reading certificate store '%s': ", certificateStoreId)+err.Error(),
 			)
 			return
 		}

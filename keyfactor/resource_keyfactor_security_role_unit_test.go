@@ -47,7 +47,8 @@ func TestUnitSecurityRoleUpdateArgPermissions(t *testing.T) {
 			Permissions: types.List{Null: true, ElemType: types.StringType},
 		}
 		declared := types.List{Null: true, ElemType: types.StringType}
-		arg := buildSecurityRoleUpdateArg(ctx, plan, declared, statePermissions, 5)
+		arg, diags := buildSecurityRoleUpdateArg(ctx, plan, declared, statePermissions, 5)
+		assert.False(t, diags.HasError())
 		if assert.NotNil(t, arg.Permissions,
 			"undeclared permissions must still be sent explicitly -- Command's PUT clears permissions when the field is absent, it does not preserve them") {
 			assert.ElementsMatch(t, []string{"certificates:read", "auditing:read"}, *arg.Permissions,
@@ -60,7 +61,8 @@ func TestUnitSecurityRoleUpdateArgPermissions(t *testing.T) {
 			Name:        types.String{Value: "role"},
 			Permissions: types.List{ElemType: types.StringType, Elems: []attr.Value{}},
 		}
-		arg := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, statePermissions, 5)
+		arg, diags := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, statePermissions, 5)
+		assert.False(t, diags.HasError())
 		if assert.NotNil(t, arg.Permissions, "explicit permissions=[] must be sent as a clear signal") {
 			assert.Equal(t, []string{}, *arg.Permissions,
 				"an explicit empty permissions list must serialize as [] (clear), not preserved from state")
@@ -75,7 +77,8 @@ func TestUnitSecurityRoleUpdateArgPermissions(t *testing.T) {
 				types.String{Value: "auditing:read"},
 			}},
 		}
-		arg := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, statePermissions, 5)
+		arg, diags := buildSecurityRoleUpdateArg(ctx, plan, plan.Permissions, statePermissions, 5)
+		assert.False(t, diags.HasError())
 		if assert.NotNil(t, arg.Permissions) {
 			assert.ElementsMatch(t, []string{"certificates:read", "auditing:read"}, *arg.Permissions)
 		}
@@ -1067,4 +1070,90 @@ func TestUnitSecurityRoleResource_UpdateUsesFreshPermissionsNotStaleState(t *tes
 		t, []string{"Certificates:Read", "Certificates:EditMetadata"}, *capturedPermissions,
 		"Update() must fall back to the fresh GetSecurityRole read (remoteRole.Permissions) when config omits permissions, not Terraform's stale prior state -- otherwise an unrelated Update (here, Description only) silently reverts a real out-of-band permission change back to the stale value",
 	)
+}
+
+// TestUnitSecurityRoleResource_CreateWithOmittedPermissions is a regression
+// test for a bug introduced while fixing an earlier finding that Create()
+// discarded plan.Permissions.ElementsAs' diagnostics: capturing those
+// diagnostics unconditionally re-broke the omitted-permissions case, because
+// permissions is Optional+Computed and has no prior state for
+// UseStateForUnknown to copy forward from during Create -- so when the user
+// omits `permissions` from config entirely, plan.Permissions arrives Unknown,
+// and ElementsAs on an Unknown (or Null) list always returns an error
+// diagnostic. Appending that diagnostic and returning early meant the role
+// was never created at all whenever `permissions` was left out of config.
+//
+// This exercises the real Create() path with plan.Permissions Unknown (the
+// shape Terraform Core actually produces for an omitted Optional+Computed
+// attribute with no prior state) and asserts Create() succeeds, sends an
+// empty (not omitted -- see buildSecurityRoleUpdateArg's sibling doc comment
+// on Command's clear-on-omit PUT semantics for why an empty list, not a nil
+// field, is correct here too) Permissions list, and writes a concrete empty
+// list into state.
+func TestUnitSecurityRoleResource_CreateWithOmittedPermissions(t *testing.T) {
+	ctx := context.Background()
+
+	mux := http.NewServeMux()
+	var capturedPermissions *[]string
+	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Permissions *[]string `json:"Permissions"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		capturedPermissions = body.Permissions
+
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"Id":          5,
+			"Name":        "tf-unit-role-create-omitted",
+			"Description": "A role with no declared permissions",
+			"Permissions": []string{},
+		})
+	})
+	server := httptest.NewTLSServer(mux)
+	defer server.Close()
+
+	client := newCertUpdateMockClient(server)
+
+	schema, sDiags := resourceSecurityRoleType{}.GetSchema(ctx)
+	if sDiags.HasError() {
+		t.Fatalf("GetSchema returned diagnostics: %+v", sDiags)
+	}
+
+	// This is the shape Terraform Core actually produces on Create for an
+	// Optional+Computed attribute the practitioner omitted from config: no
+	// prior state exists for UseStateForUnknown to copy forward from, so the
+	// plan value is Unknown, not Null.
+	plan := SecurityRole{
+		Name:        types.String{Value: "tf-unit-role-create-omitted"},
+		Description: types.String{Value: "A role with no declared permissions"},
+		Permissions: types.List{Unknown: true, ElemType: types.StringType},
+	}
+
+	planObj := tfsdk.Plan{Schema: schema}
+	if d := planObj.Set(ctx, &plan); d.HasError() {
+		t.Fatalf("test setup: plan.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceSecurityRole{p: provider{configured: true, client: client}}
+
+	req := tfsdk.CreateResourceRequest{Plan: planObj}
+	resp := &tfsdk.CreateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Create(ctx, req, resp)
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Create returned unexpected diagnostics for omitted permissions: %+v", resp.Diagnostics)
+	}
+
+	if assert.NotNil(t, capturedPermissions,
+		"Create() must send a non-nil (empty) Permissions field on the POST body when permissions is omitted from config") {
+		assert.Equal(t, []string{}, *capturedPermissions)
+	}
+
+	var result SecurityRole
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("reading back result state: %+v", d)
+	}
+	assert.False(t, result.Permissions.Unknown, "Create() must not leave an Unknown value in state -- Terraform Core rejects that")
+	assert.Empty(t, result.Permissions.Elems)
 }

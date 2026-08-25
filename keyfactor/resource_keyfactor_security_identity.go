@@ -873,7 +873,7 @@ func setIdentityRole(
 }
 
 func removeIdentityFromRole(kfClient *api.Client, identityAccountName string, roleId int) error {
-	log.Printf("[DEBUG] Removing account %s from Keyfactor role %d", identityAccountName, roleId)
+	log.Printf("[DEBUG] Removing account %q from Keyfactor role %d", identityAccountName, roleId)
 	// Construct a list of security identities currently attached to role
 	role, err := kfClient.GetSecurityRole(roleId)
 	if err != nil {

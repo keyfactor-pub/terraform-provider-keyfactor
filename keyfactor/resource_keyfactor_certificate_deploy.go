@@ -257,11 +257,11 @@ func (r resourceCommandCertificateDeployment) Create(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unknown error during read status of deployment of certificate '%v' to store '%s (%s)': "+err.Error(),
+				"Unknown error during read status of deployment of certificate '%v' to store '%s (%s)': ",
 				certificateId,
 				storeId,
 				certificateAlias,
-			),
+			)+err.Error(),
 		)
 	}
 
@@ -292,11 +292,11 @@ func (r resourceCommandCertificateDeployment) Create(
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
 				fmt.Sprintf(
-					"Unknown error during deploy of certificate '%v'(%s) to store '%s': "+addErr.Error(),
+					"Unknown error during deploy of certificate '%v'(%s) to store '%s': ",
 					certificateId,
 					certificateAlias,
 					storeId,
-				),
+				)+addErr.Error(),
 			)
 		}
 		if response.Diagnostics.HasError() {
@@ -339,11 +339,11 @@ func (r resourceCommandCertificateDeployment) Create(
 				response.Diagnostics.AddError(
 					"Deployment validation error.",
 					fmt.Sprintf(
-						"Unknown error during validation of deploy of certificate '%v' to store '%s (%s)': "+vErr2.Error(),
+						"Unknown error during validation of deploy of certificate '%v' to store '%s (%s)': ",
 						certificateId,
 						storeId,
 						certificateAlias,
-					),
+					)+vErr2.Error(),
 				)
 			}
 			if response.Diagnostics.HasError() {
@@ -398,11 +398,11 @@ func (r resourceCommandCertificateDeployment) Read(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unknown error during read status of deployment of certificate '%s' to store '%s (%s)': "+err.Error(),
+				"Unknown error during read status of deployment of certificate '%d' to store '%s (%s)': ",
 				certificateId,
 				storeId,
 				certificateAlias,
-			),
+			)+err.Error(),
 		)
 	}
 	locations := certificateData.Locations
@@ -478,11 +478,11 @@ func (r resourceCommandCertificateDeployment) Update(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unknown error during read status of deployment of certificate '%d' to store '%s (%s)': "+err.Error(),
+				"Unknown error during read status of deployment of certificate '%d' to store '%s (%s)': ",
 				certificateId,
 				storeId,
 				certificateAlias,
-			),
+			)+err.Error(),
 		)
 	}
 
@@ -506,11 +506,11 @@ func (r resourceCommandCertificateDeployment) Update(
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
 				fmt.Sprintf(
-					"Unknown error during deploy of certificate '%v'(%s) to store '%s': "+addErr.Error(),
+					"Unknown error during deploy of certificate '%v'(%s) to store '%s': ",
 					certificateId,
 					certificateAlias,
 					storeId,
-				),
+				)+addErr.Error(),
 			)
 		}
 
@@ -530,11 +530,11 @@ func (r resourceCommandCertificateDeployment) Update(
 			response.Diagnostics.AddError(
 				"Deployment validation error.",
 				fmt.Sprintf(
-					"Unknown error during validation of deploy of certificate '%d' to store '%s (%s)': "+vErr2.Error(),
+					"Unknown error during validation of deploy of certificate '%d' to store '%s (%s)': ",
 					certificateId,
 					storeId,
 					certificateAlias,
-				),
+				)+vErr2.Error(),
 			)
 		}
 	}
@@ -611,7 +611,7 @@ func (r resourceCommandCertificateDeployment) Delete(
 			if lkErr != nil {
 				response.Diagnostics.AddWarning(
 					"Certificate removal error.",
-					fmt.Sprintf("Error looking up certificate '%d' in Keyfactor: "+lkErr.Error(), certificateId),
+					fmt.Sprintf("Error looking up certificate '%d' in Keyfactor: ", certificateId)+lkErr.Error(),
 				)
 				response.State.RemoveResource(ctx)
 				return
@@ -662,11 +662,11 @@ func (r resourceCommandCertificateDeployment) Delete(
 		response.Diagnostics.AddError(
 			"Certificate deployment error",
 			fmt.Sprintf(
-				"Unknown error during removal of certificate '%d' from store '%s (%s)': "+err.Error(),
+				"Unknown error during removal of certificate '%d' from store '%s (%s)': ",
 				certificateId,
 				storeId,
 				certificateAlias,
-			),
+			)+err.Error(),
 		)
 		return
 	}
@@ -685,11 +685,11 @@ func (r resourceCommandCertificateDeployment) Delete(
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
 				fmt.Sprintf(
-					"Unknown error during removal of certificate '%d' from store '%s (%s)': "+validateErr.Error(),
+					"Unknown error during removal of certificate '%d' from store '%s (%s)': ",
 					certificateId,
 					storeId,
 					certificateAlias,
-				),
+				)+validateErr.Error(),
 			)
 			break
 		}

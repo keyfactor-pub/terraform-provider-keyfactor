@@ -372,7 +372,7 @@ func (r resourceSecurityRole) Update(
 		// %q-quoted for the same CWE-117 reason as Read() above.
 		response.Diagnostics.AddError(
 			"Identity role update error.",
-			fmt.Sprintf("Error updating identity role %q: "+err.Error(), plan.Name.Value),
+			fmt.Sprintf("Error updating identity role %q: ", plan.Name.Value)+err.Error(),
 		)
 		return
 	}
@@ -465,7 +465,11 @@ func (r resourceSecurityRole) Create(
 	tflog.Info(ctx, "Creating Keyfactor security identity resource")
 
 	var permissions []string
-	plan.Permissions.ElementsAs(ctx, &permissions, false)
+	diags = plan.Permissions.ElementsAs(ctx, &permissions, false)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	sort.Strings(permissions)
 
 	roleArg := &api.CreateSecurityRoleArg{
@@ -533,24 +537,22 @@ func (r resourceSecurityRole) ImportState(
 		response.Diagnostics.AddError(
 			"Unknown role error.",
 			fmt.Sprintf(
-				"Unknown error while trying to import role '%v' on Keyfactor. Read failed. "+err.Error(),
+				"Unknown error while trying to import role '%v' on Keyfactor. Read failed. ",
 				roleId,
-			),
+			)+err.Error(),
 		)
 		return
 	}
 
-	var permissionValues []attr.Value
 	for _, perm := range remoteState.Permissions {
 		tflog.Debug(ctx, fmt.Sprintf("Permission: %v", perm))
-		permissionValues = append(permissionValues, types.String{Value: perm})
 	}
 
 	var result = SecurityRole{
 		ID:          types.Int64{Value: int64(remoteState.Id)},
 		Name:        types.String{Value: remoteState.Name},
 		Description: types.String{Value: remoteState.Description},
-		Permissions: types.List{ElemType: types.StringType, Elems: permissionValues},
+		Permissions: permissionsToTfList(remoteState.Permissions),
 	}
 
 	diags := response.State.Set(ctx, result)

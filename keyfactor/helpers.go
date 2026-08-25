@@ -2009,6 +2009,10 @@ func searchCertificatesForOrphanRecovery(
 		return nil, fmt.Errorf("keyfactor SDK client is not configured")
 	}
 
+	if strings.Contains(commonName, `"`) {
+		return nil, fmt.Errorf("orphan-recovery search cannot safely construct a PQL query for a common name containing double-quote characters; use `terraform import` to adopt the certificate manually if it exists")
+	}
+
 	query := fmt.Sprintf(`IssuedCN -eq "%s"`, commonName)
 	var all []api.GetCertificateResponse
 	for page := int32(1); ; page++ {

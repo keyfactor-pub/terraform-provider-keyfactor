@@ -21,6 +21,8 @@
 
 - fix: `keyfactor_certificate` `dns_sans`/`ip_sans`/`uri_sans` no longer force a full destroy+recreate on the first plan after `terraform import`. Fixes [#197](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/197)
 - fix: `keyfactor_certificate` `owner_role_name` no longer clears the certificate's owner as a side effect of omitting the attribute from config on an unrelated `Update`; omitting it now leaves ownership unmanaged, and an explicit empty string (`owner_role_name = ""`) is a declarative clear that stays stable across refreshes instead of manufacturing a permanent diff
+- fix: `keyfactor_certificate` PFX enrollment now recovers automatically when the client times out waiting for Command's response but the certificate was actually issued server-side — `Create` searches for and adopts the orphaned certificate instead of leaving Terraform state empty while a real certificate exists in Command. Hardened over several passes against wrong-certificate adoption (matches the specific enrollment request, not just common name), enrollment-format loss on recovery, missing search-result pagination, and uses Command's actual valid PQL sort field for the recovery search; a successful recovery now surfaces as a warning diagnostic instead of completing silently
+- fix: `keyfactor_certificate` `Update` no longer disagrees with `ImportState` on `friendly_name`/`use_cn_as_friendly_name` — `Update` now uses the value Terraform's plan already resolved instead of re-asserting stale state, and `ImportState` now sets `collection_id`/`friendly_name`/`use_cn_as_friendly_name` to an explicit null instead of a Go zero value, preventing "provider produced inconsistent result after apply" on the first apply immediately after `terraform import`
 
 ## Certificate Deployments
 
@@ -62,6 +64,21 @@
 - fix: `keyfactor_certificate_store_type` `entry_parameters = []` (and `properties = []`) no longer reads back as `null`. Fixes [#192](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/192)
 - fix: `keyfactor_certificate_store_type` boolean fields (`local_store`, `server_required`, `power_shell`, `blueprint_allowed`) explicitly set to `false` are now actually sent to Command instead of being silently dropped
 
+## Provider Configuration
+
+### Fixes
+
+- fix: `request_timeout` was silently dropped on long-running Command API calls (e.g. PFX enrollment) regardless of what was configured, surfacing as `net/http: timeout awaiting response headers` at the SDK's ~60s default. The configured timeout is now threaded through `keyfactor-auth-client-go`'s `Server.ClientTimeout` into both `keyfactor-go-client` and `keyfactor-go-client-sdk`'s HTTP client construction
+- fix: the `request_timeout` config/env/default precedence logic had a dead-code branch that made the "nothing configured" default-fallback path unreachable, and logged the raw, unparsed environment variable string instead of the effective timeout actually used; extracted into a standalone, directly-tested `resolveClientTimeout()`
+
+## OAuth Security
+
+### Fixes
+
+- fix: `keyfactor_oauth_security_role_claim_association` `Read`/`Create`/`Delete` no longer crash the entire provider process with a nil-pointer dereference when a Command API call fails at the transport level (DNS failure, connection refused, TLS failure) — HTTP status-code logging and 404 checks are now ordered after the error check is resolved, matching the sibling `keyfactor_oauth_security_claim` resource; a transport failure now surfaces as a Terraform diagnostic instead of crashing the provider
+- fix: `keyfactor_oauth_security_role_claim_association` `Create` no longer falls through to a nil-pointer dereference when the security claim lookup fails partway through
+- fix: `keyfactor_oauth_security_role_claim_association` `Create`/`Delete` no longer panic when the associated role's `Name`, `Description`, or `PermissionSetId` are null on the server
+
 ## Certificate Authorities
 
 ### Fixes
@@ -77,12 +94,16 @@
 
 ## Chores
 
-- chore(deps): `keyfactor-go-client/v3` bumped to `v3.6.0-rc.0` (from `v3.5.6` GA) — changes `UpdateTemplateArg.KeyUsage` from `*bool` to `*int` to match Command's actual int-bitmask wire format for `PUT /Templates`; final GA of this provider must pin a go-client GA once `v3.6.0` is cut
+- chore(deps): `keyfactor-go-client/v3` bumped to `v3.6.0-rc.4` (from `v3.5.6` GA) — changes `UpdateTemplateArg.KeyUsage` from `*bool` to `*int` to match Command's actual int-bitmask wire format for `PUT /Templates`, and carries the `request_timeout`/`Server.ClientTimeout` plumbing fix above; final GA of this provider must pin a go-client GA once `v3.6.0` is cut
+- chore(deps): `keyfactor-auth-client-go` bumped to `v1.6.0-rc.5` (from `v1.5.0`) — adds `Server.ClientTimeout` so a configured `request_timeout` survives into the auth layer's own HTTP client rebuilding, closing the root cause of the `request_timeout` fix above
+- chore(deps): `keyfactor-go-client-sdk/v24` bumped to `v24.1.2-rc.4` (from `v24.1.1`) — carries the same `Server.ClientTimeout` plumbing fix
 - chore(deps): `golang.org/x/crypto` `v0.47.0 → v0.52.0` 
 - chore(deps): `google.golang.org/grpc` `v1.79.3 → v1.82.1` 
 - chore(deps): `golang.org/x/net` `v0.49.0 → v0.55.0`, plus transitive `x/sys`/`x/text`/`x/tools`/`protobuf` updates. All indirect dependencies.
 - chore(deps): Minimum Go toolchain moves `1.24 → 1.25` (required by the updated dependencies)
 - chore(test): add a real-Terraform release-test harness (`terraform/`, `make -C terraform harness`) that runs every resource through `plan → apply → import → drift-check → destroy` against a live Command instance; used to find and verify every fix above
+- chore(test): add regression coverage for the `request_timeout` resolution logic, the orphaned-PFX-recovery hardening passes, and the OAuth security role claim association nil-deref/error-handling paths
+- chore(demo/harness): `terraform/*/GNUmakefile`'s post-import reconcile-apply step is no longer deduplicated away; `k8s_orchestrator_demo` no longer sets `certificate_alias`/`overwrite` on the `tls_secret`/`opaque_secret` deployments — Command's `CertificateStoreTypes` metadata marks `CustomAliasAllowed = Forbidden` for those two K8S store types, and supplying either field gets the deploy request rejected outright; `certificate_pfx_demo`'s README documents a known lab-timeout on the RSA-8192 sub-test
 
 # v2.9.1
 

@@ -1659,9 +1659,9 @@ func (r resourceCommandCertificate) Update(
 			response.Diagnostics.AddError(
 				"Certificate owner update error.",
 				fmt.Sprintf(
-					"Could not update cert '%s''s owner role to %s on Keyfactor: "+oErr.Error(),
+					"Could not update cert '%s''s owner role to %s on Keyfactor: ",
 					state.ID.Value, plan.OwnerRoleName.Value,
-				),
+				)+oErr.Error(),
 			)
 			return
 		}
@@ -2476,9 +2476,9 @@ func (r resourceCommandCertificate) WaitForPendingCert(
 			tflog.Error(
 				ctx,
 				fmt.Sprintf(
-					"Error looking up certificate with request ID %d on Keyfactor Command: "+err.Error(),
+					"Error looking up certificate with request ID %d on Keyfactor Command: ",
 					enrollResponse.CertificateInformation.KeyfactorRequestID,
-				),
+				)+err.Error(),
 			)
 			// increment sleep duration
 			tflog.Debug(ctx, fmt.Sprintf("Sleeping for %v", sleepDuration))
@@ -2953,9 +2953,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		diags.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 			fmt.Sprintf(
-				"Could not create certificate %s on Keyfactor: "+err.Error(),
+				"Could not create certificate %s on Keyfactor: ",
 				PFXArgs.Subject.SubjectCommonName,
-			),
+			)+err.Error(),
 		)
 		return nil, diags
 	}
@@ -3003,9 +3003,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 					diags.AddError(
 						ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 						fmt.Sprintf(
-							"Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(),
+							"Could not create certificate '%s' on Keyfactor Command: ",
 							PFXArgs.Subject.SubjectCommonName,
-						),
+						)+pErr.Error(),
 					)
 					return nil, diags
 				}
@@ -3018,9 +3018,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 				diags.AddError(
 					ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 					fmt.Sprintf(
-						"Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(),
+						"Could not create certificate '%s' on Keyfactor Command: ",
 						PFXArgs.Subject.SubjectCommonName,
-					),
+					)+pErr.Error(),
 				)
 				return nil, diags
 			}
@@ -3033,9 +3033,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			diags.AddError(
 				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 				fmt.Sprintf(
-					"No response recieved on create certificate '%s' on Keyfactor Command: "+pErr.Error(),
+					"No response recieved on create certificate '%s' on Keyfactor Command: ",
 					PFXArgs.Subject.SubjectCommonName,
-				),
+				)+pErr.Error(),
 			)
 			return nil, diags
 		}

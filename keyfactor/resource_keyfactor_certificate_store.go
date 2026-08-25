@@ -197,9 +197,9 @@ func (r resourceCertificateStore) Create(
 		response.Diagnostics.AddError(
 			"Invalid certificate store type.",
 			fmt.Sprintf(
-				"Could not retrieve certificate store type '%s' from Keyfactor"+csTypeErr.Error(),
+				"Could not retrieve certificate store type '%s' from Keyfactor: ",
 				plan.StoreType.Value,
-			),
+			)+csTypeErr.Error(),
 		)
 		return
 	}
@@ -621,9 +621,9 @@ func (r resourceCertificateStore) Update(
 		response.Diagnostics.AddError(
 			"Invalid certificate store type.",
 			fmt.Sprintf(
-				"Could not retrieve certificate store type '%s' from Keyfactor"+csTypeErr.Error(),
+				"Could not retrieve certificate store type '%s' from Keyfactor: ",
 				plan.StoreType.Value,
-			),
+			)+csTypeErr.Error(),
 		)
 		return
 	}
@@ -1046,9 +1046,9 @@ func (r resourceCertificateStore) ImportState(
 		response.Diagnostics.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_READ,
 			fmt.Sprintf(
-				"Could not retrieve certificate store type '%s' from Keyfactor Command: "+csTypeErr.Error(),
+				"Could not retrieve certificate store type '%d' from Keyfactor Command: ",
 				readResponse.CertStoreType,
-			),
+			)+csTypeErr.Error(),
 		)
 		return
 	}

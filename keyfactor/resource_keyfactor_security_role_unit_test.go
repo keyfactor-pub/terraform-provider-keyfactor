@@ -488,6 +488,14 @@ func TestUnitSecurityRoleResource_ReadPreservesPermissionsOrderWhenUnchanged(t *
 // This exercises the real Read() path against a mock Command server that
 // returns HTTP 404 for the role, proving Read now removes the resource from
 // state (so Terraform plans a re-create) instead of erroring.
+//
+// The Message body below is the ACTUAL text a live Command 25.5.x instance
+// (kfclab) returns for GET Security/Roles/{id} against a nonexistent role
+// ID -- captured 2026-08-26 -- not an invented "not found" string. This
+// matters because isNotFoundError's original implementation only matched
+// literal "not found" / "404" substrings, which this real message does
+// NOT contain; using an invented "Role not found" string here would have
+// let this test pass even against that broken implementation.
 func TestUnitSecurityRoleResource_ReadRemovesResourceOn404(t *testing.T) {
 	ctx := context.Background()
 
@@ -495,7 +503,7 @@ func TestUnitSecurityRoleResource_ReadRemovesResourceOn404(t *testing.T) {
 	mux.HandleFunc("/KeyfactorAPI/Security/Roles/5", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"Message": "Role not found",
+			"Message": "Unable to find 'Security Role' with Id '5'",
 		})
 	})
 	server := httptest.NewTLSServer(mux)

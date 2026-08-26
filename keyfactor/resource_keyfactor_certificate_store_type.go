@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -689,7 +688,7 @@ func (r resourceCertStoreTypeDef) Read(ctx context.Context, request tfsdk.ReadRe
 
 	resp, err := r.p.client.GetCertificateStoreTypeById(id)
 	if err != nil {
-		if strings.Contains(err.Error(), "404") {
+		if isNotFoundError(err) {
 			tflog.Info(ctx, fmt.Sprintf("Certificate store type %d not found, removing from state", id))
 			response.State.RemoveResource(ctx)
 			return

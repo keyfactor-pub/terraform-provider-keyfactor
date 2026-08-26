@@ -2339,7 +2339,26 @@ var notFoundStatusCodePattern = regexp.MustCompile(`\b404\b`)
 // (strings.Contains(err.Error(), "404")), broadened to also catch "not
 // found" text, matching resource_keyfactor_certificate_deploy.go's Read.
 //
-// Two safeguards keep this from false-positiving on a genuine non-404 error:
+// The "unable to find" / "does not exist" patterns below were confirmed
+// against a live Command 25.5.x instance (kfclab) on 2026-08-26 by hitting
+// five different endpoints with nonexistent IDs and capturing the actual
+// 404 response Message field that sendRequest returns verbatim as the Go
+// error (client.go's 404 branch builds a "the requested resource was not
+// found" string, but that string is only ever log.Printf'd -- it is never
+// the error returned to callers). Observed real Command messages:
+//
+//   - Security/Roles/999999            -> "Unable to find 'Security Role' with Id '999999'"
+//   - CertificateStoreTypes/999999      -> "The certificate store type with StoreType '999999' does not exist."
+//   - CertificateStores/{bogus-guid}    -> "Certificate store with id '{bogus-guid}' does not exist."
+//   - Certificates/999999999           -> "Unable to find 'Certificate' with Id '999999999'"
+//   - Agents/{bogus-guid}               -> "Agent with id of '{bogus-guid}' does not exist"
+//
+// None of these contain "404" or "not found", so relying on either of
+// those alone (as this function once did) is a false negative against
+// real Command responses -- "unable to find" and "does not exist" are the
+// patterns that actually recur.
+//
+// Three safeguards keep this from false-positiving on a genuine non-404 error:
 //
 //  1. sendRequest's decode-failure fallback -- "%d - Unknown error
 //     connecting to Keyfactor %s, please check your connection." -- is
@@ -2356,6 +2375,9 @@ var notFoundStatusCodePattern = regexp.MustCompile(`\b404\b`)
 //     not as a substring of a longer digit run -- so a resource ID like
 //     "1404" or "40498" appearing elsewhere in a message can't trigger a
 //     false positive either.
+//  3. "unable to find" and "does not exist" are themselves specific enough
+//     phrases (they're not generic substrings like "404") that they don't
+//     require the same digit-boundary treatment.
 func isNotFoundError(err error) bool {
 	if err == nil {
 		return false
@@ -2368,6 +2390,14 @@ func isNotFoundError(err error) bool {
 	}
 
 	if strings.Contains(lower, "not found") {
+		return true
+	}
+
+	if strings.Contains(lower, "unable to find") {
+		return true
+	}
+
+	if strings.Contains(lower, "does not exist") {
 		return true
 	}
 

@@ -394,6 +394,23 @@ func TestUnitIsNotFoundError(t *testing.T) {
 			expected: false,
 		},
 		{
+			// Guards the resource_keyfactor_certificate_store_type.go Read
+			// call site specifically: it previously used the raw
+			// strings.Contains(err.Error(), "404") idiom directly (the exact
+			// idiom this helper's doc comment cites as the source of the
+			// bug) rather than calling isNotFoundError, so a transient 5xx
+			// against certificate store type ID 1404 would have been
+			// misclassified as a genuine not-found and silently dropped from
+			// state.
+			name: "5xx fallback message with certificate store type ID 1404 is NOT misclassified as not-found",
+			err: fmt.Errorf(
+				"%d - Unknown error connecting to Keyfactor %s, please check your connection.",
+				503,
+				"CertificateStoreTypes/1404",
+			),
+			expected: false,
+		},
+		{
 			name: "404 fallback (decode failure) with embedded status code is treated as unknown, not confirmed not-found",
 			err: fmt.Errorf(
 				"%d - Unknown error connecting to Keyfactor %s, please check your connection.",
@@ -411,6 +428,38 @@ func TestUnitIsNotFoundError(t *testing.T) {
 			name:     "unrelated 5xx error is not a not-found error",
 			err:      errors.New("503 Service Unavailable"),
 			expected: false,
+		},
+		// The following cases use the ACTUAL error message text captured
+		// against a live Command 25.5.x instance (kfclab) on 2026-08-26 by
+		// requesting nonexistent resource IDs against real endpoints. None
+		// of these contain "404" or "not found" -- round 1 of this helper
+		// (commit 7f4639f) would false-negative on every one of them,
+		// meaning a genuinely deleted resource would surface as a hard
+		// error instead of being dropped from Terraform state.
+		{
+			name:     "real Command 404: Security/Roles/999999 (Unable to find ... with Id)",
+			err:      errors.New("Unable to find 'Security Role' with Id '999999'"),
+			expected: true,
+		},
+		{
+			name:     "real Command 404: CertificateStoreTypes/999999 (does not exist, with period)",
+			err:      errors.New("The certificate store type with StoreType '999999' does not exist."),
+			expected: true,
+		},
+		{
+			name:     "real Command 404: CertificateStores/{guid} (does not exist, with period)",
+			err:      errors.New("Certificate store with id 'a1b2c3d4-0000-0000-0000-000000000000' does not exist."),
+			expected: true,
+		},
+		{
+			name:     "real Command 404: Certificates/999999999 (Unable to find ... with Id)",
+			err:      errors.New("Unable to find 'Certificate' with Id '999999999'"),
+			expected: true,
+		},
+		{
+			name:     "real Command 404: Agents/{guid} (does not exist, no period, 'with id of')",
+			err:      errors.New("Agent with id of 'a1b2c3d4-0000-0000-0000-000000000000' does not exist"),
+			expected: true,
 		},
 	}
 	for _, tt := range tests {

@@ -1314,73 +1314,100 @@ const enrollmentTimeoutSkew = 2 * time.Minute
 // meaningfully narrowing that collision window.
 const enrollmentTimeoutSkewTightened = 30 * time.Second
 
-// maskPFXEnrollmentPasswordInLogs returns a derived ctx that keeps the
-// plaintext PFX enrollment password (auto-generated or user-supplied via
-// key_password) out of TF_LOG=DEBUG output.
+// Historical note: this package used to keep the plaintext PFX enrollment
+// password (auto-generated or user-supplied via key_password) out of
+// TF_LOG=DEBUG output via a maskPFXEnrollmentPasswordInLogs helper that
+// called tflog.MaskFieldValuesWithFieldKeys / MaskAllFieldValuesStrings /
+// MaskMessageStrings with the RAW password value -- i.e. masking a literal
+// substring of the raw secret out of already-rendered/serialized log text.
 //
-// Without this, marshaling *api.EnrollPFXFctArgsV2 (which carries the real
-// password in its Password field) and logging the result -- as the PFX
-// enrollment path in resource_keyfactor_certificate.go does, both directly in
-// a debug message and via a persisted "pfx_args" field set with
-// tflog.SetField -- leaks the password in plaintext. Because tflog.SetField
-// persists that field onto every subsequent log call made with the derived
-// ctx, the leak also reaches every downstream log line in the rest of the
-// enrollment flow, including orphan-PFX-recovery logging (see
-// recoverOrphanedPFXEnrollment / searchCertificatesForOrphanRecovery below),
-// which reuses the same ctx.
-//
-// This mirrors the masking convention already used for other secrets in
-// provider.go's getServerConfig (tflog.MaskFieldValuesWithFieldKeys after
-// tflog.SetField for "password", "client_secret", "access_token", and
-// "kerberos_password"), extended with value-substring masking
-// (MaskAllFieldValuesStrings / MaskMessageStrings) so the password is also
-// redacted from message text that embeds the JSON directly (e.g. via
-// fmt.Sprintf) rather than passing it as a field -- field-key masking alone
-// does not cover that case.
-func maskPFXEnrollmentPasswordInLogs(ctx context.Context, password string) context.Context {
-	if password == "" {
-		return ctx
-	}
-	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "pfx_args", password)
-	ctx = tflog.MaskAllFieldValuesStrings(ctx, password)
-	ctx = tflog.MaskMessageStrings(ctx, password)
-	return ctx
-}
+// That approach had the same JSON-escaping bypass as
+// maskCertificateStoreCredentialsInLogs (see redactUpdateStoreFctArgsForLogging
+// above): resource_keyfactor_certificate.go's PFX enrollment path marshaled
+// *api.EnrollPFXFctArgsV2 (carrying the real password in its Password field)
+// to JSON before logging it, and encoding/json escapes '"' and '\\' when
+// serializing a string field, so a password containing either character no
+// longer appears as a contiguous substring of the raw password in the
+// JSON-rendered text -- confirmed via direct reproduction. The fix now
+// redacts the Password field on a copy of *api.EnrollPFXFctArgsV2 BEFORE
+// marshaling for logging (see enrollPFXV2 in resource_keyfactor_certificate.go),
+// rather than masking the rendered JSON afterward; no helper function is
+// needed for that single-field case, unlike the certificate-store case
+// which also has to rebuild a nested pre-serialized PropertiesString.
 
-// maskCertificateStoreCredentialsInLogs returns a derived ctx that keeps
-// plaintext certificate-store credentials -- store_password,
-// server_username, and server_password, all declared Sensitive: true in the
-// keyfactor_certificate_store resource schema -- out of TF_LOG=DEBUG output.
+// redactedSecretLogPlaceholder replaces a plaintext secret value in a
+// logging-only copy of a struct/map, in place of the real value, wherever
+// this file redacts-before-formatting rather than masking already-rendered
+// text (see redactUpdateStoreFctArgsForLogging).
+const redactedSecretLogPlaceholder = "***REDACTED***"
+
+// redactUpdateStoreFctArgsForLogging returns a copy of args safe to log at
+// TF_LOG=DEBUG, with plaintext certificate-store credentials -- store_password
+// (Password.SecretValue), and server_username/server_password (embedded in
+// both the Properties map and the pre-serialized PropertiesString) -- replaced
+// with redactedSecretLogPlaceholder BEFORE any %v/json.Marshal formatting
+// happens, instead of masking substrings of the raw secret out of already
+// rendered/serialized text.
 //
-// resource_keyfactor_certificate_store.go's Update() builds
-// *api.UpdateStoreFctArgs from these plaintext plan values (server
-// credentials land in its Properties map via plan.ServerUsername.Value /
-// plan.ServerPassword.Value; the store password lands in its Password
-// pointer via plan.StorePassword.Value) and then logs it twice: once via
-// fmt.Sprintf("...: %v", *updateStoreArgs), which fully expands the
-// Properties map's server credentials inline, and once via
-// fmt.Sprintf("...: %s", json.Marshal(updateStoreArgs)), which fully
-// serializes the Password pointer AND re-embeds the server credentials
-// (a %v on a pointer only prints its address, so the struct-dump form
-// happens not to leak the store password itself -- but the JSON form does).
-// Neither leak is behind a named tflog.SetField key, so field-key masking
-// (tflog.MaskFieldValuesWithFieldKeys) alone would not catch either
-// occurrence; both are message-text substrings of an ad hoc struct dump / a
-// JSON blob passed straight to tflog.Debug's format string.
+// This replaces an earlier approach (maskCertificateStoreCredentialsInLogs,
+// removed) that called tflog.MaskMessageStrings / tflog.MaskAllFieldValuesStrings
+// to strip the RAW secret value as a literal substring out of the rendered
+// log text. That worked for the %v struct-dump call in Update() (fmt.Sprintf
+// ("...: %v", *updateStoreArgs)) because %v on a pointer field only prints its
+// address, never expanding the actual secret bytes unescaped -- but it did NOT
+// work for the json.Marshal-based dump (fmt.Sprintf("...: %s", json.Marshal
+// (updateStoreArgs))): encoding/json escapes '"', '\\', and other characters
+// in string field values, so a secret containing any of those no longer
+// appears as a contiguous substring of the raw secret in the JSON-rendered
+// text, and the substring mask misses it entirely (confirmed via direct
+// reproduction with a password containing a literal '"'). Redacting the
+// value itself, before either formatting call, closes this class of bypass
+// rather than patching around it.
 //
-// This mirrors maskPFXEnrollmentPasswordInLogs's convention, but relies on
-// tflog.MaskMessageStrings (message text masking) to do the actual work
-// here, plus tflog.MaskAllFieldValuesStrings for defense in depth in case a
-// future change starts passing one of these values through tflog.SetField.
-func maskCertificateStoreCredentialsInLogs(ctx context.Context, secrets ...string) context.Context {
-	for _, secret := range secrets {
-		if secret == "" {
-			continue
-		}
-		ctx = tflog.MaskAllFieldValuesStrings(ctx, secret)
-		ctx = tflog.MaskMessageStrings(ctx, secret)
+// Only a shallow copy is made: Properties is copied into a new map (so the
+// caller's original map is untouched), and Password -- if it carries a
+// SecretValue -- is copied into a new *UpdateStorePasswordConfig with a
+// redacted SecretValue. All other fields are copied as-is; none of them are
+// documented Sensitive: true attributes in the keyfactor_certificate_store
+// schema.
+func redactUpdateStoreFctArgsForLogging(args *api.UpdateStoreFctArgs) (*api.UpdateStoreFctArgs, error) {
+	if args == nil {
+		return nil, nil
 	}
-	return ctx
+
+	redacted := *args
+
+	if len(args.Properties) > 0 {
+		redactedProperties := make(map[string]interface{}, len(args.Properties))
+		for k, v := range args.Properties {
+			redactedProperties[k] = v
+		}
+		if _, ok := redactedProperties["ServerUsername"]; ok {
+			redactedProperties["ServerUsername"] = redactedSecretLogPlaceholder
+		}
+		if _, ok := redactedProperties["ServerPassword"]; ok {
+			redactedProperties["ServerPassword"] = redactedSecretLogPlaceholder
+		}
+		redacted.Properties = redactedProperties
+
+		// Rebuild PropertiesString from the REDACTED map rather than masking
+		// the already-serialized string -- this is the JSON-escaping-bypass
+		// call site the doc comment above describes.
+		redactedPropertiesStr, err := mapToEscapedJSONString(redactedProperties)
+		if err != nil {
+			return nil, err
+		}
+		redacted.PropertiesString = redactedPropertiesStr
+	}
+
+	if args.Password != nil && args.Password.SecretValue != nil {
+		placeholder := redactedSecretLogPlaceholder
+		redactedPassword := *args.Password
+		redactedPassword.SecretValue = &placeholder
+		redacted.Password = &redactedPassword
+	}
+
+	return &redacted, nil
 }
 
 // certificatesOrphanSearchPageSize is the page size requested on each call

@@ -787,20 +787,26 @@ func (r resourceCertificateStore) Update(
 
 	// updateStoreArgs carries plaintext Sensitive: true credentials
 	// (store_password via Password, server_username/server_password via
-	// Properties) that must not reach TF_LOG=DEBUG output in the clear. Mask
-	// them on the ctx used by both debug dumps below -- see
-	// maskCertificateStoreCredentialsInLogs.
-	ctx = maskCertificateStoreCredentialsInLogs(
-		ctx,
-		plan.StorePassword.Value,
-		plan.ServerUsername.Value,
-		plan.ServerPassword.Value,
-	)
+	// Properties/PropertiesString) that must not reach TF_LOG=DEBUG output in
+	// the clear. Build a REDACTED COPY with those values already replaced
+	// before either debug dump below formats it, rather than masking the
+	// rendered/serialized text after the fact -- substring masking of the raw
+	// secret against json.Marshal output misses any secret containing a
+	// character JSON escapes (e.g. '"', '\\'). See
+	// redactUpdateStoreFctArgsForLogging for the full rationale.
+	redactedUpdateStoreArgs, redactErr := redactUpdateStoreFctArgsForLogging(updateStoreArgs)
+	if redactErr != nil {
+		response.Diagnostics.AddError(
+			"Invalid certificate store configuration error.",
+			fmt.Sprintf("Invalid configuration for certificate store: %s", redactErr.Error()),
+		)
+		return
+	}
 
 	// log updatestore args as json
-	tflog.Debug(ctx, fmt.Sprintf("UpdateStoreFctArgs: %v", *updateStoreArgs))
+	tflog.Debug(ctx, fmt.Sprintf("UpdateStoreFctArgs: %v", *redactedUpdateStoreArgs))
 	// convert updatestore args to json string
-	updateStoreArgsJson, err := json.Marshal(updateStoreArgs)
+	updateStoreArgsJson, err := json.Marshal(redactedUpdateStoreArgs)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Invalid certificate store configuration error.",

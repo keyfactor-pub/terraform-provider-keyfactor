@@ -2958,9 +2958,25 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 	}
 	tflog.Debug(ctx, "API PFXArgs created.")
 
-	//convert PFX args to JSON string
+	//convert PFX args to JSON string for logging purposes only -- PFXArgs
+	// itself (with the real password) is what actually gets sent to
+	// EnrollPFXV2 below; this jsonData is never transmitted.
+	//
+	// Log a REDACTED COPY with the plaintext enrollment password already
+	// replaced, rather than marshaling PFXArgs directly and relying on
+	// tflog.MaskMessageStrings/MaskAllFieldValuesStrings to strip the raw
+	// password as a literal substring out of the rendered text afterward.
+	// Confirmed by direct reproduction: encoding/json escapes '"' and '\\'
+	// when serializing the Password field, so a password containing either
+	// character no longer appears as a contiguous substring of the raw
+	// password in the JSON output, and the substring mask misses it --
+	// the same JSON-escaping-bypass class as
+	// redactUpdateStoreFctArgsForLogging in helpers.go. Redacting the value
+	// itself before marshaling closes this class entirely.
 	tflog.Debug(ctx, "Converting PFXArgs to JSON.")
-	jsonData, err := json.Marshal(PFXArgs)
+	redactedPFXArgs := *PFXArgs
+	redactedPFXArgs.Password = redactedSecretLogPlaceholder
+	jsonData, err := json.Marshal(&redactedPFXArgs)
 	if err != nil {
 		tflog.Error(ctx, "Error converting PFXArgs to JSON.")
 		diags.AddError(
@@ -2970,10 +2986,6 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		return nil, diags
 	}
 	ctx = tflog.SetField(ctx, "pfx_args", string(jsonData))
-	// Redact the plaintext enrollment password from all logging using this
-	// ctx from here on -- see maskPFXEnrollmentPasswordInLogs for why both the
-	// persisted "pfx_args" field and the raw message text below need it.
-	ctx = maskPFXEnrollmentPasswordInLogs(ctx, lookupPassword)
 
 	tflog.Debug(ctx, fmt.Sprintf("PFXArgs: %s", string(jsonData)))
 	tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))

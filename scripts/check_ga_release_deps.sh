@@ -159,7 +159,22 @@ fi
 # `replace (...)` block form) is used here to stay consistent with how the
 # rest of this script already asks the Go toolchain for ground truth
 # instead of re-parsing go.mod text.
-REPLACE_OUTPUT="$(cd "$REPO_ROOT" && go list -m -f '{{if .Replace}}{{.Path}} => {{.Replace}}{{end}}' all 2>&1)" || {
+#
+# `all` requires Go to compute the full module graph, which it refuses to do
+# from the vendor directory alone ("go: can't compute 'all' using the vendor
+# directory") -- unlike `go list -deps .` above, which only needs the build
+# list for the main package and works fine against vendor/. Since this
+# project's own documented workflow (CLAUDE.md's vendor_dev.sh) leaves
+# vendor/ populated as the normal local state, an unqualified `go list -m
+# ... all` here would fail this gate every time it's run locally with a
+# real (non-empty) vendor/ directory -- even with zero replace directives
+# present -- while happening to succeed in CI only because a fresh checkout
+# has no vendor/ directory. GOFLAGS=-mod=mod scopes the module-graph
+# resolution for this one invocation to ignore vendor/ and consult go.mod/
+# go.sum (and the module cache/proxy) directly, exactly like the `go list
+# -deps` call above already effectively does; it does not affect anything
+# else in this script or its caller's environment.
+REPLACE_OUTPUT="$(cd "$REPO_ROOT" && GOFLAGS=-mod=mod go list -m -f '{{if .Replace}}{{.Path}} => {{.Replace}}{{end}}' all 2>&1)" || {
     echo "check-ga-deps: 'go list -m all' failed — cannot verify replace directives, refusing to proceed:" >&2
     echo "$REPLACE_OUTPUT" >&2
     exit 2

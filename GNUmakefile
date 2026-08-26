@@ -427,6 +427,27 @@ vendor-dev:
 check-ga-deps:
 	@./scripts/check_ga_release_deps.sh "$(VERSION)"
 
+## check-ga-deps-selftest: Regression check for a fixed bug in
+##   check_ga_release_deps.sh's Gate 3 (replace-directive check): its
+##   underlying `go list -m ... all` call must succeed the same way whether
+##   vendor/ is populated (this project's normal local state after
+##   ./vendor_dev.sh) or absent (e.g. a fresh CI checkout) -- previously it
+##   failed with "can't compute 'all' using the vendor directory" whenever
+##   vendor/ existed, even with zero replace directives present, which meant
+##   `make tag` would always fail locally. Restores vendor/'s prior
+##   presence/absence when done.
+check-ga-deps-selftest:
+	@echo "check-ga-deps-selftest: verifying Gate 3 is vendor-state-independent..."
+	@had_vendor=0; [ -d vendor ] && had_vendor=1; \
+	rm -rf vendor; \
+	GOFLAGS=-mod=mod go list -m -f '{{if .Replace}}{{.Path}} => {{.Replace}}{{end}}' all > /dev/null || { echo "FAIL: Gate 3 command failed with vendor/ absent"; exit 1; }; \
+	echo "  OK: vendor/ absent"; \
+	./vendor_dev.sh > /dev/null 2>&1; \
+	GOFLAGS=-mod=mod go list -m -f '{{if .Replace}}{{.Path}} => {{.Replace}}{{end}}' all > /dev/null || { echo "FAIL: Gate 3 command failed with vendor/ populated"; exit 1; }; \
+	echo "  OK: vendor/ populated"; \
+	if [ "$$had_vendor" -eq 0 ]; then rm -rf vendor; fi; \
+	echo "check-ga-deps-selftest: PASS"
+
 tag: check-ga-deps
 	git tag -d v$(VERSION) || true
 	git push origin v$(VERSION) || true

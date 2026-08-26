@@ -3,7 +3,6 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
@@ -864,7 +863,7 @@ func setIdentityRole(
 	}
 
 	for _, role := range diff {
-		err = removeIdentityFromRole(kfClient, identity.AccountName, role)
+		err = removeIdentityFromRole(ctx, kfClient, identity.AccountName, role)
 		if err != nil {
 			return err
 		}
@@ -872,8 +871,10 @@ func setIdentityRole(
 	return nil
 }
 
-func removeIdentityFromRole(kfClient *api.Client, identityAccountName string, roleId int) error {
-	log.Printf("[DEBUG] Removing account %q from Keyfactor role %d", identityAccountName, roleId)
+func removeIdentityFromRole(ctx context.Context, kfClient *api.Client, identityAccountName string, roleId int) error {
+	ctx = tflog.SetField(ctx, "role_id", roleId)
+	ctx = tflog.SetField(ctx, "identity_account_name", identityAccountName)
+	tflog.Debug(ctx, "Removing account from Keyfactor role.")
 	// Construct a list of security identities currently attached to role
 	role, err := kfClient.GetSecurityRole(roleId)
 	if err != nil {

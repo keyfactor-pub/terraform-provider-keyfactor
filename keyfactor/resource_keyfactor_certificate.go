@@ -2970,6 +2970,10 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		return nil, diags
 	}
 	ctx = tflog.SetField(ctx, "pfx_args", string(jsonData))
+	// Redact the plaintext enrollment password from all logging using this
+	// ctx from here on -- see maskPFXEnrollmentPasswordInLogs for why both the
+	// persisted "pfx_args" field and the raw message text below need it.
+	ctx = maskPFXEnrollmentPasswordInLogs(ctx, lookupPassword)
 
 	tflog.Debug(ctx, fmt.Sprintf("PFXArgs: %s", string(jsonData)))
 	tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))

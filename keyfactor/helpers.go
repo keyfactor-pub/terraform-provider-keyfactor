@@ -1313,6 +1313,39 @@ const enrollmentTimeoutSkew = 2 * time.Minute
 // meaningfully narrowing that collision window.
 const enrollmentTimeoutSkewTightened = 30 * time.Second
 
+// maskPFXEnrollmentPasswordInLogs returns a derived ctx that keeps the
+// plaintext PFX enrollment password (auto-generated or user-supplied via
+// key_password) out of TF_LOG=DEBUG output.
+//
+// Without this, marshaling *api.EnrollPFXFctArgsV2 (which carries the real
+// password in its Password field) and logging the result -- as the PFX
+// enrollment path in resource_keyfactor_certificate.go does, both directly in
+// a debug message and via a persisted "pfx_args" field set with
+// tflog.SetField -- leaks the password in plaintext. Because tflog.SetField
+// persists that field onto every subsequent log call made with the derived
+// ctx, the leak also reaches every downstream log line in the rest of the
+// enrollment flow, including orphan-PFX-recovery logging (see
+// recoverOrphanedPFXEnrollment / searchCertificatesForOrphanRecovery below),
+// which reuses the same ctx.
+//
+// This mirrors the masking convention already used for other secrets in
+// provider.go's getServerConfig (tflog.MaskFieldValuesWithFieldKeys after
+// tflog.SetField for "password", "client_secret", "access_token", and
+// "kerberos_password"), extended with value-substring masking
+// (MaskAllFieldValuesStrings / MaskMessageStrings) so the password is also
+// redacted from message text that embeds the JSON directly (e.g. via
+// fmt.Sprintf) rather than passing it as a field -- field-key masking alone
+// does not cover that case.
+func maskPFXEnrollmentPasswordInLogs(ctx context.Context, password string) context.Context {
+	if password == "" {
+		return ctx
+	}
+	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "pfx_args", password)
+	ctx = tflog.MaskAllFieldValuesStrings(ctx, password)
+	ctx = tflog.MaskMessageStrings(ctx, password)
+	return ctx
+}
+
 // certificatesOrphanSearchPageSize is the page size requested on each call
 // when paginating Command's GET /Certificates to build the COMPLETE,
 // CN-scoped candidate set for orphan-certificate recovery (see

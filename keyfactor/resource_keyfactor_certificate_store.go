@@ -825,8 +825,19 @@ func (r resourceCertificateStore) Update(
 		return
 	}
 
-	// Log response
-	tflog.Trace(ctx, fmt.Sprintf("UpdateStoreResponse: %v", *updateResponse))
+	// Log response. Command's PUT /CertificateStores response echoes
+	// server_username/server_password back in cleartext inside
+	// PropertiesString -- build a redacted copy before logging (see
+	// redactUpdateStoreResponseForLogging) rather than logging the raw
+	// response directly. The store update has already succeeded against
+	// Command by this point, so a failure to redact for logging purposes
+	// must NOT abort the rest of Update (which still needs to persist state)
+	// -- it only means this one Trace line is skipped.
+	if redactedUpdateResponse, redactRespErr := redactUpdateStoreResponseForLogging(updateResponse); redactRespErr != nil {
+		tflog.Warn(ctx, fmt.Sprintf("Could not redact UpdateStoreResponse for logging, omitting response log entry: %s", redactRespErr.Error()))
+	} else {
+		tflog.Trace(ctx, fmt.Sprintf("UpdateStoreResponse: %v", *redactedUpdateResponse))
+	}
 
 	result := CertificateStore{
 		ID: types.String{Value: updateResponse.Id},

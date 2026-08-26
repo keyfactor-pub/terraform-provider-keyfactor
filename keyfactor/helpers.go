@@ -1410,6 +1410,79 @@ func redactUpdateStoreFctArgsForLogging(args *api.UpdateStoreFctArgs) (*api.Upda
 	return &redacted, nil
 }
 
+// updateStoreResponseCredentialPropertyKeys lists the property names Command
+// itself treats as credential-shaped for a certificate store (see the
+// identical set in specialProps / the ServerUsername/ServerPassword/Password
+// switch in resource_keyfactor_certificate_store.go's parseSpecialProperties-
+// style helpers, and parseProperties in this file). Kept as its own name
+// here -- rather than importing those call sites' local maps -- because this
+// list is specifically the redaction allowlist for logging, not a functional
+// parsing table.
+var updateStoreResponseCredentialPropertyKeys = map[string]bool{
+	"ServerUsername": true,
+	"ServerPassword": true,
+	"Password":       true,
+}
+
+// redactUpdateStoreResponseForLogging returns a copy of resp safe to log,
+// with plaintext certificate-store credentials redacted out of
+// PropertiesString.
+//
+// Command's PUT /CertificateStores (UpdateStore) response ECHOES BACK the
+// store's server_username/server_password inside PropertiesString in
+// cleartext -- confirmed via a real recorded cassette fixture
+// (testdata/cassettes/certificate_store_resource_container_preservation_update.yaml),
+// where the Update response body contains
+// "Properties":"{...,\"ServerPassword\":\"<plaintext>\",...,\"ServerUsername\":\"<plaintext>\"}".
+// resource_keyfactor_certificate_store.go's Update() previously logged this
+// response directly at Trace level (fmt.Sprintf("UpdateStoreResponse: %v",
+// *updateResponse)) with no redaction at all.
+//
+// This mirrors redactUpdateStoreFctArgsForLogging's redact-before-format
+// approach: PropertiesString is decoded, the credential-shaped keys are
+// replaced with redactedSecretLogPlaceholder, and it is re-serialized BEFORE
+// being handed to any logging call -- rather than masking substrings out of
+// already-rendered text, which is bypassed by JSON's escaping of characters
+// like '"' and '\\' in secret values (see the doc comment on
+// redactUpdateStoreFctArgsForLogging for the full rationale). Only a shallow
+// copy of resp is made; the caller's original response (with real
+// credential values) is untouched and still used to build Terraform state.
+func redactUpdateStoreResponseForLogging(resp *api.UpdateStoreResponse) (*api.UpdateStoreResponse, error) {
+	if resp == nil {
+		return nil, nil
+	}
+
+	redacted := *resp
+
+	if redacted.PropertiesString == "" {
+		return &redacted, nil
+	}
+
+	var properties map[string]interface{}
+	if err := json.Unmarshal([]byte(redacted.PropertiesString), &properties); err != nil {
+		return nil, err
+	}
+
+	redactedAny := false
+	for key := range properties {
+		if updateStoreResponseCredentialPropertyKeys[key] {
+			properties[key] = redactedSecretLogPlaceholder
+			redactedAny = true
+		}
+	}
+	if !redactedAny {
+		return &redacted, nil
+	}
+
+	redactedPropertiesStr, err := mapToEscapedJSONString(properties)
+	if err != nil {
+		return nil, err
+	}
+	redacted.PropertiesString = redactedPropertiesStr
+
+	return &redacted, nil
+}
+
 // certificatesOrphanSearchPageSize is the page size requested on each call
 // when paginating Command's GET /Certificates to build the COMPLETE,
 // CN-scoped candidate set for orphan-certificate recovery (see
@@ -2466,6 +2539,22 @@ var notFoundAgentPattern = regexp.MustCompile(`(?i)\bagent\b`)
 // gone." Only the certificate-deploy Delete() path involves a dependency
 // (the agent) that is distinct from the resource being deleted (the
 // deployment), so only that call site needs the extra check.
+// Open verification gap: notFoundAgentPattern was confirmed against the
+// Agents/{id} GET endpoint's real not-found message ("Agent with id of
+// '<guid>' does not exist"). The call site that consumes this function
+// (resource_keyfactor_certificate_deploy.go's Delete(), via
+// removeCertificateAliasFromStore) never calls that endpoint directly --
+// it calls GetCertificateContext and RemoveCertificateFromStores instead.
+// What Command's real "the deployment itself is genuinely gone" message
+// looks like for THAT call path (and whether it happens to contain the
+// substring "agent") has not been directly confirmed: no existing VCR
+// cassette captures a not-found response from either endpoint, and
+// confirming this would require reproducing the condition against a live
+// lab. If it turns out to contain "agent", this function would incorrectly
+// treat a genuinely-gone deployment as an unsafe-to-remove agent-missing
+// case -- an unnecessary hard error, not a data-loss or leak risk, so this
+// is left as a known gap rather than blocking on live-lab access to close
+// it.
 func isAgentMissingNotFoundError(err error) bool {
 	if err == nil {
 		return false

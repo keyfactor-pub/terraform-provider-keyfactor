@@ -274,3 +274,137 @@ func TestUnitRedactUpdateStoreFctArgsForLoggingPreservesNonSecretFields(t *testi
 		t.Fatalf("redaction must not mutate the original args.Properties map, got: %v", args.Properties["ServerUsername"])
 	}
 }
+
+// TestUnitCertificateStoreUpdateResponseNotLoggedInPlaintext is a regression
+// test for a HIGH-severity security finding from round 4 of a full-review
+// cycle, found nine lines below the fix above:
+// resource_keyfactor_certificate_store.go's Update() logs the RESPONSE it
+// gets back from Command's PUT /CertificateStores at Trace level --
+// fmt.Sprintf("UpdateStoreResponse: %v", *updateResponse) -- with no
+// redaction at all. Command's own API response ECHOES BACK the store's
+// server_username/server_password inside the response's PropertiesString
+// field in cleartext. This is confirmed via a real recorded cassette
+// fixture (testdata/cassettes/certificate_store_resource_container_preservation_update.yaml),
+// whose PUT/Update response body contains
+// "Properties":"{...,\"ServerPassword\":\"<plaintext-guid>\",...,\"ServerUsername\":\"<plaintext-guid>\"}".
+//
+// *api.UpdateStoreResponse is a different type from *api.UpdateStoreFctArgs
+// (the request type redactUpdateStoreFctArgsForLogging above handles), so
+// that helper does not apply here. The fix
+// (redactUpdateStoreResponseForLogging in helpers.go) follows the same
+// redact-before-format convention: PropertiesString is decoded, the
+// credential-shaped keys are replaced with redactedSecretLogPlaceholder,
+// and it is re-serialized BEFORE the Trace call formats it.
+func TestUnitCertificateStoreUpdateResponseNotLoggedInPlaintext(t *testing.T) {
+	const (
+		plaintextServerUsername = "11376ee5-d19d-4265-948e-ce167a320544"
+		// Embeds a literal double quote, matching the JSON-escaping-bypass
+		// class the sibling request-side test above guards against.
+		plaintextServerPassword = `c37bad9a-0e5e-4165-a1c6-a0"feab389cbd`
+	)
+	escapedServerPassword := strings.ReplaceAll(plaintextServerPassword, `"`, `\"`)
+
+	buildResponse := func() *api.UpdateStoreResponse {
+		properties := map[string]interface{}{
+			"KubeSecretType": "tls",
+			"ServerPassword": plaintextServerPassword,
+			"ServerUseSsl":   "true",
+			"ServerUsername": plaintextServerUsername,
+		}
+		propertiesStr, err := mapToEscapedJSONString(properties)
+		if err != nil {
+			t.Fatalf("mapToEscapedJSONString() returned unexpected error: %v", err)
+		}
+		resp := &api.UpdateStoreResponse{}
+		resp.Id = "5003dfba-3513-4ac7-aec1-a65ffff0e4e3"
+		resp.ClientMachine = "kfclab-uo-tertiary-uo"
+		resp.Storepath = "default/tf-unit-gh175"
+		resp.PropertiesString = propertiesStr
+		resp.AgentId = "f5f4d314-16d7-4ed5-a9c0-b16880b75bdd"
+		return resp
+	}
+
+	logResponse := func(resp *api.UpdateStoreResponse) []string {
+		var buf bytes.Buffer
+		ctx := tflogtest.RootLogger(context.Background(), &buf)
+		tflog.Trace(ctx, fmt.Sprintf("UpdateStoreResponse: %v", *resp))
+		return decodedLogMessages(t, buf.String())
+	}
+
+	t.Run("without redaction the raw response leaks server credentials (reproduces the finding)", func(t *testing.T) {
+		messages := strings.Join(logResponse(buildResponse()), "\n")
+		if !strings.Contains(messages, plaintextServerUsername) {
+			t.Fatalf(
+				"expected unredacted log output to contain plaintext server_username %q (demonstrating the bug "+
+					"being fixed), but it did not -- the reproduction no longer matches the vulnerable code "+
+					"path: %s", plaintextServerUsername, messages,
+			)
+		}
+		if !strings.Contains(messages, escapedServerPassword) {
+			t.Fatalf(
+				"expected unredacted log output to contain plaintext server_password %q (demonstrating the bug "+
+					"being fixed), but it did not -- the reproduction no longer matches the vulnerable code "+
+					"path: %s", escapedServerPassword, messages,
+			)
+		}
+	})
+
+	t.Run("with redact-before-format neither server credential appears in logs", func(t *testing.T) {
+		redacted, err := redactUpdateStoreResponseForLogging(buildResponse())
+		if err != nil {
+			t.Fatalf("redactUpdateStoreResponseForLogging() returned unexpected error: %v", err)
+		}
+
+		messages := strings.Join(logResponse(redacted), "\n")
+		for _, secret := range []string{plaintextServerUsername, plaintextServerPassword, escapedServerPassword} {
+			if strings.Contains(messages, secret) {
+				t.Fatalf("plaintext secret %q leaked into log output: %s", secret, messages)
+			}
+		}
+		if !strings.Contains(messages, redactedSecretLogPlaceholder) {
+			t.Fatalf("expected redaction placeholder %q to appear in log output, got: %s", redactedSecretLogPlaceholder, messages)
+		}
+		// Non-secret fields (Id, ClientMachine, AgentId, and the non-credential
+		// ServerUseSsl property) must remain intact so the Trace dump is still
+		// useful for troubleshooting.
+		for _, nonSecret := range []string{"5003dfba-3513-4ac7-aec1-a65ffff0e4e3", "kfclab-uo-tertiary-uo", "f5f4d314-16d7-4ed5-a9c0-b16880b75bdd", "ServerUseSsl"} {
+			if !strings.Contains(messages, nonSecret) {
+				t.Fatalf("expected non-secret field %q to remain present in redacted log output, got: %s", nonSecret, messages)
+			}
+		}
+	})
+
+	t.Run("redaction does not mutate the original response used to build state", func(t *testing.T) {
+		resp := buildResponse()
+		original := resp.PropertiesString
+
+		_, err := redactUpdateStoreResponseForLogging(resp)
+		if err != nil {
+			t.Fatalf("redactUpdateStoreResponseForLogging() returned unexpected error: %v", err)
+		}
+
+		if resp.PropertiesString != original {
+			t.Fatalf(
+				"redaction must not mutate the original response's PropertiesString (it is still used to build "+
+					"Terraform state), got: %s", resp.PropertiesString,
+			)
+		}
+	})
+
+	t.Run("nil response and empty PropertiesString are handled safely", func(t *testing.T) {
+		redacted, err := redactUpdateStoreResponseForLogging(nil)
+		if err != nil || redacted != nil {
+			t.Fatalf("expected (nil, nil) for a nil response, got (%v, %v)", redacted, err)
+		}
+
+		resp := &api.UpdateStoreResponse{}
+		resp.Id = "empty-properties-store"
+		redacted, err = redactUpdateStoreResponseForLogging(resp)
+		if err != nil {
+			t.Fatalf("redactUpdateStoreResponseForLogging() returned unexpected error for empty PropertiesString: %v", err)
+		}
+		if redacted.PropertiesString != "" {
+			t.Fatalf("expected empty PropertiesString to remain empty, got: %q", redacted.PropertiesString)
+		}
+	})
+}

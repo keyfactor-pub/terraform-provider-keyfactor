@@ -785,6 +785,18 @@ func (r resourceCertificateStore) Update(
 		Password:              storePassFormatted,
 	}
 
+	// updateStoreArgs carries plaintext Sensitive: true credentials
+	// (store_password via Password, server_username/server_password via
+	// Properties) that must not reach TF_LOG=DEBUG output in the clear. Mask
+	// them on the ctx used by both debug dumps below -- see
+	// maskCertificateStoreCredentialsInLogs.
+	ctx = maskCertificateStoreCredentialsInLogs(
+		ctx,
+		plan.StorePassword.Value,
+		plan.ServerUsername.Value,
+		plan.ServerPassword.Value,
+	)
+
 	// log updatestore args as json
 	tflog.Debug(ctx, fmt.Sprintf("UpdateStoreFctArgs: %v", *updateStoreArgs))
 	// convert updatestore args to json string

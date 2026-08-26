@@ -1347,6 +1347,42 @@ func maskPFXEnrollmentPasswordInLogs(ctx context.Context, password string) conte
 	return ctx
 }
 
+// maskCertificateStoreCredentialsInLogs returns a derived ctx that keeps
+// plaintext certificate-store credentials -- store_password,
+// server_username, and server_password, all declared Sensitive: true in the
+// keyfactor_certificate_store resource schema -- out of TF_LOG=DEBUG output.
+//
+// resource_keyfactor_certificate_store.go's Update() builds
+// *api.UpdateStoreFctArgs from these plaintext plan values (server
+// credentials land in its Properties map via plan.ServerUsername.Value /
+// plan.ServerPassword.Value; the store password lands in its Password
+// pointer via plan.StorePassword.Value) and then logs it twice: once via
+// fmt.Sprintf("...: %v", *updateStoreArgs), which fully expands the
+// Properties map's server credentials inline, and once via
+// fmt.Sprintf("...: %s", json.Marshal(updateStoreArgs)), which fully
+// serializes the Password pointer AND re-embeds the server credentials
+// (a %v on a pointer only prints its address, so the struct-dump form
+// happens not to leak the store password itself -- but the JSON form does).
+// Neither leak is behind a named tflog.SetField key, so field-key masking
+// (tflog.MaskFieldValuesWithFieldKeys) alone would not catch either
+// occurrence; both are message-text substrings of an ad hoc struct dump / a
+// JSON blob passed straight to tflog.Debug's format string.
+//
+// This mirrors maskPFXEnrollmentPasswordInLogs's convention, but relies on
+// tflog.MaskMessageStrings (message text masking) to do the actual work
+// here, plus tflog.MaskAllFieldValuesStrings for defense in depth in case a
+// future change starts passing one of these values through tflog.SetField.
+func maskCertificateStoreCredentialsInLogs(ctx context.Context, secrets ...string) context.Context {
+	for _, secret := range secrets {
+		if secret == "" {
+			continue
+		}
+		ctx = tflog.MaskAllFieldValuesStrings(ctx, secret)
+		ctx = tflog.MaskMessageStrings(ctx, secret)
+	}
+	return ctx
+}
+
 // certificatesOrphanSearchPageSize is the page size requested on each call
 // when paginating Command's GET /Certificates to build the COMPLETE,
 // CN-scoped candidate set for orphan-certificate recovery (see

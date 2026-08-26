@@ -20,8 +20,8 @@ github.com/Keyfactor/keyfactor-auth-client-go v1.6.0-rc.5 h1:nsp5hrG7EtGFOAaAIyR
 github.com/Keyfactor/keyfactor-auth-client-go v1.6.0-rc.5/go.mod h1:rFBZPMSHWwWuUwE1kXhLsDaOxjGiHMbXTTEni8Dmufo=
 github.com/Keyfactor/keyfactor-go-client-sdk/v24 v24.1.2-rc.4 h1:ZmUIbXiIUga1Z3/9WhKv3tFw4AWeES2g4eZMtnce0GI=
 github.com/Keyfactor/keyfactor-go-client-sdk/v24 v24.1.2-rc.4/go.mod h1:pIzSJmgJbg0/K0rdj7jjnF6uE9k1QjQ18oR5c6H2aP8=
-github.com/Keyfactor/keyfactor-go-client/v3 v3.6.0-rc.4 h1:qgKdLtxgvwHbwFVMnrhG7yPfrjHfuX1dk2aTqG7oI1U=
-github.com/Keyfactor/keyfactor-go-client/v3 v3.6.0-rc.4/go.mod h1:f5DYW4mP7puyjUQ+RZln/k3fR2a7eaVcFqOiXd2ryPQ=
+github.com/Keyfactor/keyfactor-go-client/v3 v3.6.0-rc.5 h1:bJWP9Ew0itwAcwZHPzvZIc7PNJl+ywaJz8ZCtPqp8C8=
+github.com/Keyfactor/keyfactor-go-client/v3 v3.6.0-rc.5/go.mod h1:f5DYW4mP7puyjUQ+RZln/k3fR2a7eaVcFqOiXd2ryPQ=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/ProtonMail/go-crypto v1.1.6 h1:ZcV+Ropw6Qn0AX9brlQLAUXfqLBc7Bl+f/DmNxpLfdw=

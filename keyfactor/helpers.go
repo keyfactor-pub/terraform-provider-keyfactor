@@ -30,6 +30,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -2285,6 +2286,13 @@ func hasAPIErrors(
 	return false
 }
 
+// notFoundStatusCodePattern matches a standalone "404" status-code token
+// (e.g. the leading "404" in "404 - Unknown error connecting to Keyfactor
+// ..."). Word boundaries prevent it from matching "404" when it's merely a
+// substring of a longer number, such as a resource ID embedded in an error
+// message ("Security/Roles/1404", "40498").
+var notFoundStatusCodePattern = regexp.MustCompile(`\b404\b`)
+
 // isNotFoundError reports whether err represents an HTTP 404 / "not found"
 // response from Keyfactor Command as surfaced by the legacy api.Client
 // (github.com/Keyfactor/keyfactor-go-client/v3/api). That client's
@@ -2294,12 +2302,40 @@ func hasAPIErrors(
 // existing idiom in resource_keyfactor_certificate_store_type.go's Read
 // (strings.Contains(err.Error(), "404")), broadened to also catch "not
 // found" text, matching resource_keyfactor_certificate_deploy.go's Read.
+//
+// Two safeguards keep this from false-positiving on a genuine non-404 error:
+//
+//  1. sendRequest's decode-failure fallback -- "%d - Unknown error
+//     connecting to Keyfactor %s, please check your connection." -- is
+//     built the same way for EVERY non-2xx status code and embeds the raw
+//     request path, including any numeric resource ID, in %s. A real
+//     5xx/gateway error against e.g. "Security/Roles/1404" produces a
+//     message containing "404" purely because of the resource ID digits,
+//     not because the resource is confirmed gone. Because this shape is
+//     definitionally "the body didn't decode, so we don't actually know
+//     what happened," it is never treated as a confirmed not-found here,
+//     regardless of what status code got embedded in it.
+//  2. Absent that fallback shape, "404" is only matched as a standalone
+//     status-code token (via notFoundStatusCodePattern's word boundaries),
+//     not as a substring of a longer digit run -- so a resource ID like
+//     "1404" or "40498" appearing elsewhere in a message can't trigger a
+//     false positive either.
 func isNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "404") || strings.Contains(msg, "not found")
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+
+	if strings.Contains(lower, "unknown error connecting to keyfactor") {
+		return false
+	}
+
+	if strings.Contains(lower, "not found") {
+		return true
+	}
+
+	return notFoundStatusCodePattern.MatchString(msg)
 }
 
 // effectiveCertificateFormat normalizes a certificate_format value to the

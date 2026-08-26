@@ -2,6 +2,8 @@ package keyfactor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
@@ -331,6 +333,90 @@ func TestNormalizePEMLineEndings(t *testing.T) {
 			result := normalizePEMLineEndings(tt.input)
 			assert.Equal(t, tt.expected, result)
 			assert.NotContains(t, result, "\r", "result must contain no carriage return characters")
+		})
+	}
+}
+
+// TestUnitIsNotFoundError guards against a regression found during the
+// full-review adjudication of PR #203: isNotFoundError previously matched
+// the raw substring "404" anywhere in an error message. The legacy
+// api.Client's sendRequest embeds the full request path -- including any
+// numeric resource ID -- into its "Unknown error connecting to Keyfactor
+// ..." fallback message for EVERY non-2xx status code when the response
+// body fails to JSON-decode. That meant a genuine transient 5xx/gateway
+// error against a resource whose ID happens to contain "404" as a digit
+// substring (e.g. "Security/Roles/1404") was misclassified as a confirmed
+// not-found, causing callers (resource_keyfactor_security_role.go,
+// resource_keyfactor_certificate_deploy.go) to silently drop a still-extant
+// resource from Terraform state.
+func TestUnitIsNotFoundError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error is not a not-found error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "genuine not-found text from the client is detected",
+			err:      errors.New("agent 1404 not found"),
+			expected: true,
+		},
+		{
+			name:     "genuine 404 status-code-shaped message is detected",
+			err:      fmt.Errorf("%d - the requested resource was not found. Please check the request and try again.", 404),
+			expected: true,
+		},
+		{
+			name:     "standalone 404 token is detected",
+			err:      errors.New("http 404: resource missing"),
+			expected: true,
+		},
+		{
+			name: "5xx fallback message with resource ID 1404 is NOT misclassified as not-found",
+			err: fmt.Errorf(
+				"%d - Unknown error connecting to Keyfactor %s, please check your connection.",
+				503,
+				"Security/Roles/1404",
+			),
+			expected: false,
+		},
+		{
+			name: "5xx fallback message with resource ID 40498 is NOT misclassified as not-found",
+			err: fmt.Errorf(
+				"%d - Unknown error connecting to Keyfactor %s, please check your connection.",
+				502,
+				"CertificateStores/40498",
+			),
+			expected: false,
+		},
+		{
+			name: "404 fallback (decode failure) with embedded status code is treated as unknown, not confirmed not-found",
+			err: fmt.Errorf(
+				"%d - Unknown error connecting to Keyfactor %s, please check your connection.",
+				404,
+				"Security/Roles/5",
+			),
+			expected: false,
+		},
+		{
+			name:     "unrelated error with a resource ID containing 404 digits is not a false positive",
+			err:      errors.New("permission denied for Security/Roles/1404"),
+			expected: false,
+		},
+		{
+			name:     "unrelated 5xx error is not a not-found error",
+			err:      errors.New("503 Service Unavailable"),
+			expected: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isNotFoundError(tt.err)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

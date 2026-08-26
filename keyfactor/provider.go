@@ -40,6 +40,17 @@ const (
 	EnvVarUsage              = "This can also be set via the `%s` environment variable."
 	DefaultValMsg            = "Default value is `%v`."
 	InvalidProviderConfigErr = "invalid provider configuration"
+
+	// MaxClientTimeoutSeconds is a hard ceiling on the resolved HTTP client
+	// timeout (`request_timeout` / KEYFACTOR_CLIENT_TIMEOUT), in seconds. It
+	// exists so an absurdly large or typo'd value (e.g. a value intended to be
+	// minutes/milliseconds but interpreted as seconds) doesn't produce an
+	// effectively-unbounded HTTP client timeout -- resolveClientTimeout is the
+	// last layer that bounds this before it becomes c.HttpClient.Timeout in
+	// keyfactor-auth-client-go. One hour is comfortably above the slowest
+	// documented legitimate operation (RSA-8192 PFX enrollment, observed up to
+	// ~10 minutes against a lab EJBCA CA) while still bounding worst case.
+	MaxClientTimeoutSeconds = 3600
 )
 
 var (
@@ -202,7 +213,9 @@ func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostic
 				Type:     types.Int64Type,
 				Optional: true,
 				Description: fmt.Sprintf(
-					"Global timeout for HTTP requests to Keyfactor Command instance. "+EnvVarUsage+DefaultValMsg,
+					"Global timeout, in seconds, for HTTP requests to Keyfactor Command instance. "+
+						"Values above %d are clamped to %d. "+EnvVarUsage+DefaultValMsg,
+					MaxClientTimeoutSeconds, MaxClientTimeoutSeconds,
 					auth_providers.EnvKeyfactorClientTimeout, auth_providers.DefaultClientTimeout,
 				),
 			},
@@ -361,7 +374,14 @@ type providerData struct {
 // (auth_providers.EnvKeyfactorClientTimeout) > auth_providers.DefaultClientTimeout.
 // It returns the resolved timeout, a message describing how it was resolved
 // (for logging), and whether that message should be logged as a warning
-// (invalid/unparseable env var) rather than at debug level.
+// (invalid/unparseable env var, or a value clamped to MaxClientTimeoutSeconds)
+// rather than at debug level.
+//
+// The resolved value is clamped to MaxClientTimeoutSeconds regardless of
+// source (provider config or environment variable) -- without a ceiling, an
+// absurdly large or typo'd value flows unbounded into
+// keyfactor-auth-client-go's c.HttpClient.Timeout, with no other layer
+// bounding it.
 //
 // This is a standalone, directly-testable function specifically because a
 // previous inline version of this logic had a dead-code branch: the
@@ -376,6 +396,12 @@ type providerData struct {
 // effective timeout were real and are covered by TestUnitResolveClientTimeout.)
 func resolveClientTimeout(configValue int64, envVarStr string, envVarSet bool) (timeout int64, logMsg string, isWarning bool) {
 	if configValue > 0 {
+		if configValue > MaxClientTimeoutSeconds {
+			return MaxClientTimeoutSeconds, fmt.Sprintf(
+				"configured `request_timeout` of %d exceeds the maximum allowed value of %d seconds; clamping to %d",
+				configValue, MaxClientTimeoutSeconds, MaxClientTimeoutSeconds,
+			), true
+		}
 		return configValue, "Using client timeout from provider configuration", false
 	}
 	if envVarSet {
@@ -384,6 +410,12 @@ func resolveClientTimeout(configValue int64, envVarStr string, envVarSet bool) (
 			return auth_providers.DefaultClientTimeout, fmt.Sprintf(
 				"invalid value %q for `%s`, using default of %d",
 				envVarStr, auth_providers.EnvKeyfactorClientTimeout, auth_providers.DefaultClientTimeout,
+			), true
+		}
+		if parsedTimeout > MaxClientTimeoutSeconds {
+			return MaxClientTimeoutSeconds, fmt.Sprintf(
+				"value %d for `%s` exceeds the maximum allowed value of %d seconds; clamping to %d",
+				parsedTimeout, auth_providers.EnvKeyfactorClientTimeout, MaxClientTimeoutSeconds, MaxClientTimeoutSeconds,
 			), true
 		}
 		return parsedTimeout, "Using client timeout from environment variables", false

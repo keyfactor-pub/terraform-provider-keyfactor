@@ -2,6 +2,7 @@ package keyfactor
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -78,6 +79,31 @@ func TestUnitResolveClientTimeout(t *testing.T) {
 			envVarStr:     "-5",
 			envVarSet:     true,
 			wantTimeout:   auth_providers.DefaultClientTimeout,
+			wantIsWarning: true,
+		},
+		{
+			// Regression test for a HIGH/LOW-severity finding: an
+			// unbounded request_timeout produces an effectively-unbounded
+			// HTTP client timeout, since no other layer bounds it before it
+			// becomes c.HttpClient.Timeout in keyfactor-auth-client-go.
+			name:          "config value above the maximum is clamped with a warning",
+			configValue:   MaxClientTimeoutSeconds + 1,
+			envVarSet:     false,
+			wantTimeout:   MaxClientTimeoutSeconds,
+			wantIsWarning: true,
+		},
+		{
+			name:        "config value exactly at the maximum is not clamped",
+			configValue: MaxClientTimeoutSeconds,
+			envVarSet:   false,
+			wantTimeout: MaxClientTimeoutSeconds,
+		},
+		{
+			name:          "env var value above the maximum is clamped with a warning",
+			configValue:   0,
+			envVarStr:     fmt.Sprintf("%d", MaxClientTimeoutSeconds*10),
+			envVarSet:     true,
+			wantTimeout:   MaxClientTimeoutSeconds,
 			wantIsWarning: true,
 		},
 	}
@@ -269,6 +295,41 @@ func TestUnitGetServerConfig_RequestTimeoutConfigOverridesEnv(t *testing.T) {
 
 	if srvCfg.ClientTimeout != 300 {
 		t.Fatalf("Server.ClientTimeout = %d, want %d (config should override env)", srvCfg.ClientTimeout, 300)
+	}
+}
+
+// TestUnitGetServerConfig_RequestTimeoutClamped is a regression test for a
+// LOW-severity availability finding: resolveClientTimeout previously applied
+// no upper bound, so a very large or typo'd request_timeout flowed straight
+// through to c.HttpClient.Timeout in keyfactor-auth-client-go with nothing
+// else bounding it. This confirms getServerConfig() clamps an oversized
+// configured value to MaxClientTimeoutSeconds rather than honoring it as-is.
+func TestUnitGetServerConfig_RequestTimeoutClamped(t *testing.T) {
+	clearTimeoutEnv(t)
+	server := newFakeCommandServer(t)
+	u, uErr := url.Parse(server.URL)
+	if uErr != nil {
+		t.Fatalf("failed to parse test server URL: %v", uErr)
+	}
+
+	p := &provider{}
+	cfg := &providerData{
+		Hostname:       types.String{Value: u.Host},
+		Username:       types.String{Value: "user"},
+		Password:       types.String{Value: "pass"},
+		Domain:         types.String{Value: "domain"},
+		ApiPath:        types.String{Value: "api"},
+		SkipTLSVerify:  types.Bool{Value: true},
+		RequestTimeout: types.Int64{Value: MaxClientTimeoutSeconds * 100},
+	}
+
+	srvCfg, diags := p.getServerConfig(cfg, context.Background())
+	if diags.HasError() {
+		t.Fatalf("getServerConfig() returned unexpected diagnostics: %v", diags)
+	}
+
+	if srvCfg.ClientTimeout != MaxClientTimeoutSeconds {
+		t.Fatalf("Server.ClientTimeout = %d, want clamped value %d", srvCfg.ClientTimeout, MaxClientTimeoutSeconds)
 	}
 }
 

@@ -213,8 +213,13 @@ func (r dataSourceCertificateStore) Read(
 		sResp = &(*sRespList)[0]
 	}
 
-	password := state.StorePassword.Value
-	tflog.Trace(ctx, fmt.Sprintf("Password for store %s: %s", sResp.Id, password))
+	// NOTE: a previous version of this block logged the plaintext value of
+	// the store_password schema field (a declared Sensitive: true
+	// attribute) at Trace level, unconditionally, on every read. There is no
+	// legitimate debugging value in logging a credential by its literal
+	// value, so it was removed outright rather than replaced with a
+	// redacted equivalent. See TestUnitCertificateStoreDataSourcePasswordNotLogged
+	// for the regression test guarding against reintroduction.
 
 	// parse inventory schedule
 	invSchedule := parseInventorySchedule(&sResp.InventorySchedule)

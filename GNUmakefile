@@ -419,7 +419,15 @@ vendor-dev:
 	go mod tidy
 	./vendor_dev.sh
 
-tag:
+## check-ga-deps: Release-hygiene gate. Refuses to proceed if VERSION is a
+##   GA-shaped tag (no -rc./-alpha./-beta. suffix) while go.mod pins a
+##   pre-release version of a dependency that is actually compiled into the
+##   release binary. No-op for pre-release provider tags (e.g. 2.9.2-rc.1).
+##   See scripts/check_ga_release_deps.sh for the full rationale.
+check-ga-deps:
+	@./scripts/check_ga_release_deps.sh "$(VERSION)"
+
+tag: check-ga-deps
 	git tag -d v$(VERSION) || true
 	git push origin v$(VERSION) || true
 	git tag v$(VERSION) || true

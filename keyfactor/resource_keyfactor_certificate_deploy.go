@@ -646,7 +646,29 @@ func (r resourceCommandCertificateDeployment) Delete(
 	tflog.Info(ctx, "Removing certificate from store.")
 	certificateData, err := removeCertificateAliasFromStore(kfClient, &diff, certId)
 	if err != nil {
-		if isNotFoundError(err) {
+		// This call site needs stricter not-found handling than the other
+		// two isNotFoundError call sites in this codebase
+		// (resource_keyfactor_security_role.go, resource_keyfactor_certificate_store_type.go):
+		// those are simple single-resource GETs where "does not exist" is
+		// unambiguous -- there is exactly one thing being read, so a
+		// not-found error about it is safe to treat as "already gone."
+		// Here, removeCertificateAliasFromStore's failure can instead be
+		// about the STORE'S BACKING ORCHESTRATOR AGENT being gone (confirmed
+		// live-Command message: "Agent with id of '<guid>' does not exist"),
+		// which matches isNotFoundError's "does not exist" pattern just as
+		// readily as a genuinely-gone deployment/store/alias/certificate
+		// would -- but describes a completely different, higher-stakes
+		// situation: the certificate is likely still physically deployed on
+		// the target, with no agent left to run the removal job. Silently
+		// dropping this resource from state in that case would make
+		// Terraform believe the cert was cleanly removed when it was not --
+		// an orphaned, untracked, still-deployed certificate/key. So an
+		// agent-shaped not-found is deliberately NOT treated as safe here,
+		// even though it is a "confirmed not found" by isNotFoundError's own
+		// (correct, for its other callers) definition.
+		if isNotFoundError(err) && !isAgentMissingNotFoundError(err) {
+			ctx = tflog.SetField(ctx, "error", err.Error())
+			tflog.Info(ctx, "Certificate deployment not found on Keyfactor Command, removing from state")
 			response.Diagnostics.AddWarning(
 				"Certificate deployment not found.",
 				fmt.Sprintf(

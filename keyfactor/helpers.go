@@ -2431,6 +2431,48 @@ func isNotFoundError(err error) bool {
 	return notFoundStatusCodePattern.MatchString(msg)
 }
 
+// notFoundAgentPattern matches a standalone "agent" token (case-insensitive)
+// in an error message. Used only by isAgentMissingNotFoundError, and only
+// meaningful after isNotFoundError(err) has already been confirmed true --
+// see that function's doc comment for the real observed Command message
+// ("Agent with id of '<guid>' does not exist") this exists to recognize.
+var notFoundAgentPattern = regexp.MustCompile(`(?i)\bagent\b`)
+
+// isAgentMissingNotFoundError reports whether an error already confirmed by
+// isNotFoundError to be a "not found"-shaped error is specifically about a
+// missing orchestrator AGENT, rather than about the deployment/store/alias/
+// certificate itself being gone.
+//
+// resource_keyfactor_certificate_deploy.go's Delete() is the one call site
+// that needs this disambiguation: removeCertificateAliasFromStore's
+// underlying RemoveCertificateFromStores call can fail because the STORE'S
+// BACKING ORCHESTRATOR AGENT has been deleted out-of-band (confirmed live
+// Command 25.5.x message, kfclab, 2026-08-26: "Agent with id of '<guid>'
+// does not exist"), a scenario where the certificate, alias, and store may
+// all still exist -- and the certificate may still be physically deployed
+// on the target -- but there is no agent left to run the removal job.
+// isNotFoundError's "does not exist" pattern matches this message just as
+// readily as it matches a genuinely-gone deployment, so that call site
+// additionally checks isAgentMissingNotFoundError to avoid treating "the
+// agent is gone" as "safe to drop from state," which would otherwise leave
+// Terraform believing a still-deployed certificate/key had been cleanly
+// removed.
+//
+// This is deliberately NOT folded into isNotFoundError itself: the other
+// two isNotFoundError call sites (resource_keyfactor_security_role.go,
+// resource_keyfactor_certificate_store_type.go) are simple single-resource
+// GETs where "does not exist" is unambiguous -- there is exactly one thing
+// being read, so any not-found error about it is safe to treat as "already
+// gone." Only the certificate-deploy Delete() path involves a dependency
+// (the agent) that is distinct from the resource being deleted (the
+// deployment), so only that call site needs the extra check.
+func isAgentMissingNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return notFoundAgentPattern.MatchString(err.Error())
+}
+
 // effectiveCertificateFormat normalizes a certificate_format value to the
 // effective download format. Empty string and "STORE" both resolve to PEM
 // (since the STORE format produces PEM output in the Read path).

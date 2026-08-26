@@ -469,3 +469,117 @@ func TestUnitIsNotFoundError(t *testing.T) {
 		})
 	}
 }
+
+// TestUnitIsAgentMissingNotFoundError is a regression test for a MEDIUM
+// full-review finding: resource_keyfactor_certificate_deploy.go's Delete()
+// called isNotFoundError(err) on errors from removeCertificateAliasFromStore
+// and treated ANY match as safe to drop the resource from Terraform state.
+// That call can fail because the STORE'S BACKING ORCHESTRATOR AGENT has been
+// deleted (real observed Command message: "Agent with id of '<guid>' does
+// not exist") -- a scenario where the certificate/alias/store may all still
+// exist and the certificate may still be physically deployed, but there's no
+// agent left to run the removal job. isNotFoundError's "does not exist"
+// pattern matches this message just as readily as a genuinely-gone
+// deployment, so isAgentMissingNotFoundError exists to let that one call
+// site distinguish the two cases and avoid silently orphaning still-deployed
+// key material.
+func TestUnitIsAgentMissingNotFoundError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error is not agent-missing",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "real Command message: agent missing (with id of ... does not exist)",
+			err:      errors.New("Agent with id of 'a1b2c3d4-0000-0000-0000-000000000000' does not exist"),
+			expected: true,
+		},
+		{
+			name:     "agent-missing message is detected case-insensitively",
+			err:      errors.New("AGENT WITH ID OF 'X' DOES NOT EXIST"),
+			expected: true,
+		},
+		{
+			name:     "real Command message: certificate store missing is NOT agent-missing",
+			err:      errors.New("Certificate store with id 'a1b2c3d4-0000-0000-0000-000000000000' does not exist."),
+			expected: false,
+		},
+		{
+			name:     "real Command message: certificate missing is NOT agent-missing",
+			err:      errors.New("Unable to find 'Certificate' with Id '999999999'"),
+			expected: false,
+		},
+		{
+			name:     "real Command message: security role missing is NOT agent-missing",
+			err:      errors.New("Unable to find 'Security Role' with Id '999999'"),
+			expected: false,
+		},
+		{
+			name:     "unrelated error is not agent-missing",
+			err:      errors.New("503 Service Unavailable"),
+			expected: false,
+		},
+		{
+			name:     "'agent' as part of a longer word does not false-positive (word boundary)",
+			err:      errors.New("Reagent configuration with id '123' does not exist"),
+			expected: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isAgentMissingNotFoundError(tt.err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// TestUnitCertificateDeployAgentMissingNotTreatedAsSafeNotFound is a
+// regression test for the actual bug: resource_keyfactor_certificate_deploy.go's
+// Delete() drops the resource from Terraform state whenever
+// isNotFoundError(err) is true. Before this fix, that was the ONLY
+// condition checked, so an agent-missing error -- which isNotFoundError
+// correctly classifies as "not found"-shaped, since that classification is
+// right for its other two call sites -- would ALSO be treated as safe to
+// drop, even though the certificate/store/alias may still exist and the
+// certificate may still be deployed. The fix adds
+// isAgentMissingNotFoundError as an additional guard so this specific error
+// shape falls through to the generic error path instead.
+//
+// This test reproduces the exact boolean condition from that Delete()
+// call site (isNotFoundError(err) && !isAgentMissingNotFoundError(err)) so
+// it fails red against the pre-fix condition (isNotFoundError(err) alone)
+// and passes green against the actual fixed condition.
+func TestUnitCertificateDeployAgentMissingNotTreatedAsSafeNotFound(t *testing.T) {
+	agentMissingErr := errors.New("Agent with id of 'a1b2c3d4-0000-0000-0000-000000000000' does not exist")
+	genuinelyGoneErr := errors.New("Certificate store with id 'a1b2c3d4-0000-0000-0000-000000000000' does not exist.")
+
+	t.Run("pre-fix condition (isNotFoundError alone) incorrectly treats agent-missing as safe to drop (reproduces the finding)", func(t *testing.T) {
+		safeToDropPreFix := isNotFoundError(agentMissingErr)
+		if !safeToDropPreFix {
+			t.Fatalf(
+				"expected the pre-fix condition to (incorrectly) treat the agent-missing error as safe to drop, " +
+					"demonstrating the bug being fixed, but it did not -- the reproduction no longer matches the " +
+					"vulnerable code path",
+			)
+		}
+	})
+
+	t.Run("fixed condition correctly refuses to drop the resource when only the agent is missing", func(t *testing.T) {
+		safeToDropFixed := isNotFoundError(agentMissingErr) && !isAgentMissingNotFoundError(agentMissingErr)
+		if safeToDropFixed {
+			t.Fatalf("fixed condition must not treat an agent-missing error as safe to drop from state")
+		}
+	})
+
+	t.Run("fixed condition still treats a genuinely-gone store as safe to drop", func(t *testing.T) {
+		safeToDropFixed := isNotFoundError(genuinelyGoneErr) && !isAgentMissingNotFoundError(genuinelyGoneErr)
+		if !safeToDropFixed {
+			t.Fatalf("fixed condition must still treat a genuinely-gone certificate store as safe to drop from state")
+		}
+	})
+}

@@ -329,6 +329,7 @@ at https://support.keyfactor.com/ and Keyfactor will address issues as resources
 
 | Keyfactor Command Version | Terraform Provider Version |
 |---------------------------|----------------------------|
+| 25.x                      | 2.9.x                      |
 | 12.x                      | 2.2.x                      |
 | 11.x                      | 2.2.x                      |
 | 10.x                      | 2.0.x                      |

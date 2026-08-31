@@ -135,7 +135,7 @@ func (r dataSourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Sche
 				Description: "Indicates whether the certificate store host requires SSL. In Keyfactor Command this is the 'ServerUseSsl' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
 			},
 		},
-		Description: "Reads an existing Keyfactor Command certificate store using the the `/CertificateStores` API, which can be used for `keyfactor_certificate_deployment` resources.",
+		Description: "Reads an existing Keyfactor Command certificate store using the `/CertificateStores` API, which can be used for `keyfactor_certificate_deployment` resources.",
 	}, nil
 }
 

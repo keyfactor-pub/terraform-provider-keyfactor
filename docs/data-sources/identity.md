@@ -3,12 +3,12 @@
 page_title: "keyfactor_identity Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Reads an existing Keyfactor Command security identity (user or group) by account name, including its assigned roles.
 ---
 
 # keyfactor_identity (Data Source)
 
-
+Reads an existing Keyfactor Command security identity (user or group) by account name, including its assigned roles.
 
 ## Example Usage
 

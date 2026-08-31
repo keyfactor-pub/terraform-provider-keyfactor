@@ -66,8 +66,7 @@ data "keyfactor_enrollment_pattern" "ep_2yrTest" {
 
 Once created for the enrollment pattern, these values are shown in Keyfactor Command on the PFX and CSR enrollment pages in the Additional Enrollment Fields section. The fields are mandatory during enrollment. The data will appear on the CA / Issued Certificates attribute tab for certificates enrolled with an enrollment pattern configured with Keyfactor Command enrollment fields.
 
-> [!NOTE]: 
-> These are not metadata fields, so they are not stored in the Keyfactor Command database, but simply passed through to the CA. The CA in turn could, via a gateway or policy module, use this data to perform required actions. (see [below for nested schema](#nestedatt--enrollment_fields))
+**Note:** These are not metadata fields, so they are not stored in the Keyfactor Command database, but simply passed through to the CA. The CA in turn could, via a gateway or policy module, use this data to perform required actions. (see [below for nested schema](#nestedatt--enrollment_fields))
 - `id` (Number) An integer indicating the ID of the enrollment pattern in Keyfactor Command.
 - `metadata_fields` (List of Object) An array of objects containing metadata field settings specific to an individual enrollment pattern. These metadata field configurations can override global metadata field configurations in these possible ways:
 

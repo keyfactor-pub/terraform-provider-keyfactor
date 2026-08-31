@@ -324,8 +324,7 @@ Note:  This parameter is considered deprecated as for Keyfactor Command v25.1.0 
 - `organizational_unit` (String) Subject organizational unit (OU) of the certificate
 - `owner_role_name` (String) A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
 
-> [!NOTE]
-> **Attribute contract**: omitting `owner_role_name` from config leaves ownership unmanaged -- Terraform never sends a clearing value, and drift from an out-of-band owner change is still surfaced on plan/refresh. Declaring an explicit empty string (`owner_role_name = ""`) is a declarative "clear the owner" sentinel: Terraform sends a PUT with no role identifier, which Keyfactor Command interprets as removing the certificate's owner.
+**Note:** **Attribute contract**: omitting `owner_role_name` from config leaves ownership unmanaged -- Terraform never sends a clearing value, and drift from an out-of-band owner change is still surfaced on plan/refresh. Declaring an explicit empty string (`owner_role_name = ""`) is a declarative "clear the owner" sentinel: Terraform sends a PUT with no role identifier, which Keyfactor Command interprets as removing the certificate's owner.
 
 Expanded Change Owner Permission: A user who holds the Certificates > Expanded Change Owner permission can set the certificate owner to any role within the permission sets they are a member of. This permission setting overrides the Certificates > Collections > Change Owner permission (both Global and Collection-level) if both are set.
 
@@ -335,13 +334,12 @@ Global or Collection Level—No Default Value: A user who holds only the Certifi
 Global or Collection Level—Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can change the default certificate owner to any role they belong to. If the default value populated from the enrollment pattern or existing certificate on a renewal is not a role held by the acting user, the this value will not be populated in the Certificate Owner Role field. The user will still be allowed to add a new owner value.
 Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is required, not both. A certificate owner is required if the enrollment pattern or system-wide settings Certificate Owner Role policy has been configured as Required.
 
-> [!IMPORTANT]
-> Only compatible with Keyfactor Command versions v12.3.0 and later.
+**Important:** Only compatible with Keyfactor Command versions v12.3.0 and later.
 - `renewal_config` (Attributes) Configuration for certificate renewal.
-> [!IMPORTANT]
-> This does not deploy the updated certificate to associated certificate store locations. To deploy the updated
-> certificate you must define a "keyfactor_certificate_deployment" Terraform resource that references this
-> certificate or deploy via the Command UI. (see [below for nested schema](#nestedatt--renewal_config))
+
+**Important:** This does not deploy the updated certificate to associated certificate store locations. To deploy the updated
+certificate you must define a "keyfactor_certificate_deployment" Terraform resource that references this
+certificate or deploy via the Command UI. (see [below for nested schema](#nestedatt--renewal_config))
 - `revoke_on_destroy` (Boolean) Whether to revoke the certificate on resource `destroy`. IMPORTANT: If set to `false` the certificate will not be revoked on `destroy`ing operations. This means the certificate will need to be revoked outside of Terraform. Defaults to `true`.
 - `state` (String) Subject state (ST) of the certificate
 - `uri_sans` (List of String) List of URIs to use as subjects of the certificate. NOTE: This field **does not work with CSR enrollments**, all SANs should be included in the CSR. Additional SANs added by the CA during enrollment **will not** be reflected in this field. Computed: on `terraform import`, this is populated from the actual certificate's SANs so that a subsequent plan matching the imported certificate's real SAN list shows no drift; declaring a different list still forces replacement (see GH issue #197). Removing this attribute from config (as opposed to changing its values) leaves it unmanaged and is a no-op -- it does not force replacement.

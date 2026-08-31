@@ -42,5 +42,5 @@ resource "keyfactor_identity" "identity" {
 Import is supported using the following syntax:
 
 ```shell
-terraform import keyfactor_security_identity.identity 'mykfdomain\\myusername'  # The user/group name to import
+terraform import keyfactor_identity.identity 'mykfdomain\\myusername'  # The user/group name to import
 ```

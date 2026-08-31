@@ -309,7 +309,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
 					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
 					"certificate's real SAN list shows no drift; declaring a different list still forces " +
-					"replacement (see GH issue #197).",
+					"replacement (see GH issue #197). Removing this attribute from config (as opposed to " +
+					"changing its values) leaves it unmanaged and is a no-op -- it does not force replacement.",
 			},
 			"uri_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
@@ -323,7 +324,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
 					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
 					"certificate's real SAN list shows no drift; declaring a different list still forces " +
-					"replacement (see GH issue #197).",
+					"replacement (see GH issue #197). Removing this attribute from config (as opposed to " +
+					"changing its values) leaves it unmanaged and is a no-op -- it does not force replacement.",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -342,7 +344,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
 					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
 					"certificate's real SAN list shows no drift; declaring a different list still forces " +
-					"replacement (see GH issue #197).",
+					"replacement (see GH issue #197). Removing this attribute from config (as opposed to " +
+					"changing its values) leaves it unmanaged and is a no-op -- it does not force replacement.",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.

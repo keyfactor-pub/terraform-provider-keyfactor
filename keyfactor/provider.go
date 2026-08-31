@@ -214,6 +214,9 @@ func (p *provider) GetSchema(ctx context.Context) (tfsdk.Schema, diag.Diagnostic
 				Optional: true,
 				Description: fmt.Sprintf(
 					"Global timeout, in seconds, for HTTP requests to Keyfactor Command instance. "+
+						"This value is enforced as the HTTP client timeout on every API request the provider "+
+						"makes, not just a subset -- a value that is too small can cause otherwise-valid, "+
+						"long-running operations (e.g. PFX enrollment) to fail with a timeout error. "+
 						"Values above %d are clamped to %d. "+EnvVarUsage+DefaultValMsg,
 					MaxClientTimeoutSeconds, MaxClientTimeoutSeconds,
 					auth_providers.EnvKeyfactorClientTimeout, auth_providers.DefaultClientTimeout,

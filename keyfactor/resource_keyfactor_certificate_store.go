@@ -98,14 +98,14 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Name of the container/application to associate with the certificate store. Kept for backwards compatibility; prefer `application_name` for Command v25.x+. NOTE: The container/application must already exist and be of the same certificate store type.",
+				Description:   "Name of the container/application to associate with the certificate store. Kept for backwards compatibility; prefer `application_name` for Command v25.x+. NOTE: The container/application must already exist and be of the same certificate store type. Omitting both `container_name` and `application_name` leaves the store's container assignment unmanaged/preserved (including assignments made outside Terraform); an explicit empty string (\"\") declaratively clears it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"application_name": {
 				Type:          types.StringType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Name of the application (formerly 'container') to associate with the certificate store. Preferred field as of Keyfactor Command v25.x. Functionally equivalent to `container_name`. NOTE: The application must already exist and be of the same certificate store type.",
+				Description:   "Name of the application (formerly 'container') to associate with the certificate store. Preferred field as of Keyfactor Command v25.x. Functionally equivalent to `container_name`. NOTE: The application must already exist and be of the same certificate store type. Omitting both `application_name` and `container_name` leaves the store's container assignment unmanaged/preserved (including assignments made outside Terraform); an explicit empty string (\"\") declaratively clears it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"inventory_schedule": {

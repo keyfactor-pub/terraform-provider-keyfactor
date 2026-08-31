@@ -166,10 +166,7 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
 API to deploy certificates to "keyfactor_certificate_store" resources.
 
-> [!IMPORTANT]
-> Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules.
-> A "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's certificate
-> inventory has been updated to include the deployed certificate.
+!> **Warning:** Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules. A "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's certificate inventory has been updated to include the deployed certificate.
 `,
 	}, nil
 }

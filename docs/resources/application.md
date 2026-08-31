@@ -5,10 +5,7 @@ subcategory: ""
 description: |-
   Manages a Keyfactor Command Application (certificate store container).
   Applications group certificate stores together and define an optional inventory schedule that applies to all member stores.
-  [!NOTE]
-  On Keyfactor Command v25.0+ this resource uses the /Applications endpoint.
-  On pre-v25 Command it automatically falls back to /CertificateStoreContainers,
-  which supports the same schedule types and JSON format.
+  ~> Note: On Keyfactor Command v25.0+ this resource uses the /Applications endpoint. On pre-v25 Command it automatically falls back to /CertificateStoreContainers, which supports the same schedule types and JSON format.
 ---
 
 # keyfactor_application (Resource)
@@ -17,10 +14,7 @@ Manages a Keyfactor Command Application (certificate store container).
 
 Applications group certificate stores together and define an optional inventory schedule that applies to all member stores.
 
-> [!NOTE]
-> On Keyfactor Command v25.0+ this resource uses the `/Applications` endpoint.
-> On pre-v25 Command it automatically falls back to `/CertificateStoreContainers`,
-> which supports the same schedule types and JSON format.
+~> **Note:** On Keyfactor Command v25.0+ this resource uses the `/Applications` endpoint. On pre-v25 Command it automatically falls back to `/CertificateStoreContainers`, which supports the same schedule types and JSON format.
 
 ## Example Usage
 

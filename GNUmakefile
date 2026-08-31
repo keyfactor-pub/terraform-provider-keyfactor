@@ -25,6 +25,19 @@ tfdocs:
 	@if [ -d "$(SCREENSHOTS_TMP)/screenshots" ]; then cp -r "$(SCREENSHOTS_TMP)/screenshots" docs/; fi
 	@rm -rf "$(SCREENSHOTS_TMP)"
 
+## tfdocs-validate: Validates docs/ against the provider's actual schema
+##   (catches missing/stale attribute docs, broken frontmatter, etc.) without
+##   regenerating anything.
+tfdocs-validate:
+	tfplugindocs validate
+
+## tfdocs-preview: Renders every docs/**/*.md to standalone HTML approximating
+##   the Terraform Registry presentation, into build/docs-preview/, plus an
+##   index.html linking every page. Local review aid only -- run after
+##   `make tfdocs` to eyeball a description change before committing.
+tfdocs-preview:
+	go run ./tools/docspreview -docs docs -out build/docs-preview
+
 ## release-harness: Run the full terraform/ release-test harness against the
 ##   registry provider (keyfactor-pub/keyfactor). See terraform/GNUmakefile.
 release-harness:

@@ -166,3 +166,8 @@ tfexes/
 *.key
 CLAUDE.md
 sandbox/
+
+# tfdocs-preview generated output (make tfdocs-preview) and stray binary from
+# `go build ./tools/...` without -o
+/build/
+/docspreview

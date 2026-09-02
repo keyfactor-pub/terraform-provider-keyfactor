@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -384,9 +386,11 @@ For full information on enrollment patterns view the [product documentation](htt
 			},
 
 			"force_template_default": {
-				Type:        types.BoolType,
-				Optional:    true,
-				Description: "Write-only directive: when true, forces this pattern to become the template's default even if another pattern currently holds that status. Not persisted -- must be re-declared on every apply where it is needed; always reads back as null.",
+				Type:          types.BoolType,
+				Optional:      true,
+				Computed:      true,
+				Description:   "Write-only directive: when true, forces this pattern to become the template's default even if another pattern currently holds that status. Not persisted -- must be re-declared on every apply where it is needed; always reads back as null.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{alwaysUnknownModifier{}},
 			},
 		},
 	}, nil
@@ -565,6 +569,181 @@ func tfListToInt32Slice(ctx context.Context, l types.List) []int32 {
 }
 
 // ---------------------------------------------------------------------------
+// Audit logging (PR #210 full-review finding F5)
+// ---------------------------------------------------------------------------
+
+// tfBoolLogString/tfInt64LogString/tfStringLogString/tfListLogString render a
+// tfsdk attr.Value as a short human-readable string for audit-log lines,
+// distinguishing null/unknown from an actual value rather than printing the
+// struct's internal representation.
+//
+// tfStringLogString/tfListLogString %q-escape the actual value (bool/int64
+// values need no escaping, since they can't contain control characters).
+// This matches the rest of the codebase's established convention for
+// logging user/server-controlled strings -- see e.g.
+// resource_keyfactor_certificate_authority.go's and resource_keyfactor_
+// security_identity.go's %q-escaped log lines -- and closes the CWE-117
+// log-injection shape this file's audit-log diffs previously left open: an
+// embedded "\n" in, say, an associated_role_names entry or a certificate
+// collection query would otherwise forge a second, visually-separate log
+// line under this repo's TF_LOG=DEBUG plaintext logging path (PR #210
+// full-review finding FIX-6).
+func tfBoolLogString(v types.Bool) string {
+	if v.Unknown {
+		return "(unknown)"
+	}
+	if v.Null {
+		return "(null)"
+	}
+	return strconv.FormatBool(v.Value)
+}
+
+func tfInt64LogString(v types.Int64) string {
+	if v.Unknown {
+		return "(unknown)"
+	}
+	if v.Null {
+		return "(null)"
+	}
+	return strconv.FormatInt(v.Value, 10)
+}
+
+func tfStringLogString(v types.String) string {
+	if v.Unknown {
+		return "(unknown)"
+	}
+	if v.Null {
+		return "(null)"
+	}
+	return fmt.Sprintf("%q", v.Value)
+}
+
+func tfListLogString(ctx context.Context, l types.List) string {
+	if l.Unknown {
+		return "(unknown)"
+	}
+	if l.Null {
+		return "(null)"
+	}
+	var vals []string
+	l.ElementsAs(ctx, &vals, false)
+	if vals == nil {
+		// ElementsAs above only succeeds directly for []string; for a list
+		// of a different element type, fall back to formatting the raw
+		// attr.Value elements so this still produces a readable, non-empty
+		// log line instead of silently reporting "[]" for a populated
+		// non-string list.
+		for _, e := range l.Elems {
+			vals = append(vals, fmt.Sprintf("%v", e))
+		}
+	}
+	quoted := make([]string, len(vals))
+	for i, v := range vals {
+		quoted[i] = fmt.Sprintf("%q", v)
+	}
+	return "[" + strings.Join(quoted, ",") + "]"
+}
+
+// enrollmentPatternPolicyRelevantFieldChanges compares the prior Terraform
+// state against the final Update() plan (after preserveUndeclaredEnrollment-
+// PatternFields and the associated_role_names/certificate_authority_ids
+// fallback have run -- i.e. exactly what is about to be sent to Command) and
+// returns one human-readable "field: old -> new" description per changed
+// policy-relevant field. Covers the fields this resource can change that
+// matter for a compliance audit trail: who can enroll (associated_role_names,
+// certificate_authority_ids), how strictly (policies.rfc_enforcement,
+// policies.allow_wildcards, policies.allow_key_reuse), and who owns the
+// resulting certificates (policies.certificate_owner_role,
+// policies.default_certificate_owner_role_id/name), plus the one-shot
+// force_template_default directive. Deliberately a pure function (no
+// tflog/side effects) so it can be unit tested directly; Update() emits one
+// tflog.Info per returned entry.
+func enrollmentPatternPolicyRelevantFieldChanges(
+	ctx context.Context,
+	prior, updated KeyfactorEnrollmentPatternState,
+) []string {
+	var changes []string
+
+	appendIfChanged := func(name, oldVal, newVal string) {
+		if oldVal != newVal {
+			changes = append(changes, fmt.Sprintf("%s: %s -> %s", name, oldVal, newVal))
+		}
+	}
+
+	appendIfChanged("associated_role_names", tfListLogString(ctx, prior.AssociatedRoleNames), tfListLogString(ctx, updated.AssociatedRoleNames))
+	appendIfChanged("certificate_authority_ids", tfListLogString(ctx, prior.CertificateAuthorityIds), tfListLogString(ctx, updated.CertificateAuthorityIds))
+	appendIfChanged("force_template_default", tfBoolLogString(prior.ForceTemplateDefault), tfBoolLogString(updated.ForceTemplateDefault))
+
+	if prior.Policies != nil || updated.Policies != nil {
+		var o, n EnrollmentPatternResourcePolicy
+		if prior.Policies != nil {
+			o = *prior.Policies
+		}
+		if updated.Policies != nil {
+			n = *updated.Policies
+		}
+		appendIfChanged("policies.rfc_enforcement", tfBoolLogString(o.RFCEnforcement), tfBoolLogString(n.RFCEnforcement))
+		appendIfChanged("policies.allow_wildcards", tfBoolLogString(o.AllowWildcards), tfBoolLogString(n.AllowWildcards))
+		appendIfChanged("policies.allow_key_reuse", tfBoolLogString(o.AllowKeyReuse), tfBoolLogString(n.AllowKeyReuse))
+		appendIfChanged("policies.certificate_owner_role", tfInt64LogString(o.CertificateOwnerRole), tfInt64LogString(n.CertificateOwnerRole))
+		appendIfChanged(
+			"policies.default_certificate_owner_role_id",
+			tfInt64LogString(o.DefaultCertificateOwnerRoleId), tfInt64LogString(n.DefaultCertificateOwnerRoleId),
+		)
+		appendIfChanged(
+			"policies.default_certificate_owner_role_name",
+			tfStringLogString(o.DefaultCertificateOwnerRoleName), tfStringLogString(n.DefaultCertificateOwnerRoleName),
+		)
+	}
+
+	return changes
+}
+
+// enrollmentPatternCreationAuditFields renders the same access-control-
+// relevant fields enrollmentPatternPolicyRelevantFieldChanges audits on
+// every subsequent Update() -- who can enroll (associated_role_names,
+// certificate_authority_ids), how strictly (policies.rfc_enforcement,
+// policies.allow_wildcards, policies.allow_key_reuse), and who owns the
+// resulting certificates (policies.certificate_owner_role,
+// policies.default_certificate_owner_role_id/name) -- as one "field: value"
+// string per field, for Create()'s audit-log line.
+//
+// Create() has no prior Terraform state to diff against (the resource
+// doesn't exist yet), so unlike enrollmentPatternPolicyRelevantFieldChanges
+// this simply reports what was set rather than an old -> new pair --
+// diffing against a synthetic zero-value KeyfactorEnrollmentPatternState
+// would render misleading "old" values (e.g. a Go zero-value types.Int64{}
+// prints as "0" via tfInt64LogString, not "(null)", since it isn't actually
+// flagged Null). Previously Create() logged nothing beyond the bare numeric
+// ID (see the tflog call below in Create()), leaving an asymmetric audit
+// trail: full field detail for every Update(), none for the initial grant
+// of enrollment/CA access -- a gap a SOC2 auditor reconstructing "who was
+// granted access to what, and when" would flag (PR #210 full-review finding
+// FIX-8). Pure function so it can be unit tested directly, matching
+// enrollmentPatternPolicyRelevantFieldChanges.
+func enrollmentPatternCreationAuditFields(ctx context.Context, created KeyfactorEnrollmentPatternState) []string {
+	var fields []string
+	add := func(name, val string) {
+		fields = append(fields, fmt.Sprintf("%s: %s", name, val))
+	}
+
+	add("associated_role_names", tfListLogString(ctx, created.AssociatedRoleNames))
+	add("certificate_authority_ids", tfListLogString(ctx, created.CertificateAuthorityIds))
+
+	if created.Policies != nil {
+		p := created.Policies
+		add("policies.rfc_enforcement", tfBoolLogString(p.RFCEnforcement))
+		add("policies.allow_wildcards", tfBoolLogString(p.AllowWildcards))
+		add("policies.allow_key_reuse", tfBoolLogString(p.AllowKeyReuse))
+		add("policies.certificate_owner_role", tfInt64LogString(p.CertificateOwnerRole))
+		add("policies.default_certificate_owner_role_id", tfInt64LogString(p.DefaultCertificateOwnerRoleId))
+		add("policies.default_certificate_owner_role_name", tfStringLogString(p.DefaultCertificateOwnerRoleName))
+	}
+
+	return fields
+}
+
+// ---------------------------------------------------------------------------
 // Response -> State conversion
 // ---------------------------------------------------------------------------
 
@@ -582,8 +761,25 @@ func enrollmentPatternTemplateResponseToState(t *v1.EnrollmentPatternsEnrollment
 	}
 }
 
+// enrollmentPatternAssociatedRolesToState converts the server's
+// AssociatedRoles response into state. AssociatedRoles is a plain
+// (non-nullable-wrapper) []T on EnrollmentPatternsEnrollmentPatternResponse
+// (`json:"AssociatedRoles,omitempty"`), so it is Go-nil only when the
+// server's JSON omits the key entirely; an explicit `[]` decodes to a
+// non-nil, zero-length slice. Building the result by appending onto a
+// nil-initialized Go slice (the bug -- fixed here) collapses that
+// non-nil-but-empty case back to nil regardless, which the framework's
+// reflection layer encodes as a null list -- clobbering a known non-null
+// empty-list plan value and crashing the apply with "Provider produced
+// inconsistent result after apply." Mirrors the fix already applied to
+// enrollmentPatternFieldsToState's Options/algorithmDataResponseToResourceEntry's
+// BitLengths/Curves above, and the identical bug class fixed for
+// certStoreTypeDefToState under GitHub issue #192.
 func enrollmentPatternAssociatedRolesToState(roles []v1.EnrollmentPatternsEnrollmentPatternAssociatedRoleResponse) []EnrollmentPatternResourceRole {
-	var result []EnrollmentPatternResourceRole
+	if roles == nil {
+		return nil
+	}
+	result := make([]EnrollmentPatternResourceRole, 0, len(roles))
 	for _, role := range roles {
 		result = append(
 			result, EnrollmentPatternResourceRole{
@@ -595,8 +791,13 @@ func enrollmentPatternAssociatedRolesToState(roles []v1.EnrollmentPatternsEnroll
 	return result
 }
 
+// enrollmentPatternCAsToState -- see enrollmentPatternAssociatedRolesToState's
+// doc comment; identical nil-vs-non-nil-empty fix for CertificateAuthorities.
 func enrollmentPatternCAsToState(cas []v1.EnrollmentPatternsEnrollmentPatternCAResponse) []EnrollmentPatternResourceCA {
-	var result []EnrollmentPatternResourceCA
+	if cas == nil {
+		return nil
+	}
+	result := make([]EnrollmentPatternResourceCA, 0, len(cas))
 	for _, ca := range cas {
 		result = append(
 			result, EnrollmentPatternResourceCA{
@@ -610,8 +811,13 @@ func enrollmentPatternCAsToState(cas []v1.EnrollmentPatternsEnrollmentPatternCAR
 	return result
 }
 
+// enrollmentPatternRegexesToState -- see enrollmentPatternAssociatedRolesToState's
+// doc comment; identical nil-vs-non-nil-empty fix for Regexes.
 func enrollmentPatternRegexesToState(regexes []v1.EnrollmentPatternsEnrollmentPatternRegexesResponse) []EnrollmentPatternResourceRegex {
-	var result []EnrollmentPatternResourceRegex
+	if regexes == nil {
+		return nil
+	}
+	result := make([]EnrollmentPatternResourceRegex, 0, len(regexes))
 	for _, rx := range regexes {
 		result = append(
 			result, EnrollmentPatternResourceRegex{
@@ -625,8 +831,13 @@ func enrollmentPatternRegexesToState(regexes []v1.EnrollmentPatternsEnrollmentPa
 	return result
 }
 
+// enrollmentPatternMetadataFieldsToState -- see enrollmentPatternAssociatedRolesToState's
+// doc comment; identical nil-vs-non-nil-empty fix for MetadataFields.
 func enrollmentPatternMetadataFieldsToState(fields []v1.EnrollmentPatternsEnrollmentPatternMetadataFieldResponse) []EnrollmentPatternResourceMetadataField {
-	var result []EnrollmentPatternResourceMetadataField
+	if fields == nil {
+		return nil
+	}
+	result := make([]EnrollmentPatternResourceMetadataField, 0, len(fields))
 	for _, f := range fields {
 		result = append(
 			result, EnrollmentPatternResourceMetadataField{
@@ -642,8 +853,13 @@ func enrollmentPatternMetadataFieldsToState(fields []v1.EnrollmentPatternsEnroll
 	return result
 }
 
+// enrollmentPatternDefaultsToState -- see enrollmentPatternAssociatedRolesToState's
+// doc comment; identical nil-vs-non-nil-empty fix for Defaults.
 func enrollmentPatternDefaultsToState(defaults []v1.EnrollmentPatternsEnrollmentPatternDefaultResponse) []EnrollmentPatternResourceDefault {
-	var result []EnrollmentPatternResourceDefault
+	if defaults == nil {
+		return nil
+	}
+	result := make([]EnrollmentPatternResourceDefault, 0, len(defaults))
 	for _, d := range defaults {
 		result = append(
 			result, EnrollmentPatternResourceDefault{
@@ -655,36 +871,70 @@ func enrollmentPatternDefaultsToState(defaults []v1.EnrollmentPatternsEnrollment
 	return result
 }
 
+// enrollmentPatternFieldsToState converts the server's EnrollmentFields
+// response into state. f.Options is a plain (non-nullable-wrapper) []string
+// on the SDK response model: encoding/json only leaves it Go-nil when the
+// server's JSON response omits the "Options" key entirely or sends an
+// explicit `null` -- both of which mean "no value," matching a Null plan for
+// an undeclared `options`. Any other case (including an explicit `[]`) comes
+// back as a non-nil, possibly zero-length slice, which only happens when the
+// config actually declared `options = [...]` (including `options = []`) and
+// the server echoed it back. Collapsing that non-nil-but-empty case to Null
+// unconditionally (the bug -- fixed here) clobbers a known non-null
+// empty-list plan value with Null and crashes the apply with "Provider
+// produced inconsistent result after apply" -- see
+// TestUnitEnrollmentPatternFieldsToStatePreservesEmptyOptions.
 func enrollmentPatternFieldsToState(fields []v1.EnrollmentPatternsEnrollmentPatternFieldResponse) []EnrollmentPatternResourceField {
-	var result []EnrollmentPatternResourceField
+	// EnrollmentFields itself (the outer slice, as opposed to each entry's
+	// nested Options handled above) is subject to the identical nil-vs-
+	// non-nil-empty bug -- see enrollmentPatternAssociatedRolesToState's doc
+	// comment.
+	if fields == nil {
+		return nil
+	}
+	result := make([]EnrollmentPatternResourceField, 0, len(fields))
 	for _, f := range fields {
 		entry := EnrollmentPatternResourceField{
 			Name:     nullableStringToTfString(f.Name),
 			DataType: enumPtrToTfInt64(f.DataType),
 		}
-		if len(f.Options) > 0 {
-			entry.Options = stringSliceToTfList(f.Options)
-		} else {
+		if f.Options == nil {
 			entry.Options = types.List{Null: true, ElemType: types.StringType}
+		} else {
+			entry.Options = stringSliceToTfList(f.Options)
 		}
 		result = append(result, entry)
 	}
 	return result
 }
 
+// algorithmDataResponseToResourceEntry converts a single PrimaryKeyAlgorithms/
+// AlternativeKeyAlgorithms entry from the server response into state.
+// a.BitLengths/a.Curves are plain (non-nullable-wrapper) slices on the SDK
+// response model -- same nil-vs-non-nil-empty distinction as
+// enrollmentPatternFieldsToState's Options handling above. primary_key_
+// algorithms/alternative_key_algorithms are Optional+Computed with
+// tfsdk.UseStateForUnknown(), which only substitutes the prior state when the
+// PLAN value is Unknown; an explicitly-declared `curves = []` (legitimate for
+// an RSA entry, which has no curves) is a known, non-null plan value that
+// UseStateForUnknown never touches, so collapsing a non-nil-but-empty
+// response slice to Null unconditionally (the bug -- fixed here) still
+// crashes the apply with "Provider produced inconsistent result after
+// apply" for that case -- see
+// TestUnitAlgorithmDataResponseToResourceEntryPreservesEmptyBitLengthsAndCurves.
 func algorithmDataResponseToResourceEntry(a v1.EnrollmentPatternsAlgorithmsAlgorithmDataResponse) EnrollmentPatternResourceAlgorithm {
 	entry := EnrollmentPatternResourceAlgorithm{
 		Name: nullableStringToTfString(a.Name),
 	}
-	if len(a.BitLengths) > 0 {
-		entry.BitLengths = types.List{ElemType: types.Int64Type, Elems: convertIntArrayToTerraform(a.BitLengths)}
-	} else {
+	if a.BitLengths == nil {
 		entry.BitLengths = types.List{Null: true, ElemType: types.Int64Type}
-	}
-	if len(a.Curves) > 0 {
-		entry.Curves = stringSliceToTfList(a.Curves)
 	} else {
+		entry.BitLengths = types.List{ElemType: types.Int64Type, Elems: convertIntArrayToTerraform(a.BitLengths)}
+	}
+	if a.Curves == nil {
 		entry.Curves = types.List{Null: true, ElemType: types.StringType}
+	} else {
+		entry.Curves = stringSliceToTfList(a.Curves)
 	}
 	return entry
 }
@@ -702,13 +952,61 @@ func enrollmentPatternPolicyResponseToState(p *v1.EnrollmentPatternsEnrollmentPa
 		DefaultCertificateOwnerRoleName: nullableStringToTfString(p.DefaultCertificateOwnerRoleName),
 		DefaultCertificateOwnerOverride: boolPtrToTfBool(p.DefaultCertificateOwnerOverride),
 	}
-	for _, algo := range p.PrimaryKeyAlgorithms {
-		pol.PrimaryKeyAlgorithms = append(pol.PrimaryKeyAlgorithms, algorithmDataResponseToResourceEntry(algo))
+	// PrimaryKeyAlgorithms/AlternativeKeyAlgorithms themselves (the outer
+	// slices, as opposed to each entry's nested BitLengths/Curves handled by
+	// algorithmDataResponseToResourceEntry above) are subject to the
+	// identical nil-vs-non-nil-empty bug -- see
+	// enrollmentPatternAssociatedRolesToState's doc comment. Appending onto
+	// a nil-initialized pol.PrimaryKeyAlgorithms/AlternativeKeyAlgorithms
+	// (the bug -- fixed here) would collapse a non-nil-but-empty response
+	// (`primary_key_algorithms = []`) back to nil/Null.
+	if p.PrimaryKeyAlgorithms != nil {
+		pol.PrimaryKeyAlgorithms = make([]EnrollmentPatternResourceAlgorithm, 0, len(p.PrimaryKeyAlgorithms))
+		for _, algo := range p.PrimaryKeyAlgorithms {
+			pol.PrimaryKeyAlgorithms = append(pol.PrimaryKeyAlgorithms, algorithmDataResponseToResourceEntry(algo))
+		}
 	}
-	for _, algo := range p.AlternativeKeyAlgorithms {
-		pol.AlternativeKeyAlgorithms = append(pol.AlternativeKeyAlgorithms, algorithmDataResponseToResourceEntry(algo))
+	if p.AlternativeKeyAlgorithms != nil {
+		pol.AlternativeKeyAlgorithms = make([]EnrollmentPatternResourceAlgorithm, 0, len(p.AlternativeKeyAlgorithms))
+		for _, algo := range p.AlternativeKeyAlgorithms {
+			pol.AlternativeKeyAlgorithms = append(pol.AlternativeKeyAlgorithms, algorithmDataResponseToResourceEntry(algo))
+		}
 	}
 	return pol
+}
+
+// alwaysUnknownModifier always plans its attribute as Unknown, regardless of
+// the declared config value or prior state.
+//
+// force_template_default is a one-shot, write-only directive: every CRUD
+// path in this file unconditionally resolves it to Null in the final state
+// (it is never persisted server-side, so there is nothing else it could
+// resolve to). Without this modifier the attribute is not Computed, so its
+// planned value is exactly whatever the config declares -- e.g. `true`.
+// Terraform Core then rejects the apply with "Provider produced
+// inconsistent result after apply" the moment the final state (Null)
+// disagrees with that planned value, which happens on literally the
+// field's only real use case (declaring force_template_default = true).
+// Marking the attribute Computed and unconditionally planning it Unknown
+// sidesteps the comparison entirely: Core accepts any final value --
+// including Null -- for an attribute whose planned value was Unknown. This
+// has no effect on whether the directive is actually honored: every CRUD
+// path decodes the real value from Config (not Plan) to build the API
+// request (see the comment above Create()'s request.Config.Get call), so
+// the modifier only changes what Core expects to see afterward, not what
+// gets sent to Command. See PR #210 full-review finding FIX-1.
+type alwaysUnknownModifier struct{}
+
+func (m alwaysUnknownModifier) Description(_ context.Context) string {
+	return "Always plans this attribute as unknown so its final value is free to differ from the declared config value (including resolving to null)."
+}
+
+func (m alwaysUnknownModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m alwaysUnknownModifier) Modify(_ context.Context, _ tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	resp.AttributePlan = types.Bool{Unknown: true}
 }
 
 // resolveUnknownListToNull resolves an Unknown types.List to Null, leaving
@@ -818,17 +1116,39 @@ func buildEnrollmentPatternPolicyRequest(ctx context.Context, p *EnrollmentPatte
 	if !p.DefaultCertificateOwnerOverride.Null && !p.DefaultCertificateOwnerOverride.Unknown {
 		req.SetDefaultCertificateOwnerOverride(p.DefaultCertificateOwnerOverride.Value)
 	}
-	if len(p.PrimaryKeyAlgorithms) > 0 {
+	// nil vs non-nil-empty matters here: the generated request models'
+	// ToMap()/MarshalJSON() (see model_enrollment_patterns_enrollment_
+	// pattern_policy_request.go) include a list field in the request body
+	// whenever it is non-nil -- even zero-length -- and omit it only when
+	// it is Go-nil. That means a non-nil empty slice IS how this SDK
+	// expresses "explicitly clear this list back to empty" (unlike a
+	// struct's own `encoding/json:"...,omitempty"` tag, which these
+	// generated types don't actually rely on for marshaling). Gating on
+	// `len(p.X) > 0` (the bug -- fixed here) treated a plan-declared empty
+	// list (`primary_key_algorithms = []`) identically to an undeclared
+	// one, silently omitting the field from the request instead of
+	// clearing it server-side -- see PR #210 full-review finding F2 and
+	// TestUnitBuildEnrollmentPatternPolicyRequestPreservesEmptyAlgorithmLists.
+	if p.PrimaryKeyAlgorithms != nil {
 		req.SetPrimaryKeyAlgorithms(buildAlgorithmDataRequestV2List(ctx, p.PrimaryKeyAlgorithms))
 	}
-	if len(p.AlternativeKeyAlgorithms) > 0 {
+	if p.AlternativeKeyAlgorithms != nil {
 		req.SetAlternativeKeyAlgorithms(buildAlgorithmDataRequestV2List(ctx, p.AlternativeKeyAlgorithms))
 	}
 	return req
 }
 
+// buildAlgorithmDataRequestV2List preserves the nil-vs-non-nil-empty
+// distinction of its input: a non-nil algos (even zero-length) must produce
+// a non-nil result, or buildEnrollmentPatternPolicyRequest's `!= nil` gate
+// above would be defeated by this function silently collapsing it back to
+// nil (the same append-onto-nil-slice bug already fixed for the response
+// conversion helpers above).
 func buildAlgorithmDataRequestV2List(ctx context.Context, algos []EnrollmentPatternResourceAlgorithm) []v1.EnrollmentPatternsAlgorithmsAlgorithmDataRequestV2 {
-	var result []v1.EnrollmentPatternsAlgorithmsAlgorithmDataRequestV2
+	if algos == nil {
+		return nil
+	}
+	result := make([]v1.EnrollmentPatternsAlgorithmsAlgorithmDataRequestV2, 0, len(algos))
 	for _, a := range algos {
 		entry := v1.EnrollmentPatternsAlgorithmsAlgorithmDataRequestV2{Name: a.Name.Value}
 		if !a.BitLengths.Null && !a.BitLengths.Unknown {
@@ -848,8 +1168,16 @@ func buildAlgorithmDataRequestV2List(ctx context.Context, algos []EnrollmentPatt
 	return result
 }
 
+// buildEnrollmentPatternRegexesRequest preserves the nil-vs-non-nil-empty
+// distinction of its input -- see buildAlgorithmDataRequestV2List's doc
+// comment; a non-nil plan (even zero-length) must produce a non-nil result
+// so the request models' ToMap() includes an explicit `"Regexes": []`
+// instead of omitting the field.
 func buildEnrollmentPatternRegexesRequest(plan []EnrollmentPatternResourceRegex) []v1.EnrollmentPatternsEnrollmentPatternRegexesRequest {
-	var result []v1.EnrollmentPatternsEnrollmentPatternRegexesRequest
+	if plan == nil {
+		return nil
+	}
+	result := make([]v1.EnrollmentPatternsEnrollmentPatternRegexesRequest, 0, len(plan))
 	for _, rx := range plan {
 		entry := v1.EnrollmentPatternsEnrollmentPatternRegexesRequest{}
 		entry.SetSubjectPart(rx.SubjectPart.Value)
@@ -867,8 +1195,14 @@ func buildEnrollmentPatternRegexesRequest(plan []EnrollmentPatternResourceRegex)
 	return result
 }
 
+// buildEnrollmentPatternMetadataFieldsRequest -- see
+// buildEnrollmentPatternRegexesRequest's doc comment; identical
+// nil-vs-non-nil-empty preservation for MetadataFields.
 func buildEnrollmentPatternMetadataFieldsRequest(plan []EnrollmentPatternResourceMetadataField) []v1.EnrollmentPatternsEnrollmentPatternMetadataFieldRequest {
-	var result []v1.EnrollmentPatternsEnrollmentPatternMetadataFieldRequest
+	if plan == nil {
+		return nil
+	}
+	result := make([]v1.EnrollmentPatternsEnrollmentPatternMetadataFieldRequest, 0, len(plan))
 	for _, mf := range plan {
 		entry := v1.EnrollmentPatternsEnrollmentPatternMetadataFieldRequest{}
 		entry.SetMetadataId(int32(mf.MetadataId.Value))
@@ -892,8 +1226,14 @@ func buildEnrollmentPatternMetadataFieldsRequest(plan []EnrollmentPatternResourc
 	return result
 }
 
+// buildEnrollmentPatternDefaultsRequest -- see
+// buildEnrollmentPatternRegexesRequest's doc comment; identical
+// nil-vs-non-nil-empty preservation for Defaults.
 func buildEnrollmentPatternDefaultsRequest(plan []EnrollmentPatternResourceDefault) []v1.EnrollmentPatternsEnrollmentPatternDefaultRequest {
-	var result []v1.EnrollmentPatternsEnrollmentPatternDefaultRequest
+	if plan == nil {
+		return nil
+	}
+	result := make([]v1.EnrollmentPatternsEnrollmentPatternDefaultRequest, 0, len(plan))
 	for _, d := range plan {
 		entry := v1.EnrollmentPatternsEnrollmentPatternDefaultRequest{}
 		entry.SetSubjectPart(d.SubjectPart.Value)
@@ -903,8 +1243,14 @@ func buildEnrollmentPatternDefaultsRequest(plan []EnrollmentPatternResourceDefau
 	return result
 }
 
+// buildEnrollmentPatternFieldsRequest -- see
+// buildEnrollmentPatternRegexesRequest's doc comment; identical
+// nil-vs-non-nil-empty preservation for EnrollmentFields.
 func buildEnrollmentPatternFieldsRequest(ctx context.Context, plan []EnrollmentPatternResourceField) []v1.EnrollmentPatternsEnrollmentPatternFieldRequest {
-	var result []v1.EnrollmentPatternsEnrollmentPatternFieldRequest
+	if plan == nil {
+		return nil
+	}
+	result := make([]v1.EnrollmentPatternsEnrollmentPatternFieldRequest, 0, len(plan))
 	for _, f := range plan {
 		entry := v1.EnrollmentPatternsEnrollmentPatternFieldRequest{}
 		entry.SetName(f.Name.Value)
@@ -948,19 +1294,26 @@ func buildEnrollmentPatternCreateRequest(ctx context.Context, plan KeyfactorEnro
 	if !plan.AllowedEnrollmentTypes.Null && !plan.AllowedEnrollmentTypes.Unknown {
 		req.SetAllowedEnrollmentTypes(int32(plan.AllowedEnrollmentTypes.Value))
 	}
-	if len(plan.Regexes) > 0 {
+	// nil vs non-nil-empty (NOT len > 0) is the deliberate gate here -- see
+	// buildEnrollmentPatternPolicyRequest's doc comment above for why: the
+	// request models' ToMap() sends an explicit `[]` for any non-nil list,
+	// so a plan-declared empty list (e.g. `regexes = []`) must reach
+	// SetRegexes with a non-nil empty slice to actually clear the field
+	// server-side, rather than being gated out and silently leaving the
+	// prior value in place.
+	if plan.Regexes != nil {
 		req.SetRegexes(buildEnrollmentPatternRegexesRequest(plan.Regexes))
 	}
-	if len(plan.MetadataFields) > 0 {
+	if plan.MetadataFields != nil {
 		req.SetMetadataFields(buildEnrollmentPatternMetadataFieldsRequest(plan.MetadataFields))
 	}
 	if !plan.RestrictCAs.Null && !plan.RestrictCAs.Unknown {
 		req.SetRestrictCAs(plan.RestrictCAs.Value)
 	}
-	if len(plan.Defaults) > 0 {
+	if plan.Defaults != nil {
 		req.SetDefaults(buildEnrollmentPatternDefaultsRequest(plan.Defaults))
 	}
-	if len(plan.EnrollmentFields) > 0 {
+	if plan.EnrollmentFields != nil {
 		req.SetEnrollmentFields(buildEnrollmentPatternFieldsRequest(ctx, plan.EnrollmentFields))
 	}
 	return req
@@ -992,19 +1345,26 @@ func buildEnrollmentPatternUpdateRequest(ctx context.Context, plan KeyfactorEnro
 	if !plan.AllowedEnrollmentTypes.Null && !plan.AllowedEnrollmentTypes.Unknown {
 		req.SetAllowedEnrollmentTypes(int32(plan.AllowedEnrollmentTypes.Value))
 	}
-	if len(plan.Regexes) > 0 {
+	// nil vs non-nil-empty (NOT len > 0) is the deliberate gate here -- see
+	// buildEnrollmentPatternPolicyRequest's doc comment above for why: the
+	// request models' ToMap() sends an explicit `[]` for any non-nil list,
+	// so a plan-declared empty list (e.g. `regexes = []`) must reach
+	// SetRegexes with a non-nil empty slice to actually clear the field
+	// server-side, rather than being gated out and silently leaving the
+	// prior value in place.
+	if plan.Regexes != nil {
 		req.SetRegexes(buildEnrollmentPatternRegexesRequest(plan.Regexes))
 	}
-	if len(plan.MetadataFields) > 0 {
+	if plan.MetadataFields != nil {
 		req.SetMetadataFields(buildEnrollmentPatternMetadataFieldsRequest(plan.MetadataFields))
 	}
 	if !plan.RestrictCAs.Null && !plan.RestrictCAs.Unknown {
 		req.SetRestrictCAs(plan.RestrictCAs.Value)
 	}
-	if len(plan.Defaults) > 0 {
+	if plan.Defaults != nil {
 		req.SetDefaults(buildEnrollmentPatternDefaultsRequest(plan.Defaults))
 	}
-	if len(plan.EnrollmentFields) > 0 {
+	if plan.EnrollmentFields != nil {
 		req.SetEnrollmentFields(buildEnrollmentPatternFieldsRequest(ctx, plan.EnrollmentFields))
 	}
 	return req
@@ -1094,6 +1454,107 @@ func preserveUndeclaredEnrollmentPatternFields(
 }
 
 // ---------------------------------------------------------------------------
+// Config validation
+// ---------------------------------------------------------------------------
+
+// ValidateConfig rejects config-time constraint violations before plan/apply
+// ever runs -- see validateEnrollmentPatternConfigConstraints for the checks
+// performed. Follows the same pattern as resourceCertificateAuthority.
+// ValidateConfig (resource_keyfactor_certificate_authority.go).
+func (r resourceEnrollmentPattern) ValidateConfig(
+	ctx context.Context,
+	request tfsdk.ValidateResourceConfigRequest,
+	response *tfsdk.ValidateResourceConfigResponse,
+) {
+	LogFunctionEntry(ctx, "resourceEnrollmentPattern.ValidateConfig")
+
+	var config KeyfactorEnrollmentPatternState
+	diags := request.Config.Get(ctx, &config)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	response.Diagnostics.Append(validateEnrollmentPatternConfigConstraints(config)...)
+
+	LogFunctionExit(ctx, "resourceEnrollmentPattern.ValidateConfig")
+}
+
+// validateEnrollmentPatternConfigConstraints enforces two cross-field
+// constraints that this resource's own schema descriptions document but,
+// until now, nothing actually checked (PR #210 full-review round 2 findings
+// F3/F4):
+//
+//  1. restrict_cas's description states "If true, at least one CA must be
+//     configured" -- reject restrict_cas=true paired with an empty/undeclared
+//     certificate_authority_ids.
+//  2. use_ad_permissions's description states "If false, at least one value
+//     must be provided for associated_role_names" -- reject
+//     use_ad_permissions=false paired with an empty/undeclared
+//     associated_role_names.
+//
+// A third, softer case is also flagged (as a warning, not an error):
+// certificate_authority_ids declared non-empty while restrict_cas is
+// explicitly false. Per restrict_cas's own description, the CA restriction
+// only applies "if applicable (see restrict_cas)" -- i.e. only when
+// restrict_cas is true -- so declaring certificate_authority_ids without
+// restrict_cas=true is very likely a config mistake (the list is silently
+// inert). This is deliberately a warning rather than a hard error: unlike
+// the two required-value checks above, there is no live-lab confirmation
+// that Command itself rejects or even meaningfully ignores this combination,
+// and forcing an error here risks rejecting an otherwise legitimate config
+// that stages certificate_authority_ids ahead of a later restrict_cas=true
+// change.
+//
+// A null/unknown value for any attribute involved is never an error (or
+// warning): ValidateConfig only ever sees Config, which cannot resolve a
+// value that isn't known yet (e.g. a value chained from another
+// not-yet-applied resource). Only explicitly configured, known values are
+// checked. Factored out of ValidateConfig so it can be unit tested directly
+// against a KeyfactorEnrollmentPatternState value.
+func validateEnrollmentPatternConfigConstraints(cfg KeyfactorEnrollmentPatternState) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	restrictCAsKnown := !cfg.RestrictCAs.Null && !cfg.RestrictCAs.Unknown
+	caIdsKnown := !cfg.CertificateAuthorityIds.Null && !cfg.CertificateAuthorityIds.Unknown
+	caIdsDeclaredNonEmpty := caIdsKnown && len(cfg.CertificateAuthorityIds.Elems) > 0
+	caIdsEmpty := cfg.CertificateAuthorityIds.Null || (caIdsKnown && len(cfg.CertificateAuthorityIds.Elems) == 0)
+
+	if restrictCAsKnown && cfg.RestrictCAs.Value && caIdsEmpty {
+		diags.AddAttributeError(
+			path.Root("certificate_authority_ids"),
+			"Missing certificate authorities for restrict_cas",
+			"restrict_cas is set to true, which requires at least one entry in certificate_authority_ids.",
+		)
+	}
+
+	if restrictCAsKnown && !cfg.RestrictCAs.Value && caIdsDeclaredNonEmpty {
+		diags.AddAttributeWarning(
+			path.Root("certificate_authority_ids"),
+			"certificate_authority_ids has no effect",
+			"certificate_authority_ids is declared, but restrict_cas is explicitly false, so the enrollment "+
+				"pattern is not restricted to these certificate authorities. Set restrict_cas = true to enforce "+
+				"this restriction, or remove certificate_authority_ids if it is not needed.",
+		)
+	}
+
+	useADKnown := !cfg.UseADPermissions.Null && !cfg.UseADPermissions.Unknown
+	if useADKnown && !cfg.UseADPermissions.Value {
+		rolesKnown := !cfg.AssociatedRoleNames.Null && !cfg.AssociatedRoleNames.Unknown
+		rolesEmpty := cfg.AssociatedRoleNames.Null || (rolesKnown && len(cfg.AssociatedRoleNames.Elems) == 0)
+		if rolesEmpty {
+			diags.AddAttributeError(
+				path.Root("associated_role_names"),
+				"Missing associated roles for use_ad_permissions = false",
+				"use_ad_permissions is set to false, which requires at least one entry in associated_role_names.",
+			)
+		}
+	}
+
+	return diags
+}
+
+// ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
 
@@ -1167,6 +1628,13 @@ func (r resourceEnrollmentPattern) Create(
 		)
 		return
 	}
+	if resp == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error creating enrollment pattern.",
+			fmt.Sprintf("creating enrollment pattern %q", plan.Name.Value),
+		)...)
+		return
+	}
 
 	newState := enrollmentPatternResponseToState(resp)
 	// On Create there is no prior Terraform state at all, so
@@ -1187,6 +1655,16 @@ func (r resourceEnrollmentPattern) Create(
 	newState.ForceTemplateDefault = types.Bool{Null: true}
 
 	tflog.Debug(ctx, fmt.Sprintf("Created enrollment pattern ID %d", newState.ID.Value))
+	// Field-level audit logging for the access-control-relevant fields set
+	// on this initial create -- see enrollmentPatternCreationAuditFields's
+	// doc comment (PR #210 full-review finding FIX-8). Info level matches
+	// the level already used for the equivalent Update() diff logging
+	// below (these fields -- role names, CA ids, policy enum settings --
+	// are not free-text search content, unlike certificate_collection's
+	// query field; see FIX-7).
+	for _, field := range enrollmentPatternCreationAuditFields(ctx, newState) {
+		tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %d field set on create: %s", newState.ID.Value, field))
+	}
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -1230,6 +1708,13 @@ func (r resourceEnrollmentPattern) Read(
 		)
 		return
 	}
+	if resp == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error reading enrollment pattern.",
+			fmt.Sprintf("reading enrollment pattern %d", state.ID.Value),
+		)...)
+		return
+	}
 
 	newState := enrollmentPatternResponseToState(resp)
 
@@ -1253,8 +1738,27 @@ func (r resourceEnrollmentPattern) Update(
 ) {
 	LogFunctionEntry(ctx, "resourceEnrollmentPattern.Update")
 
+	// Decode from Config, not Plan -- mirrors Create()'s handling (see the
+	// comment above Create()'s request.Config.Get call). Several fields
+	// (Template, AssociatedRoles, CertificateAuthorities, Policies'
+	// PrimaryKeyAlgorithms/AlternativeKeyAlgorithms) are backed by raw Go
+	// slice/struct types that cannot represent an Unknown tftypes value.
+	// On Update() these are normally carried forward from prior state by
+	// useStateOrNullModifier, but that modifier leaves the plan genuinely
+	// Unknown whenever the attribute's OWN config value is itself Unknown
+	// -- e.g. primary_key_algorithms chaining a value from another
+	// resource not yet applied in the same run. Decoding request.Plan in
+	// that case crashes with "Value Conversion Error: unhandled unknown
+	// value" (PR #210 full-review finding FIX-3). Config never has this
+	// problem for these attributes: they are Computed-only or left
+	// undeclared, both of which Config always resolves to Null. Since plan
+	// is now sourced from Config, it also doubles as the reliable "did the
+	// user actually declare this attribute" signal (see
+	// preserveUndeclaredTemplateFields's discussion of the same
+	// distinction in resource_keyfactor_certificate_template.go), so the
+	// previously-separate `config` decode is no longer needed.
 	var plan KeyfactorEnrollmentPatternState
-	diags := request.Plan.Get(ctx, &plan)
+	diags := request.Config.Get(ctx, &plan)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -1267,20 +1771,9 @@ func (r resourceEnrollmentPattern) Update(
 		return
 	}
 
-	// CONFIG (not plan) is the reliable signal for "did the user actually
-	// declare this attribute" -- see preserveUndeclaredTemplateFields's
-	// discussion of the same distinction in resource_keyfactor_certificate_
-	// template.go.
-	var config KeyfactorEnrollmentPatternState
-	diags = request.Config.Get(ctx, &config)
-	response.Diagnostics.Append(diags...)
-	if response.Diagnostics.HasError() {
-		return
-	}
-
-	if plan.ID.Value == 0 {
-		plan.ID = state.ID
-	}
+	// Config never populates id -- it's computed-only, never written by a
+	// user -- so always fall back to prior state for it.
+	plan.ID = state.ID
 
 	tflog.Info(ctx, fmt.Sprintf("Updating enrollment pattern ID %d", plan.ID.Value))
 
@@ -1305,17 +1798,41 @@ func (r resourceEnrollmentPattern) Update(
 		)
 		return
 	}
+	if current == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error reading enrollment pattern before update.",
+			fmt.Sprintf("reading enrollment pattern %d to preserve its current field values", plan.ID.Value),
+		)...)
+		return
+	}
 	preserveUndeclaredEnrollmentPatternFields(&plan, current)
 
 	// associated_role_names / certificate_authority_ids have no server-side
 	// source of truth at all (see KeyfactorEnrollmentPatternState's doc
 	// comment) -- fall back to this resource's own prior state, not the
-	// fresh GET, when config leaves them undeclared.
-	if config.AssociatedRoleNames.Null {
+	// fresh GET, when config leaves them undeclared (Null) OR when config
+	// is Unknown (e.g. `associated_role_names =
+	// [keyfactor_security_role.my_role.name]` where that role is created
+	// in the same apply -- PR #210 full-review finding FIX-4). Without the
+	// Unknown check, plan.AssociatedRoleNames/CertificateAuthorityIds would
+	// stay Unknown all the way into newState below, and a final state must
+	// never contain an Unknown value.
+	if plan.AssociatedRoleNames.Null || plan.AssociatedRoleNames.Unknown {
 		plan.AssociatedRoleNames = state.AssociatedRoleNames
 	}
-	if config.CertificateAuthorityIds.Null {
+	if plan.CertificateAuthorityIds.Null || plan.CertificateAuthorityIds.Unknown {
 		plan.CertificateAuthorityIds = state.CertificateAuthorityIds
+	}
+
+	// Audit-log old (prior state) vs new (final plan, post preservation)
+	// values for policy-relevant fields before the API call actually
+	// applies them -- PR #210 full-review finding F5. state is the
+	// unmodified prior Terraform state; plan at this point already
+	// reflects preserveUndeclaredEnrollmentPatternFields and the
+	// associated_role_names/certificate_authority_ids fallback above, i.e.
+	// exactly what buildEnrollmentPatternUpdateRequest is about to send.
+	for _, change := range enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan) {
+		tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %d field change on update: %s", plan.ID.Value, change))
 	}
 
 	updateBody := buildEnrollmentPatternUpdateRequest(ctx, plan)
@@ -1336,6 +1853,13 @@ func (r resourceEnrollmentPattern) Update(
 			"Error updating enrollment pattern.",
 			fmt.Sprintf("Could not update enrollment pattern %d: %s. Details: %s", plan.ID.Value, err.Error(), respBody),
 		)
+		return
+	}
+	if resp == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error updating enrollment pattern.",
+			fmt.Sprintf("updating enrollment pattern %d", plan.ID.Value),
+		)...)
 		return
 	}
 
@@ -1424,6 +1948,13 @@ func (r resourceEnrollmentPattern) ImportState(
 			"Error importing enrollment pattern.",
 			fmt.Sprintf("Could not read enrollment pattern %d: %s. Details: %s", id, err.Error(), body),
 		)
+		return
+	}
+	if resp == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error importing enrollment pattern.",
+			fmt.Sprintf("reading enrollment pattern %d to import", id),
+		)...)
 		return
 	}
 

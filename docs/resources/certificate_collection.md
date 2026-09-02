@@ -24,7 +24,7 @@ Manages a Keyfactor Command certificate collection.
 - `description` (String) A description of the certificate collection.
 - `duplication_field` (Number) Determines how duplicate certificate subjects are identified. 0=None, 1=CommonName, 2=DistinguishedName, 3=PrincipalName.
 - `favorite` (Boolean) Whether this collection is marked as a favorite.
-- `query` (String) The query expression that defines which certificates belong to this collection. Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form.
+- `query` (String) The query expression that defines which certificates belong to this collection. This is the resource's defining attribute and must always be declared -- it must never be removed from configuration once set (see ValidateConfig). Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form.
 - `show_on_dashboard` (Boolean) Whether to show this collection on the Keyfactor Command dashboard.
 
 ### Read-Only

@@ -2406,6 +2406,40 @@ func prepareCertificateContextArgs(id, collectionID int, thumbprint, commonName 
 	}
 }
 
+// nilAPIResponseDiagnostics builds a diagnostics error for the case where an
+// SDK Execute() call returns a nil response body AND a nil error.
+//
+// The vendored SDK's decode() (vendor/github.com/Keyfactor/keyfactor-go-
+// client-sdk/v25/api/keyfactor/v1/client.go) returns (nil, httpResp, nil)
+// -- no error at all -- for any 2xx response with an empty body, because
+// json.Unmarshal is never invoked when the body length is 0. Every
+// *ResponseToState conversion function in this codebase correctly
+// nil-checks individual *fields* on a response (via nullableStringToTfString
+// etc.) but assumes the top-level response pointer itself is never nil.
+// Without an explicit guard immediately after every Execute() call, an
+// empty-body 2xx response (from a compromised/malicious Command server, a
+// MITM -- this provider supports KEYFACTOR_SKIP_VERIFY -- or a buggy proxy/
+// load balancer) reaches the very next line as a nil pointer dereference:
+// a real, remotely-triggerable panic. Callers should check `resp == nil`
+// immediately after the err-check block on every Execute() call whose
+// response is subsequently dereferenced, and append this diagnostic instead
+// of proceeding. See PR #210 full-review finding FIX-5.
+func nilAPIResponseDiagnostics(summary, operation string) diag.Diagnostics {
+	var diags diag.Diagnostics
+	diags.AddError(
+		summary,
+		fmt.Sprintf(
+			"Keyfactor Command returned a successful (2xx) HTTP response with an empty body while %s, so no data "+
+				"could be parsed from it. This can happen if a proxy or load balancer between Terraform and Command "+
+				"stripped the response body, or (if KEYFACTOR_SKIP_VERIFY is enabled) if a man-in-the-middle is "+
+				"intercepting the connection. Retry the operation; if this persists, investigate the network path "+
+				"and TLS configuration between Terraform and Command.",
+			operation,
+		),
+	)
+	return diags
+}
+
 // hasAPIErrors processes errors from the API response; returns true if terminal.
 func hasAPIErrors(
 	ctx context.Context,

@@ -67,6 +67,7 @@ DEMOS := \
 	store_type_demo \
 	store_container_demo \
 	certificate_collection_demo \
+	enrollment_pattern_demo \
 	certificate_pfx_demo \
 	certificate_csr_demo \
 	k8s_orchestrator_demo \

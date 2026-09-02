@@ -153,6 +153,13 @@ func (d dataSourceCertificateCollection) Read(
 		)
 		return
 	}
+	if resp == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error reading certificate collection.",
+			"reading certificate collection",
+		)...)
+		return
+	}
 
 	result := CertificateCollectionDataSourceState{}
 
@@ -211,6 +218,32 @@ func (d dataSourceCertificateCollection) Read(
 	}
 
 	tflog.Debug(ctx, "Completed mapping certificate collection data")
+
+	// When both id and name are declared, verify they resolve to the same
+	// collection instead of silently letting id win. Without this check, a
+	// stale/mistaken `name` in config that doesn't match the collection
+	// actually resolved by `id` would be silently overwritten by the
+	// server's real name with no diagnostic at all -- a silently-wrong-data
+	// risk, not just a cosmetic mismatch, since callers may reasonably
+	// assume the configured name was validated (PR #210 full-review finding
+	// FIX-9).
+	if idSet && nameSet {
+		resolvedName := ""
+		if !result.Name.Null {
+			resolvedName = result.Name.Value
+		}
+		if resolvedName != state.Name.Value {
+			response.Diagnostics.AddError(
+				"Certificate collection id/name mismatch",
+				fmt.Sprintf(
+					"The certificate collection resolved by id %d has name %q, which does not match the configured "+
+						"name %q. Remove one of `id`/`name`, or correct the mismatch.",
+					state.ID.Value, resolvedName, state.Name.Value,
+				),
+			)
+			return
+		}
+	}
 
 	diags = response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)

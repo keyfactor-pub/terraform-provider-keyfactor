@@ -8,6 +8,7 @@ import (
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -42,10 +43,9 @@ func (r resourceCertificateCollectionType) GetSchema(_ context.Context) (tfsdk.S
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"query": {
-				Type:          types.StringType,
-				Optional:      true,
-				Description:   "The query expression that defines which certificates belong to this collection. Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Optional:    true,
+				Description: "The query expression that defines which certificates belong to this collection. This is the resource's defining attribute and must always be declared -- it must never be removed from configuration once set (see ValidateConfig). Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form.",
 			},
 			"content": {
 				Type:          types.StringType,
@@ -216,6 +216,74 @@ func collectionGetResponseToState(resp *v1.CSSCMSDataModelModelsCertificateQuery
 }
 
 // ---------------------------------------------------------------------------
+// Config validation
+// ---------------------------------------------------------------------------
+
+// ValidateConfig requires query to always be declared and non-empty.
+//
+// query is this resource's defining attribute -- a certificate collection
+// IS its query -- but Command's GetById (CSSCMSDataModelModelsCertificate-
+// Query, used by Read/ImportState) never returns it (see
+// KeyfactorCertificateCollectionState's doc comment), so the provider has no
+// server-side source of truth to fall back on if a user removes `query` from
+// configuration on a later apply. Before this check existed, doing so
+// produced a genuine "provider produced inconsistent result after apply":
+// query is Optional (not Computed), so an undeclared query plans to a
+// definite Null, but Update() -- unable to tell "leave unchanged" apart from
+// "clear" without a config-declared value -- fell back to resending the
+// prior state's non-null value, leaving a non-null Query in the final state
+// that disagreed with the null the plan promised (PR #210 full-review
+// finding FIX-2). Rejecting the omission outright at config-validation time,
+// before plan/apply ever runs, is simpler and safer than trying to support
+// "removing query clears the collection's filter" -- which Command's API
+// shape doesn't actually support anyway.
+func (r resourceCertificateCollection) ValidateConfig(
+	ctx context.Context,
+	request tfsdk.ValidateResourceConfigRequest,
+	response *tfsdk.ValidateResourceConfigResponse,
+) {
+	LogFunctionEntry(ctx, "resourceCertificateCollection.ValidateConfig")
+
+	var config KeyfactorCertificateCollectionState
+	diags := request.Config.Get(ctx, &config)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	response.Diagnostics.Append(validateCertificateCollectionConfigConstraints(config)...)
+
+	LogFunctionExit(ctx, "resourceCertificateCollection.ValidateConfig")
+}
+
+// validateCertificateCollectionConfigConstraints enforces that query is
+// always declared with a non-empty value -- see ValidateConfig's doc
+// comment for the full rationale (PR #210 full-review finding FIX-2). A
+// null/unknown query is never flagged as an error when Unknown: ValidateConfig
+// only ever sees Config, which cannot resolve a value that isn't known yet
+// (e.g. a value chained from another not-yet-applied resource). Factored
+// out of ValidateConfig so it can be unit tested directly against a
+// KeyfactorCertificateCollectionState value, matching
+// validateEnrollmentPatternConfigConstraints's pattern in resource_keyfactor_
+// enrollment_pattern.go.
+func validateCertificateCollectionConfigConstraints(cfg KeyfactorCertificateCollectionState) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	if cfg.Query.Null || (!cfg.Query.Unknown && cfg.Query.Value == "") {
+		diags.AddAttributeError(
+			path.Root("query"),
+			"Missing certificate collection query",
+			"query defines which certificates belong to this collection and must always be declared with a "+
+				"non-empty value. Keyfactor Command's GetById API does not return the query, so the provider "+
+				"cannot distinguish \"leave unchanged\" from \"clear\" if it is later removed from configuration -- "+
+				"removing query from configuration (or setting it to an empty string) is not supported.",
+		)
+	}
+
+	return diags
+}
+
+// ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
 
@@ -268,9 +336,27 @@ func (r resourceCertificateCollection) Create(
 		)
 		return
 	}
+	if resp == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error creating certificate collection.",
+			fmt.Sprintf("creating certificate collection %q", plan.Name.Value),
+		)...)
+		return
+	}
 
 	newState := collectionResponseToState(resp)
 	tflog.Debug(ctx, fmt.Sprintf("Created certificate collection ID %d", newState.ID.Value))
+	// Field-level audit logging for the collection's defining (and only
+	// access-control-relevant) field on this initial create -- mirrors the
+	// Update() field-change logging below (PR #210 full-review finding
+	// FIX-8). Debug level, not Info: query can embed sensitive subject
+	// DN/serial/owner filter content, matching the level Update()'s
+	// query-change logging uses (see FIX-7).
+	tflog.Debug(
+		ctx, fmt.Sprintf(
+			"Certificate collection %d field set on create: query: %s", newState.ID.Value, tfStringLogString(newState.Query),
+		),
+	)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -312,6 +398,13 @@ func (r resourceCertificateCollection) Read(
 			"Error reading certificate collection.",
 			fmt.Sprintf("Could not read certificate collection %d: %s. Details: %s", state.ID.Value, err.Error(), body),
 		)
+		return
+	}
+	if resp == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error reading certificate collection.",
+			fmt.Sprintf("reading certificate collection %d", state.ID.Value),
+		)...)
 		return
 	}
 
@@ -391,6 +484,13 @@ func (r resourceCertificateCollection) Update(
 		)
 		return
 	}
+	if current == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error reading certificate collection before update.",
+			fmt.Sprintf("reading certificate collection %d to preserve its current field values", plan.ID.Value),
+		)...)
+		return
+	}
 	currentState := collectionGetResponseToState(current)
 
 	updateBody := v1.NewCertificateCollectionsCertificateCollectionUpdateRequest(int32(plan.ID.Value), plan.Name.Value)
@@ -419,6 +519,23 @@ func (r resourceCertificateCollection) Update(
 			updateBody.SetQueryNil()
 		} else {
 			updateBody.SetQuery(plan.Query.Value)
+		}
+		// Audit-log old (prior state) vs new (declared plan) value for this
+		// policy-relevant field -- PR #210 full-review finding F5. Only
+		// logged in this branch: the else-if branch below falls back to the
+		// unmodified prior state value, i.e. no actual change is being sent.
+		// Debug level, not Info: unlike enrollment_pattern.go's role-name/
+		// CA-id/policy-enum diff logging, query is a free-text search
+		// expression that can embed sensitive subject DN/serial/owner
+		// content -- Info is a broader-capture level than warranted for
+		// that content (PR #210 full-review finding FIX-7).
+		if tfStringLogString(state.Query) != tfStringLogString(plan.Query) {
+			tflog.Debug(
+				ctx, fmt.Sprintf(
+					"Certificate collection %d field change on update: query: %s -> %s",
+					plan.ID.Value, tfStringLogString(state.Query), tfStringLogString(plan.Query),
+				),
+			)
 		}
 	} else if !state.Query.Null {
 		updateBody.SetQuery(state.Query.Value)
@@ -459,6 +576,13 @@ func (r resourceCertificateCollection) Update(
 			"Error updating certificate collection.",
 			fmt.Sprintf("Could not update certificate collection %d: %s. Details: %s", plan.ID.Value, err.Error(), respBody),
 		)
+		return
+	}
+	if resp == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error updating certificate collection.",
+			fmt.Sprintf("updating certificate collection %d", plan.ID.Value),
+		)...)
 		return
 	}
 
@@ -555,6 +679,13 @@ func (r resourceCertificateCollection) ImportState(
 			"Error importing certificate collection.",
 			fmt.Sprintf("Could not read certificate collection %d: %s. Details: %s", id, err.Error(), body),
 		)
+		return
+	}
+	if resp == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Error importing certificate collection.",
+			fmt.Sprintf("reading certificate collection %d to import", id),
+		)...)
 		return
 	}
 

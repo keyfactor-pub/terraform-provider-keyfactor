@@ -171,3 +171,4 @@ sandbox/
 # `go build ./tools/...` without -o
 /build/
 /docspreview
+mistakes.md

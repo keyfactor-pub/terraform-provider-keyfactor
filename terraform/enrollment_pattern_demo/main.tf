@@ -38,11 +38,17 @@ resource "keyfactor_enrollment_pattern" "demo" {
   template_default         = false
   restrict_cas             = false
 
-  # Keyfactor Command requires a Policies object on every create/update;
-  # an empty object is enough to inherit system-wide policy defaults. This
-  # is a SingleNestedAttributes (object-typed argument), not an HCL block --
-  # `policies {}` fails validation with "Unsupported block type".
-  policies = {}
+  # policies is intentionally left undeclared: Keyfactor Command requires a
+  # Policies object on every create/update, but the provider always sends
+  # one internally (see buildEnrollmentPatternPolicyRequest in
+  # resource_keyfactor_enrollment_pattern.go) regardless of whether this
+  # attribute is set, so server-side defaults apply automatically. Declaring
+  # `policies = {}` here used to be required to avoid a "Value Conversion
+  # Error: unhandled unknown value" crash (primary_key_algorithms/
+  # alternative_key_algorithms are Go slices, which cannot hold an Unknown
+  # value at Plan.Get() time) -- that crash is now avoided by simply never
+  # declaring policies at all, so its Computed subfields are never put in
+  # the "known parent object, unknown children" state that triggered it.
 }
 
 # ---------------------------------------------------------------------------

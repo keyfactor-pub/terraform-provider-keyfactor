@@ -167,7 +167,24 @@ For full information on enrollment patterns view the [product documentation](htt
 				Description:   "The ID of the certificate template this enrollment pattern is associated with. Immutable -- changing this value forces recreation of the enrollment pattern.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
+			// template/associated_roles/certificate_authorities are read-only
+			// (server-derived, nothing for a user to set), but MUST declare
+			// Optional in addition to Computed, matching every other nested
+			// attribute in this schema (policies, regexes, metadata_fields,
+			// defaults, enrollment_fields all already do). Reproduced live
+			// against kfclab: a Computed-only (no Optional) nested attribute
+			// with no prior Terraform state (first create) plans to an
+			// explicit Null -- not "(known after apply)" -- so when Create()'s
+			// real API response later populates it with actual data, Terraform
+			// rejects the apply with "Provider produced inconsistent result
+			// after apply: .template: was null, but now <object>" (same for
+			// .associated_roles). Adding Optional makes this attribute plan
+			// exactly like every sibling Optional+Computed attribute here:
+			// "(known after apply)" pre-apply, resolved to the real value
+			// post-apply -- no user-facing behavior changes since nothing
+			// about Create()/Update() ever reads these fields from the plan.
 			"template": {
+				Optional:      true,
 				Computed:      true,
 				Description:   "The certificate template associated with the enrollment pattern (read-only, expanded from template_id).",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
@@ -205,7 +222,10 @@ For full information on enrollment patterns view the [product documentation](htt
 				Description:   "Names of the security roles associated with the enrollment pattern. Only users holding one of these roles will be able to use the enrollment pattern if use_ad_permissions is false. Write-only: not returned by the server in this shape (see associated_roles); the provider preserves the last-known value from state on refresh.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
+			// Optional required alongside Computed -- see the comment on
+			// "template" above.
 			"associated_roles": {
+				Optional:      true,
 				Computed:      true,
 				Description:   "The security roles associated with the enrollment pattern (read-only, expanded from associated_role_names).",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
@@ -224,7 +244,10 @@ For full information on enrollment patterns view the [product documentation](htt
 				Description:   "IDs of the certificate authorities to which the enrollment pattern is restricted, if applicable (see restrict_cas). Write-only: not returned by the server in this shape (see certificate_authorities); the provider preserves the last-known value from state on refresh.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
+			// Optional required alongside Computed -- see the comment on
+			// "template" above.
 			"certificate_authorities": {
+				Optional:      true,
 				Computed:      true,
 				Description:   "The certificate authorities to which the enrollment pattern is restricted (read-only, expanded from certificate_authority_ids).",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
@@ -688,6 +711,33 @@ func enrollmentPatternPolicyResponseToState(p *v1.EnrollmentPatternsEnrollmentPa
 	return pol
 }
 
+// resolveUnknownListToNull resolves an Unknown types.List to Null, leaving
+// every other value (Null or known) untouched.
+//
+// Used for write-only list attributes (associated_role_names,
+// certificate_authority_ids -- see KeyfactorEnrollmentPatternState's doc
+// comment) whose Create-time plan value can legitimately still be Unknown
+// when left undeclared in config: useStateOrNullModifier only carries a
+// value forward from PRIOR state, and on Create there is no prior state at
+// all (fwserver's StateGetAttributeValue returns a Go nil, not a typed Null,
+// for every attribute when the whole state is nil), so the modifier's
+// "nothing to carry forward" guard leaves the plan exactly as the
+// framework's default Computed handling set it: Unknown. For most
+// Optional+Computed fields that's fine -- Create()'s API response fills in
+// the real value afterward. But these two fields are write-only: Command
+// never echoes them back in any response, so there is no source of truth to
+// resolve the Unknown plan value to except Null. Passing Unknown straight
+// into response.State.Set makes the framework reject the whole Create with
+// "Value Conversion Error: unhandled unknown value" -- reproduced live
+// against kfclab via terraform/enrollment_pattern_demo (config that leaves
+// certificate_authority_ids undeclared).
+func resolveUnknownListToNull(l types.List) types.List {
+	if l.Unknown {
+		return types.List{Null: true, ElemType: l.ElemType}
+	}
+	return l
+}
+
 // enrollmentPatternResponseToState maps the shared Create/Update/GetById
 // response shape (EnrollmentPatternsEnrollmentPatternResponse) onto Terraform
 // state. Callers are responsible for re-applying the write-only fields
@@ -1054,8 +1104,34 @@ func (r resourceEnrollmentPattern) Create(
 ) {
 	LogFunctionEntry(ctx, "resourceEnrollmentPattern.Create")
 
+	// Decode from Config, not Plan. On Create there is no prior resource
+	// state at all, so every Computed-only/Optional+Computed attribute this
+	// schema derives entirely from the server response (template,
+	// associated_roles, certificate_authorities, and Policies' nested
+	// primary_key_algorithms/alternative_key_algorithms) is planned Unknown
+	// by the framework's default Computed handling -- correctly so, since
+	// Create()'s response below is what actually fills them in. But several
+	// of these fields are backed by raw Go slice/struct types in
+	// KeyfactorEnrollmentPatternState (not attr.Value types like
+	// types.List), which cannot represent an Unknown tftypes value at all:
+	// decoding request.Plan (which legitimately contains Unknown for them)
+	// through the framework's reflection-based Get panics^Wfails with
+	// "Value Conversion Error: unhandled unknown value" before this
+	// function's own logic ever runs -- reproduced live against kfclab
+	// (terraform/enrollment_pattern_demo, "policies = {}" left with its
+	// primary_key_algorithms/alternative_key_algorithms sub-fields
+	// undeclared). Config never contains this problem for these attributes:
+	// they are Computed-only or Optional+Computed-and-undeclared, so Config
+	// -- which reflects only what the user actually wrote in HCL, never the
+	// framework's own "known after apply" placeholders -- always resolves
+	// them to Null, which every one of these raw Go types can decode fine.
+	// (Config CAN still be Unknown for a genuinely Optional attribute whose
+	// value chains from another not-yet-applied resource; that pre-existing,
+	// unrelated edge case is unchanged by this fix.) Update() is unaffected:
+	// it always has prior state, so useStateOrNullModifier already carries
+	// these fields forward as a known value instead of leaving them Unknown.
 	var plan KeyfactorEnrollmentPatternState
-	diags := request.Plan.Get(ctx, &plan)
+	diags := request.Config.Get(ctx, &plan)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -1093,8 +1169,21 @@ func (r resourceEnrollmentPattern) Create(
 	}
 
 	newState := enrollmentPatternResponseToState(resp)
-	newState.AssociatedRoleNames = plan.AssociatedRoleNames
-	newState.CertificateAuthorityIds = plan.CertificateAuthorityIds
+	// On Create there is no prior Terraform state at all, so
+	// useStateOrNullModifier's Computed handling (see
+	// resource_keyfactor_certificate_template.go) has nothing to carry
+	// forward and correctly leaves an undeclared associated_role_names /
+	// certificate_authority_ids Unknown in the plan -- that's the right
+	// behavior for Optional+Computed fields in general (it lets other
+	// resources fill the real value from the API response). But these two
+	// fields are write-only: Command never echoes them back, so there is
+	// no response-derived value either, and copying the still-Unknown plan
+	// value straight into final state below makes the framework reject the
+	// whole Create with "Value Conversion Error: unhandled unknown value".
+	// Resolve to Null explicitly -- the only value actually available when
+	// the field was never declared on first apply.
+	newState.AssociatedRoleNames = resolveUnknownListToNull(plan.AssociatedRoleNames)
+	newState.CertificateAuthorityIds = resolveUnknownListToNull(plan.CertificateAuthorityIds)
 	newState.ForceTemplateDefault = types.Bool{Null: true}
 
 	tflog.Debug(ctx, fmt.Sprintf("Created enrollment pattern ID %d", newState.ID.Value))
@@ -1343,7 +1432,18 @@ func (r resourceEnrollmentPattern) ImportState(
 	// state -- the next apply will need them re-declared in configuration if
 	// the user wants Terraform to manage them going forward (same caveat as
 	// certificate_collection's Query field on import).
+	//
+	// enrollmentPatternResponseToState never touches these two fields, so
+	// without the explicit assignment below they are left at Go's zero
+	// value for types.List -- {Null: false, Unknown: false, ElemType: nil}.
+	// That is NOT a valid "Null" list: response.State.Set's encoder requires
+	// ElemType to be set even for a null value, and errors with "cannot
+	// convert List to tftypes.Value if ElemType field is not set" --
+	// reproduced live against kfclab (terraform/enrollment_pattern_demo's
+	// `terraform import`).
 	newState := enrollmentPatternResponseToState(resp)
+	newState.AssociatedRoleNames = types.List{Null: true, ElemType: types.StringType}
+	newState.CertificateAuthorityIds = types.List{Null: true, ElemType: types.Int64Type}
 	newState.ForceTemplateDefault = types.Bool{Null: true}
 
 	diags := response.State.Set(ctx, &newState)

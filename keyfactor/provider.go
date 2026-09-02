@@ -871,6 +871,7 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 		"keyfactor_certificate_template":                  resourceCertificateTemplateType{},
 		"keyfactor_certificate_store_type":                resourceCertStoreTypeDefType{},
 		"keyfactor_certificate_collection":                resourceCertificateCollectionType{},
+		"keyfactor_enrollment_pattern":                    resourceEnrollmentPatternType{},
 	}, nil
 }
 

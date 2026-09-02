@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
-	kfsdk "github.com/Keyfactor/keyfactor-go-client-sdk/v24"
+	kfsdk "github.com/Keyfactor/keyfactor-go-client-sdk/v25"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )

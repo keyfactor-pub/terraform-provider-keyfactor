@@ -34,7 +34,7 @@ import (
 	circlEd448 "github.com/cloudflare/circl/sign/ed448"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
-	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v25"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"

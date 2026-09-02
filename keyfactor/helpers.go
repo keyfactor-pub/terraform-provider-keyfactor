@@ -37,9 +37,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
-	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
-	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v2"
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v25"
+	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
+	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v2"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -2091,16 +2091,18 @@ func formatCertificateSubjectDN(subject *api.CertificateSubject) string {
 	return strings.Join(parts, ",")
 }
 
-// sdkCertToLegacyCertificateResponse adapts a v24 SDK
-// CertificatesCertificateRetrievalResponse (from the paginated GET
-// /Certificates request built by searchCertificatesForOrphanRecovery) into
-// the legacy api.GetCertificateResponse shape findOrphanedCertificateMatch's
-// discriminators already operate on. Carries forward every field they read:
-// Id, IssuedCN, IssuedDN, ImportDate, TemplateId, TemplateName,
-// CertificateAuthorityName, RequesterName, SubjectAltNameElements, plus
-// Thumbprint/SerialNumber/IssuerDN/CertRequestId (used when building the
-// adopted EnrollResponseV2 after a match is found).
-func sdkCertToLegacyCertificateResponse(c kfv1.CertificatesCertificateRetrievalResponse) api.GetCertificateResponse {
+// sdkCertToLegacyCertificateResponse adapts a v25 SDK
+// CertificatesCertificateRetrievalBulkResponse (the per-item shape returned
+// by the paginated GET /Certificates list endpoint that
+// searchCertificatesForOrphanRecovery calls -- distinct from
+// CertificatesCertificateRetrievalResponse, the single-certificate-by-ID GET
+// shape) into the legacy api.GetCertificateResponse shape
+// findOrphanedCertificateMatch's discriminators already operate on. Carries
+// forward every field they read: Id, IssuedCN, IssuedDN, ImportDate,
+// TemplateId, TemplateName, CertificateAuthorityName, RequesterName,
+// SubjectAltNameElements, plus Thumbprint/SerialNumber/IssuerDN/CertRequestId
+// (used when building the adopted EnrollResponseV2 after a match is found).
+func sdkCertToLegacyCertificateResponse(c kfv1.CertificatesCertificateRetrievalBulkResponse) api.GetCertificateResponse {
 	var sans []api.SubjectAltNameElements
 	for _, el := range c.GetSubjectAltNameElements() {
 		sans = append(sans, api.SubjectAltNameElements{

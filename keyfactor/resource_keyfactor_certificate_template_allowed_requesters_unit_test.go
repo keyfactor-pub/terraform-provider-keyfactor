@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
-	sdkclient "github.com/Keyfactor/keyfactor-go-client-sdk/v24"
-	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	sdkclient "github.com/Keyfactor/keyfactor-go-client-sdk/v25"
+	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -47,7 +47,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // templateUpdateMockAuthConfig implements the AuthConfig interface used by
-// the keyfactor-go-client-sdk/v24 API client, pointing it at a local httptest
+// the keyfactor-go-client-sdk/v25 API client, pointing it at a local httptest
 // server instead of a real Command instance.
 type templateUpdateMockAuthConfig struct {
 	server *httptest.Server

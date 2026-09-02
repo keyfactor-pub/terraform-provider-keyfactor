@@ -3,7 +3,7 @@ package keyfactor
 import (
 	"testing"
 
-	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 )
 
 // TestUnitPAMProviderTypeResponseToState_NilParameterFields verifies that when the server omits

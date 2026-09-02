@@ -216,7 +216,7 @@ Once created for the enrollment pattern, these values are shown in Keyfactor Com
 			},
 		},
 		MarkdownDescription: `
-Reads an existing certificate from Keyfactor Command using the "/EnrollmentPatterns" API.
+Reads an existing enrollment pattern from Keyfactor Command using the "/EnrollmentPatterns" API.
 
 ~> **Note:** The enrollment pattern can be identified by its name or internal ID.
 

@@ -3,7 +3,7 @@
 page_title: "keyfactor_enrollment_pattern Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  Reads an existing certificate from Keyfactor Command using the "/EnrollmentPatterns" API.
+  Reads an existing enrollment pattern from Keyfactor Command using the "/EnrollmentPatterns" API.
   ~> Note: The enrollment pattern can be identified by its name or internal ID.
   Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
   ~> Important: Enrollment Patterns are only available in Keyfactor Command v25.0+
@@ -12,7 +12,7 @@ description: |-
 
 # keyfactor_enrollment_pattern (Data Source)
 
-Reads an existing certificate from Keyfactor Command using the "/EnrollmentPatterns" API.
+Reads an existing enrollment pattern from Keyfactor Command using the "/EnrollmentPatterns" API.
 
 ~> **Note:** The enrollment pattern can be identified by its name or internal ID.
 

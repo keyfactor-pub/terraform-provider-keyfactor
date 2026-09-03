@@ -1,6 +1,7 @@
 package keyfactor
 
 import (
+	"context"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -21,6 +22,15 @@ import (
 // final state: the resent non-null value). Requiring query to always be
 // declared and non-empty at config-validation time closes that gap before
 // plan/apply ever runs.
+//
+// full-review finding F10: query is now schema'd as Required (not
+// Optional). ValidateConfig/validateCertificateCollectionConfigConstraints
+// is retained only for the non-empty check the schema itself cannot
+// express ("must be declared" is now Required's job, not a runtime
+// check's) -- the "undeclared (null) query" sub-test below is kept as a
+// defensive/documentation case even though Required now makes it
+// unreachable through normal `terraform apply` (Core rejects an omitted
+// Required attribute before ValidateConfig ever runs).
 // ---------------------------------------------------------------------------
 
 func TestUnitValidateCertificateCollectionConfigConstraints(t *testing.T) {
@@ -69,4 +79,35 @@ func TestUnitValidateCertificateCollectionConfigConstraints(t *testing.T) {
 			t.Errorf("diags = %+v, want no diagnostics when query is Unknown", diags)
 		}
 	})
+}
+
+// TestUnitCertificateCollectionQueryIsRequired is the schema-level
+// regression test for full-review finding F10: query is now Required
+// (not Optional), so the schema itself -- not just a runtime
+// ValidateConfig check -- rejects an omitted query, and `terraform
+// validate` catches it before ValidateConfig ever runs.
+func TestUnitCertificateCollectionQueryIsRequired(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	schema, diags := resourceCertificateCollectionType{}.GetSchema(ctx)
+	if diags.HasError() {
+		t.Fatalf("test setup: GetSchema returned diagnostics: %+v", diags)
+	}
+
+	attr, ok := schema.Attributes["query"]
+	if !ok {
+		t.Fatal("schema has no query attribute")
+	}
+	if !attr.Required {
+		t.Error(
+			"query: expected Required=true -- F10 makes the schema itself express \"must always be " +
+				"declared\" instead of relying solely on a runtime ValidateConfig check",
+		)
+	}
+	if attr.Optional {
+		t.Error("query: expected Optional=false now that it is Required")
+	}
+	if attr.Computed {
+		t.Error("query: expected Computed=false -- it remains write-only, not server-derived")
+	}
 }

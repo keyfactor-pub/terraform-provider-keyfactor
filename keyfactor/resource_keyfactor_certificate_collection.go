@@ -43,9 +43,24 @@ func (r resourceCertificateCollectionType) GetSchema(_ context.Context) (tfsdk.S
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"query": {
-				Type:        types.StringType,
-				Optional:    true,
-				Description: "The query expression that defines which certificates belong to this collection. This is the resource's defining attribute and must always be declared -- it must never be removed from configuration once set (see ValidateConfig). Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form.",
+				Type: types.StringType,
+				// Required (full-review finding F10; was previously
+				// Optional with a hand-rolled ValidateConfig check for
+				// "must always be declared"): the schema itself can
+				// already express "always declared," which is strictly
+				// more correct than a custom runtime check for the same
+				// thing -- Required also makes `terraform validate` catch
+				// an omitted query before ValidateConfig ever runs, and
+				// removes any ambiguity about whether an undeclared query
+				// is legal. Note the import asymmetry this doesn't change:
+				// `terraform import` still populates state without query
+				// ever being declared (ValidateConfig/schema validation
+				// doesn't run against import), so the NEXT plan after an
+				// import will show query transitioning from absent to a
+				// required value -- expected, and no different from any
+				// other Required attribute's import behavior.
+				Required:    true,
+				Description: "The query expression that defines which certificates belong to this collection. This is the resource's defining attribute and must always be declared -- it must never be removed from configuration once set. Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form. Note: a certificate collection can only be imported and managed by Terraform if it has a non-empty query; genuinely query-less collections are out of scope for this resource.",
 			},
 			"content": {
 				Type:        types.StringType,
@@ -274,14 +289,24 @@ func (r resourceCertificateCollection) ValidateConfig(
 	LogFunctionExit(ctx, "resourceCertificateCollection.ValidateConfig")
 }
 
-// validateCertificateCollectionConfigConstraints enforces that query is
-// always declared with a non-empty value -- see ValidateConfig's doc
-// comment for the full rationale (PR #210 full-review finding FIX-2). A
-// null/unknown query is never flagged as an error when Unknown: ValidateConfig
-// only ever sees Config, which cannot resolve a value that isn't known yet
-// (e.g. a value chained from another not-yet-applied resource). Factored
-// out of ValidateConfig so it can be unit tested directly against a
-// KeyfactorCertificateCollectionState value, matching
+// validateCertificateCollectionConfigConstraints enforces that query, once
+// declared, is non-empty -- the one part of "query must always be declared
+// with a non-empty value" (see ValidateConfig's doc comment, PR #210
+// full-review finding FIX-2) the schema itself cannot express.
+// query.Required = true (full-review finding F10) already guarantees query
+// is always declared -- HCL/Core rejects an omitted Required attribute
+// before ValidateConfig ever runs -- but Required says nothing about the
+// declared value's CONTENT, so `query = ""` still reaches here and must
+// still be rejected: Keyfactor Command's GetById API does not return the
+// query, so the provider cannot distinguish "leave unchanged" from "clear"
+// if it were ever allowed to go empty. A null/unknown query is never
+// flagged as an error when Unknown: ValidateConfig only ever sees Config,
+// which cannot resolve a value that isn't known yet (e.g. a value chained
+// from another not-yet-applied resource); Null is likewise never flagged,
+// since it can no longer occur once query.Required = true is enforced by
+// Core itself, but the check is left defensive rather than assuming that.
+// Factored out of ValidateConfig so it can be unit tested directly against
+// a KeyfactorCertificateCollectionState value, matching
 // validateEnrollmentPatternConfigConstraints's pattern in resource_keyfactor_
 // enrollment_pattern.go.
 func validateCertificateCollectionConfigConstraints(cfg KeyfactorCertificateCollectionState) diag.Diagnostics {
@@ -324,9 +349,13 @@ func (r resourceCertificateCollection) Create(
 	if !plan.Description.Null && !plan.Description.Unknown {
 		body.SetDescription(plan.Description.Value)
 	}
-	if !plan.Query.Null && !plan.Query.Unknown {
-		body.SetQuery(plan.Query.Value)
-	}
+	// query is Required (full-review finding F10): Core guarantees it is
+	// always declared and, by the time Create() actually executes (as
+	// opposed to plan time), always resolved to a concrete value -- the
+	// previous `!plan.Query.Null && !plan.Query.Unknown` guard was
+	// unreachable dead code, since Null could never occur for a Required
+	// attribute in the first place.
+	body.SetQuery(plan.Query.Value)
 	if !plan.DuplicationField.Null && !plan.DuplicationField.Unknown {
 		body.SetDuplicationField(v1.CSSCMSCoreEnumsDuplicateSubjectType(int32(plan.DuplicationField.Value)))
 	}
@@ -529,34 +558,29 @@ func (r resourceCertificateCollection) Update(
 	// Query: write-only from the server's Read/GetById perspective (see
 	// collectionGetResponseToState) -- there is no fresh-GET fallback
 	// available for "the current server-side value" the way there is for
-	// every other field here, because GetById never returns it. Fall back to
-	// this resource's own prior Terraform state instead: undeclared means
-	// "leave the query unchanged," not "clear it."
-	if !config.Query.Null && !config.Query.Unknown {
-		if plan.Query.Null {
-			updateBody.SetQueryNil()
-		} else {
-			updateBody.SetQuery(plan.Query.Value)
-		}
-		// Audit-log old (prior state) vs new (declared plan) value for this
-		// policy-relevant field -- PR #210 full-review finding F5. Only
-		// logged in this branch: the else-if branch below falls back to the
-		// unmodified prior state value, i.e. no actual change is being sent.
-		// Debug level, not Info: unlike enrollment_pattern.go's role-name/
-		// CA-id/policy-enum diff logging, query is a free-text search
-		// expression that can embed sensitive subject DN/serial/owner
-		// content -- Info is a broader-capture level than warranted for
-		// that content (PR #210 full-review finding FIX-7).
-		if tfStringLogString(state.Query) != tfStringLogString(plan.Query) {
-			tflog.Debug(
-				ctx, fmt.Sprintf(
-					"Certificate collection %d field change on update: query: %s -> %s",
-					plan.ID.Value, tfStringLogString(state.Query), tfStringLogString(plan.Query),
-				),
-			)
-		}
-	} else if !state.Query.Null {
-		updateBody.SetQuery(state.Query.Value)
+	// every other field here, because GetById never returns it. query is
+	// now Required (full-review finding F10), so config.Query/plan.Query
+	// are always declared and non-null by the time an apply actually
+	// executes -- the previous "config undeclared, fall back to prior
+	// Terraform state" branch (and the SetQueryNil() call, which could
+	// only ever fire for a null plan.Query that Required now makes
+	// structurally impossible) were dead code once that schema change
+	// landed.
+	updateBody.SetQuery(plan.Query.Value)
+	// Audit-log old (prior state) vs new (declared plan) value for this
+	// policy-relevant field -- PR #210 full-review finding F5. Debug
+	// level, not Info: unlike enrollment_pattern.go's role-name/CA-id/
+	// policy-enum diff logging, query is a free-text search expression
+	// that can embed sensitive subject DN/serial/owner content -- Info is
+	// a broader-capture level than warranted for that content (PR #210
+	// full-review finding FIX-7).
+	if tfStringLogString(state.Query) != tfStringLogString(plan.Query) {
+		tflog.Debug(
+			ctx, fmt.Sprintf(
+				"Certificate collection %d field change on update: query: %s -> %s",
+				plan.ID.Value, tfStringLogString(state.Query), tfStringLogString(plan.Query),
+			),
+		)
 	}
 
 	// DuplicationField: Optional+Computed, plain enum pointer (no explicit-

@@ -48,10 +48,28 @@ func (r resourceCertificateCollectionType) GetSchema(_ context.Context) (tfsdk.S
 				Description: "The query expression that defines which certificates belong to this collection. This is the resource's defining attribute and must always be declared -- it must never be removed from configuration once set (see ValidateConfig). Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form.",
 			},
 			"content": {
-				Type:          types.StringType,
-				Computed:      true,
-				Description:   "The server-normalized form of the collection query.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "The server-normalized form of the collection query.",
+				// followsDriverModifier (full-review finding F3; type
+				// defined in resource_keyfactor_enrollment_pattern.go,
+				// shared across resources), not tfsdk.UseStateForUnknown():
+				// content must NOT be pinned to its stale, prior
+				// server-normalized form when query itself is changing
+				// this apply, since Update()'s response carries the
+				// NEWLY-normalized content for the new query -- pinning
+				// the old value causes "Provider produced inconsistent
+				// result after apply" on this resource's primary update
+				// path (editing query). estimated_cert_count/last_estimated
+				// are unaffected -- they have no plan modifier at all, so
+				// they are already always left Unknown and are not part
+				// of this fix.
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					followsDriverModifier[types.String]{
+						driverPath:  path.Root("query"),
+						description: "Uses the prior state value unless query is changing this apply, in which case this attribute is left unknown so it can be recomputed from the server's response.",
+					},
+				},
 			},
 			"duplication_field": {
 				Type:          types.Int64Type,

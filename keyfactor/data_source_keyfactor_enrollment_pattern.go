@@ -3,7 +3,6 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -32,57 +31,73 @@ func allowedEnrollmentTypesPtrToTfInt64(v *int) types.Int64 {
 	return types.Int64{Value: int64(*v), Null: isNullId(*v)}
 }
 
-// enrollmentPatternMatchesIdentifier decides, for a single candidate
-// pattern, whether it matches the user-supplied `identifier` attribute
-// (documented as accepting either the pattern's name or its internal ID).
-// The previous implementation OR'd a name-equality check with an ID-equality
-// check with no priority between them, so a "first match wins" walk over a
-// server-ordered list could silently resolve to the wrong pattern -- e.g.
-// pattern A (ID=2, Name="5") and pattern B (ID=5, Name="Default") both
-// exist; `identifier = "5"` intends to look up pattern B by ID, but matches
-// pattern A's name first if Command returns it earlier in the list.
+// enrollmentPatternCandidate is the minimal (ID, Name) shape
+// enrollmentPatternResolveIdentifier needs from each pattern returned by
+// GetEnrollmentPatterns, factored out so the resolver can be unit tested
+// without depending on the full legacy v3 API response type.
+type enrollmentPatternCandidate struct {
+	ID   int
+	Name string
+}
+
+// enrollmentPatternResolveIdentifier resolves the user-supplied `identifier`
+// attribute (documented as accepting either the pattern's name or its
+// internal ID) against every candidate pattern at once, using name-or-ID
+// semantics (full-review finding F6, decision approved by user):
 //
-// This enforces a strict, documented priority instead: if identifier parses
-// as an integer, match ONLY on ID; otherwise match ONLY on name. That
-// removes the ambiguity for a single input attribute (unlike certificate_
-// collection's id+name data source, which has two separate input attributes
-// and needs its own cross-check machinery for a different ambiguity shape).
-// See PR #210 full-review round 2 finding FIX-F.
-func enrollmentPatternMatchesIdentifier(identifier string, id int, name string) bool {
-	if isID, asID := enrollmentPatternIdentifierMode(identifier); isID {
-		return id == asID
+//   - An exact NAME match wins deterministically.
+//   - A canonical ID-string match (fmt.Sprint(id) == identifier) is the
+//     fallback -- deliberately NOT strconv.Atoi-based, so "007" never
+//     matches ID 7 (only the literal string "7" does).
+//   - If a genuine name match exists for one pattern AND a genuine
+//     canonical-ID match exists for a DIFFERENT pattern, that is
+//     ambiguous: return an error identifying both candidates rather than
+//     silently picking one.
+//
+// This replaces two earlier, narrower designs, in order:
+//  1. (pre-PR #210) a plain "name == identifier OR id == identifier" OR,
+//     with no priority between them, letting "first match wins" list
+//     order silently resolve to the wrong pattern when both a name match
+//     and a different ID match existed (PR #210 full-review finding
+//     FIX-F's bug).
+//  2. (PR #210 FIX-F) strconv.Atoi-gated ID-only-or-name-only priority:
+//     if identifier parses as an integer, match ONLY on ID, otherwise
+//     match ONLY on name. That over-corrected: a pattern literally named
+//     "2025" became unreachable (or worse, silently resolved to a
+//     DIFFERENT pattern whose ID happens to be 2025) purely because its
+//     name looks numeric, and "007" would resolve by parsed value to ID
+//     7 even though no pattern is literally named "007" is being asked
+//     for by ID at all.
+//
+// Returns the resolved candidate's index into candidates, or -1 with a
+// descriptive error if identifier matches no candidate or is ambiguous
+// between two different ones.
+func enrollmentPatternResolveIdentifier(identifier string, candidates []enrollmentPatternCandidate) (int, error) {
+	nameMatch := -1
+	idMatch := -1
+	for i, c := range candidates {
+		if nameMatch == -1 && c.Name == identifier {
+			nameMatch = i
+		}
+		if idMatch == -1 && fmt.Sprint(c.ID) == identifier {
+			idMatch = i
+		}
 	}
-	return name == identifier
-}
 
-// enrollmentPatternIdentifierMode reports which lookup mode
-// enrollmentPatternMatchesIdentifier uses for a given identifier -- true (with
-// the parsed value) if identifier parses as an integer and is therefore
-// matched by ID only, false if it is matched by name only. Factored out of
-// enrollmentPatternMatchesIdentifier so the Read() "not found" error message
-// can report which mode was actually used without re-implementing (and
-// risking drift from) the same strconv.Atoi check. See PR #210 full-review
-// round 3 finding FIX-H: previously the "not found" error unconditionally
-// said "name" even when identifier was a syntactically valid but
-// non-existent numeric ID, which is misleading for incident/access review.
-func enrollmentPatternIdentifierMode(identifier string) (isID bool, idVal int) {
-	if asID, err := strconv.Atoi(identifier); err == nil {
-		return true, asID
+	switch {
+	case nameMatch == -1 && idMatch == -1:
+		return -1, fmt.Errorf("could not find enrollment pattern with name or ID: %s", identifier)
+	case nameMatch != -1 && idMatch != -1 && nameMatch != idMatch:
+		return -1, fmt.Errorf(
+			"identifier %q is ambiguous: it matches pattern %q (ID %d) by name, and pattern %q (ID %d) by ID; "+
+				"rename one of them, or use the internal ID of the one you intend to look up",
+			identifier, candidates[nameMatch].Name, candidates[nameMatch].ID, candidates[idMatch].Name, candidates[idMatch].ID,
+		)
+	case nameMatch != -1:
+		return nameMatch, nil
+	default:
+		return idMatch, nil
 	}
-	return false, 0
-}
-
-// enrollmentPatternNotFoundLookupField returns the word ("ID" or "name")
-// describing which lookup mode enrollmentPatternMatchesIdentifier actually
-// used for identifier, for use in the Read() "not found" error message. Pure
-// function wrapping enrollmentPatternIdentifierMode so the error-message
-// wording can be unit tested directly without standing up a full data
-// source Read(). See PR #210 full-review round 3 finding FIX-H.
-func enrollmentPatternNotFoundLookupField(identifier string) string {
-	if isID, _ := enrollmentPatternIdentifierMode(identifier); isID {
-		return "ID"
-	}
-	return "name"
 }
 
 type dataSourceEnrollmentPatternType struct{}
@@ -93,7 +108,7 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 			"identifier": {
 				Type:        types.StringType,
 				Required:    true,
-				Description: "The name or internal ID (integer) of the enrollment pattern to look up. If this value parses as an integer, it is matched against the pattern ID only (never against a pattern name that happens to look like a number); otherwise it is matched against the pattern name only.",
+				Description: "The name or internal ID (integer) of the enrollment pattern to look up. An exact match on the pattern's name takes precedence; if no pattern's name matches, this value is matched against the pattern's internal ID as a canonical decimal string (so, e.g., \"007\" never matches ID 7). If it matches a different pattern by name than by ID, this is treated as an ambiguous identifier and returns an error rather than silently picking one.",
 			},
 			"id": {
 				Type:        types.Int64Type,
@@ -292,7 +307,7 @@ Once created for the enrollment pattern, these values are shown in Keyfactor Com
 		MarkdownDescription: `
 Reads an existing enrollment pattern from Keyfactor Command using the "/EnrollmentPatterns" API.
 
-~> **Note:** The enrollment pattern can be identified by its name or internal ID. If ` + "`identifier`" + ` parses as an integer, it is matched against the pattern ID only; otherwise it is matched against the pattern name only.
+~> **Note:** The enrollment pattern can be identified by its name or internal ID. An exact match on name takes precedence; if none matches, ` + "`identifier`" + ` is matched against the pattern's internal ID as a canonical decimal string (so ` + "`\"007\"`" + ` never matches ID 7). A value matching a different pattern by name than by ID is treated as ambiguous and returns an error.
 
 Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
 
@@ -347,13 +362,31 @@ func (r dataSourceEnrollmentPattern) Read(
 
 	ctx = tflog.SetField(ctx, "pattern_identifier", patternName)
 	tflog.Debug(ctx, "Searching for enrollment pattern by name or ID")
-	for _, pattern := range enrollmentPatterns {
+
+	// full-review finding F6: resolve identifier against ALL candidates up
+	// front, using name-or-ID semantics (see
+	// enrollmentPatternResolveIdentifier's doc comment) -- an exact name
+	// match wins deterministically; a canonical ID-string match
+	// (fmt.Sprint(id) == identifier, so "007" never matches ID 7) is the
+	// fallback; a genuine match on BOTH for two DIFFERENT patterns is an
+	// error, not a silent pick. This replaces the previous strict
+	// ID-only-or-name-only priority (PR #210 FIX-F), which made a pattern
+	// named e.g. "2025" unreachable (or worse, silently resolved to a
+	// different pattern with ID 2025) purely because its name happened to
+	// look numeric.
+	candidates := make([]enrollmentPatternCandidate, len(enrollmentPatterns))
+	for i, p := range enrollmentPatterns {
+		candidates[i] = enrollmentPatternCandidate{ID: p.ID, Name: p.Name}
+	}
+	matchedIdx, resolveErr := enrollmentPatternResolveIdentifier(patternName, candidates)
+	if resolveErr != nil {
+		response.Diagnostics.AddError("Enrollment pattern not found", resolveErr.Error())
+		return
+	}
+
+	for i, pattern := range enrollmentPatterns {
 		tflog.Debug(ctx, fmt.Sprintf("Checking enrollment pattern: ID=%d, Name=%q", pattern.ID, pattern.Name))
-		// Check if the current pattern matches the requested name or ID,
-		// per the strict priority documented on enrollmentPatternMatchesIdentifier
-		// (FIX-F): match on ID only when identifier parses as an integer,
-		// otherwise match on name only.
-		if enrollmentPatternMatchesIdentifier(patternName, pattern.ID, pattern.Name) {
+		if i == matchedIdx {
 			tflog.Info(ctx, fmt.Sprintf("Found enrollment pattern with name: %q", patternName))
 
 			// Map the enrollment pattern data to the result
@@ -682,9 +715,15 @@ func (r dataSourceEnrollmentPattern) Read(
 		}
 	}
 	if !found {
+		// Defensive only: enrollmentPatternResolveIdentifier already
+		// returned a descriptive "not found"/ambiguous error above (and
+		// this function returned before reaching here) for every case
+		// that function can detect. This should be unreachable in
+		// practice -- it would only trip if matchedIdx pointed outside
+		// enrollmentPatterns, which resolveErr == nil rules out.
 		response.Diagnostics.AddError(
 			"Enrollment pattern not found",
-			fmt.Sprintf("Could not find enrollment pattern with %s: %s", enrollmentPatternNotFoundLookupField(patternName), patternName),
+			fmt.Sprintf("Could not find enrollment pattern with identifier: %s", patternName),
 		)
 		return
 	}

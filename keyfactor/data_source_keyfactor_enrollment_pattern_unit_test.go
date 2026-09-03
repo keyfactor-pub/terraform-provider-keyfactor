@@ -1,6 +1,7 @@
 package keyfactor
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -68,125 +69,147 @@ func TestUnitAllowedEnrollmentTypesPtrToTfInt64(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression test -- PR #210 full-review round 2 finding FIX-F:
+// Regression tests -- full-review finding F6 (supersedes PR #210 findings
+// FIX-F/FIX-H, which this test file previously covered):
 //
-// The previous match logic OR'd a name-equality check with an
-// ID-equality check with no priority between them, so "first match wins"
-// across a server-ordered list could silently resolve `identifier` to the
-// wrong pattern -- e.g. pattern A (ID=2, Name="5") and pattern B (ID=5,
-// Name="Default") both exist; identifier = "5" intends to look up pattern B
-// by ID, but matches pattern A's name first if Command returns it earlier
-// in the list.
-//
-// enrollmentPatternMatchesIdentifier enforces a strict priority instead: if
+// PR #210's FIX-F replaced an ambiguous "name == identifier OR id ==
+// identifier" match with a strict, strconv.Atoi-gated priority: if
 // identifier parses as an integer, match ONLY on ID; otherwise match ONLY
-// on name.
+// on name. That over-corrected two ways:
+//   - a pattern literally NAMED "2025" became unreachable by name (or
+//     worse, silently resolved to a DIFFERENT pattern whose ID happens to
+//     be 2025), purely because its name looks numeric.
+//   - identifier = "007" would resolve, via strconv.Atoi, to a pattern
+//     with ID 7 -- but no pattern is literally named "007", so this is
+//     surprising if the user actually meant to look up a pattern NAMED
+//     "007".
+//
+// enrollmentPatternResolveIdentifier restores name-or-ID semantics
+// (decision approved by user): an exact NAME match wins deterministically;
+// a canonical ID-string match (fmt.Sprint(id) == identifier, so "007"
+// never matches ID 7) is the fallback; a genuine match on both for two
+// DIFFERENT patterns is ambiguous and returns an error rather than
+// silently picking one.
 // ---------------------------------------------------------------------------
 
-func TestUnitEnrollmentPatternMatchesIdentifier(t *testing.T) {
+func TestUnitEnrollmentPatternResolveIdentifier(t *testing.T) {
 	t.Parallel()
 
-	t.Run("numeric identifier matches by ID only, even when another pattern's name collides", func(t *testing.T) {
+	t.Run("exact name match resolves, even when another pattern's ID equals the identifier", func(t *testing.T) {
 		t.Parallel()
 
-		// Pattern A: ID=2, Name="5" -- a name that looks like an ID.
-		// Pattern B: ID=5, Name="Default" -- the pattern identifier="5"
-		// actually means to select, by ID.
-		if enrollmentPatternMatchesIdentifier("5", 2, "5") {
-			t.Error("got true, want false -- a numeric identifier must not match on Name, even if Name looks numeric")
+		// Pattern A: ID=2, Name="5" -- a name that looks like an ID, and IS
+		// the identifier being looked up.
+		// Pattern B: ID=5, Name="Default" -- ID happens to equal the
+		// identifier too, but the name match on A takes precedence.
+		candidates := []enrollmentPatternCandidate{
+			{ID: 2, Name: "5"},
+			{ID: 5, Name: "Default"},
 		}
-		if !enrollmentPatternMatchesIdentifier("5", 5, "Default") {
-			t.Error("got false, want true -- a numeric identifier must match the pattern whose ID equals it")
-		}
-	})
-
-	t.Run("non-numeric identifier matches by name only", func(t *testing.T) {
-		t.Parallel()
-
-		if !enrollmentPatternMatchesIdentifier("Default", 5, "Default") {
-			t.Error("got false, want true -- a non-numeric identifier must match the pattern whose Name equals it")
-		}
-		if enrollmentPatternMatchesIdentifier("Default", 99, "Other") {
-			t.Error("got true, want false for a non-matching name")
-		}
-	})
-
-	t.Run("simulated list walk resolves by documented precedence, not list order", func(t *testing.T) {
-		t.Parallel()
-
-		type candidate struct {
-			id   int
-			name string
-		}
-		// Pattern A appears FIRST in the list and has Name == "5" (the
-		// identifier we're looking up); pattern B appears SECOND and has
-		// ID == 5. Before the fix, "first match wins" logic would return A
-		// (matching on name) since it's iterated first. The fix must return
-		// B, since a numeric identifier is documented to match on ID only.
-		patterns := []candidate{
-			{id: 2, name: "5"},
-			{id: 5, name: "Default"},
-		}
-
-		identifier := "5"
-		var matchedID int
-		var matchedName string
-		found := false
-		for _, p := range patterns {
-			if enrollmentPatternMatchesIdentifier(identifier, p.id, p.name) {
-				matchedID = p.id
-				matchedName = p.name
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			t.Fatal("expected a match, got none")
-		}
-		if matchedID != 5 || matchedName != "Default" {
-			t.Errorf(
-				"got match {id:%d,name:%q}, want {id:5,name:%q} -- a numeric identifier must resolve to the "+
-					"pattern matching by ID, not the pattern earlier in the list matching by name",
-				matchedID, matchedName, "Default",
+		idx, err := enrollmentPatternResolveIdentifier("5", candidates)
+		if err == nil {
+			t.Fatalf(
+				"got idx=%d, err=nil, want an ambiguity error -- \"5\" genuinely matches pattern A by name AND "+
+					"pattern B by ID, which is exactly the case that must be flagged, not silently resolved",
+				idx,
 			)
 		}
-	})
-}
-
-// ---------------------------------------------------------------------------
-// Regression test -- PR #210 full-review round 3 finding FIX-H:
-//
-// Read()'s terminal "not found" error unconditionally said
-// `"Could not find enrollment pattern with name: %s"`, even when identifier
-// was a syntactically valid but non-existent numeric ID (e.g. identifier =
-// "9999"), which is factually wrong and could mislead someone doing
-// incident/access review into thinking a name-based search failed.
-//
-// enrollmentPatternNotFoundLookupField wraps the same numeric-vs-name check
-// enrollmentPatternMatchesIdentifier uses (via enrollmentPatternIdentifierMode)
-// so the error message and the match logic can never drift out of sync
-// about which mode was actually used.
-// ---------------------------------------------------------------------------
-
-func TestUnitEnrollmentPatternNotFoundLookupField(t *testing.T) {
-	t.Parallel()
-
-	t.Run("numeric identifier reports ID", func(t *testing.T) {
-		t.Parallel()
-
-		got := enrollmentPatternNotFoundLookupField("9999")
-		if got != "ID" {
-			t.Errorf("got %q, want %q for a numeric identifier", got, "ID")
+		if !strings.Contains(err.Error(), "ambiguous") {
+			t.Errorf("err = %q, want it to mention \"ambiguous\"", err.Error())
 		}
 	})
 
-	t.Run("non-numeric identifier reports name", func(t *testing.T) {
+	t.Run("a pattern literally named with a number is reachable by name", func(t *testing.T) {
 		t.Parallel()
 
-		got := enrollmentPatternNotFoundLookupField("Default")
-		if got != "name" {
-			t.Errorf("got %q, want %q for a non-numeric identifier", got, "name")
+		// No OTHER pattern has ID 2025, so there is no ambiguity -- this is
+		// exactly the case the old strconv.Atoi-gated design broke: it
+		// would have matched ONLY on ID (since "2025" parses as an
+		// integer), found no pattern with ID 2025, and reported "not
+		// found" even though a pattern named "2025" exists.
+		candidates := []enrollmentPatternCandidate{
+			{ID: 3, Name: "2025"},
+		}
+		idx, err := enrollmentPatternResolveIdentifier("2025", candidates)
+		if err != nil {
+			t.Fatalf("err = %v, want no error -- pattern named \"2025\" must be reachable by name", err)
+		}
+		if idx != 0 {
+			t.Errorf("idx = %d, want 0", idx)
+		}
+	})
+
+	t.Run(`"007" matches a pattern literally named "007", never a pattern with ID 7`, func(t *testing.T) {
+		t.Parallel()
+
+		candidates := []enrollmentPatternCandidate{
+			{ID: 99, Name: "007"},
+			{ID: 7, Name: "SevenPattern"},
+		}
+		idx, err := enrollmentPatternResolveIdentifier("007", candidates)
+		if err != nil {
+			t.Fatalf(`err = %v, want no error -- "007" must resolve to the pattern literally named "007"`, err)
+		}
+		if idx != 0 {
+			t.Errorf("idx = %d, want 0 (the pattern named \"007\", not the pattern with ID 7)", idx)
+		}
+	})
+
+	t.Run("canonical ID-string match resolves when no name matches", func(t *testing.T) {
+		t.Parallel()
+
+		candidates := []enrollmentPatternCandidate{
+			{ID: 5, Name: "Default"},
+		}
+		idx, err := enrollmentPatternResolveIdentifier("5", candidates)
+		if err != nil {
+			t.Fatalf("err = %v, want no error", err)
+		}
+		if idx != 0 {
+			t.Errorf("idx = %d, want 0", idx)
+		}
+	})
+
+	t.Run("no match at all is a not-found error", func(t *testing.T) {
+		t.Parallel()
+
+		candidates := []enrollmentPatternCandidate{
+			{ID: 5, Name: "Default"},
+		}
+		_, err := enrollmentPatternResolveIdentifier("NoSuchPattern", candidates)
+		if err == nil {
+			t.Fatal("err = nil, want a not-found error")
+		}
+	})
+
+	t.Run("name and ID match resolving to the SAME pattern is not ambiguous", func(t *testing.T) {
+		t.Parallel()
+
+		candidates := []enrollmentPatternCandidate{
+			{ID: 5, Name: "5"},
+		}
+		idx, err := enrollmentPatternResolveIdentifier("5", candidates)
+		if err != nil {
+			t.Fatalf("err = %v, want no error -- both matches point at the same pattern", err)
+		}
+		if idx != 0 {
+			t.Errorf("idx = %d, want 0", idx)
+		}
+	})
+
+	t.Run("list order does not affect resolution", func(t *testing.T) {
+		t.Parallel()
+
+		// Same ambiguous scenario as the first sub-test, but with the
+		// ID-matching pattern listed FIRST -- the result (an ambiguity
+		// error) must not depend on list order.
+		candidates := []enrollmentPatternCandidate{
+			{ID: 5, Name: "Default"},
+			{ID: 2, Name: "5"},
+		}
+		_, err := enrollmentPatternResolveIdentifier("5", candidates)
+		if err == nil {
+			t.Fatal("err = nil, want an ambiguity error regardless of list order")
 		}
 	})
 }

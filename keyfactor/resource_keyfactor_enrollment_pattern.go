@@ -221,11 +221,26 @@ For full information on enrollment patterns view the [product documentation](htt
 			},
 
 			"template_default": {
-				Type:          types.BoolType,
-				Optional:      true,
-				Computed:      true,
-				Description:   "Whether this enrollment pattern is the default pattern for the associated template. A certificate template can have only one default enrollment pattern, which is required for the template to be used for enrollment. If no other enrollment pattern for the template exists or is marked as default, this option is automatically enabled when a new pattern is created.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:     types.BoolType,
+				Optional: true,
+				Computed: true,
+				Description: "Whether this enrollment pattern is the default pattern for the associated template. A certificate template can have only one default enrollment pattern, which is required for the template to be used for enrollment. If no other enrollment pattern for the template exists or is marked as default, this option is automatically enabled when a new pattern is created. " +
+					"~> If this is the very first enrollment pattern created for its template, Command may automatically mark it as the default regardless of an explicit `template_default = false` here; this provider cannot detect that case ahead of time, so declaring `template_default = false` for what may turn out to be a template's first pattern carries a risk of \"Provider produced inconsistent result after apply\" (full-review finding F8, Case B -- not fully reproducible without disrupting shared lab fixtures; documented as a known risk rather than guarded against). Leaving this attribute undeclared avoids the risk entirely.",
+				// templateDefaultFollowsForceModifier (full-review finding
+				// F8), not plain tfsdk.UseStateForUnknown(): verified live
+				// against kfclab that Command's PUT/POST body value for
+				// TemplateDefault takes precedence over the
+				// forceTemplateDefault query param (Case A) -- declaring
+				// ONLY force_template_default = true, with template_default
+				// left undeclared (pinned to its prior, non-default state
+				// value), sends body TemplateDefault=false alongside
+				// forceTemplateDefault=true and is a confirmed silent no-op.
+				// Create()/Update() now force plan.TemplateDefault to true
+				// whenever force_template_default is genuinely true, so this
+				// attribute's plan must resolve to that same known `true`
+				// value in that same case, or the pinned prior-state plan
+				// disagrees with the forced-true response.
+				PlanModifiers: []tfsdk.AttributePlanModifier{templateDefaultFollowsForceModifier{}},
 			},
 			"use_ad_permissions": {
 				Type:          types.BoolType,
@@ -1562,6 +1577,91 @@ func (m followsDriverModifier[T]) Modify(ctx context.Context, req tfsdk.ModifyAt
 	}
 }
 
+// templateDefaultFollowsForceModifier resolves template_default's plan the
+// way tfsdk.UseStateForUnknown() would (prior state value carried forward)
+// EXCEPT when force_template_default is genuinely being invoked this apply
+// (a known, true config value), in which case template_default plans to a
+// KNOWN `true` directly -- full-review finding F8.
+//
+// Verified live against kfclab: Command's PUT/POST body value for
+// TemplateDefault takes precedence over the forceTemplateDefault query
+// param -- declaring ONLY force_template_default = true, with
+// template_default left undeclared (and therefore pinned by
+// tfsdk.UseStateForUnknown() to its prior, non-default state value), sends
+// body TemplateDefault=false alongside forceTemplateDefault=true on the
+// wire, which Command silently treats as a no-op (confirmed: neither this
+// pattern nor the template's existing default pattern changed). Create()/
+// Update() now force plan.TemplateDefault to true whenever
+// force_template_default is genuinely true (see the comment above each
+// CRUD path's `plan.TemplateDefault = types.Bool{Value: true}` override),
+// and live testing confirms Command then deterministically honors that
+// body value -- so this modifier plans the SAME known `true` rather than
+// Unknown. Planning Unknown here was an earlier version's approach and
+// reintroduced the identical perpetual-diff bug class the alwaysUnknownModifier
+// removal already documents for force_template_default itself (round 2
+// finding FIX-A): as long as force_template_default stayed declared true,
+// every subsequent plan showed "template_default = ... -> (known after
+// apply)" forever, even with nothing left to actually change. Planning a
+// known value both avoids that AND surfaces the real change (e.g. "false ->
+// true") in `terraform plan` output instead of hiding it behind a
+// placeholder. This modifier is the template_default-specific counterpart
+// to followsDriverModifier[T]: instead of comparing a driver's
+// config-vs-state equality, it checks force_template_default's OWN config
+// value directly, since that's what actually triggers the override in
+// Create()/Update().
+type templateDefaultFollowsForceModifier struct{}
+
+func (m templateDefaultFollowsForceModifier) Description(_ context.Context) string {
+	return "Uses the prior state value unless force_template_default is true this apply, in which case this attribute plans to true directly."
+}
+
+func (m templateDefaultFollowsForceModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m templateDefaultFollowsForceModifier) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+
+	var forceConfig types.Bool
+	if diags := req.Config.GetAttribute(ctx, path.Root("force_template_default"), &forceConfig); diags.HasError() {
+		return
+	}
+	if !forceConfig.Null && !forceConfig.Unknown && forceConfig.Value {
+		// force_template_default is genuinely being invoked this apply --
+		// Create()/Update() force the request body's TemplateDefault to
+		// true (see the comment above each CRUD path's override), and
+		// live testing against kfclab confirms Command honors a body
+		// value of true unconditionally (demoting whichever pattern
+		// previously held default status). Plan a KNOWN `true` directly,
+		// not Unknown: the response is deterministically true in this
+		// branch, and planning a known value (rather than Unknown) is
+		// also what keeps this stable across repeated applies -- an
+		// earlier version of this modifier planned Unknown here, which
+		// produced "template_default = ... -> (known after apply)" on
+		// EVERY subsequent plan for as long as force_template_default
+		// stayed declared true, even once nothing was actually changing
+		// anymore (the same perpetual-diff bug class documented on
+		// alwaysUnknownModifier's removal for force_template_default
+		// itself, round 2 finding FIX-A).
+		resp.AttributePlan = types.Bool{Value: true}
+		return
+	}
+
+	// Not forced -- behave exactly like tfsdk.UseStateForUnknown().
+	if req.AttributeState.IsNull() {
+		return
+	}
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() {
+		return
+	}
+	resp.AttributePlan = req.AttributeState
+}
+
 // resolveUnknownListToNull resolves an Unknown types.List to Null, leaving
 // every other value (Null or known) untouched.
 //
@@ -2126,6 +2226,31 @@ func validateEnrollmentPatternConfigConstraints(cfg KeyfactorEnrollmentPatternSt
 		}
 	}
 
+	// full-review finding F8: force_template_default's own description
+	// says it "forces this pattern to become the template's default" --
+	// Create()/Update() now honor that literally by forcing the request
+	// body's TemplateDefault to true whenever force_template_default is
+	// true, overriding whatever template_default itself would otherwise
+	// resolve to. An explicit, KNOWN `template_default = false` declared
+	// in the SAME config as `force_template_default = true` is therefore
+	// a direct contradiction the provider would otherwise silently
+	// resolve in the directive's favor -- reject it instead of guessing
+	// which the user actually meant. A null/unknown value for either
+	// attribute is never flagged, for the same reason every other check
+	// in this function isn't: ValidateConfig only sees Config, which
+	// cannot resolve a not-yet-known chained value.
+	forceKnownTrue := !cfg.ForceTemplateDefault.Null && !cfg.ForceTemplateDefault.Unknown && cfg.ForceTemplateDefault.Value
+	templateDefaultKnownFalse := !cfg.TemplateDefault.Null && !cfg.TemplateDefault.Unknown && !cfg.TemplateDefault.Value
+	if forceKnownTrue && templateDefaultKnownFalse {
+		diags.AddAttributeError(
+			path.Root("template_default"),
+			"Contradictory force_template_default and template_default",
+			"force_template_default is set to true (forcing this pattern to become the template's default), "+
+				"but template_default is explicitly set to false in the same configuration. Remove one of the "+
+				"two, or leave template_default undeclared, to avoid the ambiguity.",
+		)
+	}
+
 	return diags
 }
 
@@ -2179,6 +2304,20 @@ func (r resourceEnrollmentPattern) Create(
 			"template_id is required to create an enrollment pattern.",
 		)
 		return
+	}
+
+	// full-review finding F8 (Case A, verified live against kfclab):
+	// Command's PUT/POST body value for TemplateDefault takes precedence
+	// over the forceTemplateDefault query param -- sending force alongside
+	// a body that doesn't ALSO say true is a confirmed silent no-op. Force
+	// plan.TemplateDefault to true whenever force_template_default is
+	// genuinely true so the directive actually does what its own
+	// description promises ("forces this pattern to become the template's
+	// default"). templateDefaultFollowsForceModifier (see its doc
+	// comment) is what keeps this from disagreeing with Core's
+	// plan-validity/consistency checks.
+	if !plan.ForceTemplateDefault.Null && !plan.ForceTemplateDefault.Unknown && plan.ForceTemplateDefault.Value {
+		plan.TemplateDefault = types.Bool{Value: true}
 	}
 
 	body := buildEnrollmentPatternCreateRequest(ctx, plan)
@@ -2440,6 +2579,15 @@ func (r resourceEnrollmentPattern) Update(
 	}
 	if plan.CertificateAuthorityIds.Null || plan.CertificateAuthorityIds.Unknown {
 		plan.CertificateAuthorityIds = state.CertificateAuthorityIds
+	}
+
+	// full-review finding F8 (Case A) -- see the identical comment above
+	// Create()'s equivalent override for the full rationale: force the
+	// request body's TemplateDefault to true whenever force_template_default
+	// is genuinely true, since Command ignores the forceTemplateDefault
+	// query param unless the body ALSO says true.
+	if !plan.ForceTemplateDefault.Null && !plan.ForceTemplateDefault.Unknown && plan.ForceTemplateDefault.Value {
+		plan.TemplateDefault = types.Bool{Value: true}
 	}
 
 	// Audit-log old (prior state) vs new (final plan, post preservation)

@@ -8,7 +8,7 @@ interactions:
         proto_minor: 1
         content_length: 120
         host: command.lab.local
-        body: '{"Name":"TFEPFixRoleB_TFU789000","Description":"TF F1/F2/F4 regression test role B","Permissions":["Certificates:Read"]}'
+        body: '{"Name":"TFEPFixRoleA_TFU678000","Description":"TF F1/F2/F4 regression test role A","Permissions":["Certificates:Read"]}'
         headers:
             Accept:
                 - application/json
@@ -25,7 +25,7 @@ interactions:
         proto_major: 1
         proto_minor: 1
         content_length: 283
-        body: '{"Id":57,"Description":"TF F1/F2/F4 regression test role B","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleB_TFU789000","Permissions":["Certificates:Read"]}'
+        body: '{"Id":66,"Description":"TF F1/F2/F4 regression test role A","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleA_TFU678000","Permissions":["Certificates:Read"]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -36,16 +36,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:00 GMT
+                - Thu, 03 Sep 2026 17:42:39 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 91d1f282-9c08-44e8-9a46-f38bde47be05
+                - acae7654-d5ec-463c-aef5-664a205f7b6f
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 5.348044739s
+        duration: 5.291678195s
     - id: 1
       request:
         proto: HTTP/1.1
@@ -53,7 +53,7 @@ interactions:
         proto_minor: 1
         content_length: 120
         host: command.lab.local
-        body: '{"Name":"TFEPFixRoleA_TFU789000","Description":"TF F1/F2/F4 regression test role A","Permissions":["Certificates:Read"]}'
+        body: '{"Name":"TFEPFixRoleB_TFU678000","Description":"TF F1/F2/F4 regression test role B","Permissions":["Certificates:Read"]}'
         headers:
             Accept:
                 - application/json
@@ -70,7 +70,7 @@ interactions:
         proto_major: 1
         proto_minor: 1
         content_length: 283
-        body: '{"Id":58,"Description":"TF F1/F2/F4 regression test role A","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleA_TFU789000","Permissions":["Certificates:Read"]}'
+        body: '{"Id":67,"Description":"TF F1/F2/F4 regression test role B","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleB_TFU678000","Permissions":["Certificates:Read"]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -81,16 +81,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:00 GMT
+                - Thu, 03 Sep 2026 17:42:45 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 114bc185-4916-4cb0-b2f9-0ea71a2ef4e2
+                - c5479a53-7245-4bc6-90b4-100564305b97
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 5.348055079s
+        duration: 213.845718ms
     - id: 2
       request:
         proto: HTTP/1.1
@@ -99,7 +99,7 @@ interactions:
         content_length: 224
         host: command.lab.local
         body: |
-            {"AssociatedRoles":["TFEPFixRoleA_TFU789000"],"Name":"TFEPFix_TFU789000","Policies":{"CertificateOwnerRole":2,"DefaultCertificateOwnerOverride":true,"DefaultCertificateOwnerRoleId":58},"Template":6,"UseADPermissions":false}
+            {"AssociatedRoles":["TFEPFixRoleA_TFU678000"],"Name":"TFEPFix_TFU678000","Policies":{"CertificateOwnerRole":2,"DefaultCertificateOwnerOverride":true,"DefaultCertificateOwnerRoleId":66},"Template":6,"UseADPermissions":false}
         headers:
             Accept:
                 - application/json
@@ -118,7 +118,7 @@ interactions:
         proto_major: 1
         proto_minor: 1
         content_length: 896
-        body: '{"Id":25,"Name":"TFEPFix_TFU789000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":58,"Name":"TFEPFixRoleA_TFU789000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":58,"DefaultCertificateOwnerRoleName":"TFEPFixRoleA_TFU789000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
+        body: '{"Id":33,"Name":"TFEPFix_TFU678000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":66,"Name":"TFEPFixRoleA_TFU678000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":66,"DefaultCertificateOwnerRoleName":"TFEPFixRoleA_TFU678000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
         headers:
             Api-Supported-Versions:
                 - "1.0"
@@ -129,16 +129,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:06 GMT
+                - Thu, 03 Sep 2026 17:42:45 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 75c55b38-9979-4ec5-85bb-6c67e4071998
+                - 261d66ec-b0e0-4500-b3a2-239ee1ced41e
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 106.074143ms
+        duration: 419.453116ms
     - id: 3
       request:
         proto: HTTP/1.1
@@ -156,14 +156,14 @@ interactions:
                 - "1"
             X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/Security/Roles/58
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/66
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 283
-        body: '{"Id":58,"Description":"TF F1/F2/F4 regression test role A","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleA_TFU789000","Permissions":["Certificates:Read"]}'
+        body: '{"Id":66,"Description":"TF F1/F2/F4 regression test role A","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleA_TFU678000","Permissions":["Certificates:Read"]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -174,16 +174,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:07 GMT
+                - Thu, 03 Sep 2026 17:42:46 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 3356e1aa-e8ec-45b0-a399-52b9fe852ce5
+                - fdfca1f7-8694-4214-98f0-c9a586c41fb9
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 117.465013ms
+        duration: 31.170209ms
     - id: 4
       request:
         proto: HTTP/1.1
@@ -201,14 +201,14 @@ interactions:
                 - "1"
             X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/Security/Roles/57
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/67
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 283
-        body: '{"Id":57,"Description":"TF F1/F2/F4 regression test role B","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleB_TFU789000","Permissions":["Certificates:Read"]}'
+        body: '{"Id":67,"Description":"TF F1/F2/F4 regression test role B","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleB_TFU678000","Permissions":["Certificates:Read"]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -219,16 +219,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:07 GMT
+                - Thu, 03 Sep 2026 17:42:46 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 93204a5f-b219-4483-a1c5-c9f7e569d6c3
+                - c0bd448a-f4e4-45b0-a747-5b18ba91743d
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 117.509645ms
+        duration: 44.471577ms
     - id: 5
       request:
         proto: HTTP/1.1
@@ -245,14 +245,14 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/25
+        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/33
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 896
-        body: '{"Id":25,"Name":"TFEPFix_TFU789000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":58,"Name":"TFEPFixRoleA_TFU789000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":58,"DefaultCertificateOwnerRoleName":"TFEPFixRoleA_TFU789000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
+        body: '{"Id":33,"Name":"TFEPFix_TFU678000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":66,"Name":"TFEPFixRoleA_TFU678000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":66,"DefaultCertificateOwnerRoleName":"TFEPFixRoleA_TFU678000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
         headers:
             Api-Supported-Versions:
                 - "1.0"
@@ -263,16 +263,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:07 GMT
+                - Thu, 03 Sep 2026 17:42:46 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - edb3b7a3-6549-435e-8c51-a8e9e44c292e
+                - 0e6b272c-a96c-4140-88ed-0b5140f844b0
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 23.832127ms
+        duration: 130.416008ms
     - id: 6
       request:
         proto: HTTP/1.1
@@ -290,14 +290,14 @@ interactions:
                 - "1"
             X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/Security/Roles/57
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/66
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 283
-        body: '{"Id":57,"Description":"TF F1/F2/F4 regression test role B","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleB_TFU789000","Permissions":["Certificates:Read"]}'
+        body: '{"Id":66,"Description":"TF F1/F2/F4 regression test role A","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleA_TFU678000","Permissions":["Certificates:Read"]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -308,16 +308,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:07 GMT
+                - Thu, 03 Sep 2026 17:42:47 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 4e007f20-4e76-43d8-9ed2-09555e4a8e1c
+                - 3300258b-f950-4051-b65d-aaf5d7acc78e
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 33.025635ms
+        duration: 27.339668ms
     - id: 7
       request:
         proto: HTTP/1.1
@@ -335,14 +335,14 @@ interactions:
                 - "1"
             X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/Security/Roles/58
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/67
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 283
-        body: '{"Id":58,"Description":"TF F1/F2/F4 regression test role A","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleA_TFU789000","Permissions":["Certificates:Read"]}'
+        body: '{"Id":67,"Description":"TF F1/F2/F4 regression test role B","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleB_TFU678000","Permissions":["Certificates:Read"]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -353,16 +353,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:07 GMT
+                - Thu, 03 Sep 2026 17:42:47 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - d9db72a4-a93f-4b79-943c-e6cbaa58149c
+                - e2891b20-a0da-4395-b454-af51d127ccaf
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 93.843342ms
+        duration: 63.910454ms
     - id: 8
       request:
         proto: HTTP/1.1
@@ -379,14 +379,14 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/25
+        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/33
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 896
-        body: '{"Id":25,"Name":"TFEPFix_TFU789000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":58,"Name":"TFEPFixRoleA_TFU789000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":58,"DefaultCertificateOwnerRoleName":"TFEPFixRoleA_TFU789000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
+        body: '{"Id":33,"Name":"TFEPFix_TFU678000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":66,"Name":"TFEPFixRoleA_TFU678000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":66,"DefaultCertificateOwnerRoleName":"TFEPFixRoleA_TFU678000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
         headers:
             Api-Supported-Versions:
                 - "1.0"
@@ -397,16 +397,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:07 GMT
+                - Thu, 03 Sep 2026 17:42:47 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 46ae24b7-8967-4107-9f03-c7be5156f485
+                - f42cf31d-349a-4905-9f69-8f0c932430df
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 54.518412ms
+        duration: 25.184348ms
     - id: 9
       request:
         proto: HTTP/1.1
@@ -423,14 +423,14 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/25
+        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/33
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 896
-        body: '{"Id":25,"Name":"TFEPFix_TFU789000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":58,"Name":"TFEPFixRoleA_TFU789000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":58,"DefaultCertificateOwnerRoleName":"TFEPFixRoleA_TFU789000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
+        body: '{"Id":33,"Name":"TFEPFix_TFU678000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":66,"Name":"TFEPFixRoleA_TFU678000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":66,"DefaultCertificateOwnerRoleName":"TFEPFixRoleA_TFU678000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
         headers:
             Api-Supported-Versions:
                 - "1.0"
@@ -441,25 +441,25 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:08 GMT
+                - Thu, 03 Sep 2026 17:42:48 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - f918d943-e141-4753-bf08-1c8d7b8830a8
+                - 6936cc51-035a-4f3c-861d-c444d635a168
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 27.928571ms
+        duration: 23.320993ms
     - id: 10
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 407
+        content_length: 406
         host: command.lab.local
         body: |
-            {"AllowedEnrollmentTypes":0,"AssociatedRoles":["TFEPFixRoleB_TFU789000"],"Defaults":[],"EnrollmentFields":[],"MetadataFields":[],"Name":"TFEPFix_TFU789000","Policies":{"AlternativeKeyAlgorithms":[],"CertificateOwnerRole":2,"DefaultCertificateOwnerOverride":true,"DefaultCertificateOwnerRoleId":57,"PrimaryKeyAlgorithms":[]},"Regexes":[],"RestrictCAs":false,"TemplateDefault":false,"UseADPermissions":false}
+            {"AllowedEnrollmentTypes":0,"AssociatedRoles":["TFEPFixRoleB_TFU678000"],"Defaults":[],"EnrollmentFields":[],"MetadataFields":[],"Name":"TFEPFix_TFU678000","Policies":{"AlternativeKeyAlgorithms":[],"CertificateOwnerRole":2,"DefaultCertificateOwnerOverride":true,"DefaultCertificateOwnerRoleId":67,"PrimaryKeyAlgorithms":[]},"Regexes":[],"RestrictCAs":false,"TemplateDefault":true,"UseADPermissions":false}
         form:
             forceTemplateDefault:
                 - "true"
@@ -474,34 +474,34 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/25?forceTemplateDefault=true
+        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/33?forceTemplateDefault=true
         method: PUT
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 896
-        body: '{"Id":25,"Name":"TFEPFix_TFU789000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":57,"Name":"TFEPFixRoleB_TFU789000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":57,"DefaultCertificateOwnerRoleName":"TFEPFixRoleB_TFU789000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
+        content_length: 895
+        body: '{"Id":33,"Name":"TFEPFix_TFU678000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":true,"UseADPermissions":false,"AssociatedRoles":[{"Id":67,"Name":"TFEPFixRoleB_TFU678000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":67,"DefaultCertificateOwnerRoleName":"TFEPFixRoleB_TFU678000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
         headers:
             Api-Supported-Versions:
                 - "1.0"
             Connection:
                 - keep-alive
             Content-Length:
-                - "896"
+                - "895"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:08 GMT
+                - Thu, 03 Sep 2026 17:42:48 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - a0ac0eac-1a2f-4dc5-a085-b72c879164ce
+                - 4d363df3-479c-420c-b219-604d55bfb311
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 183.455361ms
+        duration: 126.815599ms
     - id: 11
       request:
         proto: HTTP/1.1
@@ -519,14 +519,14 @@ interactions:
                 - "1"
             X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/Security/Roles/57
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/66
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 283
-        body: '{"Id":57,"Description":"TF F1/F2/F4 regression test role B","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleB_TFU789000","Permissions":["Certificates:Read"]}'
+        body: '{"Id":66,"Description":"TF F1/F2/F4 regression test role A","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleA_TFU678000","Permissions":["Certificates:Read"]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -537,16 +537,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:09 GMT
+                - Thu, 03 Sep 2026 17:42:48 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 1e8f9bca-9841-477c-a3da-b3bdb0af5573
+                - 5172e9a4-fec7-4afa-9856-db2a5bebb8d2
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 51.499561ms
+        duration: 26.056352ms
     - id: 12
       request:
         proto: HTTP/1.1
@@ -564,14 +564,14 @@ interactions:
                 - "1"
             X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/Security/Roles/58
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/67
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 283
-        body: '{"Id":58,"Description":"TF F1/F2/F4 regression test role A","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleA_TFU789000","Permissions":["Certificates:Read"]}'
+        body: '{"Id":67,"Description":"TF F1/F2/F4 regression test role B","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleB_TFU678000","Permissions":["Certificates:Read"]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
@@ -582,16 +582,16 @@ interactions:
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:09 GMT
+                - Thu, 03 Sep 2026 17:42:48 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 41f936c3-8ad1-43c7-82f8-91de5084f3fe
+                - 68fd2f0b-982a-4bf0-b659-4b327e538a51
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 51.531227ms
+        duration: 48.134039ms
     - id: 13
       request:
         proto: HTTP/1.1
@@ -608,72 +608,79 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/25
+        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/33
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 896
-        body: '{"Id":25,"Name":"TFEPFix_TFU789000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":57,"Name":"TFEPFixRoleB_TFU789000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":57,"DefaultCertificateOwnerRoleName":"TFEPFixRoleB_TFU789000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
+        content_length: 895
+        body: '{"Id":33,"Name":"TFEPFix_TFU678000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":true,"UseADPermissions":false,"AssociatedRoles":[{"Id":67,"Name":"TFEPFixRoleB_TFU678000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":67,"DefaultCertificateOwnerRoleName":"TFEPFixRoleB_TFU678000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
         headers:
             Api-Supported-Versions:
                 - "1.0"
             Connection:
                 - keep-alive
             Content-Length:
-                - "896"
+                - "895"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:09 GMT
+                - Thu, 03 Sep 2026 17:42:48 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - cb3c41c1-dbe4-427e-8f3c-906d536ac8c2
+                - d67fa8fa-f615-40b3-b6de-298f901f0c6c
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 200 OK
         code: 200
-        duration: 20.737103ms
+        duration: 18.09249ms
     - id: 14
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 0
+        content_length: 4
         host: command.lab.local
+        body: "null"
         headers:
-            User-Agent:
-                - OpenAPI-Generator/1.0.0/go
-            x-keyfactor-api-version:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
                 - "1"
-            x-keyfactor-requested-with:
+            X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/25
-        method: DELETE
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/66
+        method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 0
-        body: ""
+        content_length: 283
+        body: '{"Id":66,"Description":"TF F1/F2/F4 regression test role A","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleA_TFU678000","Permissions":["Certificates:Read"]}'
         headers:
             Api-Supported-Versions:
-                - "1.0"
+                - 1.0, 2
             Connection:
                 - keep-alive
+            Content-Length:
+                - "283"
+            Content-Type:
+                - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:09 GMT
+                - Thu, 03 Sep 2026 17:42:49 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 4930f3b8-5890-4bd7-b3be-90ab91cd1858
+                - 9d695887-c0ec-4029-8f9f-272dceb7af3b
             X-Keyfactor-Product-Version:
                 - 25.5.1
-        status: 204 No Content
-        code: 204
-        duration: 209.288787ms
+        status: 200 OK
+        code: 200
+        duration: 34.845991ms
     - id: 15
       request:
         proto: HTTP/1.1
@@ -691,31 +698,79 @@ interactions:
                 - "1"
             X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/Security/Roles/58
-        method: DELETE
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/67
+        method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 0
-        body: ""
+        content_length: 283
+        body: '{"Id":67,"Description":"TF F1/F2/F4 regression test role B","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleB_TFU678000","Permissions":["Certificates:Read"]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
             Connection:
                 - keep-alive
+            Content-Length:
+                - "283"
+            Content-Type:
+                - application/json; charset=utf-8
             Date:
-                - Thu, 03 Sep 2026 16:41:09 GMT
+                - Thu, 03 Sep 2026 17:42:49 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 4cb3296a-0da2-4f8b-8ec6-252d2c0e8155
+                - b765f5b5-180f-447e-a474-f531f5035eb1
             X-Keyfactor-Product-Version:
                 - 25.5.1
-        status: 204 No Content
-        code: 204
-        duration: 228.642011ms
+        status: 200 OK
+        code: 200
+        duration: 40.659823ms
     - id: 16
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: command.lab.local
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/33
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 895
+        body: '{"Id":33,"Name":"TFEPFix_TFU678000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":true,"UseADPermissions":false,"AssociatedRoles":[{"Id":67,"Name":"TFEPFixRoleB_TFU678000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":67,"DefaultCertificateOwnerRoleName":"TFEPFixRoleB_TFU678000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "895"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 03 Sep 2026 17:42:49 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - f012a754-c8fa-4036-8249-4465d399f5f8
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 20.947561ms
+    - id: 17
       request:
         proto: HTTP/1.1
         proto_major: 1
@@ -732,7 +787,179 @@ interactions:
                 - "1"
             X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://command.lab.local/KeyfactorAPI/Security/Roles/57
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/66
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 283
+        body: '{"Id":66,"Description":"TF F1/F2/F4 regression test role A","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleA_TFU678000","Permissions":["Certificates:Read"]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "283"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 03 Sep 2026 17:43:09 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 1deb800e-aa85-4cc1-9c7f-20fe85828f1a
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 26.752186ms
+    - id: 18
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/67
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 283
+        body: '{"Id":67,"Description":"TF F1/F2/F4 regression test role B","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"TFEPFixRoleB_TFU678000","Permissions":["Certificates:Read"]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "283"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 03 Sep 2026 17:43:09 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 66684679-55d3-4f81-9eee-2e845ed2d057
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 41.613288ms
+    - id: 19
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: command.lab.local
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/33
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 896
+        body: '{"Id":33,"Name":"TFEPFix_TFU678000","Description":null,"Template":{"Id":6,"TemplateName":"AnyCA (lab-role)","CommonName":"AnyCA_lab-role","ConfigurationTenant":"openbao","RequiresApproval":false,"FriendlyName":"Terraform Harness Demo (6)"},"TemplateDefault":false,"UseADPermissions":false,"AssociatedRoles":[{"Id":67,"Name":"TFEPFixRoleB_TFU678000"}],"CertificateAuthorities":[],"AllowedEnrollmentTypes":0,"Regexes":[],"MetadataFields":[],"RestrictCAs":false,"Policies":{"AllowKeyReuse":null,"AllowWildcards":null,"RFCEnforcement":null,"CertificateOwnerRole":2,"DefaultCertificateOwnerRoleId":67,"DefaultCertificateOwnerRoleName":"TFEPFixRoleB_TFU678000","DefaultCertificateOwnerOverride":true,"KeyInfo":{"ECDSA":null,"RSA":null,"Ed448":null,"Ed25519":null,"MLDSA44":null,"MLDSA65":null,"MLDSA87":null},"PrimaryKeyAlgorithms":[],"AlternativeKeyAlgorithms":[]},"Defaults":[],"EnrollmentFields":[]}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "896"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 03 Sep 2026 17:43:09 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 58b8088b-172d-487e-adf3-8b5c56e28575
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 22.681113ms
+    - id: 20
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: command.lab.local
+        headers:
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/EnrollmentPatterns/33
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Date:
+                - Thu, 03 Sep 2026 17:43:09 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - e3da20c0-16bf-49be-9957-f4999bbf6f6f
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 204 No Content
+        code: 204
+        duration: 33.957918ms
+    - id: 21
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/67
         method: DELETE
       response:
         proto: HTTP/1.1
@@ -746,13 +973,54 @@ interactions:
             Connection:
                 - keep-alive
             Date:
-                - Thu, 03 Sep 2026 16:41:10 GMT
+                - Thu, 03 Sep 2026 17:43:10 GMT
             Strict-Transport-Security:
                 - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 9f526620-a0c7-4b1b-8096-ff715ee8d78a
+                - c64ca27d-3fc8-4c52-a075-2c5cac963c11
             X-Keyfactor-Product-Version:
                 - 25.5.1
         status: 204 No Content
         code: 204
-        duration: 36.988964ms
+        duration: 35.68749ms
+    - id: 22
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/66
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Connection:
+                - keep-alive
+            Date:
+                - Thu, 03 Sep 2026 17:43:10 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 69a83c03-46ab-4cfd-9d34-95c37cb4f4d5
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 204 No Content
+        code: 204
+        duration: 35.363181ms

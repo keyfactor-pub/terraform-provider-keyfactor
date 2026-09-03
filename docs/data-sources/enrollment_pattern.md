@@ -4,7 +4,7 @@ page_title: "keyfactor_enrollment_pattern Data Source - terraform-provider-keyfa
 subcategory: ""
 description: |-
   Reads an existing enrollment pattern from Keyfactor Command using the "/EnrollmentPatterns" API.
-  ~> Note: The enrollment pattern can be identified by its name or internal ID. If identifier parses as an integer, it is matched against the pattern ID only; otherwise it is matched against the pattern name only.
+  ~> Note: The enrollment pattern can be identified by its name or internal ID. An exact match on name takes precedence; if none matches, identifier is matched against the pattern's internal ID as a canonical decimal string (so "007" never matches ID 7). A value matching a different pattern by name than by ID is treated as ambiguous and returns an error.
   Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
   ~> Important: Enrollment Patterns are only available in Keyfactor Command v25.0+
   For full information on enrollment patterns view the product documentation https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern
@@ -14,7 +14,7 @@ description: |-
 
 Reads an existing enrollment pattern from Keyfactor Command using the "/EnrollmentPatterns" API.
 
-~> **Note:** The enrollment pattern can be identified by its name or internal ID. If `identifier` parses as an integer, it is matched against the pattern ID only; otherwise it is matched against the pattern name only.
+~> **Note:** The enrollment pattern can be identified by its name or internal ID. An exact match on name takes precedence; if none matches, `identifier` is matched against the pattern's internal ID as a canonical decimal string (so `"007"` never matches ID 7). A value matching a different pattern by name than by ID is treated as ambiguous and returns an error.
 
 Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
 
@@ -47,7 +47,7 @@ data "keyfactor_enrollment_pattern" "ep_2yrTest" {
 
 ### Required
 
-- `identifier` (String) The name or internal ID (integer) of the enrollment pattern to look up. If this value parses as an integer, it is matched against the pattern ID only (never against a pattern name that happens to look like a number); otherwise it is matched against the pattern name only.
+- `identifier` (String) The name or internal ID (integer) of the enrollment pattern to look up. An exact match on the pattern's name takes precedence; if no pattern's name matches, this value is matched against the pattern's internal ID as a canonical decimal string (so, e.g., "007" never matches ID 7). If it matches a different pattern by name than by ID, this is treated as an ambiguous identifier and returns an error rather than silently picking one.
 
 ### Read-Only
 

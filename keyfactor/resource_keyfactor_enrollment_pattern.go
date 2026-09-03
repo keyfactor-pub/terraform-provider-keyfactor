@@ -677,8 +677,12 @@ func algorithmListLogString(ctx context.Context, algos []EnrollmentPatternResour
 // fallback have run -- i.e. exactly what is about to be sent to Command) and
 // returns one human-readable "field: old -> new" description per changed
 // policy-relevant field. Covers the fields this resource can change that
-// matter for a compliance audit trail: who can enroll (associated_role_names,
-// certificate_authority_ids), how strictly (policies.rfc_enforcement,
+// matter for a compliance audit trail: the authorization model governing
+// enrollment (use_ad_permissions, restrict_cas) and who it grants access to
+// (associated_role_names, certificate_authority_ids), which enrollment
+// methods -- and thus key-custody model -- are permitted
+// (allowed_enrollment_types: 1=CSR, 2=PFX/server-generated key, 3=both), how
+// strictly enrollment is validated (policies.rfc_enforcement,
 // policies.allow_wildcards, policies.allow_key_reuse), the cryptographic
 // strength allowed (policies.primary_key_algorithms,
 // policies.alternative_key_algorithms), and who owns the resulting
@@ -700,8 +704,11 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 		}
 	}
 
+	appendIfChanged("use_ad_permissions", tfBoolLogString(prior.UseADPermissions), tfBoolLogString(updated.UseADPermissions))
 	appendIfChanged("associated_role_names", tfListLogString(ctx, prior.AssociatedRoleNames), tfListLogString(ctx, updated.AssociatedRoleNames))
+	appendIfChanged("restrict_cas", tfBoolLogString(prior.RestrictCAs), tfBoolLogString(updated.RestrictCAs))
 	appendIfChanged("certificate_authority_ids", tfListLogString(ctx, prior.CertificateAuthorityIds), tfListLogString(ctx, updated.CertificateAuthorityIds))
+	appendIfChanged("allowed_enrollment_types", tfInt64LogString(prior.AllowedEnrollmentTypes), tfInt64LogString(updated.AllowedEnrollmentTypes))
 	appendIfChanged("force_template_default", tfBoolLogString(prior.ForceTemplateDefault), tfBoolLogString(updated.ForceTemplateDefault))
 
 	if prior.Policies != nil || updated.Policies != nil {
@@ -743,8 +750,12 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 
 // enrollmentPatternCreationAuditFields renders the same access-control-
 // relevant fields enrollmentPatternPolicyRelevantFieldChanges audits on
-// every subsequent Update() -- who can enroll (associated_role_names,
-// certificate_authority_ids), how strictly (policies.rfc_enforcement,
+// every subsequent Update() -- the authorization model governing enrollment
+// (use_ad_permissions, restrict_cas) and who it grants access to
+// (associated_role_names, certificate_authority_ids), which enrollment
+// methods -- and thus key-custody model -- are permitted
+// (allowed_enrollment_types: 1=CSR, 2=PFX/server-generated key, 3=both), how
+// strictly enrollment is validated (policies.rfc_enforcement,
 // policies.allow_wildcards, policies.allow_key_reuse), the cryptographic
 // strength allowed (policies.primary_key_algorithms,
 // policies.alternative_key_algorithms), who owns the resulting certificates
@@ -787,8 +798,11 @@ func enrollmentPatternCreationAuditFields(
 		fields = append(fields, fmt.Sprintf("%s: %s", name, val))
 	}
 
+	add("use_ad_permissions", tfBoolLogString(created.UseADPermissions))
 	add("associated_role_names", tfListLogString(ctx, created.AssociatedRoleNames))
+	add("restrict_cas", tfBoolLogString(created.RestrictCAs))
 	add("certificate_authority_ids", tfListLogString(ctx, created.CertificateAuthorityIds))
+	add("allowed_enrollment_types", tfInt64LogString(created.AllowedEnrollmentTypes))
 	add("force_template_default", tfBoolLogString(submittedForceTemplateDefault))
 
 	if created.Policies != nil {

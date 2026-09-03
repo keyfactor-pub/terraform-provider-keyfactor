@@ -153,3 +153,40 @@ func TestUnitEnrollmentPatternMatchesIdentifier(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Regression test -- PR #210 full-review round 3 finding FIX-H:
+//
+// Read()'s terminal "not found" error unconditionally said
+// `"Could not find enrollment pattern with name: %s"`, even when identifier
+// was a syntactically valid but non-existent numeric ID (e.g. identifier =
+// "9999"), which is factually wrong and could mislead someone doing
+// incident/access review into thinking a name-based search failed.
+//
+// enrollmentPatternNotFoundLookupField wraps the same numeric-vs-name check
+// enrollmentPatternMatchesIdentifier uses (via enrollmentPatternIdentifierMode)
+// so the error message and the match logic can never drift out of sync
+// about which mode was actually used.
+// ---------------------------------------------------------------------------
+
+func TestUnitEnrollmentPatternNotFoundLookupField(t *testing.T) {
+	t.Parallel()
+
+	t.Run("numeric identifier reports ID", func(t *testing.T) {
+		t.Parallel()
+
+		got := enrollmentPatternNotFoundLookupField("9999")
+		if got != "ID" {
+			t.Errorf("got %q, want %q for a numeric identifier", got, "ID")
+		}
+	})
+
+	t.Run("non-numeric identifier reports name", func(t *testing.T) {
+		t.Parallel()
+
+		got := enrollmentPatternNotFoundLookupField("Default")
+		if got != "name" {
+			t.Errorf("got %q, want %q for a non-numeric identifier", got, "name")
+		}
+	})
+}

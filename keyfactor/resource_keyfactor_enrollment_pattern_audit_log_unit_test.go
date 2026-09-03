@@ -82,6 +82,61 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 		}
 	})
 
+	// ---------------------------------------------------------------------
+	// Regression tests -- PR #210 full-review round 3 finding FIX-G:
+	// use_ad_permissions, restrict_cas, and allowed_enrollment_types were
+	// missing from Update()'s audit trail even though they are the master
+	// switches governing whether associated_role_names/certificate_
+	// authority_ids are enforced at all, and (for allowed_enrollment_types)
+	// whether server-side private-key generation is permitted for the
+	// pattern.
+	// ---------------------------------------------------------------------
+
+	t.Run("use_ad_permissions change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			UseADPermissions: types.Bool{Value: false},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			UseADPermissions: types.Bool{Value: true},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "use_ad_permissions") {
+			t.Errorf("got %+v, want an entry for use_ad_permissions", got)
+		}
+	})
+
+	t.Run("restrict_cas change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			RestrictCAs: types.Bool{Value: false},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			RestrictCAs: types.Bool{Value: true},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "restrict_cas") {
+			t.Errorf("got %+v, want an entry for restrict_cas", got)
+		}
+	})
+
+	t.Run("allowed_enrollment_types change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			AllowedEnrollmentTypes: types.Int64{Value: 1},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			AllowedEnrollmentTypes: types.Int64{Value: 2},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "allowed_enrollment_types") {
+			t.Errorf("got %+v, want an entry for allowed_enrollment_types", got)
+		}
+	})
+
 	t.Run("policies.rfc_enforcement change is reported", func(t *testing.T) {
 		t.Parallel()
 		state := KeyfactorEnrollmentPatternState{
@@ -344,6 +399,34 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 		}
 		if !anyContains(got, "certificate_authority_ids") {
 			t.Errorf("got %+v, want an entry for certificate_authority_ids", got)
+		}
+	})
+
+	// -----------------------------------------------------------------------
+	// Regression tests -- PR #210 full-review round 3 finding FIX-G:
+	// use_ad_permissions, restrict_cas, and allowed_enrollment_types were
+	// missing from Create()'s audit trail too (see the equivalent Update()-
+	// path tests above).
+	// -----------------------------------------------------------------------
+
+	t.Run("reports use_ad_permissions, restrict_cas, and allowed_enrollment_types", func(t *testing.T) {
+		t.Parallel()
+		created := KeyfactorEnrollmentPatternState{
+			UseADPermissions:        types.Bool{Value: true},
+			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
+			RestrictCAs:             types.Bool{Value: true},
+			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AllowedEnrollmentTypes:  types.Int64{Value: 3},
+		}
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
+		if !anyContains(got, "use_ad_permissions: true") {
+			t.Errorf("got %+v, want an entry for use_ad_permissions: true", got)
+		}
+		if !anyContains(got, "restrict_cas: true") {
+			t.Errorf("got %+v, want an entry for restrict_cas: true", got)
+		}
+		if !anyContains(got, "allowed_enrollment_types: 3") {
+			t.Errorf("got %+v, want an entry for allowed_enrollment_types: 3", got)
 		}
 	})
 

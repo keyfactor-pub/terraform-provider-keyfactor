@@ -49,10 +49,40 @@ func allowedEnrollmentTypesPtrToTfInt64(v *int) types.Int64 {
 // and needs its own cross-check machinery for a different ambiguity shape).
 // See PR #210 full-review round 2 finding FIX-F.
 func enrollmentPatternMatchesIdentifier(identifier string, id int, name string) bool {
-	if asID, err := strconv.Atoi(identifier); err == nil {
+	if isID, asID := enrollmentPatternIdentifierMode(identifier); isID {
 		return id == asID
 	}
 	return name == identifier
+}
+
+// enrollmentPatternIdentifierMode reports which lookup mode
+// enrollmentPatternMatchesIdentifier uses for a given identifier -- true (with
+// the parsed value) if identifier parses as an integer and is therefore
+// matched by ID only, false if it is matched by name only. Factored out of
+// enrollmentPatternMatchesIdentifier so the Read() "not found" error message
+// can report which mode was actually used without re-implementing (and
+// risking drift from) the same strconv.Atoi check. See PR #210 full-review
+// round 3 finding FIX-H: previously the "not found" error unconditionally
+// said "name" even when identifier was a syntactically valid but
+// non-existent numeric ID, which is misleading for incident/access review.
+func enrollmentPatternIdentifierMode(identifier string) (isID bool, idVal int) {
+	if asID, err := strconv.Atoi(identifier); err == nil {
+		return true, asID
+	}
+	return false, 0
+}
+
+// enrollmentPatternNotFoundLookupField returns the word ("ID" or "name")
+// describing which lookup mode enrollmentPatternMatchesIdentifier actually
+// used for identifier, for use in the Read() "not found" error message. Pure
+// function wrapping enrollmentPatternIdentifierMode so the error-message
+// wording can be unit tested directly without standing up a full data
+// source Read(). See PR #210 full-review round 3 finding FIX-H.
+func enrollmentPatternNotFoundLookupField(identifier string) string {
+	if isID, _ := enrollmentPatternIdentifierMode(identifier); isID {
+		return "ID"
+	}
+	return "name"
 }
 
 type dataSourceEnrollmentPatternType struct{}
@@ -654,7 +684,7 @@ func (r dataSourceEnrollmentPattern) Read(
 	if !found {
 		response.Diagnostics.AddError(
 			"Enrollment pattern not found",
-			fmt.Sprintf("Could not find enrollment pattern with name: %s", patternName),
+			fmt.Sprintf("Could not find enrollment pattern with %s: %s", enrollmentPatternNotFoundLookupField(patternName), patternName),
 		)
 		return
 	}

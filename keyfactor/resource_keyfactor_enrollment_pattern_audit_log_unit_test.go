@@ -267,6 +267,151 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	})
 
 	// ---------------------------------------------------------------------
+	// Regression test -- PR #210 full-review round 5 finding FIX-N: a nil
+	// Policies side was rendered via a bare Go zero-value
+	// EnrollmentPatternResourcePolicy{}, whose types.Bool{}/types.Int64{}
+	// fields are NOT flagged Null, so tfBoolLogString/tfInt64LogString
+	// rendered "false"/"0" instead of the accurate "(null)" -- e.g. prior
+	// state has Policies == nil (server omitted the key) and the new plan
+	// declares policies { allow_wildcards = true, certificate_owner_role = 2
+	// }; the audit line must read "(null) -> true" / "(null) -> 2", not
+	// "false -> true" / "0 -> 2".
+	// ---------------------------------------------------------------------
+
+	t.Run("Policies going from nil to non-nil renders the nil side as (null), not a zero value", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{}
+		plan := KeyfactorEnrollmentPatternState{
+			Policies: &EnrollmentPatternResourcePolicy{
+				AllowWildcards:       types.Bool{Value: true},
+				CertificateOwnerRole: types.Int64{Value: 2},
+			},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "policies.allow_wildcards: (null) -> true") {
+			t.Errorf(
+				"got %+v, want the bool subfield's OLD value rendered as (null), not false", got,
+			)
+		}
+		if !anyContains(got, "policies.certificate_owner_role: (null) -> 2") {
+			t.Errorf(
+				"got %+v, want the int subfield's OLD value rendered as (null), not 0", got,
+			)
+		}
+	})
+
+	// ---------------------------------------------------------------------
+	// Regression tests -- PR #210 full-review round 5 finding FIX-M:
+	// metadata_fields, defaults, and enrollment_fields were completely
+	// absent from the Update() audit diff despite being sent to Command on
+	// every create/update (buildEnrollmentPatternUpdateRequest/
+	// buildEnrollmentPatternCreateRequest) and being exactly the kind of
+	// "how strictly enrollment is validated" / "what ends up in issued
+	// certificates" control already tracked here for regexes and
+	// policies.rfc_enforcement.
+	// ---------------------------------------------------------------------
+
+	t.Run("metadata_fields change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			MetadataFields: []EnrollmentPatternResourceMetadataField{
+				{MetadataId: types.Int64{Value: 1}, Enrollment: types.Int64{Value: 1}},
+			},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			MetadataFields: []EnrollmentPatternResourceMetadataField{
+				{MetadataId: types.Int64{Value: 1}, Enrollment: types.Int64{Value: 2}},
+			},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "metadata_fields") {
+			t.Errorf("got %+v, want an entry for metadata_fields", got)
+		}
+	})
+
+	t.Run("defaults change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			Defaults: []EnrollmentPatternResourceDefault{
+				{SubjectPart: types.String{Value: "Organization"}, Value: types.String{Value: "Old Org"}},
+			},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			Defaults: []EnrollmentPatternResourceDefault{
+				{SubjectPart: types.String{Value: "Organization"}, Value: types.String{Value: "New Org"}},
+			},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "defaults") {
+			t.Errorf("got %+v, want an entry for defaults", got)
+		}
+	})
+
+	t.Run("enrollment_fields change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			EnrollmentFields: []EnrollmentPatternResourceField{
+				{Name: types.String{Value: "TicketNumber"}, DataType: types.Int64{Value: 1}},
+			},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			EnrollmentFields: nil,
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "enrollment_fields") {
+			t.Errorf("got %+v, want an entry for enrollment_fields when an enrollment field is removed", got)
+		}
+	})
+
+	// ---------------------------------------------------------------------
+	// Regression test -- PR #210 full-review round 5 finding FIX-O:
+	// policies.default_certificate_owner_role_name must never be reported by
+	// this function -- both prior/updated sides here are derived from
+	// pre-update data (prior Terraform state / the pre-update GET), so a
+	// same-apply change to policies.default_certificate_owner_role_id can
+	// never be reflected in this field at this point. The name change is
+	// reported separately by enrollmentPatternOwnerRoleNameChange, sourced
+	// from the actual PUT response, in Update() itself.
+	// ---------------------------------------------------------------------
+
+	t.Run("default_certificate_owner_role_id change never produces a default_certificate_owner_role_name entry here", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			Policies: &EnrollmentPatternResourcePolicy{
+				DefaultCertificateOwnerRoleId:   types.Int64{Value: 5},
+				DefaultCertificateOwnerRoleName: types.String{Value: "Role A"},
+			},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			Policies: &EnrollmentPatternResourcePolicy{
+				DefaultCertificateOwnerRoleId: types.Int64{Value: 42},
+				// Structurally, at this point in Update(), the name has not
+				// yet been re-resolved for the new id -- it is still
+				// whatever the pre-update GET returned. Mirroring that here
+				// (same name, different id) is exactly the scenario FIX-O
+				// guards against: the name line must not silently render an
+				// unchanged/misleading "Role A" -> "Role A".
+				DefaultCertificateOwnerRoleName: types.String{Value: "Role A"},
+			},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "policies.default_certificate_owner_role_id: 5 -> 42") {
+			t.Errorf("got %+v, want an entry for policies.default_certificate_owner_role_id: 5 -> 42", got)
+		}
+		if anyContains(got, "policies.default_certificate_owner_role_name") {
+			t.Errorf(
+				"got %+v, want no policies.default_certificate_owner_role_name entry from this function -- "+
+					"it cannot be resolved accurately before the update is actually applied", got,
+			)
+		}
+	})
+
+	// ---------------------------------------------------------------------
 	// Regression tests -- PR #210 full-review round 4 finding FIX-I:
 	// template_default (the persisted field, distinct from the one-shot
 	// force_template_default directive) was completely absent from the
@@ -751,6 +896,46 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 			t.Errorf("got %+v, want the regex's subject_part rendered", got)
 		}
 	})
+
+	// -----------------------------------------------------------------------
+	// Regression test -- PR #210 full-review round 5 finding FIX-M:
+	// metadata_fields, defaults, and enrollment_fields were completely
+	// absent from Create()'s audit trail too, despite being sent to Command
+	// on every create (buildEnrollmentPatternCreateRequest).
+	// -----------------------------------------------------------------------
+
+	t.Run("reports metadata_fields, defaults, and enrollment_fields", func(t *testing.T) {
+		t.Parallel()
+		created := KeyfactorEnrollmentPatternState{
+			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			MetadataFields: []EnrollmentPatternResourceMetadataField{
+				{MetadataId: types.Int64{Value: 7}, Enrollment: types.Int64{Value: 2}},
+			},
+			Defaults: []EnrollmentPatternResourceDefault{
+				{SubjectPart: types.String{Value: "Organization"}, Value: types.String{Value: "Keyfactor"}},
+			},
+			EnrollmentFields: []EnrollmentPatternResourceField{
+				{Name: types.String{Value: "TicketNumber"}, DataType: types.Int64{Value: 1}},
+			},
+		}
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
+		if !anyContains(got, "metadata_fields") {
+			t.Errorf("got %+v, want an entry for metadata_fields", got)
+		}
+		if !anyContains(got, "defaults") {
+			t.Errorf("got %+v, want an entry for defaults", got)
+		}
+		if !anyContains(got, "enrollment_fields") {
+			t.Errorf("got %+v, want an entry for enrollment_fields", got)
+		}
+		if !anyContains(got, `"Keyfactor"`) {
+			t.Errorf("got %+v, want the default's value rendered", got)
+		}
+		if !anyContains(got, `"TicketNumber"`) {
+			t.Errorf("got %+v, want the enrollment field's name rendered", got)
+		}
+	})
 }
 
 // TestUnitAlgorithmListLogString covers algorithmListLogString directly --
@@ -835,4 +1020,191 @@ func TestUnitRegexListLogString(t *testing.T) {
 	if strings.Contains(injected, "\n") {
 		t.Errorf("got %q, want no raw newline in rendered log value", injected)
 	}
+}
+
+// TestUnitMetadataFieldListLogString covers metadataFieldListLogString
+// directly -- the null-vs-non-nil-empty-aware renderer backing the new
+// metadata_fields audit-log entries (PR #210 full-review round 5 finding
+// FIX-M).
+func TestUnitMetadataFieldListLogString(t *testing.T) {
+	t.Parallel()
+
+	if got := metadataFieldListLogString(nil); got != "(null)" {
+		t.Errorf("got %q, want (null) for a nil slice", got)
+	}
+
+	if got := metadataFieldListLogString([]EnrollmentPatternResourceMetadataField{}); got != "[]" {
+		t.Errorf("got %q, want [] for a non-nil empty slice", got)
+	}
+
+	got := metadataFieldListLogString(
+		[]EnrollmentPatternResourceMetadataField{
+			{
+				MetadataId:    types.Int64{Value: 7},
+				DefaultValue:  types.String{Value: "CHG0000123"},
+				Validation:    types.String{Value: "^CHG[0-9]+$"},
+				Enrollment:    types.Int64{Value: 2},
+				Message:       types.String{Value: "Change ticket required"},
+				CaseSensitive: types.Bool{Value: true},
+			},
+		},
+	)
+	if !strings.Contains(got, `"CHG0000123"`) {
+		t.Errorf("got %q, want the default_value %%q-escaped", got)
+	}
+	if !strings.Contains(got, "metadata_id:7") {
+		t.Errorf("got %q, want the metadata_id rendered", got)
+	}
+
+	// CWE-117 regression: an embedded newline in any string field must be
+	// escaped, not passed through raw.
+	injected := metadataFieldListLogString(
+		[]EnrollmentPatternResourceMetadataField{
+			{DefaultValue: types.String{Value: "CHG0000123\nforged"}},
+		},
+	)
+	if strings.Contains(injected, "\n") {
+		t.Errorf("got %q, want no raw newline in rendered log value", injected)
+	}
+}
+
+// TestUnitDefaultListLogString covers defaultListLogString directly -- the
+// null-vs-non-nil-empty-aware renderer backing the new defaults audit-log
+// entries (PR #210 full-review round 5 finding FIX-M).
+func TestUnitDefaultListLogString(t *testing.T) {
+	t.Parallel()
+
+	if got := defaultListLogString(nil); got != "(null)" {
+		t.Errorf("got %q, want (null) for a nil slice", got)
+	}
+
+	if got := defaultListLogString([]EnrollmentPatternResourceDefault{}); got != "[]" {
+		t.Errorf("got %q, want [] for a non-nil empty slice", got)
+	}
+
+	got := defaultListLogString(
+		[]EnrollmentPatternResourceDefault{
+			{SubjectPart: types.String{Value: "Organization"}, Value: types.String{Value: "Keyfactor"}},
+		},
+	)
+	if !strings.Contains(got, `"Organization"`) {
+		t.Errorf("got %q, want the subject_part %%q-escaped", got)
+	}
+	if !strings.Contains(got, `"Keyfactor"`) {
+		t.Errorf("got %q, want the value %%q-escaped", got)
+	}
+
+	// CWE-117 regression: an embedded newline in any string field must be
+	// escaped, not passed through raw.
+	injected := defaultListLogString(
+		[]EnrollmentPatternResourceDefault{
+			{Value: types.String{Value: "Keyfactor\nforged"}},
+		},
+	)
+	if strings.Contains(injected, "\n") {
+		t.Errorf("got %q, want no raw newline in rendered log value", injected)
+	}
+}
+
+// TestUnitEnrollmentFieldListLogString covers enrollmentFieldListLogString
+// directly -- the null-vs-non-nil-empty-aware renderer backing the new
+// enrollment_fields audit-log entries (PR #210 full-review round 5 finding
+// FIX-M).
+func TestUnitEnrollmentFieldListLogString(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	if got := enrollmentFieldListLogString(ctx, nil); got != "(null)" {
+		t.Errorf("got %q, want (null) for a nil slice", got)
+	}
+
+	if got := enrollmentFieldListLogString(ctx, []EnrollmentPatternResourceField{}); got != "[]" {
+		t.Errorf("got %q, want [] for a non-nil empty slice", got)
+	}
+
+	got := enrollmentFieldListLogString(
+		ctx, []EnrollmentPatternResourceField{
+			{
+				Name:     types.String{Value: "TicketNumber"},
+				DataType: types.Int64{Value: 1},
+				Options:  types.List{Null: true, ElemType: types.StringType},
+			},
+		},
+	)
+	if !strings.Contains(got, `"TicketNumber"`) {
+		t.Errorf("got %q, want the name %%q-escaped", got)
+	}
+	if !strings.Contains(got, "data_type:1") {
+		t.Errorf("got %q, want the data_type rendered", got)
+	}
+
+	// CWE-117 regression: an embedded newline in any string field must be
+	// escaped, not passed through raw.
+	injected := enrollmentFieldListLogString(
+		ctx, []EnrollmentPatternResourceField{
+			{Name: types.String{Value: "TicketNumber\nforged"}},
+		},
+	)
+	if strings.Contains(injected, "\n") {
+		t.Errorf("got %q, want no raw newline in rendered log value", injected)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests -- PR #210 full-review round 5 finding FIX-O:
+//
+// enrollmentPatternOwnerRoleNameChange is the pure function Update() calls
+// AFTER the PUT response is available (see the call site in Update(), right
+// before response.State.Set), to correctly report a
+// policies.default_certificate_owner_role_name change caused by a same-apply
+// default_certificate_owner_role_id change -- something
+// enrollmentPatternPolicyRelevantFieldChanges structurally cannot do, since
+// both its sides are derived from pre-update data (see that function's doc
+// comment and the "default_certificate_owner_role_id change never produces
+// a ...role_name entry here" test above).
+// ---------------------------------------------------------------------------
+
+func TestUnitEnrollmentPatternOwnerRoleNameChange(t *testing.T) {
+	t.Parallel()
+
+	t.Run("reports a change using the actual post-update resolved name", func(t *testing.T) {
+		t.Parallel()
+		prior := &EnrollmentPatternResourcePolicy{
+			DefaultCertificateOwnerRoleId:   types.Int64{Value: 5},
+			DefaultCertificateOwnerRoleName: types.String{Value: "Role A"},
+		}
+		// actual mirrors newState.Policies built from the Update PUT
+		// response itself -- the genuinely-resolved name for the NEW id.
+		actual := &EnrollmentPatternResourcePolicy{
+			DefaultCertificateOwnerRoleId:   types.Int64{Value: 42},
+			DefaultCertificateOwnerRoleName: types.String{Value: "Role B"},
+		}
+
+		got := enrollmentPatternOwnerRoleNameChange(prior, actual)
+		want := `policies.default_certificate_owner_role_name: "Role A" -> "Role B"`
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("no change reports empty string", func(t *testing.T) {
+		t.Parallel()
+		prior := &EnrollmentPatternResourcePolicy{DefaultCertificateOwnerRoleName: types.String{Value: "Role A"}}
+		actual := &EnrollmentPatternResourcePolicy{DefaultCertificateOwnerRoleName: types.String{Value: "Role A"}}
+
+		if got := enrollmentPatternOwnerRoleNameChange(prior, actual); got != "" {
+			t.Errorf("got %q, want empty string for no change", got)
+		}
+	})
+
+	t.Run("nil prior/actual render as (null), not a zero value", func(t *testing.T) {
+		t.Parallel()
+		actual := &EnrollmentPatternResourcePolicy{DefaultCertificateOwnerRoleName: types.String{Value: "Role B"}}
+
+		got := enrollmentPatternOwnerRoleNameChange(nil, actual)
+		want := `policies.default_certificate_owner_role_name: (null) -> "Role B"`
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
 }

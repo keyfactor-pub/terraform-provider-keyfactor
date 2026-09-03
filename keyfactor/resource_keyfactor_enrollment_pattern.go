@@ -698,6 +698,87 @@ func regexListLogString(regexes []EnrollmentPatternResourceRegex) string {
 	return "[" + strings.Join(entries, ",") + "]"
 }
 
+// metadataFieldListLogString renders a []EnrollmentPatternResourceMetadataField
+// (the raw Go slice type backing the top-level metadata_fields attribute) as
+// a short human-readable string for audit-log lines, mirroring
+// regexListLogString's null vs. value distinction and %q-escaping
+// convention: a nil slice (undeclared metadata_fields -- see
+// buildEnrollmentPatternMetadataFieldsRequest's doc comment for the same
+// nil-vs-non-nil-empty distinction) logs as "(null)"; a non-nil (even
+// zero-length) slice renders each entry's metadata_id/default_value/
+// validation/enrollment/message/case_sensitive, %q-escaped via
+// tfStringLogString/tfInt64LogString/tfBoolLogString for the same CWE-117
+// reason those helpers exist. metadata_fields[].enrollment gates
+// required/optional/hidden status for enrollment metadata (e.g. a mandatory
+// "Change Ticket Number" field), so its default_value/enrollment/validation
+// settings are exactly the kind of "how strictly enrollment is validated"
+// control already tracked here for regexes/policies.rfc_enforcement. See PR
+// #210 full-review round 5 finding FIX-M.
+func metadataFieldListLogString(fields []EnrollmentPatternResourceMetadataField) string {
+	if fields == nil {
+		return "(null)"
+	}
+	entries := make([]string, 0, len(fields))
+	for _, f := range fields {
+		entries = append(
+			entries, fmt.Sprintf(
+				"{metadata_id:%s,default_value:%s,validation:%s,enrollment:%s,message:%s,case_sensitive:%s}",
+				tfInt64LogString(f.MetadataId), tfStringLogString(f.DefaultValue), tfStringLogString(f.Validation),
+				tfInt64LogString(f.Enrollment), tfStringLogString(f.Message), tfBoolLogString(f.CaseSensitive),
+			),
+		)
+	}
+	return "[" + strings.Join(entries, ",") + "]"
+}
+
+// defaultListLogString renders a []EnrollmentPatternResourceDefault (the raw
+// Go slice type backing the top-level defaults attribute) as a short
+// human-readable string for audit-log lines -- see
+// metadataFieldListLogString's doc comment for the same null-vs-value and
+// %q-escaping rationale. defaults pre-fills subject content for certificates
+// issued through this pattern, affecting the accuracy of what gets issued
+// (processing-integrity relevant), so it belongs in the same audit trail as
+// the other subject/validation-affecting fields. See PR #210 full-review
+// round 5 finding FIX-M.
+func defaultListLogString(defaults []EnrollmentPatternResourceDefault) string {
+	if defaults == nil {
+		return "(null)"
+	}
+	entries := make([]string, 0, len(defaults))
+	for _, d := range defaults {
+		entries = append(
+			entries, fmt.Sprintf(
+				"{subject_part:%s,value:%s}",
+				tfStringLogString(d.SubjectPart), tfStringLogString(d.Value),
+			),
+		)
+	}
+	return "[" + strings.Join(entries, ",") + "]"
+}
+
+// enrollmentFieldListLogString renders a []EnrollmentPatternResourceField
+// (the raw Go slice type backing the top-level enrollment_fields attribute)
+// as a short human-readable string for audit-log lines -- see
+// metadataFieldListLogString's doc comment for the same null-vs-value and
+// %q-escaping rationale. enrollment_fields is CA-passthrough data that ends
+// up in issued certificates, so like defaults it affects the accuracy of
+// what gets issued. See PR #210 full-review round 5 finding FIX-M.
+func enrollmentFieldListLogString(ctx context.Context, fields []EnrollmentPatternResourceField) string {
+	if fields == nil {
+		return "(null)"
+	}
+	entries := make([]string, 0, len(fields))
+	for _, f := range fields {
+		entries = append(
+			entries, fmt.Sprintf(
+				"{name:%s,data_type:%s,options:%s}",
+				tfStringLogString(f.Name), tfInt64LogString(f.DataType), tfListLogString(ctx, f.Options),
+			),
+		)
+	}
+	return "[" + strings.Join(entries, ",") + "]"
+}
+
 // enrollmentPatternPolicyRelevantFieldChanges compares the prior Terraform
 // state against the final Update() plan (after preserveUndeclaredEnrollment-
 // PatternFields and the associated_role_names/certificate_authority_ids
@@ -714,10 +795,14 @@ func regexListLogString(regexes []EnrollmentPatternResourceRegex) string {
 // certificate_authority_ids), which enrollment methods -- and thus
 // key-custody model -- are permitted (allowed_enrollment_types: 1=CSR,
 // 2=PFX/server-generated key, 3=both), how strictly enrollment is validated
-// (regexes, policies.rfc_enforcement, policies.allow_wildcards,
-// policies.allow_key_reuse), the cryptographic strength allowed
-// (policies.primary_key_algorithms, policies.alternative_key_algorithms),
-// and who owns the resulting certificates (policies.certificate_owner_role,
+// (regexes, metadata_fields, policies.rfc_enforcement,
+// policies.allow_wildcards, policies.allow_key_reuse), the cryptographic
+// strength allowed (policies.primary_key_algorithms,
+// policies.alternative_key_algorithms), the subject content and CA
+// passthrough data that ends up in issued certificates (defaults,
+// enrollment_fields -- processing-integrity relevant even though neither is
+// a classic access-control gate), and who owns the resulting certificates
+// (policies.certificate_owner_role,
 // policies.default_certificate_owner_role_id/name,
 // policies.default_certificate_owner_override), plus the one-shot
 // force_template_default directive. Deliberately a pure function (no
@@ -731,6 +816,16 @@ func regexListLogString(regexes []EnrollmentPatternResourceRegex) string {
 // output, and is instead reported on the Create side by
 // enrollmentPatternCreationAuditFields below. See PR #210 full-review round
 // 4 finding FIX-J.
+//
+// policies.default_certificate_owner_role_name is deliberately NOT compared
+// here: both `prior`/`updated` at the point this function runs (see
+// Update()) are still derived from state/GET responses taken BEFORE the PUT
+// that actually applies this update, so this field structurally cannot
+// reflect a same-apply change to policies.default_certificate_owner_role_id
+// (the id line above already reports that). Update() separately calls
+// enrollmentPatternOwnerRoleNameChange, sourced from the actual PUT
+// response, after the update has been applied. See PR #210 full-review
+// round 5 finding FIX-O.
 func enrollmentPatternPolicyRelevantFieldChanges(
 	ctx context.Context,
 	prior, updated KeyfactorEnrollmentPatternState,
@@ -751,6 +846,15 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 	appendIfChanged("certificate_authority_ids", tfListLogString(ctx, prior.CertificateAuthorityIds), tfListLogString(ctx, updated.CertificateAuthorityIds))
 	appendIfChanged("allowed_enrollment_types", tfInt64LogString(prior.AllowedEnrollmentTypes), tfInt64LogString(updated.AllowedEnrollmentTypes))
 	appendIfChanged("regexes", regexListLogString(prior.Regexes), regexListLogString(updated.Regexes))
+	appendIfChanged(
+		"metadata_fields",
+		metadataFieldListLogString(prior.MetadataFields), metadataFieldListLogString(updated.MetadataFields),
+	)
+	appendIfChanged("defaults", defaultListLogString(prior.Defaults), defaultListLogString(updated.Defaults))
+	appendIfChanged(
+		"enrollment_fields",
+		enrollmentFieldListLogString(ctx, prior.EnrollmentFields), enrollmentFieldListLogString(ctx, updated.EnrollmentFields),
+	)
 	// force_template_default is a one-shot, write-only directive: every CRUD
 	// path in this file unconditionally resets it to Null in the persisted
 	// state (see alwaysUnknownModifier's doc comment), so `prior` here is
@@ -777,7 +881,18 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 	}
 
 	if prior.Policies != nil || updated.Policies != nil {
-		var o, n EnrollmentPatternResourcePolicy
+		// When either side's Policies pointer is nil (server/plan omitted the
+		// policies key entirely), fall back to an explicitly Null-flagged
+		// zero value rather than Go's implicit struct zero value. A bare
+		// `var o EnrollmentPatternResourcePolicy` zero-value produces
+		// types.Bool{Null: false, Value: false} / types.Int64{Null: false,
+		// Value: 0} / types.String{Null: false, Value: ""} for every
+		// subfield -- none of which are actually flagged Null -- so
+		// tfBoolLogString/tfInt64LogString/tfStringLogString would render
+		// "false"/"0"/"" instead of the accurate "(null)", misrepresenting a
+		// genuinely-absent prior/updated value as a concrete one. See PR
+		// #210 full-review round 5 finding FIX-N.
+		o, n := enrollmentPatternNullPolicy(), enrollmentPatternNullPolicy()
 		if prior.Policies != nil {
 			o = *prior.Policies
 		}
@@ -792,10 +907,8 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 			"policies.default_certificate_owner_role_id",
 			tfInt64LogString(o.DefaultCertificateOwnerRoleId), tfInt64LogString(n.DefaultCertificateOwnerRoleId),
 		)
-		appendIfChanged(
-			"policies.default_certificate_owner_role_name",
-			tfStringLogString(o.DefaultCertificateOwnerRoleName), tfStringLogString(n.DefaultCertificateOwnerRoleName),
-		)
+		// policies.default_certificate_owner_role_name is intentionally not
+		// compared here -- see this function's doc comment (FIX-O).
 		appendIfChanged(
 			"policies.default_certificate_owner_override",
 			tfBoolLogString(o.DefaultCertificateOwnerOverride), tfBoolLogString(n.DefaultCertificateOwnerOverride),
@@ -813,6 +926,56 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 	return changes
 }
 
+// enrollmentPatternNullPolicy returns a zero-value EnrollmentPatternResourcePolicy
+// with every scalar subfield explicitly flagged Null, for use as a diff-side
+// fallback when the source *EnrollmentPatternResourcePolicy is itself nil --
+// see enrollmentPatternPolicyRelevantFieldChanges's doc comment on the
+// resulting bare Go zero-value pitfall (PR #210 full-review round 5 finding
+// FIX-N).
+func enrollmentPatternNullPolicy() EnrollmentPatternResourcePolicy {
+	return EnrollmentPatternResourcePolicy{
+		AllowKeyReuse:                   types.Bool{Null: true},
+		AllowWildcards:                  types.Bool{Null: true},
+		RFCEnforcement:                  types.Bool{Null: true},
+		CertificateOwnerRole:            types.Int64{Null: true},
+		DefaultCertificateOwnerRoleId:   types.Int64{Null: true},
+		DefaultCertificateOwnerRoleName: types.String{Null: true},
+		DefaultCertificateOwnerOverride: types.Bool{Null: true},
+	}
+}
+
+// enrollmentPatternOwnerRoleNameChange reports a
+// "policies.default_certificate_owner_role_name: old -> new" audit line, or
+// "" when unchanged. Unlike every other field compared by
+// enrollmentPatternPolicyRelevantFieldChanges, this one is NOT safe to
+// compare using the prior-state/pre-update-GET-derived `prior`/`updated`
+// values that function receives: both sides of that comparison are resolved
+// BEFORE the update PUT actually applies (see
+// preserveUndeclaredEnrollmentPatternFields's unconditional
+// `pp.DefaultCertificateOwnerRoleName = cp.DefaultCertificateOwnerRoleName`,
+// sourced from a GET taken immediately before the PUT), so a same-apply
+// change to policies.default_certificate_owner_role_id would render this
+// field as unchanged even though the name resolves differently once the PUT
+// takes effect. Call this instead with `actual` sourced from the Update PUT
+// response itself (already fetched by Update() -- no extra API call needed),
+// which reflects the genuinely-applied result. See PR #210 full-review round
+// 5 finding FIX-O.
+func enrollmentPatternOwnerRoleNameChange(prior, actual *EnrollmentPatternResourcePolicy) string {
+	oldName := types.String{Null: true}
+	if prior != nil {
+		oldName = prior.DefaultCertificateOwnerRoleName
+	}
+	newName := types.String{Null: true}
+	if actual != nil {
+		newName = actual.DefaultCertificateOwnerRoleName
+	}
+	oldStr, newStr := tfStringLogString(oldName), tfStringLogString(newName)
+	if oldStr == newStr {
+		return ""
+	}
+	return fmt.Sprintf("policies.default_certificate_owner_role_name: %s -> %s", oldStr, newStr)
+}
+
 // enrollmentPatternCreationAuditFields renders the same access-control-
 // relevant fields enrollmentPatternPolicyRelevantFieldChanges audits on
 // every subsequent Update() -- the reference name of the pattern (name) and
@@ -824,14 +987,22 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 // (associated_role_names, certificate_authority_ids), which enrollment
 // methods -- and thus key-custody model -- are permitted
 // (allowed_enrollment_types: 1=CSR, 2=PFX/server-generated key, 3=both), how
-// strictly enrollment is validated (regexes, policies.rfc_enforcement,
-// policies.allow_wildcards, policies.allow_key_reuse), the cryptographic
-// strength allowed (policies.primary_key_algorithms,
-// policies.alternative_key_algorithms), who owns the resulting certificates
-// (policies.certificate_owner_role, policies.default_certificate_owner_
-// role_id/name, policies.default_certificate_owner_override), and the
-// one-shot force_template_default directive -- as one "field: value" string
-// per field, for Create()'s audit-log line.
+// strictly enrollment is validated (regexes, metadata_fields,
+// policies.rfc_enforcement, policies.allow_wildcards,
+// policies.allow_key_reuse), the cryptographic strength allowed
+// (policies.primary_key_algorithms, policies.alternative_key_algorithms),
+// the subject content and CA passthrough data that ends up in issued
+// certificates (defaults, enrollment_fields), who owns the resulting
+// certificates (policies.certificate_owner_role, policies.default_
+// certificate_owner_role_id/name, policies.default_certificate_owner_
+// override), and the one-shot force_template_default directive -- as one
+// "field: value" string per field, for Create()'s audit-log line.
+//
+// Unlike enrollmentPatternPolicyRelevantFieldChanges, Create() has no
+// pre-update GET to worry about: `created` here is derived directly from the
+// Create response itself, so policies.default_certificate_owner_role_name is
+// already the genuinely-resolved value and is reported normally (no FIX-O
+// suppression needed on this path).
 //
 // force_template_default is passed in separately (submittedForceTemplate-
 // Default), rather than read off `created`, because by the time Create()
@@ -876,6 +1047,9 @@ func enrollmentPatternCreationAuditFields(
 	add("certificate_authority_ids", tfListLogString(ctx, created.CertificateAuthorityIds))
 	add("allowed_enrollment_types", tfInt64LogString(created.AllowedEnrollmentTypes))
 	add("regexes", regexListLogString(created.Regexes))
+	add("metadata_fields", metadataFieldListLogString(created.MetadataFields))
+	add("defaults", defaultListLogString(created.Defaults))
+	add("enrollment_fields", enrollmentFieldListLogString(ctx, created.EnrollmentFields))
 	add("force_template_default", tfBoolLogString(submittedForceTemplateDefault))
 
 	if created.Policies != nil {
@@ -2049,6 +2223,16 @@ func (r resourceEnrollmentPattern) Update(
 	newState.AssociatedRoleNames = plan.AssociatedRoleNames
 	newState.CertificateAuthorityIds = plan.CertificateAuthorityIds
 	newState.ForceTemplateDefault = types.Bool{Null: true}
+
+	// policies.default_certificate_owner_role_name can only be audited
+	// accurately AFTER the update has actually been applied -- see
+	// enrollmentPatternOwnerRoleNameChange's doc comment (PR #210 full-review
+	// round 5 finding FIX-O). newState.Policies here is derived from `resp`,
+	// the PUT response itself, so this reuses data already fetched rather
+	// than issuing an extra GET.
+	if change := enrollmentPatternOwnerRoleNameChange(state.Policies, newState.Policies); change != "" {
+		tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %d field change on update: %s", plan.ID.Value, change))
+	}
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)

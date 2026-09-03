@@ -96,8 +96,9 @@ resource "keyfactor_enrollment_pattern" "test" {
   associated_role_names = [keyfactor_role.role_a.name]
 
   policies = {
-    certificate_owner_role            = 2
-    default_certificate_owner_role_id = keyfactor_role.role_a.id
+    certificate_owner_role             = 2
+    default_certificate_owner_override = true
+    default_certificate_owner_role_id  = keyfactor_role.role_a.id
   }
 }
 `, suffix, templateID)
@@ -114,8 +115,9 @@ resource "keyfactor_enrollment_pattern" "test" {
   force_template_default  = true
 
   policies = {
-    certificate_owner_role            = 2
-    default_certificate_owner_role_id = keyfactor_role.role_b.id
+    certificate_owner_role             = 2
+    default_certificate_owner_override = true
+    default_certificate_owner_role_id  = keyfactor_role.role_b.id
   }
 }
 `, suffix, templateID)

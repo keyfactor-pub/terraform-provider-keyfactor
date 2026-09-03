@@ -59,8 +59,9 @@ func testAccCertificateCollectionContentFixConfig(suffix string, step2 bool) str
 	}
 	return fmt.Sprintf(`
 resource "keyfactor_certificate_collection" "test" {
-  name  = "TFCCFix%s"
-  query = %q
+  name        = "TFCCFix%s"
+  description = "TF F3 regression test collection"
+  query       = %q
 }
 `, suffix, query)
 }

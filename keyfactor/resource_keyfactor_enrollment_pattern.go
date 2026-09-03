@@ -644,6 +644,33 @@ func tfListLogString(ctx context.Context, l types.List) string {
 	return "[" + strings.Join(quoted, ",") + "]"
 }
 
+// algorithmListLogString renders a []EnrollmentPatternResourceAlgorithm (the
+// raw Go slice type backing policies.primary_key_algorithms/alternative_key_
+// algorithms -- see EnrollmentPatternResourcePolicy) as a short human-
+// readable string for audit-log lines, mirroring tfListLogString's null vs.
+// value distinction for the types.List-backed fields logged alongside it: a
+// nil slice (this resource's "undeclared" sentinel for these two fields --
+// see buildEnrollmentPatternPolicyRequest's doc comment for the same
+// nil-vs-non-nil-empty distinction) logs as "(null)"; a non-nil (even
+// zero-length) slice renders each entry's name/bit_lengths/curves, %q-
+// escaped via tfStringLogString/tfListLogString for the same CWE-117 reason
+// those helpers exist.
+func algorithmListLogString(ctx context.Context, algos []EnrollmentPatternResourceAlgorithm) string {
+	if algos == nil {
+		return "(null)"
+	}
+	entries := make([]string, 0, len(algos))
+	for _, a := range algos {
+		entries = append(
+			entries, fmt.Sprintf(
+				"{name:%s,bit_lengths:%s,curves:%s}",
+				tfStringLogString(a.Name), tfListLogString(ctx, a.BitLengths), tfListLogString(ctx, a.Curves),
+			),
+		)
+	}
+	return "[" + strings.Join(entries, ",") + "]"
+}
+
 // enrollmentPatternPolicyRelevantFieldChanges compares the prior Terraform
 // state against the final Update() plan (after preserveUndeclaredEnrollment-
 // PatternFields and the associated_role_names/certificate_authority_ids
@@ -652,9 +679,12 @@ func tfListLogString(ctx context.Context, l types.List) string {
 // policy-relevant field. Covers the fields this resource can change that
 // matter for a compliance audit trail: who can enroll (associated_role_names,
 // certificate_authority_ids), how strictly (policies.rfc_enforcement,
-// policies.allow_wildcards, policies.allow_key_reuse), and who owns the
-// resulting certificates (policies.certificate_owner_role,
-// policies.default_certificate_owner_role_id/name), plus the one-shot
+// policies.allow_wildcards, policies.allow_key_reuse), the cryptographic
+// strength allowed (policies.primary_key_algorithms,
+// policies.alternative_key_algorithms), and who owns the resulting
+// certificates (policies.certificate_owner_role,
+// policies.default_certificate_owner_role_id/name,
+// policies.default_certificate_owner_override), plus the one-shot
 // force_template_default directive. Deliberately a pure function (no
 // tflog/side effects) so it can be unit tested directly; Update() emits one
 // tflog.Info per returned entry.
@@ -694,6 +724,18 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 			"policies.default_certificate_owner_role_name",
 			tfStringLogString(o.DefaultCertificateOwnerRoleName), tfStringLogString(n.DefaultCertificateOwnerRoleName),
 		)
+		appendIfChanged(
+			"policies.default_certificate_owner_override",
+			tfBoolLogString(o.DefaultCertificateOwnerOverride), tfBoolLogString(n.DefaultCertificateOwnerOverride),
+		)
+		appendIfChanged(
+			"policies.primary_key_algorithms",
+			algorithmListLogString(ctx, o.PrimaryKeyAlgorithms), algorithmListLogString(ctx, n.PrimaryKeyAlgorithms),
+		)
+		appendIfChanged(
+			"policies.alternative_key_algorithms",
+			algorithmListLogString(ctx, o.AlternativeKeyAlgorithms), algorithmListLogString(ctx, n.AlternativeKeyAlgorithms),
+		)
 	}
 
 	return changes
@@ -703,10 +745,24 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 // relevant fields enrollmentPatternPolicyRelevantFieldChanges audits on
 // every subsequent Update() -- who can enroll (associated_role_names,
 // certificate_authority_ids), how strictly (policies.rfc_enforcement,
-// policies.allow_wildcards, policies.allow_key_reuse), and who owns the
-// resulting certificates (policies.certificate_owner_role,
-// policies.default_certificate_owner_role_id/name) -- as one "field: value"
-// string per field, for Create()'s audit-log line.
+// policies.allow_wildcards, policies.allow_key_reuse), the cryptographic
+// strength allowed (policies.primary_key_algorithms,
+// policies.alternative_key_algorithms), who owns the resulting certificates
+// (policies.certificate_owner_role, policies.default_certificate_owner_
+// role_id/name, policies.default_certificate_owner_override), and the
+// one-shot force_template_default directive -- as one "field: value" string
+// per field, for Create()'s audit-log line.
+//
+// force_template_default is passed in separately (submittedForceTemplate-
+// Default), rather than read off `created`, because by the time Create()
+// builds its audit log, created.ForceTemplateDefault has already been
+// force-reset to Null (it is never persisted server-side -- see the comment
+// above every CRUD path's `ForceTemplateDefault = types.Bool{Null: true}`
+// assignment). Reading it off `created` would always render "(null)"
+// regardless of what was actually sent to Command on this create -- the
+// caller must pass the plan value that was actually used to build the
+// create request, before that reset. See PR #210 full-review round 2
+// finding FIX-B.
 //
 // Create() has no prior Terraform state to diff against (the resource
 // doesn't exist yet), so unlike enrollmentPatternPolicyRelevantFieldChanges
@@ -721,7 +777,11 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 // granted access to what, and when" would flag (PR #210 full-review finding
 // FIX-8). Pure function so it can be unit tested directly, matching
 // enrollmentPatternPolicyRelevantFieldChanges.
-func enrollmentPatternCreationAuditFields(ctx context.Context, created KeyfactorEnrollmentPatternState) []string {
+func enrollmentPatternCreationAuditFields(
+	ctx context.Context,
+	created KeyfactorEnrollmentPatternState,
+	submittedForceTemplateDefault types.Bool,
+) []string {
 	var fields []string
 	add := func(name, val string) {
 		fields = append(fields, fmt.Sprintf("%s: %s", name, val))
@@ -729,6 +789,7 @@ func enrollmentPatternCreationAuditFields(ctx context.Context, created Keyfactor
 
 	add("associated_role_names", tfListLogString(ctx, created.AssociatedRoleNames))
 	add("certificate_authority_ids", tfListLogString(ctx, created.CertificateAuthorityIds))
+	add("force_template_default", tfBoolLogString(submittedForceTemplateDefault))
 
 	if created.Policies != nil {
 		p := created.Policies
@@ -738,6 +799,9 @@ func enrollmentPatternCreationAuditFields(ctx context.Context, created Keyfactor
 		add("policies.certificate_owner_role", tfInt64LogString(p.CertificateOwnerRole))
 		add("policies.default_certificate_owner_role_id", tfInt64LogString(p.DefaultCertificateOwnerRoleId))
 		add("policies.default_certificate_owner_role_name", tfStringLogString(p.DefaultCertificateOwnerRoleName))
+		add("policies.default_certificate_owner_override", tfBoolLogString(p.DefaultCertificateOwnerOverride))
+		add("policies.primary_key_algorithms", algorithmListLogString(ctx, p.PrimaryKeyAlgorithms))
+		add("policies.alternative_key_algorithms", algorithmListLogString(ctx, p.AlternativeKeyAlgorithms))
 	}
 
 	return fields
@@ -975,38 +1039,69 @@ func enrollmentPatternPolicyResponseToState(p *v1.EnrollmentPatternsEnrollmentPa
 	return pol
 }
 
-// alwaysUnknownModifier always plans its attribute as Unknown, regardless of
-// the declared config value or prior state.
+// alwaysUnknownModifier plans its attribute as Unknown only when the config
+// actually declares a definite `true` (or is itself still Unknown, e.g.
+// chained from a not-yet-applied resource) -- i.e. only when the directive
+// is genuinely being invoked this apply. Every other case (undeclared/Null
+// config, or an explicit `false`) plans a stable Null.
 //
 // force_template_default is a one-shot, write-only directive: every CRUD
 // path in this file unconditionally resolves it to Null in the final state
 // (it is never persisted server-side, so there is nothing else it could
-// resolve to). Without this modifier the attribute is not Computed, so its
-// planned value is exactly whatever the config declares -- e.g. `true`.
-// Terraform Core then rejects the apply with "Provider produced
-// inconsistent result after apply" the moment the final state (Null)
-// disagrees with that planned value, which happens on literally the
-// field's only real use case (declaring force_template_default = true).
-// Marking the attribute Computed and unconditionally planning it Unknown
-// sidesteps the comparison entirely: Core accepts any final value --
-// including Null -- for an attribute whose planned value was Unknown. This
-// has no effect on whether the directive is actually honored: every CRUD
-// path decodes the real value from Config (not Plan) to build the API
-// request (see the comment above Create()'s request.Config.Get call), so
-// the modifier only changes what Core expects to see afterward, not what
-// gets sent to Command. See PR #210 full-review finding FIX-1.
+// resolve to). Without any modifier, a non-Computed attribute's planned
+// value is exactly whatever the config declares -- e.g. `true`. Terraform
+// Core then rejects the apply with "Provider produced inconsistent result
+// after apply" the moment the final state (Null) disagrees with that
+// planned value, which happens on literally the field's only real use case
+// (declaring force_template_default = true). Marking the attribute Computed
+// and planning it Unknown for that one case sidesteps the comparison
+// entirely: Core accepts any final value -- including Null -- for an
+// attribute whose planned value was Unknown.
+//
+// An earlier version of this modifier planned Unknown UNCONDITIONALLY,
+// regardless of config/state. That over-applied to the overwhelmingly
+// common case where force_template_default is never declared (or is
+// declared false, which the request-building code below treats as
+// equivalent to unset -- see Create()/Update()'s `!plan.ForceTemplateDefault
+// .Null && !plan.ForceTemplateDefault.Unknown` guard before sending it):
+// every subsequent `terraform plan` -- even with zero declared changes --
+// reported `force_template_default = null -> (known after apply)`,
+// forever, breaking a clean drift-check. Planning a stable Null for the
+// undeclared/false case (mirroring useStateOrNullModifier's style) fixes
+// that while still resolving to Unknown -- and thus still tolerating the
+// always-Null final state -- for the one case that matters. This has no
+// effect on whether the directive is actually honored: every CRUD path
+// decodes the real value from Config (not Plan) to build the API request
+// (see the comment above Create()'s request.Config.Get call), so the
+// modifier only changes what Core expects to see afterward, not what gets
+// sent to Command. See PR #210 full-review finding FIX-1 (original
+// modifier) and round 2 finding FIX-A (perpetual-diff fix).
 type alwaysUnknownModifier struct{}
 
 func (m alwaysUnknownModifier) Description(_ context.Context) string {
-	return "Always plans this attribute as unknown so its final value is free to differ from the declared config value (including resolving to null)."
+	return "Plans this attribute as unknown when config declares (or may yet resolve to) true, so its final value is free to differ from the declared config value (including resolving to null); otherwise plans a stable null."
 }
 
 func (m alwaysUnknownModifier) MarkdownDescription(ctx context.Context) string {
 	return m.Description(ctx)
 }
 
-func (m alwaysUnknownModifier) Modify(_ context.Context, _ tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
-	resp.AttributePlan = types.Bool{Unknown: true}
+func (m alwaysUnknownModifier) Modify(_ context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if cfg, ok := req.AttributeConfig.(types.Bool); ok {
+		// Config not yet known (e.g. chained from a resource not yet
+		// applied this run) -- it could still resolve to true, so stay
+		// Unknown rather than risk a stable-Null plan that later disagrees
+		// with a genuinely-true final config.
+		if cfg.Unknown {
+			resp.AttributePlan = types.Bool{Unknown: true}
+			return
+		}
+		if !cfg.Null && cfg.Value {
+			resp.AttributePlan = types.Bool{Unknown: true}
+			return
+		}
+	}
+	resp.AttributePlan = types.Bool{Null: true}
 }
 
 // resolveUnknownListToNull resolves an Unknown types.List to Null, leaving
@@ -1662,7 +1757,7 @@ func (r resourceEnrollmentPattern) Create(
 	// below (these fields -- role names, CA ids, policy enum settings --
 	// are not free-text search content, unlike certificate_collection's
 	// query field; see FIX-7).
-	for _, field := range enrollmentPatternCreationAuditFields(ctx, newState) {
+	for _, field := range enrollmentPatternCreationAuditFields(ctx, newState, plan.ForceTemplateDefault) {
 		tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %d field set on create: %s", newState.ID.Value, field))
 	}
 

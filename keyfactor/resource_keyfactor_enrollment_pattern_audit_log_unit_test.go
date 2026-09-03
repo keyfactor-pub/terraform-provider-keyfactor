@@ -121,6 +121,72 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 		}
 	})
 
+	// ---------------------------------------------------------------------
+	// Regression tests -- PR #210 full-review round 2 finding FIX-C:
+	// policies.default_certificate_owner_override, policies.primary_key_
+	// algorithms, and policies.alternative_key_algorithms were not audited
+	// on Update() despite being exactly as security-relevant as the
+	// adjacent fields already covered (access-control override, allowed
+	// key types/sizes/curves).
+	// ---------------------------------------------------------------------
+
+	t.Run("policies.default_certificate_owner_override change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			Policies: &EnrollmentPatternResourcePolicy{DefaultCertificateOwnerOverride: types.Bool{Value: false}},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			Policies: &EnrollmentPatternResourcePolicy{DefaultCertificateOwnerOverride: types.Bool{Value: true}},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "policies.default_certificate_owner_override") {
+			t.Errorf("got %+v, want an entry for policies.default_certificate_owner_override", got)
+		}
+	})
+
+	t.Run("policies.primary_key_algorithms change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			Policies: &EnrollmentPatternResourcePolicy{
+				PrimaryKeyAlgorithms: []EnrollmentPatternResourceAlgorithm{
+					{Name: types.String{Value: "RSA"}},
+				},
+			},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			Policies: &EnrollmentPatternResourcePolicy{
+				PrimaryKeyAlgorithms: []EnrollmentPatternResourceAlgorithm{
+					{Name: types.String{Value: "ECDSA"}},
+				},
+			},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "policies.primary_key_algorithms") {
+			t.Errorf("got %+v, want an entry for policies.primary_key_algorithms", got)
+		}
+	})
+
+	t.Run("policies.alternative_key_algorithms change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			Policies: &EnrollmentPatternResourcePolicy{AlternativeKeyAlgorithms: nil},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			Policies: &EnrollmentPatternResourcePolicy{
+				AlternativeKeyAlgorithms: []EnrollmentPatternResourceAlgorithm{
+					{Name: types.String{Value: "Ed25519"}},
+				},
+			},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "policies.alternative_key_algorithms") {
+			t.Errorf("got %+v, want an entry for policies.alternative_key_algorithms", got)
+		}
+	})
+
 	t.Run("nil Policies on both sides produces no policy entries", func(t *testing.T) {
 		t.Parallel()
 		state := KeyfactorEnrollmentPatternState{}
@@ -272,7 +338,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 			},
 			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
 		}
-		got := enrollmentPatternCreationAuditFields(ctx, created)
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
 		if !anyContains(got, "associated_role_names") {
 			t.Errorf("got %+v, want an entry for associated_role_names", got)
 		}
@@ -291,7 +357,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 				CertificateOwnerRole: types.Int64{Value: 2},
 			},
 		}
-		got := enrollmentPatternCreationAuditFields(ctx, created)
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
 		if !anyContains(got, "policies.rfc_enforcement") {
 			t.Errorf("got %+v, want an entry for policies.rfc_enforcement", got)
 		}
@@ -306,7 +372,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
 			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
 		}
-		got := enrollmentPatternCreationAuditFields(ctx, created)
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
 		if anyContains(got, "policies.") {
 			t.Errorf("got %+v, want no policies.* entries when Policies is nil", got)
 		}
@@ -321,11 +387,130 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 			},
 			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
 		}
-		got := enrollmentPatternCreationAuditFields(ctx, created)
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
 		for _, entry := range got {
 			if strings.Contains(entry, "\n") {
 				t.Errorf("got %q, want no raw newline (CWE-117 escaping) in audit entry", entry)
 			}
 		}
 	})
+
+	// -----------------------------------------------------------------------
+	// Regression test -- PR #210 full-review round 2 finding FIX-B:
+	//
+	// force_template_default was missing from enrollmentPatternCreationAudit-
+	// Fields entirely, and even if referenced directly off `created` would
+	// always read back "(null)" -- Create() force-resets
+	// newState.ForceTemplateDefault to Null (it's never persisted
+	// server-side) BEFORE calling this function. The value that was actually
+	// submitted to the API must be sourced from the pre-reset plan value,
+	// passed in as submittedForceTemplateDefault.
+	// -----------------------------------------------------------------------
+
+	t.Run("reports force_template_default sourced from the submitted value, not the reset state", func(t *testing.T) {
+		t.Parallel()
+		// created mirrors Create()'s newState AFTER the force-reset to Null
+		// -- i.e. exactly what the function receives in practice.
+		created := KeyfactorEnrollmentPatternState{
+			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			ForceTemplateDefault:    types.Bool{Null: true},
+		}
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Value: true})
+		if !anyContains(got, "force_template_default: true") {
+			t.Errorf(
+				"got %+v, want an entry reporting force_template_default: true (the value actually submitted "+
+					"to the API), not (null) (the post-reset state value)", got,
+			)
+		}
+	})
+
+	t.Run("reports force_template_default as (null) when never declared", func(t *testing.T) {
+		t.Parallel()
+		created := KeyfactorEnrollmentPatternState{
+			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			ForceTemplateDefault:    types.Bool{Null: true},
+		}
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
+		if !anyContains(got, "force_template_default: (null)") {
+			t.Errorf("got %+v, want an entry reporting force_template_default: (null)", got)
+		}
+	})
+
+	// -----------------------------------------------------------------------
+	// Regression tests -- PR #210 full-review round 2 finding FIX-C:
+	// policies.default_certificate_owner_override, policies.primary_key_
+	// algorithms, and policies.alternative_key_algorithms were missing from
+	// Create()'s audit trail too (see the equivalent Update()-path tests
+	// above).
+	// -----------------------------------------------------------------------
+
+	t.Run("reports policies.default_certificate_owner_override, primary/alternative_key_algorithms", func(t *testing.T) {
+		t.Parallel()
+		created := KeyfactorEnrollmentPatternState{
+			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			Policies: &EnrollmentPatternResourcePolicy{
+				DefaultCertificateOwnerOverride: types.Bool{Value: true},
+				PrimaryKeyAlgorithms: []EnrollmentPatternResourceAlgorithm{
+					{Name: types.String{Value: "RSA"}},
+				},
+				AlternativeKeyAlgorithms: []EnrollmentPatternResourceAlgorithm{
+					{Name: types.String{Value: "ECDSA"}},
+				},
+			},
+		}
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
+		if !anyContains(got, "policies.default_certificate_owner_override") {
+			t.Errorf("got %+v, want an entry for policies.default_certificate_owner_override", got)
+		}
+		if !anyContains(got, "policies.primary_key_algorithms") {
+			t.Errorf("got %+v, want an entry for policies.primary_key_algorithms", got)
+		}
+		if !anyContains(got, "policies.alternative_key_algorithms") {
+			t.Errorf("got %+v, want an entry for policies.alternative_key_algorithms", got)
+		}
+	})
+}
+
+// TestUnitAlgorithmListLogString covers algorithmListLogString directly --
+// the null-vs-non-nil-empty-aware renderer backing the new policies.
+// primary_key_algorithms/alternative_key_algorithms audit-log entries (PR
+// #210 full-review round 2 finding FIX-C).
+func TestUnitAlgorithmListLogString(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	if got := algorithmListLogString(ctx, nil); got != "(null)" {
+		t.Errorf("got %q, want (null) for a nil slice", got)
+	}
+
+	if got := algorithmListLogString(ctx, []EnrollmentPatternResourceAlgorithm{}); got != "[]" {
+		t.Errorf("got %q, want [] for a non-nil empty slice", got)
+	}
+
+	got := algorithmListLogString(
+		ctx, []EnrollmentPatternResourceAlgorithm{
+			{
+				Name:       types.String{Value: "RSA"},
+				BitLengths: types.List{ElemType: types.Int64Type, Elems: []attr.Value{types.Int64{Value: 2048}}},
+				Curves:     types.List{Null: true, ElemType: types.StringType},
+			},
+		},
+	)
+	if !strings.Contains(got, `"RSA"`) {
+		t.Errorf("got %q, want the algorithm name %%q-escaped", got)
+	}
+
+	// CWE-117 regression: an embedded newline in the algorithm name must be
+	// escaped, not passed through raw.
+	injected := algorithmListLogString(
+		ctx, []EnrollmentPatternResourceAlgorithm{
+			{Name: types.String{Value: "RSA\nforged"}},
+		},
+	)
+	if strings.Contains(injected, "\n") {
+		t.Errorf("got %q, want no raw newline in rendered log value", injected)
+	}
 }

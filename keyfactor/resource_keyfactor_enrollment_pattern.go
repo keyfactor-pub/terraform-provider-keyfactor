@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -95,10 +96,27 @@ func enrollmentPatternPolicySchema() map[string]tfsdk.Attribute {
 			PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 		},
 		"default_certificate_owner_role_name": {
-			Type:          types.StringType,
-			Computed:      true,
-			Description:   "Name of the security role that should be set as the owner of the cert during import of new certificates. Read-only, derived from default_certificate_owner_role_id.",
-			PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+			Type:        types.StringType,
+			Computed:    true,
+			Description: "Name of the security role that should be set as the owner of the cert during import of new certificates. Read-only, derived from default_certificate_owner_role_id.",
+			// followsDriverModifier (full-review finding F4), not
+			// tfsdk.UseStateForUnknown(): this mirror must NOT be pinned
+			// to its stale, pre-update-resolved name when
+			// default_certificate_owner_role_id itself is changing this
+			// apply, since the PUT response resolves the name for the NEW
+			// id differently -- pinning the old name causes "Provider
+			// produced inconsistent result after apply" once Update()'s
+			// response-derived name lands in the final state. See
+			// followsDriverModifier's doc comment. The driver path is
+			// relative to this nested attribute's own parent object
+			// (policies), matching how a sibling attribute within the
+			// same nested object is referenced.
+			PlanModifiers: []tfsdk.AttributePlanModifier{
+				followsDriverModifier[types.Int64]{
+					driverPath:  path.Root("policies").AtName("default_certificate_owner_role_id"),
+					description: "Uses the prior state value unless policies.default_certificate_owner_role_id is changing this apply, in which case this attribute is left unknown so it can be recomputed from the server's response.",
+				},
+			},
 		},
 		"default_certificate_owner_override": {
 			Type:          types.BoolType,
@@ -227,10 +245,23 @@ For full information on enrollment patterns view the [product documentation](htt
 			// Optional required alongside Computed -- see the comment on
 			// "template" above.
 			"associated_roles": {
-				Optional:      true,
-				Computed:      true,
-				Description:   "The security roles associated with the enrollment pattern (read-only, expanded from associated_role_names).",
-				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
+				Optional:    true,
+				Computed:    true,
+				Description: "The security roles associated with the enrollment pattern (read-only, expanded from associated_role_names).",
+				// followsDriverModifier (full-review finding F2), not
+				// useStateOrNullModifier: this mirror must NOT be pinned
+				// to its stale prior membership when associated_role_names
+				// itself is changing this apply, or Update()'s genuinely
+				// new membership in the final state disagrees with that
+				// pinned plan value -- "Provider produced inconsistent
+				// result after apply" on this resource's primary update
+				// path. See followsDriverModifier's doc comment.
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					followsDriverModifier[types.List]{
+						driverPath:  path.Root("associated_role_names"),
+						description: "Uses the prior state value unless associated_role_names is changing this apply, in which case this attribute is left unknown so it can be recomputed from the server's response.",
+					},
+				},
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
 						"id":   {Type: types.Int64Type, Computed: true},
@@ -249,10 +280,18 @@ For full information on enrollment patterns view the [product documentation](htt
 			// Optional required alongside Computed -- see the comment on
 			// "template" above.
 			"certificate_authorities": {
-				Optional:      true,
-				Computed:      true,
-				Description:   "The certificate authorities to which the enrollment pattern is restricted (read-only, expanded from certificate_authority_ids).",
-				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
+				Optional:    true,
+				Computed:    true,
+				Description: "The certificate authorities to which the enrollment pattern is restricted (read-only, expanded from certificate_authority_ids).",
+				// followsDriverModifier (full-review finding F2) -- see
+				// the identical rationale on associated_roles above,
+				// mirrored here for certificate_authority_ids.
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					followsDriverModifier[types.List]{
+						driverPath:  path.Root("certificate_authority_ids"),
+						description: "Uses the prior state value unless certificate_authority_ids is changing this apply, in which case this attribute is left unknown so it can be recomputed from the server's response.",
+					},
+				},
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
 						"id":                   {Type: types.Int64Type, Computed: true},
@@ -386,11 +425,22 @@ For full information on enrollment patterns view the [product documentation](htt
 			},
 
 			"force_template_default": {
-				Type:          types.BoolType,
-				Optional:      true,
-				Computed:      true,
-				Description:   "Write-only directive: when true, forces this pattern to become the template's default even if another pattern currently holds that status. Not persisted -- must be re-declared on every apply where it is needed; always reads back as null.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{alwaysUnknownModifier{}},
+				Type: types.BoolType,
+				// Optional-only (NOT Computed, no plan modifier) --
+				// see the full doc comment on alwaysUnknownModifier's
+				// removal (full-review finding F1) above Create()'s
+				// force_template_default handling for why: this is a
+				// write-only, one-shot directive, and a plain
+				// Optional attribute's planned value is always exactly
+				// the declared config value, which is also exactly
+				// what every CRUD path below now writes into the
+				// final state (see Create()/Update()'s
+				// `newState.ForceTemplateDefault = plan.ForceTemplateDefault`
+				// and Read()'s state-preserving assignment) -- so the
+				// planned and applied values can never disagree,
+				// without needing to plan Unknown at all.
+				Optional:    true,
+				Description: "Write-only directive: when true, forces this pattern to become the template's default even if another pattern currently holds that status. Not persisted server-side -- Command never returns this value, so the provider simply echoes back whatever was last declared (leaving it undeclared on a later apply clears the directive back to null, which is the correct way to \"un-set\" a one-shot directive that no longer needs to fire).",
 			},
 		},
 	}, nil
@@ -855,22 +905,24 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 		"enrollment_fields",
 		enrollmentFieldListLogString(ctx, prior.EnrollmentFields), enrollmentFieldListLogString(ctx, updated.EnrollmentFields),
 	)
-	// force_template_default is a one-shot, write-only directive: every CRUD
-	// path in this file unconditionally resets it to Null in the persisted
-	// state (see alwaysUnknownModifier's doc comment), so `prior` here is
-	// ALWAYS Null by construction, regardless of what actually happened on
-	// any previous apply -- it is never a real signal. A naive
-	// appendIfChanged("force_template_default", ...) comparison against that
-	// always-Null baseline would report a false-positive "changed" entry
-	// (null -> false) on every single Update() where a user declares
-	// force_template_default = false in config and leaves it there, forever
-	// -- even though the directive was never actually invoked (only a
+	// force_template_default is a one-shot, write-only directive. A naive
+	// appendIfChanged("force_template_default", ...) comparison of prior vs.
+	// updated would report a "changed" entry (e.g. false -> false, or
+	// unrelated null -> false transitions) any time a user declares
+	// force_template_default = false (or leaves it declared unchanged) --
+	// even though the directive was never actually invoked (only a
 	// genuinely true value triggers the ForceTemplateDefault API call at
 	// the Update() call site -- false is sent as a no-op equivalent to
 	// leaving it unset). Report a change only when the directive is
 	// genuinely being invoked this apply (a known, true value on the
 	// updated/plan side) -- that is the only case that has any real,
-	// auditable effect. See PR #210 full-review round 4 finding FIX-L.
+	// auditable effect. See PR #210 full-review round 4 finding FIX-L. (As
+	// of full-review finding F1, force_template_default is now a plain
+	// Optional attribute whose final state is exactly the last-declared
+	// config value -- see the schema attribute's doc comment -- so `prior`
+	// here reflects the genuine last-declared value rather than always
+	// being Null, but the same "only a true invocation is auditable" gate
+	// still applies.)
 	if !updated.ForceTemplateDefault.Null && !updated.ForceTemplateDefault.Unknown && updated.ForceTemplateDefault.Value {
 		changes = append(
 			changes, fmt.Sprintf(
@@ -1060,15 +1112,14 @@ func enrollmentPatternOwnerRoleNameChangeAttemptedOnFailure(prior, planned *Enro
 // suppression needed on this path).
 //
 // force_template_default is passed in separately (submittedForceTemplate-
-// Default), rather than read off `created`, because by the time Create()
-// builds its audit log, created.ForceTemplateDefault has already been
-// force-reset to Null (it is never persisted server-side -- see the comment
-// above every CRUD path's `ForceTemplateDefault = types.Bool{Null: true}`
-// assignment). Reading it off `created` would always render "(null)"
-// regardless of what was actually sent to Command on this create -- the
-// caller must pass the plan value that was actually used to build the
-// create request, before that reset. See PR #210 full-review round 2
-// finding FIX-B.
+// Default) rather than read off `created` for symmetry with the original
+// design (PR #210 full-review round 2 finding FIX-B) even though, as of
+// full-review finding F1, `created.ForceTemplateDefault` is now simply
+// `plan.ForceTemplateDefault` copied verbatim (see Create()'s
+// `newState.ForceTemplateDefault = plan.ForceTemplateDefault` assignment) --
+// reading either would render the same value today, but passing the
+// pre-reset plan value explicitly keeps this function's contract
+// independent of exactly how Create() happens to populate that field.
 //
 // Create() has no prior Terraform state to diff against (the resource
 // doesn't exist yet), so unlike enrollmentPatternPolicyRelevantFieldChanges
@@ -1355,69 +1406,109 @@ func enrollmentPatternPolicyResponseToState(p *v1.EnrollmentPatternsEnrollmentPa
 	return pol
 }
 
-// alwaysUnknownModifier plans its attribute as Unknown only when the config
-// actually declares a definite `true` (or is itself still Unknown, e.g.
-// chained from a not-yet-applied resource) -- i.e. only when the directive
-// is genuinely being invoked this apply. Every other case (undeclared/Null
-// config, or an explicit `false`) plans a stable Null.
-//
-// force_template_default is a one-shot, write-only directive: every CRUD
-// path in this file unconditionally resolves it to Null in the final state
-// (it is never persisted server-side, so there is nothing else it could
-// resolve to). Without any modifier, a non-Computed attribute's planned
-// value is exactly whatever the config declares -- e.g. `true`. Terraform
-// Core then rejects the apply with "Provider produced inconsistent result
-// after apply" the moment the final state (Null) disagrees with that
-// planned value, which happens on literally the field's only real use case
-// (declaring force_template_default = true). Marking the attribute Computed
-// and planning it Unknown for that one case sidesteps the comparison
-// entirely: Core accepts any final value -- including Null -- for an
-// attribute whose planned value was Unknown.
-//
-// An earlier version of this modifier planned Unknown UNCONDITIONALLY,
-// regardless of config/state. That over-applied to the overwhelmingly
-// common case where force_template_default is never declared (or is
-// declared false, which the request-building code below treats as
-// equivalent to unset -- see Create()/Update()'s `!plan.ForceTemplateDefault
-// .Null && !plan.ForceTemplateDefault.Unknown` guard before sending it):
-// every subsequent `terraform plan` -- even with zero declared changes --
-// reported `force_template_default = null -> (known after apply)`,
-// forever, breaking a clean drift-check. Planning a stable Null for the
-// undeclared/false case (mirroring useStateOrNullModifier's style) fixes
-// that while still resolving to Unknown -- and thus still tolerating the
-// always-Null final state -- for the one case that matters. This has no
-// effect on whether the directive is actually honored: every CRUD path
-// decodes the real value from Config (not Plan) to build the API request
-// (see the comment above Create()'s request.Config.Get call), so the
-// modifier only changes what Core expects to see afterward, not what gets
-// sent to Command. See PR #210 full-review finding FIX-1 (original
-// modifier) and round 2 finding FIX-A (perpetual-diff fix).
-type alwaysUnknownModifier struct{}
+// alwaysUnknownModifier (removed -- full-review finding F1) used to plan
+// force_template_default as Unknown so Core would tolerate the always-Null
+// final state every CRUD path forced it to. That papered over the real
+// problem instead of fixing it: a declared `force_template_default = true`
+// is a perfectly legitimate, KNOWN config value, and Core rejects an
+// Unknown planned value over a known non-null config value on an
+// Optional+Computed attribute outright ("planned value
+// cty.UnknownVal(cty.Bool) does not match config value cty.True") -- the
+// same inconsistency this modifier was trying to avoid, just moved earlier
+// (at plan time instead of apply time). force_template_default is now
+// declared plain Optional (no Computed, no plan modifier at all -- see its
+// schema attribute above): a non-Computed attribute's planned value is
+// always exactly the declared config value, and every CRUD path below now
+// writes that SAME value into the final state (Create()/Update()'s
+// `newState.ForceTemplateDefault = plan.ForceTemplateDefault`; Read()'s
+// state-preserving assignment, since Command never returns this field),
+// so the planned and applied values can never disagree, in any case,
+// without needing an Unknown plan at all.
 
-func (m alwaysUnknownModifier) Description(_ context.Context) string {
-	return "Plans this attribute as unknown when config declares (or may yet resolve to) true, so its final value is free to differ from the declared config value (including resolving to null); otherwise plans a stable null."
+// followsDriverModifier resolves a read-only, server-derived attribute's
+// plan the way tfsdk.UseStateForUnknown would (prior state value carried
+// forward) EXCEPT when a sibling "driver" attribute at driverPath is
+// itself changing this apply, in which case the plan is left Unknown so a
+// fresh, server-derived value can be written into the final state without
+// Core rejecting the apply as "inconsistent." Mirrors
+// displayNameFollowsFriendlyNameModifier's shape in resource_keyfactor_
+// certificate_template.go; T lets one generic implementation cover every
+// "computed mirror pinned to prior state while Update() writes a
+// response-derived value" case in this resource instead of hand-
+// duplicating the same logic per mirror attribute:
+//   - associated_roles follows associated_role_names (full-review finding
+//     F2): changing associated_role_names must NOT leave the stale
+//     associated_roles membership pinned as a known planned value, or
+//     Update()'s genuinely-new membership in the final state triggers
+//     "Provider produced inconsistent result after apply" on this
+//     resource's primary update path.
+//   - certificate_authorities follows certificate_authority_ids (same
+//     finding F2, identical shape for the CA-restriction mirror).
+//   - policies.default_certificate_owner_role_name follows
+//     policies.default_certificate_owner_role_id (full-review finding F4):
+//     changing the id must NOT leave the stale, pre-update-resolved name
+//     pinned, since the PUT response resolves the name for the NEW id
+//     differently.
+//
+// T must be a concrete attr.Value-implementing type that Config/State's
+// reflection-based GetAttribute can decode into (e.g. types.List,
+// types.Int64) -- see the callers below for the two shapes currently
+// needed.
+type followsDriverModifier[T attr.Value] struct {
+	driverPath  path.Path
+	description string
 }
 
-func (m alwaysUnknownModifier) MarkdownDescription(ctx context.Context) string {
+func (m followsDriverModifier[T]) Description(_ context.Context) string {
+	return m.description
+}
+
+func (m followsDriverModifier[T]) MarkdownDescription(ctx context.Context) string {
 	return m.Description(ctx)
 }
 
-func (m alwaysUnknownModifier) Modify(_ context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
-	if cfg, ok := req.AttributeConfig.(types.Bool); ok {
-		// Config not yet known (e.g. chained from a resource not yet
-		// applied this run) -- it could still resolve to true, so stay
-		// Unknown rather than risk a stable-Null plan that later disagrees
-		// with a genuinely-true final config.
-		if cfg.Unknown {
-			resp.AttributePlan = types.Bool{Unknown: true}
-			return
-		}
-		if !cfg.Null && cfg.Value {
-			resp.AttributePlan = types.Bool{Unknown: true}
-			return
-		}
+func (m followsDriverModifier[T]) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
 	}
-	resp.AttributePlan = types.Bool{Null: true}
+	if req.AttributeState.IsNull() {
+		return
+	}
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() {
+		return
+	}
+
+	var driverConfig, driverState T
+	if diags := req.Config.GetAttribute(ctx, m.driverPath, &driverConfig); diags.HasError() {
+		return
+	}
+	if diags := req.State.GetAttribute(ctx, m.driverPath, &driverState); diags.HasError() {
+		return
+	}
+
+	switch {
+	case driverConfig.IsUnknown():
+		// Cannot yet tell whether the driver is changing (it depends on
+		// another not-yet-applied value) -- be conservative and leave
+		// this attribute unknown too.
+		return
+	case driverConfig.IsNull():
+		// Driver undeclared: it will resolve to the prior state value via
+		// its own plan modifier, so it is NOT changing.
+		resp.AttributePlan = req.AttributeState
+	case !driverState.IsNull() && driverConfig.Equal(driverState):
+		// Driver explicitly re-declared with its current value: not
+		// changing.
+		resp.AttributePlan = req.AttributeState
+	default:
+		// Driver is changing (newly declared, or declared with a value
+		// different from current state) -- leave this attribute Unknown
+		// so the server's post-update response is free to set the new
+		// value.
+	}
 }
 
 // resolveUnknownListToNull resolves an Unknown types.List to Null, leaving
@@ -1929,9 +2020,25 @@ func validateEnrollmentPatternConfigConstraints(cfg KeyfactorEnrollmentPatternSt
 	restrictCAsKnown := !cfg.RestrictCAs.Null && !cfg.RestrictCAs.Unknown
 	caIdsKnown := !cfg.CertificateAuthorityIds.Null && !cfg.CertificateAuthorityIds.Unknown
 	caIdsDeclaredNonEmpty := caIdsKnown && len(cfg.CertificateAuthorityIds.Elems) > 0
-	caIdsEmpty := cfg.CertificateAuthorityIds.Null || (caIdsKnown && len(cfg.CertificateAuthorityIds.Elems) == 0)
+	// caIdsKnownEmpty is deliberately narrower than "null or empty" (the
+	// pre-fix bug -- full-review finding F5): a Null/Unknown
+	// certificate_authority_ids is NOT a config error on its own -- per
+	// this function's own doc comment above ("A null/unknown value for
+	// any attribute involved is never an error"), it means "undeclared,"
+	// which Update()'s prior-state fallback (see the
+	// plan.CertificateAuthorityIds.Null || plan.CertificateAuthorityIds
+	// .Unknown check in Update()) explicitly supports falling back to
+	// existing server-side CAs for. Only a KNOWN, explicitly-empty list
+	// (`certificate_authority_ids = []`) is a genuine config error here.
+	// The pre-fix version incorrectly treated Null the same as
+	// known-empty, hard-erroring "requires at least one entry in
+	// certificate_authority_ids" on the ordinary import-then-manage flow
+	// (certificate_authority_ids is always null immediately after
+	// import) even though CAs exist server-side and restrict_cas=true is
+	// legitimately being preserved from state.
+	caIdsKnownEmpty := caIdsKnown && len(cfg.CertificateAuthorityIds.Elems) == 0
 
-	if restrictCAsKnown && cfg.RestrictCAs.Value && caIdsEmpty {
+	if restrictCAsKnown && cfg.RestrictCAs.Value && caIdsKnownEmpty {
 		diags.AddAttributeError(
 			path.Root("certificate_authority_ids"),
 			"Missing certificate authorities for restrict_cas",
@@ -1952,8 +2059,14 @@ func validateEnrollmentPatternConfigConstraints(cfg KeyfactorEnrollmentPatternSt
 	useADKnown := !cfg.UseADPermissions.Null && !cfg.UseADPermissions.Unknown
 	if useADKnown && !cfg.UseADPermissions.Value {
 		rolesKnown := !cfg.AssociatedRoleNames.Null && !cfg.AssociatedRoleNames.Unknown
-		rolesEmpty := cfg.AssociatedRoleNames.Null || (rolesKnown && len(cfg.AssociatedRoleNames.Elems) == 0)
-		if rolesEmpty {
+		// rolesKnownEmpty -- see caIdsKnownEmpty's doc comment above for
+		// the identical null-vs-known-empty rationale (full-review
+		// finding F5): a Null/Unknown associated_role_names is
+		// "undeclared," not an error, since Update()'s prior-state
+		// fallback explicitly supports preserving existing membership
+		// for it.
+		rolesKnownEmpty := rolesKnown && len(cfg.AssociatedRoleNames.Elems) == 0
+		if rolesKnownEmpty {
 			diags.AddAttributeError(
 				path.Root("associated_role_names"),
 				"Missing associated roles for use_ad_permissions = false",
@@ -2063,7 +2176,16 @@ func (r resourceEnrollmentPattern) Create(
 	// the field was never declared on first apply.
 	newState.AssociatedRoleNames = resolveUnknownListToNull(plan.AssociatedRoleNames)
 	newState.CertificateAuthorityIds = resolveUnknownListToNull(plan.CertificateAuthorityIds)
-	newState.ForceTemplateDefault = types.Bool{Null: true}
+	// force_template_default is Optional-only (full-review finding F1): its
+	// planned value is always exactly the declared config value (Null if
+	// undeclared), so the final state must echo that same value back --
+	// not hardcode Null -- or Core would reject a declared `true` (or any
+	// other non-null value) as inconsistent. plan is decoded from Config
+	// (see the comment above), so plan.ForceTemplateDefault is never
+	// Unknown here except when genuinely chained from another resource not
+	// yet applied -- which by the time this Create() actually executes has
+	// already resolved to a concrete value.
+	newState.ForceTemplateDefault = plan.ForceTemplateDefault
 
 	tflog.Debug(ctx, fmt.Sprintf("Created enrollment pattern ID %d", newState.ID.Value))
 	// Field-level audit logging for the access-control-relevant fields set
@@ -2132,10 +2254,16 @@ func (r resourceEnrollmentPattern) Read(
 	// GetById never returns AssociatedRoleNames/CertificateAuthorityIds in
 	// their write shape -- preserve from the prior state (see
 	// KeyfactorEnrollmentPatternState's doc comment). force_template_default
-	// is a one-shot directive, not a persisted setting -- always null.
+	// is likewise never returned by Command (it's a one-shot directive, not
+	// a persisted setting) -- preserve the last-declared value from prior
+	// state rather than hardcoding Null, matching the write-only
+	// preservation pattern used for the other two fields (full-review
+	// finding F1): force_template_default is Optional-only, so its plan is
+	// always exactly the declared config value, and a plain refresh
+	// (nothing declared differently) must not silently clear it.
 	newState.AssociatedRoleNames = state.AssociatedRoleNames
 	newState.CertificateAuthorityIds = state.CertificateAuthorityIds
-	newState.ForceTemplateDefault = types.Bool{Null: true}
+	newState.ForceTemplateDefault = state.ForceTemplateDefault
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -2291,7 +2419,11 @@ func (r resourceEnrollmentPattern) Update(
 	newState := enrollmentPatternResponseToState(resp)
 	newState.AssociatedRoleNames = plan.AssociatedRoleNames
 	newState.CertificateAuthorityIds = plan.CertificateAuthorityIds
-	newState.ForceTemplateDefault = types.Bool{Null: true}
+	// force_template_default: see the identical comment on Create()'s
+	// equivalent assignment above (full-review finding F1) -- plan is
+	// decoded from Config, so this is exactly the value the user declared
+	// (or Null if undeclared) this apply.
+	newState.ForceTemplateDefault = plan.ForceTemplateDefault
 
 	// policies.default_certificate_owner_role_name can only be audited
 	// accurately AFTER the update has actually been applied -- see

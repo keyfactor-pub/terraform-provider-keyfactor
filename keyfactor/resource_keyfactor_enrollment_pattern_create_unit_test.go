@@ -91,6 +91,7 @@ func blankEnrollmentPatternState() KeyfactorEnrollmentPatternState {
 	nullStr := types.String{Null: true}
 	nullBool := types.Bool{Null: true}
 	nullInt := types.Int64{Null: true}
+	nullStrList := types.List{Null: true, ElemType: types.StringType}
 	nullIntList := types.List{Null: true, ElemType: types.Int64Type}
 	return KeyfactorEnrollmentPatternState{
 		ID:                      nullInt,
@@ -100,7 +101,7 @@ func blankEnrollmentPatternState() KeyfactorEnrollmentPatternState {
 		Template:                nil,
 		TemplateDefault:         nullBool,
 		UseADPermissions:        nullBool,
-		AssociatedRoleNames:     nullIntList, // overwritten per-test with the real list ElemType (String)
+		AssociatedRoleNames:     nullStrList,
 		AssociatedRoles:         nil,
 		CertificateAuthorityIds: nullIntList,
 		CertificateAuthorities:  nil,

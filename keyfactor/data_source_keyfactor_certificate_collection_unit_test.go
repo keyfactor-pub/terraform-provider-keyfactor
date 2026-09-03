@@ -121,6 +121,104 @@ func TestUnitCertificateCollectionDataSourceIdNameMismatchIsError(t *testing.T) 
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Regression test -- full-review round 6 finding FIX-P:
+//
+// `name` was schema'd as Optional-only (no Computed), while `id` was
+// correctly Optional+Computed. Read() unconditionally resolves and writes
+// the server's real name into state regardless of which lookup key was
+// declared in config. For an id-only lookup (name undeclared in config),
+// that means state.Name ends up non-null while config's `name` is null --
+// which Terraform Core rejects for a non-Computed attribute ("Provider
+// produced inconsistent result after apply" / invalid data source result).
+// This is invisible to a test that calls Read() directly (as the other
+// tests in this file do), since only Terraform Core enforces the
+// config/state consistency contract for non-Computed attributes -- so this
+// test instead asserts the schema property itself, mirroring the dual
+// "either X or Y" lookup precedent in data_source_keyfactor_certificate_
+// store.go (its `id` and `client_machine`/`store_path` alternates are all
+// marked Optional+Computed for exactly this reason).
+// ---------------------------------------------------------------------------
+
+func TestUnitCertificateCollectionDataSourceNameAttributeIsComputed(t *testing.T) {
+	ctx := context.Background()
+	schema := dataSourceCertificateCollectionSchemaForTest(t, ctx)
+
+	nameAttr, ok := schema.Attributes["name"]
+	if !ok {
+		t.Fatal("schema has no \"name\" attribute")
+	}
+	if !nameAttr.Optional {
+		t.Error("\"name\" attribute should remain Optional (either name or id may be used to look up the collection)")
+	}
+	if !nameAttr.Computed {
+		t.Error(
+			"\"name\" attribute must be Computed, matching \"id\"'s Optional+Computed treatment -- " +
+				"otherwise an id-only lookup (name undeclared) has Read() write a server-resolved, " +
+				"non-null name into state for a non-Computed attribute, which Terraform Core rejects " +
+				"as an inconsistent result",
+		)
+	}
+
+	idAttr, ok := schema.Attributes["id"]
+	if !ok {
+		t.Fatal("schema has no \"id\" attribute")
+	}
+	if !idAttr.Optional || !idAttr.Computed {
+		t.Errorf("\"id\" attribute should be Optional+Computed, got Optional=%v Computed=%v", idAttr.Optional, idAttr.Computed)
+	}
+}
+
+// TestUnitCertificateCollectionDataSourceIdOnlyLookupSucceeds exercises the
+// id-only lookup path (name undeclared in config) end-to-end through Read(),
+// confirming it resolves cleanly and populates state.Name from the server.
+// It cannot itself detect the Core-level consistency violation (Read() is
+// called directly, bypassing Core), but combined with the schema-Computed
+// assertion above, this documents the exact scenario FIX-P addresses.
+func TestUnitCertificateCollectionDataSourceIdOnlyLookupSucceeds(t *testing.T) {
+	ctx := context.Background()
+
+	server := idAndNameMismatchServer(t, "Server Resolved Name")
+	defer server.Close()
+	sdkClient := newTemplateUpdateSDKClient(server)
+
+	schema := dataSourceCertificateCollectionSchemaForTest(t, ctx)
+
+	// Only id declared -- name is explicitly left Null/undeclared in config,
+	// exactly the shape that would violate Core's non-Computed-attribute
+	// contract if the schema's `name` attribute weren't Computed. (Go's
+	// zero-value types.String{} is Null:false/Value:"", NOT the same as an
+	// undeclared config attribute -- it must be set explicitly here to
+	// accurately simulate "name omitted from config".)
+	config := CertificateCollectionDataSourceState{
+		ID:   types.Int64{Value: 8},
+		Name: types.String{Null: true},
+	}
+	scratch := tfsdk.Plan{Schema: schema}
+	if d := scratch.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: scratch.Raw}
+
+	d := dataSourceCertificateCollection{p: provider{configured: true, sdkClient: sdkClient}}
+	req := tfsdk.ReadDataSourceRequest{Config: configObj}
+	resp := &tfsdk.ReadDataSourceResponse{State: tfsdk.State{Schema: schema}}
+
+	d.Read(ctx, req, resp)
+
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Read returned diagnostics for an id-only lookup: %+v", resp.Diagnostics)
+	}
+
+	var result CertificateCollectionDataSourceState
+	if d := resp.State.Get(ctx, &result); d.HasError() {
+		t.Fatalf("state.Get returned diagnostics: %+v", d)
+	}
+	if result.Name.Null || result.Name.Value != "Server Resolved Name" {
+		t.Errorf("result.Name = %+v, want non-null \"Server Resolved Name\"", result.Name)
+	}
+}
+
 func TestUnitCertificateCollectionDataSourceIdNameMatchSucceeds(t *testing.T) {
 	ctx := context.Background()
 

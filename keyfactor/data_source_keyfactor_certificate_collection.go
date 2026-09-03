@@ -20,6 +20,7 @@ func (d dataSourceCertificateCollectionType) GetSchema(_ context.Context) (tfsdk
 			"name": {
 				Type:        types.StringType,
 				Optional:    true,
+				Computed:    true,
 				Description: "The name of the certificate collection to look up. Either `name` or `id` must be provided.",
 			},
 			"id": {

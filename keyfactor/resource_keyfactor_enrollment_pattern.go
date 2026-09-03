@@ -976,6 +976,61 @@ func enrollmentPatternOwnerRoleNameChange(prior, actual *EnrollmentPatternResour
 	return fmt.Sprintf("policies.default_certificate_owner_role_name: %s -> %s", oldStr, newStr)
 }
 
+// enrollmentPatternOwnerRoleNameChangeAttemptedOnFailure reports a
+// best-effort "policies.default_certificate_owner_role_name: old ->
+// (update failed, new value unresolved)" audit line for use ONLY on the
+// Update() PUT-failure path, or "" when no default-certificate-owner-role
+// change was even being attempted this apply.
+//
+// Every other policy-relevant field logs its "attempted" old -> new value
+// via enrollmentPatternPolicyRelevantFieldChanges BEFORE the PUT call, so a
+// failed update still leaves an audit trail of what was being attempted --
+// including policies.default_certificate_owner_role_id, whose id-vs-id
+// comparison is safe to make pre-PUT. But
+// policies.default_certificate_owner_role_name is deliberately excluded
+// from that pre-PUT comparison (see enrollmentPatternPolicyRelevantFieldChanges's
+// doc comment on FIX-O) because the resolved name is only known from the PUT
+// response itself. That leaves an asymmetry: on a PUT failure, the sibling
+// id field always has an audit line, but the name field has none at all --
+// an auditor reconstructing a failed ownership-role change sees the raw id
+// attempt with no human-readable name context, which becomes unrecoverable
+// if the role is later renamed or deleted. This function closes that gap
+// with a deliberately limited substitute: it cannot report the attempted
+// NEW name (unresolvable without a successful PUT response), but it can
+// still report that a change was attempted at all, and the OLD name for
+// context, by comparing `prior`'s and `planned`'s
+// DefaultCertificateOwnerRoleId (the same signal
+// enrollmentPatternPolicyRelevantFieldChanges already trusts pre-PUT for the
+// id field). See PR #210 full-review round 6 finding FIX-Q.
+//
+// `prior` should be the unmodified prior state's Policies (state.Policies);
+// `planned` should be the final, post-preservation plan Policies actually
+// submitted to the PUT (plan.Policies) -- i.e. the same two audit-relevant
+// inputs already used elsewhere in Update().
+func enrollmentPatternOwnerRoleNameChangeAttemptedOnFailure(prior, planned *EnrollmentPatternResourcePolicy) string {
+	oldId := types.Int64{Null: true}
+	oldName := types.String{Null: true}
+	if prior != nil {
+		oldId = prior.DefaultCertificateOwnerRoleId
+		oldName = prior.DefaultCertificateOwnerRoleName
+	}
+	newId := types.Int64{Null: true}
+	if planned != nil {
+		newId = planned.DefaultCertificateOwnerRoleId
+	}
+	if tfInt64LogString(oldId) == tfInt64LogString(newId) {
+		// No change to the id was even being attempted this apply, so there
+		// is nothing role-name-related to report -- matches
+		// enrollmentPatternPolicyRelevantFieldChanges's own id comparison,
+		// which would likewise have produced no "id: old -> new" line.
+		return ""
+	}
+	return fmt.Sprintf(
+		"policies.default_certificate_owner_role_name: %s -> (update failed, new value unresolved)",
+		tfStringLogString(oldName),
+	)
+}
+
 // enrollmentPatternCreationAuditFields renders the same access-control-
 // relevant fields enrollmentPatternPolicyRelevantFieldChanges audits on
 // every subsequent Update() -- the reference name of the pattern (name) and
@@ -2204,6 +2259,20 @@ func (r resourceEnrollmentPattern) Update(
 	resp, httpResp, err := req.Execute()
 	LogFunctionReturned(ctx, "EnrollmentPatternApi.UpdateEnrollmentPatternsById")
 	if err != nil {
+		// policies.default_certificate_owner_role_name otherwise has ZERO
+		// audit signal on this failure path -- its sibling id field always
+		// logs an "attempted" line pre-PUT (see
+		// enrollmentPatternPolicyRelevantFieldChanges above), but the name
+		// field's real audit call (enrollmentPatternOwnerRoleNameChange)
+		// only runs after a successful PUT response, which we don't have
+		// here. Log a best-effort substitute instead of leaving this field
+		// silent. See PR #210 full-review round 6 finding FIX-Q.
+		if change := enrollmentPatternOwnerRoleNameChangeAttemptedOnFailure(state.Policies, plan.Policies); change != "" {
+			tflog.Info(
+				ctx,
+				fmt.Sprintf("Enrollment pattern %d field change attempted on failed update: %s", plan.ID.Value, change),
+			)
+		}
 		respBody := readHTTPResponseBody(httpResp)
 		response.Diagnostics.AddError(
 			"Error updating enrollment pattern.",

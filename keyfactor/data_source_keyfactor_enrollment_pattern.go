@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -10,6 +11,49 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
+
+// allowedEnrollmentTypesPtrToTfInt64 converts the legacy keyfactor-go-client
+// v3 API model's *int AllowedEnrollmentTypes field to types.Int64, guarding
+// against a nil pointer the same way every other pointer field in
+// dataSourceEnrollmentPattern.Read is already guarded (pattern.Template,
+// pattern.AssociatedRoles, pattern.CertificateAuthorities, pattern.Regexes,
+// pattern.MetadataFields, pattern.Defaults, pattern.EnrollmentFields,
+// pattern.Policies). AllowedEnrollmentTypes is nil whenever Command omits
+// the key from the response -- a real, reachable case, since the
+// corresponding resource attribute (allowed_enrollment_types) is
+// Optional+Computed, i.e. explicitly designed to be left unset. Without this
+// guard, dereferencing the nil pointer panics on every `terraform plan`/
+// `refresh` against such a pattern. See PR #210 full-review round 2 finding
+// FIX-D.
+func allowedEnrollmentTypesPtrToTfInt64(v *int) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v), Null: isNullId(*v)}
+}
+
+// enrollmentPatternMatchesIdentifier decides, for a single candidate
+// pattern, whether it matches the user-supplied `identifier` attribute
+// (documented as accepting either the pattern's name or its internal ID).
+// The previous implementation OR'd a name-equality check with an ID-equality
+// check with no priority between them, so a "first match wins" walk over a
+// server-ordered list could silently resolve to the wrong pattern -- e.g.
+// pattern A (ID=2, Name="5") and pattern B (ID=5, Name="Default") both
+// exist; `identifier = "5"` intends to look up pattern B by ID, but matches
+// pattern A's name first if Command returns it earlier in the list.
+//
+// This enforces a strict, documented priority instead: if identifier parses
+// as an integer, match ONLY on ID; otherwise match ONLY on name. That
+// removes the ambiguity for a single input attribute (unlike certificate_
+// collection's id+name data source, which has two separate input attributes
+// and needs its own cross-check machinery for a different ambiguity shape).
+// See PR #210 full-review round 2 finding FIX-F.
+func enrollmentPatternMatchesIdentifier(identifier string, id int, name string) bool {
+	if asID, err := strconv.Atoi(identifier); err == nil {
+		return id == asID
+	}
+	return name == identifier
+}
 
 type dataSourceEnrollmentPatternType struct{}
 
@@ -19,7 +63,7 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 			"identifier": {
 				Type:        types.StringType,
 				Required:    true,
-				Description: "The name or internal ID (integer) of the enrollment pattern to look up.",
+				Description: "The name or internal ID (integer) of the enrollment pattern to look up. If this value parses as an integer, it is matched against the pattern ID only (never against a pattern name that happens to look like a number); otherwise it is matched against the pattern name only.",
 			},
 			"id": {
 				Type:        types.Int64Type,
@@ -218,7 +262,7 @@ Once created for the enrollment pattern, these values are shown in Keyfactor Com
 		MarkdownDescription: `
 Reads an existing enrollment pattern from Keyfactor Command using the "/EnrollmentPatterns" API.
 
-~> **Note:** The enrollment pattern can be identified by its name or internal ID.
+~> **Note:** The enrollment pattern can be identified by its name or internal ID. If ` + "`identifier`" + ` parses as an integer, it is matched against the pattern ID only; otherwise it is matched against the pattern name only.
 
 Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
 
@@ -274,10 +318,13 @@ func (r dataSourceEnrollmentPattern) Read(
 	ctx = tflog.SetField(ctx, "pattern_identifier", patternName)
 	tflog.Debug(ctx, "Searching for enrollment pattern by name or ID")
 	for _, pattern := range enrollmentPatterns {
-		tflog.Debug(ctx, fmt.Sprintf("Checking enrollment pattern: ID=%d, Name=%s", pattern.ID, pattern.Name))
-		// Check if the current pattern matches the requested name or ID
-		if pattern.Name == patternName || fmt.Sprint(pattern.ID) == patternName {
-			tflog.Info(ctx, fmt.Sprintf("Found enrollment pattern with name: %s", patternName))
+		tflog.Debug(ctx, fmt.Sprintf("Checking enrollment pattern: ID=%d, Name=%q", pattern.ID, pattern.Name))
+		// Check if the current pattern matches the requested name or ID,
+		// per the strict priority documented on enrollmentPatternMatchesIdentifier
+		// (FIX-F): match on ID only when identifier parses as an integer,
+		// otherwise match on name only.
+		if enrollmentPatternMatchesIdentifier(patternName, pattern.ID, pattern.Name) {
+			tflog.Info(ctx, fmt.Sprintf("Found enrollment pattern with name: %q", patternName))
 
 			// Map the enrollment pattern data to the result
 			result = CertificateEnrollmentPattern{
@@ -290,7 +337,7 @@ func (r dataSourceEnrollmentPattern) Read(
 			if pattern.Template != nil {
 				tflog.Debug(
 					ctx, fmt.Sprintf(
-						"Enrollment pattern %s has template ID: %d", patternName,
+						"Enrollment pattern %q has template ID: %d", patternName,
 						pattern.Template.Id,
 					),
 				)
@@ -324,10 +371,7 @@ func (r dataSourceEnrollmentPattern) Read(
 
 			result.TemplateDefault = types.Bool{Value: pattern.TemplateDefault}
 			result.UseADPermissions = types.Bool{Value: pattern.UseADPermissions}
-			result.AllowedEnrollmentTypes = types.Int64{
-				Value: int64(*pattern.AllowedEnrollmentTypes),
-				Null:  isNullId(*pattern.AllowedEnrollmentTypes),
-			}
+			result.AllowedEnrollmentTypes = allowedEnrollmentTypesPtrToTfInt64(pattern.AllowedEnrollmentTypes)
 			result.RestrictCAs = types.Bool{Value: pattern.RestrictCAs}
 
 			// Associated Roles

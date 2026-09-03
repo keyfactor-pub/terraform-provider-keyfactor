@@ -709,139 +709,106 @@ func tfListLogString(ctx context.Context, l types.List) string {
 	return "[" + strings.Join(quoted, ",") + "]"
 }
 
-// algorithmListLogString renders a []EnrollmentPatternResourceAlgorithm (the
-// raw Go slice type backing policies.primary_key_algorithms/alternative_key_
-// algorithms -- see EnrollmentPatternResourcePolicy) as a short human-
-// readable string for audit-log lines, mirroring tfListLogString's null vs.
-// value distinction for the types.List-backed fields logged alongside it: a
-// nil slice (this resource's "undeclared" sentinel for these two fields --
-// see buildEnrollmentPatternPolicyRequest's doc comment for the same
-// nil-vs-non-nil-empty distinction) logs as "(null)"; a non-nil (even
-// zero-length) slice renders each entry's name/bit_lengths/curves, %q-
-// escaped via tfStringLogString/tfListLogString for the same CWE-117 reason
-// those helpers exist.
-func algorithmListLogString(ctx context.Context, algos []EnrollmentPatternResourceAlgorithm) string {
-	if algos == nil {
+// genericListLogString renders any []T slice as a short human-readable
+// string for audit-log lines, given a per-entry formatter: a nil slice
+// (this resource's "undeclared" sentinel -- see e.g.
+// buildEnrollmentPatternPolicyRequest's/buildEnrollmentPatternRegexesRequest's
+// doc comments for the nil-vs-non-nil-empty distinction that sentinel
+// supports) logs as "(null)"; a non-nil (even zero-length) slice renders
+// each entry via formatEntry, comma-joined inside "[...]". Factored out of
+// five near-identical copy-paste helpers (algorithmListLogString,
+// regexListLogString, metadataFieldListLogString, defaultListLogString,
+// enrollmentFieldListLogString -- PR #210 full-review findings FIX-K/FIX-M)
+// that differed only in their per-entry formatting; full-review Phase 4
+// cleanup item 3. Callers are still responsible for %q-escaping any
+// user/server-controlled string content in formatEntry (via
+// tfStringLogString etc.) for the same CWE-117 log-injection reason those
+// helpers exist.
+func genericListLogString[T any](items []T, formatEntry func(T) string) string {
+	if items == nil {
 		return "(null)"
 	}
-	entries := make([]string, 0, len(algos))
-	for _, a := range algos {
-		entries = append(
-			entries, fmt.Sprintf(
-				"{name:%s,bit_lengths:%s,curves:%s}",
-				tfStringLogString(a.Name), tfListLogString(ctx, a.BitLengths), tfListLogString(ctx, a.Curves),
-			),
-		)
+	entries := make([]string, 0, len(items))
+	for _, item := range items {
+		entries = append(entries, formatEntry(item))
 	}
 	return "[" + strings.Join(entries, ",") + "]"
+}
+
+// algorithmListLogString renders a []EnrollmentPatternResourceAlgorithm (the
+// raw Go slice type backing policies.primary_key_algorithms/alternative_key_
+// algorithms -- see EnrollmentPatternResourcePolicy) for audit-log lines,
+// %q-escaping name/bit_lengths/curves via tfStringLogString/tfListLogString
+// for the same CWE-117 reason those helpers exist.
+func algorithmListLogString(ctx context.Context, algos []EnrollmentPatternResourceAlgorithm) string {
+	return genericListLogString(algos, func(a EnrollmentPatternResourceAlgorithm) string {
+		return fmt.Sprintf(
+			"{name:%s,bit_lengths:%s,curves:%s}",
+			tfStringLogString(a.Name), tfListLogString(ctx, a.BitLengths), tfListLogString(ctx, a.Curves),
+		)
+	})
 }
 
 // regexListLogString renders a []EnrollmentPatternResourceRegex (the raw Go
-// slice type backing the top-level regexes attribute) as a short human-
-// readable string for audit-log lines, mirroring algorithmListLogString's
-// null vs. value distinction and %q-escaping convention: a nil slice
-// (undeclared regexes -- see buildEnrollmentPatternRegexesRequest's doc
-// comment for the same nil-vs-non-nil-empty distinction) logs as "(null)"; a
-// non-nil (even zero-length) slice renders each entry's subject_part/regex/
-// error/case_sensitive, %q-escaped via tfStringLogString/tfBoolLogString for
-// the same CWE-117 reason those helpers exist. PR #210 full-review round 4
-// finding FIX-K.
+// slice type backing the top-level regexes attribute) for audit-log lines --
+// see algorithmListLogString's doc comment for the shared rationale. PR #210
+// full-review round 4 finding FIX-K.
 func regexListLogString(regexes []EnrollmentPatternResourceRegex) string {
-	if regexes == nil {
-		return "(null)"
-	}
-	entries := make([]string, 0, len(regexes))
-	for _, rx := range regexes {
-		entries = append(
-			entries, fmt.Sprintf(
-				"{subject_part:%s,regex:%s,error:%s,case_sensitive:%s}",
-				tfStringLogString(rx.SubjectPart), tfStringLogString(rx.Regex), tfStringLogString(rx.Error),
-				tfBoolLogString(rx.CaseSensitive),
-			),
+	return genericListLogString(regexes, func(rx EnrollmentPatternResourceRegex) string {
+		return fmt.Sprintf(
+			"{subject_part:%s,regex:%s,error:%s,case_sensitive:%s}",
+			tfStringLogString(rx.SubjectPart), tfStringLogString(rx.Regex), tfStringLogString(rx.Error),
+			tfBoolLogString(rx.CaseSensitive),
 		)
-	}
-	return "[" + strings.Join(entries, ",") + "]"
+	})
 }
 
 // metadataFieldListLogString renders a []EnrollmentPatternResourceMetadataField
-// (the raw Go slice type backing the top-level metadata_fields attribute) as
-// a short human-readable string for audit-log lines, mirroring
-// regexListLogString's null vs. value distinction and %q-escaping
-// convention: a nil slice (undeclared metadata_fields -- see
-// buildEnrollmentPatternMetadataFieldsRequest's doc comment for the same
-// nil-vs-non-nil-empty distinction) logs as "(null)"; a non-nil (even
-// zero-length) slice renders each entry's metadata_id/default_value/
-// validation/enrollment/message/case_sensitive, %q-escaped via
-// tfStringLogString/tfInt64LogString/tfBoolLogString for the same CWE-117
-// reason those helpers exist. metadata_fields[].enrollment gates
-// required/optional/hidden status for enrollment metadata (e.g. a mandatory
-// "Change Ticket Number" field), so its default_value/enrollment/validation
-// settings are exactly the kind of "how strictly enrollment is validated"
-// control already tracked here for regexes/policies.rfc_enforcement. See PR
-// #210 full-review round 5 finding FIX-M.
+// (the raw Go slice type backing the top-level metadata_fields attribute)
+// for audit-log lines -- see algorithmListLogString's doc comment for the
+// shared rationale. metadata_fields[].enrollment gates required/optional/
+// hidden status for enrollment metadata (e.g. a mandatory "Change Ticket
+// Number" field), so its default_value/enrollment/validation settings are
+// exactly the kind of "how strictly enrollment is validated" control
+// already tracked here for regexes/policies.rfc_enforcement. See PR #210
+// full-review round 5 finding FIX-M.
 func metadataFieldListLogString(fields []EnrollmentPatternResourceMetadataField) string {
-	if fields == nil {
-		return "(null)"
-	}
-	entries := make([]string, 0, len(fields))
-	for _, f := range fields {
-		entries = append(
-			entries, fmt.Sprintf(
-				"{metadata_id:%s,default_value:%s,validation:%s,enrollment:%s,message:%s,case_sensitive:%s}",
-				tfInt64LogString(f.MetadataId), tfStringLogString(f.DefaultValue), tfStringLogString(f.Validation),
-				tfInt64LogString(f.Enrollment), tfStringLogString(f.Message), tfBoolLogString(f.CaseSensitive),
-			),
+	return genericListLogString(fields, func(f EnrollmentPatternResourceMetadataField) string {
+		return fmt.Sprintf(
+			"{metadata_id:%s,default_value:%s,validation:%s,enrollment:%s,message:%s,case_sensitive:%s}",
+			tfInt64LogString(f.MetadataId), tfStringLogString(f.DefaultValue), tfStringLogString(f.Validation),
+			tfInt64LogString(f.Enrollment), tfStringLogString(f.Message), tfBoolLogString(f.CaseSensitive),
 		)
-	}
-	return "[" + strings.Join(entries, ",") + "]"
+	})
 }
 
 // defaultListLogString renders a []EnrollmentPatternResourceDefault (the raw
-// Go slice type backing the top-level defaults attribute) as a short
-// human-readable string for audit-log lines -- see
-// metadataFieldListLogString's doc comment for the same null-vs-value and
-// %q-escaping rationale. defaults pre-fills subject content for certificates
-// issued through this pattern, affecting the accuracy of what gets issued
+// Go slice type backing the top-level defaults attribute) for audit-log
+// lines -- see algorithmListLogString's doc comment for the shared
+// rationale. defaults pre-fills subject content for certificates issued
+// through this pattern, affecting the accuracy of what gets issued
 // (processing-integrity relevant), so it belongs in the same audit trail as
 // the other subject/validation-affecting fields. See PR #210 full-review
 // round 5 finding FIX-M.
 func defaultListLogString(defaults []EnrollmentPatternResourceDefault) string {
-	if defaults == nil {
-		return "(null)"
-	}
-	entries := make([]string, 0, len(defaults))
-	for _, d := range defaults {
-		entries = append(
-			entries, fmt.Sprintf(
-				"{subject_part:%s,value:%s}",
-				tfStringLogString(d.SubjectPart), tfStringLogString(d.Value),
-			),
-		)
-	}
-	return "[" + strings.Join(entries, ",") + "]"
+	return genericListLogString(defaults, func(d EnrollmentPatternResourceDefault) string {
+		return fmt.Sprintf("{subject_part:%s,value:%s}", tfStringLogString(d.SubjectPart), tfStringLogString(d.Value))
+	})
 }
 
 // enrollmentFieldListLogString renders a []EnrollmentPatternResourceField
 // (the raw Go slice type backing the top-level enrollment_fields attribute)
-// as a short human-readable string for audit-log lines -- see
-// metadataFieldListLogString's doc comment for the same null-vs-value and
-// %q-escaping rationale. enrollment_fields is CA-passthrough data that ends
-// up in issued certificates, so like defaults it affects the accuracy of
-// what gets issued. See PR #210 full-review round 5 finding FIX-M.
+// for audit-log lines -- see algorithmListLogString's doc comment for the
+// shared rationale. enrollment_fields is CA-passthrough data that ends up in
+// issued certificates, so like defaults it affects the accuracy of what
+// gets issued. See PR #210 full-review round 5 finding FIX-M.
 func enrollmentFieldListLogString(ctx context.Context, fields []EnrollmentPatternResourceField) string {
-	if fields == nil {
-		return "(null)"
-	}
-	entries := make([]string, 0, len(fields))
-	for _, f := range fields {
-		entries = append(
-			entries, fmt.Sprintf(
-				"{name:%s,data_type:%s,options:%s}",
-				tfStringLogString(f.Name), tfInt64LogString(f.DataType), tfListLogString(ctx, f.Options),
-			),
+	return genericListLogString(fields, func(f EnrollmentPatternResourceField) string {
+		return fmt.Sprintf(
+			"{name:%s,data_type:%s,options:%s}",
+			tfStringLogString(f.Name), tfInt64LogString(f.DataType), tfListLogString(ctx, f.Options),
 		)
-	}
-	return "[" + strings.Join(entries, ",") + "]"
+	})
 }
 
 // enrollmentPatternPolicyRelevantFieldChanges compares the prior Terraform

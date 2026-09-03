@@ -671,27 +671,66 @@ func algorithmListLogString(ctx context.Context, algos []EnrollmentPatternResour
 	return "[" + strings.Join(entries, ",") + "]"
 }
 
+// regexListLogString renders a []EnrollmentPatternResourceRegex (the raw Go
+// slice type backing the top-level regexes attribute) as a short human-
+// readable string for audit-log lines, mirroring algorithmListLogString's
+// null vs. value distinction and %q-escaping convention: a nil slice
+// (undeclared regexes -- see buildEnrollmentPatternRegexesRequest's doc
+// comment for the same nil-vs-non-nil-empty distinction) logs as "(null)"; a
+// non-nil (even zero-length) slice renders each entry's subject_part/regex/
+// error/case_sensitive, %q-escaped via tfStringLogString/tfBoolLogString for
+// the same CWE-117 reason those helpers exist. PR #210 full-review round 4
+// finding FIX-K.
+func regexListLogString(regexes []EnrollmentPatternResourceRegex) string {
+	if regexes == nil {
+		return "(null)"
+	}
+	entries := make([]string, 0, len(regexes))
+	for _, rx := range regexes {
+		entries = append(
+			entries, fmt.Sprintf(
+				"{subject_part:%s,regex:%s,error:%s,case_sensitive:%s}",
+				tfStringLogString(rx.SubjectPart), tfStringLogString(rx.Regex), tfStringLogString(rx.Error),
+				tfBoolLogString(rx.CaseSensitive),
+			),
+		)
+	}
+	return "[" + strings.Join(entries, ",") + "]"
+}
+
 // enrollmentPatternPolicyRelevantFieldChanges compares the prior Terraform
 // state against the final Update() plan (after preserveUndeclaredEnrollment-
 // PatternFields and the associated_role_names/certificate_authority_ids
 // fallback have run -- i.e. exactly what is about to be sent to Command) and
 // returns one human-readable "field: old -> new" description per changed
 // policy-relevant field. Covers the fields this resource can change that
-// matter for a compliance audit trail: the authorization model governing
-// enrollment (use_ad_permissions, restrict_cas) and who it grants access to
-// (associated_role_names, certificate_authority_ids), which enrollment
-// methods -- and thus key-custody model -- are permitted
-// (allowed_enrollment_types: 1=CSR, 2=PFX/server-generated key, 3=both), how
-// strictly enrollment is validated (policies.rfc_enforcement,
-// policies.allow_wildcards, policies.allow_key_reuse), the cryptographic
-// strength allowed (policies.primary_key_algorithms,
-// policies.alternative_key_algorithms), and who owns the resulting
-// certificates (policies.certificate_owner_role,
+// matter for a compliance audit trail: the reference name of the pattern
+// itself (name), which template's default enrollment pattern this is
+// (template_default -- see the same-named schema attribute's description:
+// "a certificate template can have only one default enrollment pattern,
+// which is required for the template to be used for enrollment"), the
+// authorization model governing enrollment (use_ad_permissions,
+// restrict_cas) and who it grants access to (associated_role_names,
+// certificate_authority_ids), which enrollment methods -- and thus
+// key-custody model -- are permitted (allowed_enrollment_types: 1=CSR,
+// 2=PFX/server-generated key, 3=both), how strictly enrollment is validated
+// (regexes, policies.rfc_enforcement, policies.allow_wildcards,
+// policies.allow_key_reuse), the cryptographic strength allowed
+// (policies.primary_key_algorithms, policies.alternative_key_algorithms),
+// and who owns the resulting certificates (policies.certificate_owner_role,
 // policies.default_certificate_owner_role_id/name,
 // policies.default_certificate_owner_override), plus the one-shot
 // force_template_default directive. Deliberately a pure function (no
 // tflog/side effects) so it can be unit tested directly; Update() emits one
 // tflog.Info per returned entry.
+//
+// template_id is deliberately NOT compared here: it is RequiresReplace
+// (immutable -- see its schema attribute), so it can never differ between
+// prior and updated on a genuine Update() call; a "change" to template_id
+// is actually a destroy+create, already visible in Terraform's own plan
+// output, and is instead reported on the Create side by
+// enrollmentPatternCreationAuditFields below. See PR #210 full-review round
+// 4 finding FIX-J.
 func enrollmentPatternPolicyRelevantFieldChanges(
 	ctx context.Context,
 	prior, updated KeyfactorEnrollmentPatternState,
@@ -704,12 +743,38 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 		}
 	}
 
+	appendIfChanged("name", tfStringLogString(prior.Name), tfStringLogString(updated.Name))
+	appendIfChanged("template_default", tfBoolLogString(prior.TemplateDefault), tfBoolLogString(updated.TemplateDefault))
 	appendIfChanged("use_ad_permissions", tfBoolLogString(prior.UseADPermissions), tfBoolLogString(updated.UseADPermissions))
 	appendIfChanged("associated_role_names", tfListLogString(ctx, prior.AssociatedRoleNames), tfListLogString(ctx, updated.AssociatedRoleNames))
 	appendIfChanged("restrict_cas", tfBoolLogString(prior.RestrictCAs), tfBoolLogString(updated.RestrictCAs))
 	appendIfChanged("certificate_authority_ids", tfListLogString(ctx, prior.CertificateAuthorityIds), tfListLogString(ctx, updated.CertificateAuthorityIds))
 	appendIfChanged("allowed_enrollment_types", tfInt64LogString(prior.AllowedEnrollmentTypes), tfInt64LogString(updated.AllowedEnrollmentTypes))
-	appendIfChanged("force_template_default", tfBoolLogString(prior.ForceTemplateDefault), tfBoolLogString(updated.ForceTemplateDefault))
+	appendIfChanged("regexes", regexListLogString(prior.Regexes), regexListLogString(updated.Regexes))
+	// force_template_default is a one-shot, write-only directive: every CRUD
+	// path in this file unconditionally resets it to Null in the persisted
+	// state (see alwaysUnknownModifier's doc comment), so `prior` here is
+	// ALWAYS Null by construction, regardless of what actually happened on
+	// any previous apply -- it is never a real signal. A naive
+	// appendIfChanged("force_template_default", ...) comparison against that
+	// always-Null baseline would report a false-positive "changed" entry
+	// (null -> false) on every single Update() where a user declares
+	// force_template_default = false in config and leaves it there, forever
+	// -- even though the directive was never actually invoked (only a
+	// genuinely true value triggers the ForceTemplateDefault API call at
+	// the Update() call site -- false is sent as a no-op equivalent to
+	// leaving it unset). Report a change only when the directive is
+	// genuinely being invoked this apply (a known, true value on the
+	// updated/plan side) -- that is the only case that has any real,
+	// auditable effect. See PR #210 full-review round 4 finding FIX-L.
+	if !updated.ForceTemplateDefault.Null && !updated.ForceTemplateDefault.Unknown && updated.ForceTemplateDefault.Value {
+		changes = append(
+			changes, fmt.Sprintf(
+				"force_template_default: %s -> %s",
+				tfBoolLogString(prior.ForceTemplateDefault), tfBoolLogString(updated.ForceTemplateDefault),
+			),
+		)
+	}
 
 	if prior.Policies != nil || updated.Policies != nil {
 		var o, n EnrollmentPatternResourcePolicy
@@ -750,12 +815,16 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 
 // enrollmentPatternCreationAuditFields renders the same access-control-
 // relevant fields enrollmentPatternPolicyRelevantFieldChanges audits on
-// every subsequent Update() -- the authorization model governing enrollment
+// every subsequent Update() -- the reference name of the pattern (name) and
+// which template it is immutably associated with (template_id -- see
+// enrollmentPatternPolicyRelevantFieldChanges's doc comment for why
+// template_id is Create-only), which template's default enrollment pattern
+// this is (template_default), the authorization model governing enrollment
 // (use_ad_permissions, restrict_cas) and who it grants access to
 // (associated_role_names, certificate_authority_ids), which enrollment
 // methods -- and thus key-custody model -- are permitted
 // (allowed_enrollment_types: 1=CSR, 2=PFX/server-generated key, 3=both), how
-// strictly enrollment is validated (policies.rfc_enforcement,
+// strictly enrollment is validated (regexes, policies.rfc_enforcement,
 // policies.allow_wildcards, policies.allow_key_reuse), the cryptographic
 // strength allowed (policies.primary_key_algorithms,
 // policies.alternative_key_algorithms), who owns the resulting certificates
@@ -798,11 +867,15 @@ func enrollmentPatternCreationAuditFields(
 		fields = append(fields, fmt.Sprintf("%s: %s", name, val))
 	}
 
+	add("name", tfStringLogString(created.Name))
+	add("template_id", tfInt64LogString(created.TemplateId))
+	add("template_default", tfBoolLogString(created.TemplateDefault))
 	add("use_ad_permissions", tfBoolLogString(created.UseADPermissions))
 	add("associated_role_names", tfListLogString(ctx, created.AssociatedRoleNames))
 	add("restrict_cas", tfBoolLogString(created.RestrictCAs))
 	add("certificate_authority_ids", tfListLogString(ctx, created.CertificateAuthorityIds))
 	add("allowed_enrollment_types", tfInt64LogString(created.AllowedEnrollmentTypes))
+	add("regexes", regexListLogString(created.Regexes))
 	add("force_template_default", tfBoolLogString(submittedForceTemplateDefault))
 
 	if created.Policies != nil {

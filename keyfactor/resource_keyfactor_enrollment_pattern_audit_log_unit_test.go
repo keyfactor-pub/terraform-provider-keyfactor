@@ -265,6 +265,136 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 			t.Errorf("got %+v, want an entry for policies.allow_wildcards", got)
 		}
 	})
+
+	// ---------------------------------------------------------------------
+	// Regression tests -- PR #210 full-review round 4 finding FIX-I:
+	// template_default (the persisted field, distinct from the one-shot
+	// force_template_default directive) was completely absent from the
+	// Update() audit diff.
+	// ---------------------------------------------------------------------
+
+	t.Run("template_default change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			TemplateDefault: types.Bool{Value: false},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			TemplateDefault: types.Bool{Value: true},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "template_default: false -> true") {
+			t.Errorf("got %+v, want an entry for template_default: false -> true", got)
+		}
+	})
+
+	// ---------------------------------------------------------------------
+	// Regression tests -- PR #210 full-review round 4 finding FIX-J: name
+	// (mutable) changes never appeared in the Update() audit diff.
+	// ---------------------------------------------------------------------
+
+	t.Run("name change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			Name: types.String{Value: "Old Pattern Name"},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			Name: types.String{Value: "New Pattern Name"},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, `name: "Old Pattern Name" -> "New Pattern Name"`) {
+			t.Errorf("got %+v, want an entry for name: \"Old Pattern Name\" -> \"New Pattern Name\"", got)
+		}
+	})
+
+	// ---------------------------------------------------------------------
+	// Regression tests -- PR #210 full-review round 4 finding FIX-K: regexes
+	// (subject-validation regex policy) was untracked in the Update() audit
+	// diff despite matching the established rationale for sibling fields
+	// like policies.rfc_enforcement/policies.allow_wildcards.
+	// ---------------------------------------------------------------------
+
+	t.Run("regexes change is reported", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			Regexes: []EnrollmentPatternResourceRegex{
+				{
+					SubjectPart: types.String{Value: "CommonName"},
+					Regex:       types.String{Value: "^[a-z]+$"},
+				},
+			},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			Regexes: nil,
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "regexes") {
+			t.Errorf("got %+v, want an entry for regexes when a regex is removed", got)
+		}
+	})
+
+	// ---------------------------------------------------------------------
+	// Regression test -- PR #210 full-review round 4 finding FIX-L:
+	// force_template_default produced a false-positive "changed" audit
+	// entry on every Update() where a user explicitly declares
+	// force_template_default = false, because the prior side is ALWAYS
+	// Null by construction (every CRUD path force-resets it), so a naive
+	// diff against that always-Null baseline reports "null -> false" on
+	// literally every apply, forever -- even though the directive was
+	// never actually invoked.
+	// ---------------------------------------------------------------------
+
+	t.Run("force_template_default declared false repeatedly does not produce a changed entry", func(t *testing.T) {
+		t.Parallel()
+		// Mirrors reality: the prior state's ForceTemplateDefault is always
+		// Null by construction (every CRUD path resets it before
+		// persisting), regardless of what was declared in config on the
+		// previous apply.
+		state := KeyfactorEnrollmentPatternState{
+			ForceTemplateDefault: types.Bool{Null: true},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			ForceTemplateDefault: types.Bool{Value: false},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if anyContains(got, "force_template_default") {
+			t.Errorf(
+				"got %+v, want no force_template_default entry when the directive is declared false "+
+					"(never actually invoked)", got,
+			)
+		}
+
+		// Run it a second time against the same always-Null prior -- the
+		// bug this test guards against reproduced on literally every
+		// subsequent call, not just the first.
+		got2 := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if anyContains(got2, "force_template_default") {
+			t.Errorf(
+				"got %+v, want no force_template_default entry on a second call either -- "+
+					"declaring false must never be a permanent false-positive", got2,
+			)
+		}
+	})
+
+	t.Run("force_template_default declared true still produces a changed entry", func(t *testing.T) {
+		t.Parallel()
+		state := KeyfactorEnrollmentPatternState{
+			ForceTemplateDefault: types.Bool{Null: true},
+		}
+		plan := KeyfactorEnrollmentPatternState{
+			ForceTemplateDefault: types.Bool{Value: true},
+		}
+
+		got := enrollmentPatternPolicyRelevantFieldChanges(ctx, state, plan)
+		if !anyContains(got, "force_template_default: (null) -> true") {
+			t.Errorf(
+				"got %+v, want an entry for force_template_default: (null) -> true when genuinely invoked", got,
+			)
+		}
+	})
 }
 
 func anyContains(entries []string, substr string) bool {
@@ -555,6 +685,72 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 			t.Errorf("got %+v, want an entry for policies.alternative_key_algorithms", got)
 		}
 	})
+
+	// -----------------------------------------------------------------------
+	// Regression test -- PR #210 full-review round 4 finding FIX-I:
+	// template_default was completely absent from Create()'s audit trail.
+	// -----------------------------------------------------------------------
+
+	t.Run("reports template_default", func(t *testing.T) {
+		t.Parallel()
+		created := KeyfactorEnrollmentPatternState{
+			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			TemplateDefault:         types.Bool{Value: true},
+		}
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
+		if !anyContains(got, "template_default: true") {
+			t.Errorf("got %+v, want an entry for template_default: true", got)
+		}
+	})
+
+	// -----------------------------------------------------------------------
+	// Regression tests -- PR #210 full-review round 4 finding FIX-J: name
+	// and template_id never appeared in Create()'s audit trail.
+	// -----------------------------------------------------------------------
+
+	t.Run("reports name and template_id", func(t *testing.T) {
+		t.Parallel()
+		created := KeyfactorEnrollmentPatternState{
+			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			Name:                    types.String{Value: "My Enrollment Pattern"},
+			TemplateId:              types.Int64{Value: 17},
+		}
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
+		if !anyContains(got, `name: "My Enrollment Pattern"`) {
+			t.Errorf("got %+v, want an entry for name: \"My Enrollment Pattern\"", got)
+		}
+		if !anyContains(got, "template_id: 17") {
+			t.Errorf("got %+v, want an entry for template_id: 17", got)
+		}
+	})
+
+	// -----------------------------------------------------------------------
+	// Regression test -- PR #210 full-review round 4 finding FIX-K: regexes
+	// was untracked in Create()'s audit trail.
+	// -----------------------------------------------------------------------
+
+	t.Run("reports regexes", func(t *testing.T) {
+		t.Parallel()
+		created := KeyfactorEnrollmentPatternState{
+			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			Regexes: []EnrollmentPatternResourceRegex{
+				{
+					SubjectPart: types.String{Value: "CommonName"},
+					Regex:       types.String{Value: "^[a-z]+$"},
+				},
+			},
+		}
+		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
+		if !anyContains(got, "regexes") {
+			t.Errorf("got %+v, want an entry for regexes", got)
+		}
+		if !anyContains(got, `"CommonName"`) {
+			t.Errorf("got %+v, want the regex's subject_part rendered", got)
+		}
+	})
 }
 
 // TestUnitAlgorithmListLogString covers algorithmListLogString directly --
@@ -591,6 +787,49 @@ func TestUnitAlgorithmListLogString(t *testing.T) {
 	injected := algorithmListLogString(
 		ctx, []EnrollmentPatternResourceAlgorithm{
 			{Name: types.String{Value: "RSA\nforged"}},
+		},
+	)
+	if strings.Contains(injected, "\n") {
+		t.Errorf("got %q, want no raw newline in rendered log value", injected)
+	}
+}
+
+// TestUnitRegexListLogString covers regexListLogString directly -- the
+// null-vs-non-nil-empty-aware renderer backing the new regexes audit-log
+// entries (PR #210 full-review round 4 finding FIX-K).
+func TestUnitRegexListLogString(t *testing.T) {
+	t.Parallel()
+
+	if got := regexListLogString(nil); got != "(null)" {
+		t.Errorf("got %q, want (null) for a nil slice", got)
+	}
+
+	if got := regexListLogString([]EnrollmentPatternResourceRegex{}); got != "[]" {
+		t.Errorf("got %q, want [] for a non-nil empty slice", got)
+	}
+
+	got := regexListLogString(
+		[]EnrollmentPatternResourceRegex{
+			{
+				SubjectPart:   types.String{Value: "CommonName"},
+				Regex:         types.String{Value: "^[a-z]+$"},
+				Error:         types.String{Value: "must be lowercase"},
+				CaseSensitive: types.Bool{Value: true},
+			},
+		},
+	)
+	if !strings.Contains(got, `"CommonName"`) {
+		t.Errorf("got %q, want the subject_part %%q-escaped", got)
+	}
+	if !strings.Contains(got, `"^[a-z]+$"`) {
+		t.Errorf("got %q, want the regex %%q-escaped", got)
+	}
+
+	// CWE-117 regression: an embedded newline in any string field must be
+	// escaped, not passed through raw.
+	injected := regexListLogString(
+		[]EnrollmentPatternResourceRegex{
+			{SubjectPart: types.String{Value: "CommonName\nforged"}},
 		},
 	)
 	if strings.Contains(injected, "\n") {

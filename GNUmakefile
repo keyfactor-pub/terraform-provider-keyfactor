@@ -262,6 +262,30 @@ testunit-repro-friendly-collection-bug:
 	@echo "==> Re-running test on fixed code (expected to PASS)"
 	go test ./keyfactor/ -run "TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved" -v -count=1 -timeout 5m
 
+## testunit-repro-f5: Reproduce the full-review finding F5 regression
+## (validateEnrollmentPatternConfigConstraints treating a null/undeclared
+## certificate_authority_ids or associated_role_names identically to a known,
+## explicitly-empty list, breaking the ordinary import-then-manage flow) by
+## temporarily patching the two guard lines back to the buggy null-is-empty
+## check, confirming the regression tests FAIL, then restoring the fix.
+## git-checkout-based repro (see testunit-repro-friendly-collection-bug above)
+## isn't usable here: F5's fix landed in the same commit/file as F1/F2/F4, and
+## checking out that file's pre-fix revision breaks compilation of unrelated
+## test files added by those other findings in the same commit. A scoped sed
+## patch of just the two affected lines avoids that collateral breakage.
+testunit-repro-f5:
+	@echo "==> Reproducing F5: patching validateEnrollmentPatternConfigConstraints back to null-is-empty (buggy)"
+	sed -i.bak \
+	  -e 's/caIdsKnownEmpty := caIdsKnown && len(cfg.CertificateAuthorityIds.Elems) == 0/caIdsKnownEmpty := cfg.CertificateAuthorityIds.Null || (caIdsKnown \&\& len(cfg.CertificateAuthorityIds.Elems) == 0)/' \
+	  -e 's/rolesKnownEmpty := rolesKnown && len(cfg.AssociatedRoleNames.Elems) == 0/rolesKnownEmpty := cfg.AssociatedRoleNames.Null || (rolesKnown \&\& len(cfg.AssociatedRoleNames.Elems) == 0)/' \
+	  keyfactor/resource_keyfactor_enrollment_pattern.go
+	@echo "==> Running F5 regression tests (expected to FAIL on buggy code)"
+	-go test ./keyfactor/ -run "TestUnitValidateEnrollmentPatternConfigConstraints|TestUnitEnrollmentPatternValidateConfig_ImportThenManageDoesNotError" -v -count=1 -timeout 5m
+	@echo "==> Restoring fixed resource_keyfactor_enrollment_pattern.go"
+	mv keyfactor/resource_keyfactor_enrollment_pattern.go.bak keyfactor/resource_keyfactor_enrollment_pattern.go
+	@echo "==> Re-running tests on fixed code (expected to PASS)"
+	go test ./keyfactor/ -run "TestUnitValidateEnrollmentPatternConfigConstraints|TestUnitEnrollmentPatternValidateConfig_ImportThenManageDoesNotError" -v -count=1 -timeout 5m
+
 # Re-record ALL unit test cassettes (requires lab connection and Command v25+ for enrollment-pattern).
 # This is the primary target to run when the Command API changes break existing cassettes.
 testunit-record-all:

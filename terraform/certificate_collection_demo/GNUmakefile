@@ -85,12 +85,19 @@ lab-plan:
 lab-apply:
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 
-## lab-update: Apply with an updated description to verify the in-place update path.
-## Plan after each apply should show "No changes".
+## lab-update: Apply with an updated description AND changed query to verify
+## the in-place update path -- full-review Phase 1 required tests, item 3:
+## this demo previously never touched query on update, which is why the
+## content mirror follow-the-driver bug (F3) shipped undetected despite a
+## green harness. Plan after each apply should show "No changes".
 lab-update:
-	@echo "==> Step 1: update description (in-place update)..."
-	$(LAB_ENV) TF_VAR_description_override="Updated by harness" $(MAKE) apply SUFFIX=$(SUFFIX)
-	$(LAB_ENV) TF_VAR_description_override="Updated by harness" $(MAKE) plan SUFFIX=$(SUFFIX)
+	@echo "==> Step 1: update description + query (in-place update)..."
+	$(LAB_ENV) TF_VAR_description_override="Updated by harness" \
+	  TF_VAR_query_override="IssuedDN -contains \"demo-updated\"" \
+	  $(MAKE) apply SUFFIX=$(SUFFIX)
+	$(LAB_ENV) TF_VAR_description_override="Updated by harness" \
+	  TF_VAR_query_override="IssuedDN -contains \"demo-updated\"" \
+	  $(MAKE) plan SUFFIX=$(SUFFIX)
 	@echo "==> Step 2: revert to defaults..."
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 	$(LAB_ENV) $(MAKE) plan SUFFIX=$(SUFFIX)

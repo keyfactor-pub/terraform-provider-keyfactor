@@ -11,11 +11,17 @@ provider "keyfactor" {}
 
 # ---------------------------------------------------------------------------
 # keyfactor_certificate_collection resource under test.
+#
+# query is driven by var.query_override (default unset -> the original
+# fixed query) so lab-update (see GNUmakefile) can actually CHANGE it in
+# place -- full-review Phase 1 required tests, item 3: this demo previously
+# never touched query on update, which is why the content mirror
+# follow-the-driver bug (F3) shipped undetected despite a green harness.
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_collection" "demo" {
   name              = "Demo Collection${var.suffix}"
   description       = var.description_override != "" ? var.description_override : "Terraform harness demo collection"
-  query             = "IssuedDN -contains \"demo\""
+  query             = var.query_override != "" ? var.query_override : "IssuedDN -contains \"demo\""
   show_on_dashboard = false
 }
 

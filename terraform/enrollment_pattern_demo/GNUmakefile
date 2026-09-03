@@ -87,12 +87,25 @@ lab-plan:
 lab-apply:
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 
-## lab-update: Apply with an updated description to verify the in-place update path.
-## Plan after each apply should show "No changes".
+## lab-update: Apply with an updated description AND changed driver
+## attributes (associated_role_names, certificate_authority_ids,
+## policies.default_certificate_owner_role_id) to verify the in-place
+## update path -- full-review Phase 1 required tests, item 3: this demo
+## previously never touched these fields, which is why the mirror-pinning
+## bugs (F2/F4) shipped undetected despite a green harness. Plan after each
+## apply should show "No changes".
 lab-update:
-	@echo "==> Step 1: update description (in-place update)..."
-	$(LAB_ENV) TF_VAR_description_override="Updated by harness" $(MAKE) apply SUFFIX=$(SUFFIX)
-	$(LAB_ENV) TF_VAR_description_override="Updated by harness" $(MAKE) plan SUFFIX=$(SUFFIX)
+	@echo "==> Step 1: update description + driver attributes (in-place update)..."
+	$(LAB_ENV) TF_VAR_description_override="Updated by harness" \
+	  TF_VAR_associated_role_name="Administrator" \
+	  TF_VAR_owner_role_name="Administrator" \
+	  TF_VAR_ca_name="OpenBao Root CA" \
+	  $(MAKE) apply SUFFIX=$(SUFFIX)
+	$(LAB_ENV) TF_VAR_description_override="Updated by harness" \
+	  TF_VAR_associated_role_name="Administrator" \
+	  TF_VAR_owner_role_name="Administrator" \
+	  TF_VAR_ca_name="OpenBao Root CA" \
+	  $(MAKE) plan SUFFIX=$(SUFFIX)
 	@echo "==> Step 2: revert to defaults..."
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 	$(LAB_ENV) $(MAKE) plan SUFFIX=$(SUFFIX)

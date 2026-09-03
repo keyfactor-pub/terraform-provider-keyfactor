@@ -249,3 +249,94 @@ func TestUnitCertificateCollectionDataSourceIdNameMatchSucceeds(t *testing.T) {
 		t.Fatalf("Read returned diagnostics for a matching id/name pair: %+v", resp.Diagnostics)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Regression test -- full-review finding F9:
+//
+// The id/name cross-check above (FIX-9) compared the resolved and
+// configured names with a byte-for-byte `!=`. Keyfactor Command's name
+// resolution is case-insensitive (SQL Server default collation), so
+// id=5/name="dashboard certs" against a collection actually named
+// "Dashboard Certs" is NOT a real mismatch from Command's point of view,
+// but the byte comparison hard-errored on it anyway. strings.EqualFold
+// (this repo's own convention for the identical problem -- see
+// resource_keyfactor_security_identity.go's role-name comparisons) fixes
+// this while still catching a genuinely different name.
+// ---------------------------------------------------------------------------
+
+func TestUnitCertificateCollectionDataSourceIdNameCaseInsensitiveMatchSucceeds(t *testing.T) {
+	ctx := context.Background()
+
+	server := idAndNameMismatchServer(t, "Dashboard Certs")
+	defer server.Close()
+	sdkClient := newTemplateUpdateSDKClient(server)
+
+	schema := dataSourceCertificateCollectionSchemaForTest(t, ctx)
+
+	// Both id and name declared; name differs from the server's stored
+	// value ONLY in case -- Command itself treats these as the same
+	// collection (case-insensitive name resolution), so this must NOT
+	// error.
+	config := CertificateCollectionDataSourceState{
+		ID:   types.Int64{Value: 8},
+		Name: types.String{Value: "dashboard certs"},
+	}
+	scratch := tfsdk.Plan{Schema: schema}
+	if d := scratch.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: scratch.Raw}
+
+	d := dataSourceCertificateCollection{p: provider{configured: true, sdkClient: sdkClient}}
+	req := tfsdk.ReadDataSourceRequest{Config: configObj}
+	resp := &tfsdk.ReadDataSourceResponse{State: tfsdk.State{Schema: schema}}
+
+	d.Read(ctx, req, resp)
+
+	if resp.Diagnostics.HasError() {
+		t.Fatalf(
+			"Read returned diagnostics for an id/name pair differing only in case (Command's name resolution "+
+				"is case-insensitive, so this is not a real mismatch): %+v", resp.Diagnostics,
+		)
+	}
+}
+
+// TestUnitCertificateCollectionDataSourceIdNameGenuineMismatchStillErrors
+// confirms F9's EqualFold fix did not weaken the FIX-9 check itself: a
+// genuinely different name (not just a case variant) must still error.
+// TestUnitCertificateCollectionDataSourceIdNameMismatchIsError above already
+// covers this with "Real Name" vs. "Wrong Name" (unrelated strings); this
+// test additionally confirms a name that is a case-insensitive NON-match
+// (differs in more than case) is still rejected.
+func TestUnitCertificateCollectionDataSourceIdNameGenuineMismatchStillErrors(t *testing.T) {
+	ctx := context.Background()
+
+	server := idAndNameMismatchServer(t, "Dashboard Certs")
+	defer server.Close()
+	sdkClient := newTemplateUpdateSDKClient(server)
+
+	schema := dataSourceCertificateCollectionSchemaForTest(t, ctx)
+
+	config := CertificateCollectionDataSourceState{
+		ID:   types.Int64{Value: 8},
+		Name: types.String{Value: "dashboard certificates"}, // genuinely different, not just a case variant
+	}
+	scratch := tfsdk.Plan{Schema: schema}
+	if d := scratch.Set(ctx, &config); d.HasError() {
+		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: scratch.Raw}
+
+	d := dataSourceCertificateCollection{p: provider{configured: true, sdkClient: sdkClient}}
+	req := tfsdk.ReadDataSourceRequest{Config: configObj}
+	resp := &tfsdk.ReadDataSourceResponse{State: tfsdk.State{Schema: schema}}
+
+	d.Read(ctx, req, resp)
+
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("Read with a genuinely different (not just case-variant) declared name should still error, got none")
+	}
+	if !hasAttributeError(resp.Diagnostics, "Certificate collection id/name mismatch") {
+		t.Errorf("diags = %+v, want the id/name mismatch error", resp.Diagnostics)
+	}
+}

@@ -286,6 +286,25 @@ testunit-repro-f5:
 	@echo "==> Re-running tests on fixed code (expected to PASS)"
 	go test ./keyfactor/ -run "TestUnitValidateEnrollmentPatternConfigConstraints|TestUnitEnrollmentPatternValidateConfig_ImportThenManageDoesNotError" -v -count=1 -timeout 5m
 
+## testunit-repro-f9: Reproduce the full-review finding F9 regression
+## (data.keyfactor_certificate_collection's id/name cross-check comparing
+## names byte-for-byte instead of case-insensitively, contradicting
+## Command's own case-insensitive name resolution) by temporarily patching
+## the comparison back to a plain `!=`, confirming the regression test
+## FAILS, then restoring the fix.
+testunit-repro-f9:
+	@echo "==> Reproducing F9: patching the id/name comparison back to byte-for-byte (buggy)"
+	sed -i.bak \
+	  -e 's/if !strings\.EqualFold(resolvedName, state\.Name\.Value) {/if resolvedName != state.Name.Value {/' \
+	  -e '/^\t"strings"$$/d' \
+	  keyfactor/data_source_keyfactor_certificate_collection.go
+	@echo "==> Running F9 regression test (expected to FAIL on buggy code)"
+	-go test ./keyfactor/ -run "TestUnitCertificateCollectionDataSourceIdNameCaseInsensitiveMatchSucceeds" -v -count=1 -timeout 5m
+	@echo "==> Restoring fixed data_source_keyfactor_certificate_collection.go"
+	mv keyfactor/data_source_keyfactor_certificate_collection.go.bak keyfactor/data_source_keyfactor_certificate_collection.go
+	@echo "==> Re-running test on fixed code (expected to PASS)"
+	go test ./keyfactor/ -run "TestUnitCertificateCollectionDataSourceIdNameCaseInsensitiveMatchSucceeds" -v -count=1 -timeout 5m
+
 # Re-record ALL unit test cassettes (requires lab connection and Command v25+ for enrollment-pattern).
 # This is the primary target to run when the Command API changes break existing cassettes.
 testunit-record-all:

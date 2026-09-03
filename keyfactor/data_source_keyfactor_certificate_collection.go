@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -228,12 +229,24 @@ func (d dataSourceCertificateCollection) Read(
 	// risk, not just a cosmetic mismatch, since callers may reasonably
 	// assume the configured name was validated (PR #210 full-review finding
 	// FIX-9).
+	//
+	// full-review finding F9: Keyfactor Command's name resolution is
+	// case-insensitive (SQL Server default collation), so a byte-for-byte
+	// comparison here hard-errors "id/name mismatch" on a config the
+	// server itself considers consistent -- e.g. id=5, name="dashboard
+	// certs" against a collection actually stored as "Dashboard Certs".
+	// strings.EqualFold matches this repo's own convention for the
+	// identical case-insensitive-server-vs-case-sensitive-Go-compare
+	// problem (see resource_keyfactor_security_identity.go's role-name
+	// comparisons). Genuinely different names (not just a case variant)
+	// are still flagged -- this only widens what counts as "the same
+	// name," it doesn't weaken the check.
 	if idSet && nameSet {
 		resolvedName := ""
 		if !result.Name.Null {
 			resolvedName = result.Name.Value
 		}
-		if resolvedName != state.Name.Value {
+		if !strings.EqualFold(resolvedName, state.Name.Value) {
 			response.Diagnostics.AddError(
 				"Certificate collection id/name mismatch",
 				fmt.Sprintf(

@@ -1306,15 +1306,26 @@ func enrollmentPatternDefaultsToState(defaults []v1.EnrollmentPatternsEnrollment
 // response into state. f.Options is a plain (non-nullable-wrapper) []string
 // on the SDK response model: encoding/json only leaves it Go-nil when the
 // server's JSON response omits the "Options" key entirely or sends an
-// explicit `null` -- both of which mean "no value," matching a Null plan for
-// an undeclared `options`. Any other case (including an explicit `[]`) comes
-// back as a non-nil, possibly zero-length slice, which only happens when the
-// config actually declared `options = [...]` (including `options = []`) and
-// the server echoed it back. Collapsing that non-nil-but-empty case to Null
-// unconditionally (the bug -- fixed here) clobbers a known non-null
-// empty-list plan value with Null and crashes the apply with "Provider
-// produced inconsistent result after apply" -- see
+// explicit `null`. Any other case (including an explicit `[]`) comes back
+// as a non-nil, possibly zero-length slice -- collapsing THAT case to Null
+// unconditionally clobbers a known non-null empty-list plan value with Null
+// and crashes the apply with "Provider produced inconsistent result after
+// apply" whenever `options` genuinely was declared as `options = []` -- see
 // TestUnitEnrollmentPatternFieldsToStatePreservesEmptyOptions.
+//
+// full-review finding F7 (verified live against kfclab): Command's
+// EnrollmentPatterns endpoints echo an explicit `"Options": []` for EVERY
+// enrollment field, including ones whose `options` was never declared at
+// all -- the "config actually declared options = [...] and the server
+// echoed it back" assumption this function's doc comment previously made
+// is FALSE. `options` is Optional-only (no Computed, no plan modifier), so
+// its planned value is always exactly the declared config value (Null if
+// undeclared) -- meaning this function alone cannot distinguish "options
+// was declared []" from "options was never declared" from the response
+// alone; both arrive as a non-nil, zero-length slice. Reconciling that
+// distinction against the actual plan/config value for the corresponding
+// entry is the caller's job -- see reconcileEnrollmentFieldsOptionsFromPlan,
+// called from Create()/Update() after this function runs.
 func enrollmentPatternFieldsToState(fields []v1.EnrollmentPatternsEnrollmentPatternFieldResponse) []EnrollmentPatternResourceField {
 	// EnrollmentFields itself (the outer slice, as opposed to each entry's
 	// nested Options handled above) is subject to the identical nil-vs-
@@ -1337,6 +1348,46 @@ func enrollmentPatternFieldsToState(fields []v1.EnrollmentPatternsEnrollmentPatt
 		result = append(result, entry)
 	}
 	return result
+}
+
+// reconcileEnrollmentFieldsOptionsFromPlan collapses a server-echoed
+// `Options: []` back to Null wherever the corresponding PLAN/CONFIG entry
+// left `options` undeclared (Null) -- full-review finding F7, verified
+// live against kfclab (see enrollmentPatternFieldsToState's doc comment):
+// Command echoes an explicit `"Options": []` for every enrollment field,
+// including ones whose `options` was never declared at all, so
+// enrollmentPatternFieldsToState alone cannot tell the two cases apart.
+// `options` is Optional-only (no Computed, no plan modifier), so its
+// planned value for a given entry is always exactly that entry's declared
+// config value -- a genuinely-empty `options = []` is a KNOWN non-null
+// value the plan promises, and must NOT be collapsed to Null; an
+// undeclared `options` is a Null value the plan promises, and MUST be
+// collapsed (a non-null-empty final value there is exactly "Provider
+// produced inconsistent result after apply").
+//
+// planFields must be the plan/config-derived []EnrollmentPatternResourceField
+// actually submitted this apply (i.e. what buildEnrollmentPatternFieldsRequest
+// was given) -- callers only invoke this when planFields is non-nil (the
+// top-level enrollment_fields list was genuinely declared this apply); see
+// Create()/Update() call sites. responseFields is the same-shape result of
+// enrollmentPatternFieldsToState(resp.EnrollmentFields). Matches entries by
+// index, which is safe here: responseFields is the server's echo of
+// exactly what planFields submitted, in the same request, so order and
+// count are preserved. A length mismatch (which should not happen in
+// practice) is handled defensively by only reconciling up to the shorter
+// length, leaving any extra response entries untouched.
+func reconcileEnrollmentFieldsOptionsFromPlan(
+	planFields, responseFields []EnrollmentPatternResourceField,
+) []EnrollmentPatternResourceField {
+	for i := range responseFields {
+		if i >= len(planFields) {
+			break
+		}
+		if planFields[i].Options.Null {
+			responseFields[i].Options = types.List{Null: true, ElemType: types.StringType}
+		}
+	}
+	return responseFields
 }
 
 // algorithmDataResponseToResourceEntry converts a single PrimaryKeyAlgorithms/
@@ -2161,6 +2212,14 @@ func (r resourceEnrollmentPattern) Create(
 	}
 
 	newState := enrollmentPatternResponseToState(resp)
+	// full-review finding F7: Command echoes an explicit "Options": [] for
+	// every enrollment field regardless of whether options was actually
+	// declared, so reconcile against what plan.EnrollmentFields (decoded
+	// from Config, i.e. exactly what was submitted) actually declared per
+	// entry before this value reaches the final state.
+	if plan.EnrollmentFields != nil {
+		newState.EnrollmentFields = reconcileEnrollmentFieldsOptionsFromPlan(plan.EnrollmentFields, newState.EnrollmentFields)
+	}
 	// On Create there is no prior Terraform state at all, so
 	// useStateOrNullModifier's Computed handling (see
 	// resource_keyfactor_certificate_template.go) has nothing to carry
@@ -2251,6 +2310,18 @@ func (r resourceEnrollmentPattern) Read(
 
 	newState := enrollmentPatternResponseToState(resp)
 
+	// full-review finding F7: reconcile the same Options null-vs-empty
+	// ambiguity as Create()/Update() (see reconcileEnrollmentFieldsOptionsFromPlan's
+	// doc comment), using PRIOR STATE (not plan/config -- Read() has no
+	// plan) as the reference for "was this entry's options genuinely
+	// null." Without this, a plain refresh would silently replace a
+	// correctly-null options with the server's echoed "[]", causing a
+	// spurious "options: null -> []" diff (and, if that state then feeds a
+	// subsequent Update(), the same Core rejection F7 fixes elsewhere).
+	if state.EnrollmentFields != nil {
+		newState.EnrollmentFields = reconcileEnrollmentFieldsOptionsFromPlan(state.EnrollmentFields, newState.EnrollmentFields)
+	}
+
 	// GetById never returns AssociatedRoleNames/CertificateAuthorityIds in
 	// their write shape -- preserve from the prior state (see
 	// KeyfactorEnrollmentPatternState's doc comment). force_template_default
@@ -2313,6 +2384,14 @@ func (r resourceEnrollmentPattern) Update(
 	// Config never populates id -- it's computed-only, never written by a
 	// user -- so always fall back to prior state for it.
 	plan.ID = state.ID
+
+	// Captured BEFORE preserveUndeclaredEnrollmentPatternFields mutates
+	// plan.EnrollmentFields (when undeclared, it falls back to a fresh
+	// pre-update GET's response) -- full-review finding F7's reconciliation
+	// below needs the ORIGINAL, genuinely-declared-this-apply value (or nil
+	// if enrollment_fields itself was undeclared) to know which entries'
+	// options were truly left undeclared vs. genuinely configured empty.
+	originalPlanEnrollmentFields := plan.EnrollmentFields
 
 	tflog.Info(ctx, fmt.Sprintf("Updating enrollment pattern ID %d", plan.ID.Value))
 
@@ -2424,6 +2503,21 @@ func (r resourceEnrollmentPattern) Update(
 	// decoded from Config, so this is exactly the value the user declared
 	// (or Null if undeclared) this apply.
 	newState.ForceTemplateDefault = plan.ForceTemplateDefault
+	// full-review finding F7: reconcile the Options null-vs-empty ambiguity
+	// (see reconcileEnrollmentFieldsOptionsFromPlan's doc comment) using
+	// whichever reference reflects "was this entry's options genuinely
+	// declared null this apply": if enrollment_fields was declared this
+	// apply, use the ORIGINAL plan/config value (captured above, before
+	// preserveUndeclaredEnrollmentPatternFields could overwrite it from
+	// the pre-update GET); if it was left undeclared entirely, fall back
+	// to prior Terraform state -- mirroring Read()'s identical treatment,
+	// since the PUT resent state's own values via preservation and the
+	// response should echo them back unchanged.
+	if originalPlanEnrollmentFields != nil {
+		newState.EnrollmentFields = reconcileEnrollmentFieldsOptionsFromPlan(originalPlanEnrollmentFields, newState.EnrollmentFields)
+	} else if state.EnrollmentFields != nil {
+		newState.EnrollmentFields = reconcileEnrollmentFieldsOptionsFromPlan(state.EnrollmentFields, newState.EnrollmentFields)
+	}
 
 	// policies.default_certificate_owner_role_name can only be audited
 	// accurately AFTER the update has actually been applied -- see

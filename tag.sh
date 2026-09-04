@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-TAG_VERSION=v2.10.0-rc.2
+TAG_VERSION=v2.10.0-rc.3
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

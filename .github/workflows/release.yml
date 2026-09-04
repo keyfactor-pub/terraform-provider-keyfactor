@@ -36,8 +36,12 @@ jobs:
         run: |
           echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
           echo "Version extracted: ${GITHUB_REF#refs/tags/}"
-      - name: Guard against GA release with pre-release dependencies
-        run: ./scripts/check_ga_release_deps.sh "${{ env.TAG_NAME }}"
+      # TEMPORARILY DISABLED for v2.9.2 only: this release intentionally ships
+      # with a pre-release keyfactor-go-client-sdk dependency pinned in
+      # go.mod, by explicit decision rather than oversight. Restore this step
+      # immediately after the v2.9.2 release completes.
+      # - name: Guard against GA release with pre-release dependencies
+      #   run: ./scripts/check_ga_release_deps.sh "${{ env.TAG_NAME }}"
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v4
         with:

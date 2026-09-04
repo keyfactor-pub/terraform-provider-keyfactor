@@ -40,7 +40,7 @@ import-all:
 	  fi; \
 	done < _import_pairs.txt
 
-## drift-check: Plan after import — only write-only fields should appear as "to change"
+## drift-check: Plan after import (only write-only fields should appear as "to change"
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
@@ -52,7 +52,7 @@ destroy:
 clean:
 	rm -f tf_state.json _import_pairs.txt terraform.tfstate terraform.tfstate.backup
 
-## all: Full workflow — build, init, validate, plan, apply, import-all, drift-check, destroy
+## all: Full workflow: build, init, validate, plan, apply, import-all, drift-check, destroy
 all: build init validate plan apply import-all drift-check destroy
 
 ## lab-plan / lab-apply / lab-import-all / lab-drift-check / lab-destroy:

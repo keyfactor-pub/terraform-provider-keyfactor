@@ -13,7 +13,7 @@ association.
 
 ## Variables
 
-See `variables.tf` — `suffix`, `claim_value`, `role_description`,
+See `variables.tf`: `suffix`, `claim_value`, `role_description`,
 `claim_description`.
 
 ## Running

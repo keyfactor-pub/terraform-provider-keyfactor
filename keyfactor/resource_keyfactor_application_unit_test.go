@@ -71,7 +71,7 @@ func TestUnitApplicationUpdateScheduleImmediateNullPlan(t *testing.T) {
 	preserveApplicationScheduleFields(plan, &newState)
 
 	assert.True(t, newState.ScheduleImmediate.Null,
-		"null plan must yield null state — preservation is one-way (true only)")
+		"null plan must yield null state : preservation is one-way (true only)")
 }
 
 // TestUnitApplicationUpdateNormalizesScheduleTimes verifies that datetime

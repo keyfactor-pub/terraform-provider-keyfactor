@@ -20,7 +20,7 @@ func int32Ptr(v int32) *int32 { return &v }
 // ---------------------------------------------------------------------------
 // Integration tests
 //
-// Certificate authorities cannot be created with fake hostnames — the server
+// Certificate authorities cannot be created with fake hostnames : the server
 // validates connectivity during creation. These tests discover the existing
 // CA on the lab and exercise import + read operations.
 // ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ func TestUnitKeyfactorCertificateAuthorityResource(t *testing.T) {
 //
 // Note: delete is called by the test framework at the end (cleanup); for CAs
 // this may fail if the server rejects deletion of in-use CAs, which is
-// acceptable — the test only verifies the update path.
+// acceptable : the test only verifies the update path.
 //
 // A t.Cleanup restores the CA to its pre-test state (best-effort) so that
 // re-runs of this test see consistent initial conditions.
@@ -156,7 +156,7 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 	// "associated with at least one Certificate and cannot be deleted"). The SDK
 	// test framework's post-test destroy runs in a defer that bypasses
 	// ErrorCheck and t.Fatalf's on that error, so it cannot be rescued from
-	// within the test steps — it must be handled BEFORE any step runs. Probe the
+	// within the test steps : it must be handled BEFORE any step runs. Probe the
 	// Certificates endpoint for any cert issued by this CA and skip (warn) if
 	// found. Be conservative: also skip if the probe is inconclusive (request
 	// error or non-2xx / unexpected body), since we then cannot guarantee a
@@ -185,7 +185,7 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 	rawCAJSON, _, snapshotErr := commandHTTPDo(client, "GET",
 		fmt.Sprintf("CertificateAuthority/%s", caID), nil)
 	if snapshotErr != nil {
-		t.Logf("WARNING: could not snapshot CA %s before test: %s — cleanup will be skipped", caID, snapshotErr)
+		t.Logf("WARNING: could not snapshot CA %s before test: %s : cleanup will be skipped", caID, snapshotErr)
 	}
 
 	t.Cleanup(func() {
@@ -202,13 +202,13 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 		// to be reset to their server defaults on the subsequent PUT.
 		var rawMap map[string]interface{}
 		if err := json.Unmarshal(rawCAJSON, &rawMap); err != nil {
-			t.Logf("cleanup: could not parse CA snapshot JSON: %s — skipping restore", err)
+			t.Logf("cleanup: could not parse CA snapshot JSON: %s : skipping restore", err)
 			return
 		}
 		rawMap["MonitorThresholds"] = ca.MonitorThresholds
 		patchedJSON, err := json.Marshal(rawMap)
 		if err != nil {
-			t.Logf("cleanup: could not re-marshal patched CA JSON: %s — skipping restore", err)
+			t.Logf("cleanup: could not re-marshal patched CA JSON: %s : skipping restore", err)
 			return
 		}
 
@@ -248,7 +248,7 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 				),
 			},
 			{
-				// Step 2: Apply update — toggle monitor_thresholds.
+				// Step 2: Apply update : toggle monitor_thresholds.
 				Config: testAccCertificateAuthorityUpdateConfig(caName, caHost, newMonitorThresholds),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(resourceName, "id", caID),
@@ -260,7 +260,7 @@ func TestIntKeyfactorCertificateAuthorityResourceUpdate(t *testing.T) {
 				// Step 3: Explicit destroy so the imported CA is removed in a
 				// numbered step, leaving empty state for the framework's
 				// post-test destroy (which would otherwise re-run it). This step
-				// is only reached when the CA is deletable — the upfront probe
+				// is only reached when the CA is deletable : the upfront probe
 				// above skips the whole test when the CA has issued certificates.
 				// Config is required even when Destroy=true; reuse the Step 2
 				// config so the destroy targets the same resource.
@@ -460,7 +460,7 @@ resource "keyfactor_certificate_authority" "test" {
 }
 
 // ---------------------------------------------------------------------------
-// Unit tests — caResponseToState nil-safe conversion
+// Unit tests : caResponseToState nil-safe conversion
 // ---------------------------------------------------------------------------
 
 // TestUnitCertificateAuthorityResponseToState verifies that caResponseToState

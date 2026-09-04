@@ -15,7 +15,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Unit tests — OAuth access_token propagation regression (v2.8.0 fix)
+// Unit tests : OAuth access_token propagation regression (v2.8.0 fix)
 // ---------------------------------------------------------------------------
 
 // TestUnitOAuthAccessTokenPropagation verifies that AccessToken, Audience, and
@@ -81,7 +81,7 @@ func TestUnitOAuthAccessTokenPropagation(t *testing.T) {
 
 // TestUnitOAuthAccessTokenNoClientCreds verifies the access_token-only path
 // (no client_id/client_secret/token_url) produces an "oauth" auth type and
-// the token propagates correctly — the exact scenario broken in v2.8.0.
+// the token propagates correctly : the exact scenario broken in v2.8.0.
 func TestUnitOAuthAccessTokenNoClientCreds(t *testing.T) {
 	srv := &auth_providers.Server{
 		Host:        "command.example.com",
@@ -112,11 +112,11 @@ func TestUnitOAuthAccessTokenNoClientCreds(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Integration test — OAuth access_token-only auth against a real lab
+// Integration test : OAuth access_token-only auth against a real lab
 // ---------------------------------------------------------------------------
 
 // TestIntOAuthAccessTokenAuth verifies that the provider can authenticate
-// using only hostname + access_token (pre-fetched token mode) — the exact
+// using only hostname + access_token (pre-fetched token mode) : the exact
 // scenario that was broken in v2.8.0. It reads a list of agents as a simple
 // smoke test that the auth is working end-to-end.
 //
@@ -214,7 +214,7 @@ func restoreEnv(key, original string) {
 
 // fetchOAuthToken performs a client credentials grant against the given token
 // URL and returns the access_token from the response. The test is skipped (not
-// failed) if the request fails or the response cannot be parsed — this lets
+// failed) if the request fails or the response cannot be parsed : this lets
 // the test be safely run in environments where the token endpoint is
 // unreachable.
 func fetchOAuthToken(t *testing.T, tokenURL, clientID, clientSecret string) string {

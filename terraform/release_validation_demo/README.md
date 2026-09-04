@@ -12,7 +12,7 @@ deployments.
 - `keyfactor_certificate_deployment` (tls_secret, opaque_secret, jks, pkcs12)
 
 Deliberately narrower than `k8s_orchestrator_demo` (no K8SCert, no
-buddy-password JKS/PKCS12 variants) — this demo is a fast pass across common
+buddy-password JKS/PKCS12 variants); this demo is a fast pass across common
 surfaces, not a deep per-feature test.
 
 ## Variables

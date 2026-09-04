@@ -65,7 +65,7 @@ import-all:
 reconcile:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)" -var="account_name=$(ACCOUNT_NAME)"
 
-## drift-check: Plan after reconcile — should show "No changes"
+## drift-check: Plan after reconcile (should show "No changes"
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)" -var="account_name=$(ACCOUNT_NAME)"
 
@@ -81,7 +81,7 @@ clean:
 # Combined workflows
 # ---------------------------------------------------------------------------
 
-## all: Full workflow — build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
+## all: Full workflow: build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
 all: build init validate plan apply import-all reconcile drift-check destroy
 
 ## demo-no-destroy: Run workflow without final destroy (leaves resources on server)
@@ -127,7 +127,7 @@ lifecycle:
 	fi
 
 # ---------------------------------------------------------------------------
-# PR #179 regression proof — roles omitted on an Update
+# PR #179 regression proof: roles omitted on an Update
 #
 #   1. apply with roles declared (roles_declared=true)
 #   2. apply again with roles omitted from config (roles_declared=false) --

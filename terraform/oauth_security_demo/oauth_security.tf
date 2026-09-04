@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# OAuth Security Role — read-only certificate permissions
+# OAuth Security Role : read-only certificate permissions
 # ---------------------------------------------------------------------------
 resource "keyfactor_oauth_security_role" "demo" {
   name              = "OAuthDemo${var.suffix}"
@@ -12,7 +12,7 @@ resource "keyfactor_oauth_security_role" "demo" {
 }
 
 # ---------------------------------------------------------------------------
-# OAuth Security Claim — OAuthClientId bound to a UUID
+# OAuth Security Claim : OAuthClientId bound to a UUID
 # ---------------------------------------------------------------------------
 resource "keyfactor_oauth_security_claim" "demo" {
   claim_type                     = "OAuthClientId"
@@ -22,7 +22,7 @@ resource "keyfactor_oauth_security_claim" "demo" {
 }
 
 # ---------------------------------------------------------------------------
-# Association — bind the claim to the role
+# Association : bind the claim to the role
 # ---------------------------------------------------------------------------
 resource "keyfactor_oauth_security_role_claim_association" "demo" {
   role_id  = keyfactor_oauth_security_role.demo.id
@@ -30,7 +30,7 @@ resource "keyfactor_oauth_security_role_claim_association" "demo" {
 }
 
 # ---------------------------------------------------------------------------
-# Data sources — read back the created resources
+# Data sources : read back the created resources
 # ---------------------------------------------------------------------------
 data "keyfactor_oauth_security_role" "demo" {
   name = keyfactor_oauth_security_role.demo.name

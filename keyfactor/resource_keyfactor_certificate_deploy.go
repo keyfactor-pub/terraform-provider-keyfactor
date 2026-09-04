@@ -16,7 +16,7 @@ import (
 
 // storeHasInventorySchedule reports whether the certificate store storeId has any
 // inventory schedule configured (Immediate, Interval, Daily, or ExactlyOnce). When
-// the store read itself fails, readErr is returned and hasSchedule is always false —
+// the store read itself fails, readErr is returned and hasSchedule is always false :
 // callers must distinguish "store read failed" from "store genuinely has no
 // schedule" in their own logging/diagnostics rather than conflating the two.
 func storeHasInventorySchedule(conn *api.Client, storeId string) (hasSchedule bool, readErr error) {
@@ -585,7 +585,7 @@ func (r resourceCommandCertificateDeployment) Delete(
 	//hid := fmt.Sprintf("%s-%s-%s", certificateId, storeId, certificateAlias)
 
 	if certificateAlias == "" {
-		// Look up the actual alias from the store inventory — the alias is the Name field in the inventory entry.
+		// Look up the actual alias from the store inventory : the alias is the Name field in the inventory entry.
 		// This handles store types (e.g. K8S TLS Secret) where the alias is not the thumbprint.
 		inv, invErr := kfClient.GetCertStoreInventory(storeId)
 		if invErr == nil && inv != nil {
@@ -932,7 +932,7 @@ func validateUndeployment(
 }
 
 // deploymentPresentInInventory performs a single inventory read and reports whether the
-// certificate is present in the store — matched by alias, or by leaf certificate ID when
+// certificate is present in the store : matched by alias, or by leaf certificate ID when
 // no alias is set. Matching semantics are shared with validateDeployment.
 func deploymentPresentInInventory(
 	ctx context.Context,

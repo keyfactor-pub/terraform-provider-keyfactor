@@ -382,7 +382,7 @@ func (r resourceCertificateStore) Create(
 	// The server never echoes ContainerName in Create/GET responses (always null).
 	// Resolve the name from the ContainerId by looking up the container directly
 	// by ID. The list endpoint is paginated (default 50/page), so a just-created
-	// container may not appear on the first page — see lookupContainerNameByID.
+	// container may not appear on the first page : see lookupContainerNameByID.
 	result.syncApplicationAndContainerName(lookupContainerNameByID(ctx, kfClient, createStoreResponse.ContainerId, effectiveName))
 
 	diags = response.State.Set(ctx, result)
@@ -486,7 +486,7 @@ func (r resourceCertificateStore) resolveContainerIDByName(name string) (int, er
 //
 // When containerId is nonzero, an unresolved (empty) name is omitted from the
 // request (via stringToPointer, which maps "" to nil, omitted by the
-// `omitempty` tag) rather than sent as a literal empty string — pairing a
+// `omitempty` tag) rather than sent as a literal empty string : pairing a
 // real, nonzero containerId with an explicit empty ContainerName is a
 // combination that never occurred before this fix and whose
 // handling on Command's UpdateStore endpoint is unverified; there's no reason
@@ -494,7 +494,7 @@ func (r resourceCertificateStore) resolveContainerIDByName(name string) (int, er
 // sufficient (containerId is what actually carries the assignment).
 //
 // When containerId is 0, the name is sent explicitly (even if empty) exactly
-// as before this fix — this is the long-standing, tested "no
+// as before this fix : this is the long-standing, tested "no
 // assignment"/explicit-clear request shape and must not change.
 func containerNameArgPointer(containerId int, name string) *string {
 	if containerId != 0 {
@@ -509,23 +509,23 @@ func containerNameArgPointer(containerId int, name string) *string {
 //
 // Background: Command's UpdateStore endpoint treats an
 // omitted ContainerId as an explicit instruction to CLEAR the store's
-// container/application assignment — UpdateStoreFctArgs.ContainerId is
+// container/application assignment : UpdateStoreFctArgs.ContainerId is
 // `json:"ContainerId,omitempty"`, and intToPointer(0) returns nil, so a
 // resolved containerId of 0 is dropped from the request body entirely rather
 // than sent as an explicit zero. Previously, whenever the plan gave no
 // explicit application_name/container_name (nameIsNull), containerId was
 // simply left at 0 with no regard for whether the store already had a real
 // assignment server-side. That silently deleted a live container/application
-// assignment on the very next Update() — including one that was only ever
+// assignment on the very next Update() : including one that was only ever
 // made out-of-band (e.g. directly via the API) and never represented in
-// Terraform config — well before Terraform's own "inconsistent result after
+// Terraform config : well before Terraform's own "inconsistent result after
 // apply" check had a chance to catch anything.
 //
 // effectiveContainerName() (models.go) only checks .Value != "", never
 // .IsNull(), so it collapses two very different signals into the same
 // nameIsNull=true result: "the attribute was never declared in config" and
 // "the attribute was explicitly set to \"\" to clear the assignment." Those
-// must be handled differently — the former should preserve a real existing
+// must be handled differently : the former should preserve a real existing
 // assignment, but the latter is an explicit user instruction to remove it and
 // must still resolve containerId to 0, exactly as before this fix. This
 // function re-checks plan.ApplicationName/ContainerName directly via
@@ -941,7 +941,7 @@ type storeImportRef struct {
 //   - "containers/<idOrName>/stores/<guid>"             (scope lookup by container; legacy alias)
 //   - "applications/<idOrName>/stores/<guid>"           (scope lookup by application; preferred alias)
 //
-// "containers" and "applications" are interchangeable — both map to the same
+// "containers" and "applications" are interchangeable : both map to the same
 // ContainerID field on the returned storeImportRef.
 //
 // Anything else returns an error listing the accepted formats.
@@ -952,7 +952,7 @@ func parseStoreImportID(raw string) (storeImportRef, error) {
 		)
 	}
 
-	// Bare GUID — no slashes.
+	// Bare GUID : no slashes.
 	if !strings.Contains(raw, "/") {
 		return storeImportRef{StoreID: raw}, nil
 	}
@@ -1024,7 +1024,7 @@ func (r resourceCertificateStore) ImportState(
 
 	var readResponse *api.GetCertificateStoreResponse
 	if ref.ContainerID == "" {
-		// Direct lookup — requires read-on-all-stores permission on the caller.
+		// Direct lookup : requires read-on-all-stores permission on the caller.
 		resp, err := r.p.client.GetCertificateStoreByID(certificateStoreId)
 		if err != nil {
 			response.Diagnostics.AddError(
@@ -1062,7 +1062,7 @@ func (r resourceCertificateStore) ImportState(
 			response.Diagnostics.AddError(
 				ERR_SUMMARY_CERT_STORE_READ,
 				fmt.Sprintf(
-					"certificate store %s not found in container %v — verify your container access and store ID",
+					"certificate store %s not found in container %v : verify your container access and store ID",
 					certificateStoreId, cArg,
 				),
 			)
@@ -1162,7 +1162,7 @@ func resolveInventoryScheduleState(planVal types.String, serverSched *api.Invent
 			return types.String{Value: s}
 		}
 	}
-	// No schedule on the server either — return known null.
+	// No schedule on the server either : return known null.
 	return types.String{Null: true}
 }
 

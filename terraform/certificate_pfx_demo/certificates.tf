@@ -19,7 +19,7 @@ locals {
 # -------------------------------------------------------------------------
 # Example 1: Minimal PFX enrollment
 #
-# The simplest possible certificate — only the required fields.
+# The simplest possible certificate : only the required fields.
 # Keyfactor Command picks the key algorithm and size from the template
 # defaults. The signed certificate and private key are returned in PEM
 # format (provider default).
@@ -39,8 +39,8 @@ resource "keyfactor_certificate" "minimal_pfx" {
 # Demonstrates every commonly used field:
 #   - Explicit EC P-521 key algorithm
 #   - DNS and IP SANs
-#   - Custom metadata fields (in-place updatable — no certificate replacement)
-#   - Automatic renewal config (in-place updatable — no certificate replacement)
+#   - Custom metadata fields (in-place updatable : no certificate replacement)
+#   - Automatic renewal config (in-place updatable : no certificate replacement)
 #   - Explicit PEM output format
 #
 # The template must have KeyRetention enabled for the private key to be returned.
@@ -53,7 +53,7 @@ resource "keyfactor_certificate" "full_pfx" {
   key_password                   = var.key_password
   use_cn_as_friendly_name        = var.use_cn_as_friendly_name
 
-  # Explicit key algorithm — EC P-521
+  # Explicit key algorithm : EC P-521
   key_type = "ECC"
   curve    = "P-521"
 
@@ -74,7 +74,7 @@ resource "keyfactor_certificate" "full_pfx" {
   } : null
 
   # Trigger automatic renewal when fewer than renew_days remain (in-place updatable; disabled when 0)
-  # Setting renew_days=0 omits this block — same as removing it from config.
+  # Setting renew_days=0 omits this block : same as removing it from config.
   renewal_config = var.renew_days > 0 ? {
     renew_days = var.renew_days
   } : null
@@ -130,7 +130,7 @@ resource "keyfactor_certificate" "rsa_4096" {
 # -------------------------------------------------------------------------
 # Example 6: RSA 8192-bit key
 #
-# Very large key — enrollment may take longer than other key sizes.
+# Very large key : enrollment may take longer than other key sizes.
 # -------------------------------------------------------------------------
 resource "keyfactor_certificate" "rsa_8192" {
   common_name                    = "tf-demo-rsa8192${local.dns_suffix}.example.com"
@@ -193,7 +193,7 @@ resource "keyfactor_certificate" "ecc_p521" {
 # Example 10: Ed25519 key
 #
 # Requires Command v11.7+ and a CA configured to issue Ed25519 certificates.
-# Not all CAs or templates support this algorithm — the enrollment will fail
+# Not all CAs or templates support this algorithm : the enrollment will fail
 # with a CA error if it is not supported.
 # -------------------------------------------------------------------------
 resource "keyfactor_certificate" "ed25519" {
@@ -211,7 +211,7 @@ resource "keyfactor_certificate" "ed25519" {
 # Example 11: Ed448 key
 #
 # Requires Command v11.7+ and a CA explicitly configured for Ed448.
-# Not widely supported — the enrollment will fail with a CA error if the
+# Not widely supported : the enrollment will fail with a CA error if the
 # CA or template does not support this algorithm.
 # -------------------------------------------------------------------------
 resource "keyfactor_certificate" "ed448" {

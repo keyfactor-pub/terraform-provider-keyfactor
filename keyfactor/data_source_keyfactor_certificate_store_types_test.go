@@ -22,7 +22,7 @@ func TestIntKeyfactorCertificateStoreTypesDataSource(t *testing.T) {
 		t.Skip("Skipping: testAccIntegrationPreCheck returned nil client")
 	}
 
-	// Test 1: No filters — should return at least one store type
+	// Test 1: No filters : should return at least one store type
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -41,7 +41,7 @@ func TestIntKeyfactorCertificateStoreTypesDataSource(t *testing.T) {
 		},
 	})
 
-	// Test 2: Filter by short_name substring — discover a known short name first
+	// Test 2: Filter by short_name substring : discover a known short name first
 	allTypes, err := client.ListCertificateStoreTypes()
 	if err != nil || allTypes == nil || len(*allTypes) == 0 {
 		t.Log("Skipping short_name_filter sub-test: no store types available")
@@ -141,7 +141,7 @@ func TestUnitKeyfactorCertificateStoreTypesDataSource(t *testing.T) {
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				// No filter — all store types returned
+				// No filter : all store types returned
 				Config: testAccCertStoreTypesDataSourceConfigNoFilter(),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(dsName, "id"),
@@ -157,7 +157,7 @@ func TestUnitKeyfactorCertificateStoreTypesDataSource(t *testing.T) {
 				),
 			},
 			{
-				// Filter by exact short_name — should return exactly this store type
+				// Filter by exact short_name : should return exactly this store type
 				Config: testAccCertStoreTypesDataSourceConfigShortNameFilter(params.FirstShortName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr(dsName, "store_types.#", "1"),

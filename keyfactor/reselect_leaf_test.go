@@ -1,6 +1,6 @@
 package keyfactor
 
-// Regression tests for reselectLeafFromChain — the provider-side guard that
+// Regression tests for reselectLeafFromChain : the provider-side guard that
 // re-derives the true end-entity leaf from the combined leaf+chain set,
 // independent of how Keyfactor Command ordered the chain or which client path
 // (P7B findLeafCert, PFX DecodeChain fallback, or PEM UnpackPEM's positional
@@ -55,7 +55,7 @@ func TestReselectLeafFromChain(t *testing.T) {
 		chainPEM string
 	}{
 		{
-			// Correct input — must stay correct (no churn).
+			// Correct input : must stay correct (no churn).
 			name:     "already-leaf-first",
 			leafPEM:  certToPEM(leaf),
 			chainPEM: certToPEM(intermediate) + certToPEM(root),
@@ -85,7 +85,7 @@ func TestReselectLeafFromChain(t *testing.T) {
 			gotLeaf, _ := reselectLeafFromChain(ctx, tc.leafPEM, tc.chainPEM)
 			cn, isCA := parsePEMLeafCN(t, gotLeaf)
 			if isCA {
-				t.Errorf("reselected leaf is a CA (CN=%q) — guard failed", cn)
+				t.Errorf("reselected leaf is a CA (CN=%q) : guard failed", cn)
 			}
 			if cn != "leaf.example.com" {
 				t.Errorf("reselected leaf CN=%q, want %q", cn, "leaf.example.com")
@@ -126,7 +126,7 @@ func TestUnpackPEM_RootFirstReturnsRoot(t *testing.T) {
 	}
 	cn, isCA := parsePEMLeafCN(t, certificate)
 	if !isCA || cn != "Test Root CA" {
-		t.Logf("NOTE: api.UnpackPEM no longer returns the root (CN=%q IsCA=%v) — upstream may be fixed", cn, isCA)
+		t.Logf("NOTE: api.UnpackPEM no longer returns the root (CN=%q IsCA=%v) : upstream may be fixed", cn, isCA)
 		return
 	}
 	t.Logf("confirmed upstream behavior: UnpackPEM root-first returns CN=%q (IsCA=%v); provider guard compensates", cn, isCA)

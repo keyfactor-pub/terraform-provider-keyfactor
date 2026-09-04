@@ -22,8 +22,8 @@ import (
 // emptied" and stripped every real role assignment on any unrelated Update.
 //
 // roles is Optional (not Computed): a Null value means preserve existing
-// assignments (do not sync), while a non-null value — including an explicit
-// empty list — is a full-replace instruction (an empty list clears all roles).
+// assignments (do not sync), while a non-null value : including an explicit
+// empty list : is a full-replace instruction (an empty list clears all roles).
 func TestUnitSecurityIdentityRolesDeclared(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -72,7 +72,7 @@ func TestUnitSecurityIdentityRolesDeclared(t *testing.T) {
 // PRIOR state (state.Roles.Elems) instead of using the freshly-fetched
 // identity.Roles from the GetSecurityIdentities() response. That meant real
 // server-side role drift (someone changed roles out-of-band, outside
-// Terraform) was never detected — Read() just echoed back whatever was
+// Terraform) was never detected : Read() just echoed back whatever was
 // already in state.
 //
 // This test mocks GetSecurityIdentities() to return an identity whose roles

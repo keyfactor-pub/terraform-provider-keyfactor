@@ -1,12 +1,12 @@
 # -------------------------------------------------------------------------
-# Private keys and CSRs — generated locally by the hashicorp/tls provider.
+# Private keys and CSRs : generated locally by the hashicorp/tls provider.
 #
 # WARNING: Private keys are stored in Terraform state. Use a remote backend
 # with encryption at rest (e.g. S3 + KMS) for production workloads.
 # -------------------------------------------------------------------------
 
 # -------------------------------------------------------------------------
-# Minimal — RSA 2048 (CSR with CN only)
+# Minimal : RSA 2048 (CSR with CN only)
 # -------------------------------------------------------------------------
 resource "tls_private_key" "minimal_csr" {
   algorithm = "RSA"
@@ -21,7 +21,7 @@ resource "tls_cert_request" "minimal_csr" {
 }
 
 # -------------------------------------------------------------------------
-# Full — EC P-521 with SANs
+# Full : EC P-521 with SANs
 # -------------------------------------------------------------------------
 resource "tls_private_key" "full_csr" {
   algorithm   = "ECDSA"
@@ -159,12 +159,12 @@ resource "tls_cert_request" "ed25519" {
 }
 
 # -------------------------------------------------------------------------
-# Ed448 key + CSR — generated via OpenSSL through the external data source
+# Ed448 key + CSR : generated via OpenSSL through the external data source
 #
 # The hashicorp/tls provider does not support Ed448. gen_ed448_csr.sh uses
 # openssl (>= 1.1.1) to generate a stable private key (.ed448_key.pem) and
 # a deterministic CSR (Ed448 signatures are deterministic per RFC 8032, so
-# the same key + subject always produces identical CSR bytes — no drift).
+# the same key + subject always produces identical CSR bytes : no drift).
 #
 # Prerequisites: openssl >= 1.1.1, python3 (both already required by README)
 # -------------------------------------------------------------------------

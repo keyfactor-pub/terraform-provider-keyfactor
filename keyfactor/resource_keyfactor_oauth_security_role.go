@@ -60,7 +60,7 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 			},
 		},
 		Description:         "Used to manage Keyfactor Command Security Roles using the V2 `/Security/Roles` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct, please refer to the API documentation for Security Roles: https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm",
-		MarkdownDescription: "Used to manage Keyfactor Command Security Roles using the V2 `/Security/Roles` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct, please refer to the [API documentation for Security Roles](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm).\n\n~> **Note on claim associations:** Claim bindings managed by `keyfactor_oauth_security_role_claim_association` are preserved automatically during role updates. Do not manage claims directly on this resource if you are using separate association resources — doing so will cause conflicts.",
+		MarkdownDescription: "Used to manage Keyfactor Command Security Roles using the V2 `/Security/Roles` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct, please refer to the [API documentation for Security Roles](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm).\n\n~> **Note on claim associations:** Claim bindings managed by `keyfactor_oauth_security_role_claim_association` are preserved automatically during role updates. Do not manage claims directly on this resource if you are using separate association resources : doing so will cause conflicts.",
 	}, nil
 }
 
@@ -332,7 +332,7 @@ func (r resourceOAuthSecurityRole) Create(
 	if createResponse.Id == nil {
 		response.Diagnostics.AddError(
 			"Error creating security role",
-			"API response missing Id field — role may have been created remotely but cannot be tracked in state.",
+			"API response missing Id field : role may have been created remotely but cannot be tracked in state.",
 		)
 		return
 	}

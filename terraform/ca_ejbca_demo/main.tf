@@ -10,7 +10,7 @@ terraform {
 provider "keyfactor" {}
 
 # ---------------------------------------------------------------------------
-# keyfactor_certificate_authority — HTTPS/AnyCA REST Gateway (ca_type=1) demo
+# keyfactor_certificate_authority : HTTPS/AnyCA REST Gateway (ca_type=1) demo
 # exercising the OAuth connector fields (client_id/client_secret/token_url/
 # scope/audience) through a full create + update lifecycle.
 #

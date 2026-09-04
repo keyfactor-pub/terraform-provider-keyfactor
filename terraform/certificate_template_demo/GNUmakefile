@@ -54,7 +54,7 @@ import-existing:
 
 import-all: import-existing
 
-## drift-check: Plan after import — real templates will likely show drift for
+## drift-check: Plan after import (real templates will likely show drift for
 ##   any field this demo doesn't declare; that's expected/informative (see
 ##   certificate_authority_demo's drift-check for the same pattern).
 drift-check:

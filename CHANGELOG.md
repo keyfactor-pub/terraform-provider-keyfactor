@@ -2,7 +2,7 @@
 
 ## Upgrade notes
 
-- **`request_timeout` is now actually enforced.** It was previously accepted in config but ignored; the real timeout was always the `KEYFACTOR_CLIENT_TIMEOUT` env var, or 60s. If a small `request_timeout` seemed to "work" before, it may now time out for real on long operations like PFX enrollment. Raise it if applies that used to succeed start failing. A timed-out request also no longer retries silently; it now surfaces immediately as a Terraform error.
+- **`request_timeout` is now enforced.** It was previously accepted in config but ignored; the real timeout was always the `KEYFACTOR_CLIENT_TIMEOUT` env var, or 60s. If a small `request_timeout` seemed to work before, it may now time out for real on long operations like PFX enrollment. Raise it if `terraform apply` runs that used to succeed start timing out. A timed-out request now surfaces immediately as a Terraform error instead of retrying silently.
 - **Omitting an attribute from config now means "leave unmanaged," not "clear it."** Affects `keyfactor_certificate.owner_role_name`, `keyfactor_identity.roles`, `keyfactor_security_role.permissions`, `keyfactor_certificate_store.container_name`/`application_name`, and `keyfactor_certificate_template.allowed_requesters`/`template_regexes`/`template_defaults`/`enrollment_fields`/`metadata_fields`. If your config relied on simply omitting one of these to keep it cleared, set it explicitly to `""` or `[]` instead. Related: `keyfactor_certificate`'s `dns_sans`/`ip_sans`/`uri_sans` are now Optional+Computed, so omitting one is also a no-op rather than forcing a replace.
 - **Refresh behavior changed for three resources.** `keyfactor_security_role` and `keyfactor_security_identity` now detect changes made outside Terraform on `Read` instead of always re-asserting state. `keyfactor_certificate_store_type` now correctly detects out-of-band deletion without misreading gateway/5xx errors as deletion. `keyfactor_certificate_deployment`'s `Delete` now succeeds with a warning if the certificate was already removed outside Terraform.
 
@@ -10,14 +10,14 @@
 
 ### Features
 
-- feat(enrollment_patterns): Add `keyfactor_enrollment_pattern` resource for full lifecycle management (create, read, update, delete, import) of Command enrollment patterns, including policies, default subject values, regexes, enrollment/metadata fields, and CA/role restrictions. Requires Keyfactor Command v25.0+.
+- feat: Add `keyfactor_enrollment_pattern` resource for full lifecycle management (create, read, update, delete, import) of Command enrollment patterns, including policies, default subject values, regexes, enrollment/metadata fields, and CA/role restrictions. Requires Keyfactor Command v25.0+.
 
 ## Certificate Collections
 
 ### Features
 
-- feat(certificate_collections): Add `keyfactor_certificate_collection` resource to manage certificate collections (name, query, description, dashboard/favorite flags).
-- feat(certificate_collections): Add `keyfactor_certificate_collection` data source to look up an existing certificate collection by name or ID.
+- feat: Add `keyfactor_certificate_collection` resource to manage certificate collections (name, query, description, dashboard/favorite flags).
+- feat: Add `keyfactor_certificate_collection` data source to look up an existing certificate collection by name or ID.
 
 ## Template Role Bindings
 
@@ -39,7 +39,7 @@
 
 - fix: `dns_sans`/`ip_sans`/`uri_sans` no longer force a destroy+recreate on the first plan after `terraform import`. Fixes [#197](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/197)
 - fix: `owner_role_name` no longer clears ownership as a side effect of an unrelated `Update` when omitted from config; an explicit `owner_role_name = ""` is now the deliberate way to clear it
-- fix: PFX enrollment now recovers automatically when the client times out but Command actually issued the certificate, instead of leaving Terraform state empty while a real certificate exists. A recovery surfaces as a warning diagnostic
+- fix: PFX enrollment now recovers automatically when the client times out but Command actually issued the certificate, instead of leaving Terraform state empty while a real certificate exists. This recovery surfaces as a warning diagnostic
 - fix: `Update` no longer disagrees with `ImportState` on `friendly_name`/`use_cn_as_friendly_name`, fixing "provider produced inconsistent result after apply" on the first apply right after `terraform import`
 
 ## Certificate Deployments
@@ -55,7 +55,7 @@
 - fix: `Update` no longer clears `roles` when config omits the attribute
 - fix: `Read` now detects roles added/removed outside Terraform instead of always re-asserting state
 - fix: `Read` no longer manufactures an unresolvable diff from role-name casing or ID-vs-name differences when the actual role set is unchanged; genuinely different role sets still surface as drift
-- fix: a `roles` entry that looks like a number (e.g. `"7"`) now resolves as a role ID first, with a plan/apply warning whenever that happens. This is opt-in-by-default so an existing config with a numeric `roles` entry that previously silently no-op'd doesn't start granting a real role on a routine upgrade without notice
+- fix: a `roles` entry that looks like a number (e.g. `"7"`) now resolves as a role ID first, with a plan/apply warning whenever that happens. Existing configs with a numeric `roles` entry keep their old silent no-op behavior on upgrade rather than suddenly granting a real role without notice
 - security: role-lookup debug logging no longer lets an embedded newline in a declared role forge additional log lines
 
 ## Security Roles

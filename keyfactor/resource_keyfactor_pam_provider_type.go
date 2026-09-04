@@ -67,7 +67,7 @@ func (r resourcePAMProviderTypeType) GetSchema(_ context.Context) (tfsdk.Schema,
 				}),
 			},
 		},
-		Description: "Manages a Keyfactor Command PAM Provider Type. There is no update endpoint for PAM provider types — any field change forces a new resource (delete + recreate).",
+		Description: "Manages a Keyfactor Command PAM Provider Type. There is no update endpoint for PAM provider types : any field change forces a new resource (delete + recreate).",
 	}, nil
 }
 
@@ -110,7 +110,7 @@ func pamProviderTypeResponseToState(resp *v1.PAMProviderTypeResponse) KeyfactorP
 	}
 	for _, p := range resp.Parameters {
 		// DisplayName is NullableString; InstanceLevel is *bool. When the server omits these
-		// fields, GetDisplayName/GetInstanceLevel return Go zero values ("" / false) — which
+		// fields, GetDisplayName/GetInstanceLevel return Go zero values ("" / false) : which
 		// would cause "inconsistent result after apply" diagnostics for Optional+Computed
 		// schema fields. Map unset/null SDK values to types.Null instead.
 		state.Parameters = append(state.Parameters, KeyfactorPAMProviderTypeParam{
@@ -215,7 +215,7 @@ func (r resourcePAMProviderType) Read(ctx context.Context, request tfsdk.ReadRes
 		}
 	}
 
-	// Not found — resource was deleted outside Terraform.
+	// Not found : resource was deleted outside Terraform.
 	tflog.Info(ctx, fmt.Sprintf("PAM provider type %q not found, removing from state", state.ID.Value))
 	response.State.RemoveResource(ctx)
 	LogFunctionExit(ctx, "resourcePAMProviderType.Read")

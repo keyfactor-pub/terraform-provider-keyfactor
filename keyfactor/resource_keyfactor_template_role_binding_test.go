@@ -130,7 +130,7 @@ resource "keyfactor_template_role_binding" "terraform_test" {
 }
 
 // testAccKeyfactorTemplateRoleBindingImportConfig returns HCL that declares
-// the binding with no templates — used as the Config for import-only test steps
+// the binding with no templates : used as the Config for import-only test steps
 // where the actual template list is discovered by ImportState at runtime.
 func testAccKeyfactorTemplateRoleBindingImportConfig(roleName string) string {
 	return fmt.Sprintf(`
@@ -278,7 +278,7 @@ func TestIntKeyfactorTemplateRoleBindingResource(t *testing.T) {
 		t.Skip("Template role binding requires templates with enrollment patterns (Command v25+)")
 	}
 
-	// Use the template from the enrollment pattern — it's guaranteed to be linked
+	// Use the template from the enrollment pattern : it's guaranteed to be linked
 	templateName := discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
 	if templateName == "" {
 		templateName = discoverTemplate(t, client)
@@ -314,7 +314,7 @@ resource "keyfactor_template_role_binding" "int_test" {
 // template role binding in the lab and imports it by role name. Verifies that
 // ImportState correctly discovers and populates template_short_names.
 //
-// This test is read-only and does not require Create to work — it uses
+// This test is read-only and does not require Create to work : it uses
 // pre-existing role bindings already in the lab.
 func TestIntKeyfactorTemplateRoleBindingResource_Import(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)

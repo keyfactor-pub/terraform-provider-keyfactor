@@ -8,7 +8,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Unit tests — CA auth-variant mutual exclusion.
+// Unit tests : CA auth-variant mutual exclusion.
 //
 // Live repro (provider v2.9.1 -> Command 25.5): destroying a
 // keyfactor_certificate_authority configured with client-certificate auth

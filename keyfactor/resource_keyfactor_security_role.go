@@ -213,7 +213,7 @@ func securityIdentitiesToRoleConfig(identities []api.SecurityIdentity) *[]api.Se
 	return &result
 }
 
-// permissionSetsEqual compares two permission slices as sets — order-
+// permissionSetsEqual compares two permission slices as sets : order-
 // insensitive, but case-SENSITIVE (Command permission strings are
 // case-sensitive, e.g. "Certificates:Read").
 func permissionSetsEqual(a, b []string) bool {

@@ -47,7 +47,7 @@ import-all:
 reconcile:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
-## drift-check: Plan after reconcile — should show "No changes"
+## drift-check: Plan after reconcile (should show "No changes"
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
@@ -63,7 +63,7 @@ clean:
 # Combined workflows
 # ---------------------------------------------------------------------------
 
-## all: Full workflow — build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
+## all: Full workflow: build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
 all: build init validate plan apply import-all reconcile drift-check destroy
 
 ## demo-no-destroy: Run workflow without final destroy (leaves resources on server)
@@ -101,15 +101,15 @@ lab-destroy:
 lifecycle: lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy
 
 # ---------------------------------------------------------------------------
-# PR #178 regression proof — out-of-band drift detection
+# PR #178 regression proof: out-of-band drift detection
 #
 #   1. apply the Terraform-managed role
 #   2. mutate its permissions directly via the Command REST API
 #      (bypassing Terraform entirely)
-#   3. plan — MUST show drift (this is the PR178 fix); "No changes" here
+#   3. plan (must show drift (this is the PR178 fix); "No changes" here
 #      is a FAIL (that would mean the false-negative regressed)
 #   4. apply again to reconcile the role back to the Terraform-managed value
-#   5. plan again — MUST show "No changes"
+#   5. plan again (must show "No changes"
 #
 # Uses `terraform plan -detailed-exitcode` for the assertion rather than
 # grepping text: exit 0 = no changes, exit 2 = changes present, exit 1 = error.
@@ -142,7 +142,7 @@ lab-oob-drift:
 	   echo "FAIL: out-of-band API mutation did not succeed (HTTP $$HTTP_STATUS)"; \
 	   exit 1; \
 	 fi
-	@echo "==> [3/5] plan — expect drift to be detected (PR178 regression proof)..."
+	@echo "==> [3/5] plan (expect drift to be detected (PR178 regression proof)..."
 	@PLANFILE=$$(mktemp) && \
 	 echo "    scratch plan file: $$PLANFILE" && \
 	 $(LAB_ENV) $(TF) plan -var="suffix=$(SUFFIX)" -detailed-exitcode -no-color > "$$PLANFILE" 2>&1; \

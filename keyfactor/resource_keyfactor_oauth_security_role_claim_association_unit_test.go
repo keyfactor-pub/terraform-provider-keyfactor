@@ -43,7 +43,7 @@ func nullFieldsRoleResponseBody(roleId int32) string {
 // validClaimResponseBody builds a /Security/Claims/{id} GET response body with
 // all fields the Create() path dereferences (ClaimType, ClaimValue, Provider,
 // Description) populated, so the claim-side code (a separate, out-of-scope
-// nil-deref risk) never panics in this test — isolating the assertion to the
+// nil-deref risk) never panics in this test : isolating the assertion to the
 // role Name/Description/PermissionSetId dereference under test.
 func validClaimResponseBody(claimId int32) string {
 	return fmt.Sprintf(`{
@@ -134,7 +134,7 @@ func TestUnitOAuthSecurityRoleClaimAssociation_CreateNullRoleFieldsDoesNotPanic(
 // nothing is listening on, so the HTTP client fails at the transport layer
 // (connection refused) before any *http.Response is read. This reproduces
 // the shape the generated SDK's callAPI/Execute methods return on a
-// transport-level failure: (nil, err) — a nil *http.Response alongside a
+// transport-level failure: (nil, err) : a nil *http.Response alongside a
 // non-nil error.
 type oauthRoleClaimAssocUnreachableAuthConfig struct{}
 
@@ -160,7 +160,7 @@ func newOAuthRoleClaimAssocUnreachableClient() *kfsdk.APIClient {
 // httpResp.StatusCode via tflog.Debug before checking `err != nil`. On a
 // transport-level failure (DNS/connection-refused/TLS failure), the
 // generated SDK's callAPI returns a nil *http.Response alongside the error,
-// and Execute() passes that nil response straight through — dereferencing
+// and Execute() passes that nil response straight through : dereferencing
 // .StatusCode on it panics.
 func TestUnitOAuthSecurityRoleClaimAssociation_CreateTransportErrorDoesNotPanic(t *testing.T) {
 	ctx := context.Background()
@@ -262,7 +262,7 @@ func TestUnitOAuthSecurityRoleClaimAssociation_DeleteTransportErrorDoesNotPanic(
 // and the `== 404` check) before checking `err != nil`. On a transport-level
 // failure (DNS/connection-refused/TLS failure) the generated SDK's callAPI
 // returns a nil *http.Response alongside the error, and Execute() passes that
-// nil response straight through — dereferencing .StatusCode on it crashed the
+// nil response straight through : dereferencing .StatusCode on it crashed the
 // entire provider process instead of surfacing a Terraform diagnostic.
 func TestUnitOAuthSecurityRoleClaimAssociation_ReadTransportErrorDoesNotPanic(t *testing.T) {
 	ctx := context.Background()
@@ -318,7 +318,7 @@ func TestUnitOAuthSecurityRoleClaimAssociation_ReadTransportErrorDoesNotPanic(t 
 // GET (`/Security/Claims/{claimId}`) fails, the generated SDK Execute()
 // returns a nil `*SecurityRoleClaimDefinitionsRoleClaimDefinitionResponse`
 // alongside the error, but Create only called response.Diagnostics.AddError
-// without returning — execution fell through and dereferenced
+// without returning : execution fell through and dereferenced
 // `remoteClaimState.Provider`, panicking on the nil claim response. This
 // mirrors the identical (already-fixed) pattern for the role GET a few lines
 // above.

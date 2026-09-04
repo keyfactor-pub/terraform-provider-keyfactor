@@ -38,7 +38,7 @@ func TestAccKeyfactorApplicationDataSource(t *testing.T) {
 					// Resource checks
 					resource.TestCheckResourceAttrSet(resourceName, "id"),
 					resource.TestCheckResourceAttr(resourceName, "name", appName),
-					// Data source checks — read back by name
+					// Data source checks : read back by name
 					resource.TestCheckResourceAttrSet(dataSourceName, "id"),
 					resource.TestCheckResourceAttr(dataSourceName, "name", appName),
 					resource.TestCheckResourceAttrSet(dataSourceName, "overwrite_schedules"),

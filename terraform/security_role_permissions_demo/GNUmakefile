@@ -55,7 +55,7 @@ import-all:
 reconcile:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
-## drift-check: Plan after reconcile — should show "No changes"
+## drift-check: Plan after reconcile (should show "No changes"
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
@@ -71,7 +71,7 @@ clean:
 # Combined workflows
 # ---------------------------------------------------------------------------
 
-## all: Full workflow — build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
+## all: Full workflow: build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
 all: build init validate plan apply import-all reconcile drift-check destroy
 
 ## demo-no-destroy: Run workflow without final destroy (leaves resources on server)
@@ -109,7 +109,7 @@ lab-destroy:
 lifecycle: lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy
 
 # ---------------------------------------------------------------------------
-# PR #179 regression proof — permissions omitted on an unrelated Update
+# PR #179 regression proof: permissions omitted on an unrelated Update
 #
 #   1. apply with permissions declared (permissions_declared=true) and an
 #      initial description

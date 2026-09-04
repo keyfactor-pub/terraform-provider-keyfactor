@@ -51,7 +51,7 @@ import-all:
 reconcile:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
-## drift-check: Plan after reconcile — should show "No changes"
+## drift-check: Plan after reconcile (should show "No changes"
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
@@ -67,7 +67,7 @@ clean:
 # Combined workflows
 # ---------------------------------------------------------------------------
 
-## all: Full workflow — build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
+## all: Full workflow: build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
 all: build init validate plan apply import-all reconcile drift-check destroy
 
 ## demo-no-destroy: Run workflow without final destroy (leaves resources on server)

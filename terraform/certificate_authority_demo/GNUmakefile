@@ -37,7 +37,7 @@ import-existing:
 
 import-all: import-existing
 
-## drift-check: Plan after import — shows any real drift, or fields this demo's
+## drift-check: Plan after import (shows any real drift, or fields this demo's
 ##   minimal config doesn't fully match (Optional+Computed fields with
 ##   UseStateForUnknown should show no diff; only genuinely-mismatched
 ##   Optional fields not set in config would appear, which is expected/informative

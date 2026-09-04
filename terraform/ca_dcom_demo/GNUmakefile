@@ -46,7 +46,7 @@ import-all:
 	 $(UNSET_BASIC) $(TF) state rm keyfactor_certificate_authority.demo 2>&1 | grep -E "Removed|Successfully" || true; \
 	 $(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" keyfactor_certificate_authority.demo "$$CA_ID"
 
-## drift-check: Plan after import — should show "No changes" (or SKIPPED if never created)
+## drift-check: Plan after import (should show "No changes" (or SKIPPED if never created)
 drift-check:
 	@if [ -z "$$($(UNSET_BASIC) $(TF) output -raw ca_id 2>/dev/null)" ]; then \
 	  echo "SKIPPED: ca_dcom_demo -- nothing in state to drift-check."; \
@@ -66,7 +66,7 @@ destroy:
 clean:
 	rm -f tf_state.json terraform.tfstate terraform.tfstate.backup terraform.tfstate.*.backup
 
-## all: Full workflow — build, init, validate, plan, apply, import-all, drift-check, destroy
+## all: Full workflow: build, init, validate, plan, apply, import-all, drift-check, destroy
 all: build init validate plan apply import-all drift-check destroy
 
 ## lab-plan / lab-apply / lab-import-all / lab-drift-check / lab-destroy:

@@ -54,7 +54,7 @@ func (r resourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Schema
 			"identity_type": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "A string indicating the type of identity—User or Group.",
+				Description: "A string indicating the type of identity:User or Group.",
 			},
 			"valid": {
 				Type:        types.BoolType,
@@ -152,8 +152,8 @@ func (r resourceSecurityIdentity) Read(
 
 // identityRolesDeclared reports whether the config explicitly declares the
 // roles attribute. A Null value means the user omitted it from config
-// (preserve existing assignments), while a non-null value — including an
-// explicit empty list — is a full-replace instruction (an empty list clears
+// (preserve existing assignments), while a non-null value : including an
+// explicit empty list : is a full-replace instruction (an empty list clears
 // all roles).
 //
 // This must be evaluated against the CONFIG, not the plan. roles is
@@ -384,7 +384,7 @@ func (r resourceSecurityIdentity) Update(
 
 	// Get config values. roles is Optional+Computed, so request.Plan.Roles is
 	// no longer a reliable signal of whether the user declared the attribute
-	// (see identityRolesDeclared's doc comment) — request.Config.Roles is.
+	// (see identityRolesDeclared's doc comment) : request.Config.Roles is.
 	var config SecurityIdentity
 	diags = request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diags...)
@@ -405,8 +405,8 @@ func (r resourceSecurityIdentity) Update(
 
 	// setIdentityRole is a full-replace sync of the identity's role assignments.
 	// Only run it when the plan explicitly declares the roles attribute. When
-	// roles is genuinely undeclared (Null) — the user simply omitted it from
-	// config — Null must not be conflated with an explicit empty list; the former
+	// roles is genuinely undeclared (Null) : the user simply omitted it from
+	// config : Null must not be conflated with an explicit empty list; the former
 	// preserves the identity's existing roles, the latter clears them. Running
 	// the full-replace sync on an undeclared Null plan stripped every real role
 	// assignment on any unrelated Update.
@@ -424,7 +424,7 @@ func (r resourceSecurityIdentity) Update(
 		// called: setIdentityRole performs a full-replace sync of the
 		// identity's role membership, so silently dropping a role here (e.g.
 		// on a lookup error or "not found") would cause setIdentityRole to
-		// actively REVOKE the identity's existing membership in that role —
+		// actively REVOKE the identity's existing membership in that role :
 		// a silent access change on what looks like a successful apply. A
 		// lookup failure for a declared role must fail the apply with
 		// nothing mutated, matching this project's standing rule that

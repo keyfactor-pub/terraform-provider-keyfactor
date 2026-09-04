@@ -19,7 +19,7 @@ locals {
 # -------------------------------------------------------------------------
 # Example 1: Minimal CSR enrollment
 #
-# The simplest possible CSR enrollment — only the required fields.
+# The simplest possible CSR enrollment : only the required fields.
 # The key type and size are determined by the CSR (RSA 2048 here).
 # No private key is returned; it stays local in tls_private_key.minimal_csr.
 # -------------------------------------------------------------------------
@@ -39,7 +39,7 @@ resource "keyfactor_certificate" "minimal_csr" {
 #   - Custom metadata fields
 #   - Automatic renewal when fewer than 30 days remain
 #
-# Note: no key_password — there is no server-side key to protect.
+# Note: no key_password : there is no server-side key to protect.
 # -------------------------------------------------------------------------
 resource "keyfactor_certificate" "full_csr" {
   certificate_authority          = var.certificate_authority
@@ -57,7 +57,7 @@ resource "keyfactor_certificate" "full_csr" {
   } : null
 
   # Trigger automatic renewal when fewer than renew_days remain (in-place updatable; disabled when omitted)
-  # Setting renew_days=0 omits this block — same as removing it from config.
+  # Setting renew_days=0 omits this block : same as removing it from config.
   renewal_config = var.renew_days > 0 ? {
     renew_days = var.renew_days
   } : null

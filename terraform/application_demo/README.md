@@ -25,8 +25,8 @@ verify zero drift, and destroy.
 | `_export_ids.py` | Reads `tf_state.json`, writes `_import_pairs.txt` for `terraform import` |
 | `.terraformrc` | Dev override pointing Terraform at the locally built provider binary |
 | `GNUmakefile` | All workflow targets |
-| `tf_state.json` | **Generated** — captured from `terraform show -json` |
-| `_import_pairs.txt` | **Generated** — `tf_name id` pairs used by `import-all` |
+| `tf_state.json` | **Generated**: captured from `terraform show -json` |
+| `_import_pairs.txt` | **Generated**: `tf_name id` pairs used by `import-all` |
 
 ### Environment variables
 
@@ -36,7 +36,7 @@ export KEYFACTOR_AUTH_CLIENT_ID=your-client-id
 export KEYFACTOR_AUTH_CLIENT_SECRET=your-client-secret
 export KEYFACTOR_AUTH_TOKEN_URL=https://auth.example.com/connect/token
 
-# Optional — skip TLS verification for self-signed certs
+# Optional: skip TLS verification for self-signed certs
 export KEYFACTOR_SKIP_VERIFY=true
 ```
 
@@ -76,7 +76,7 @@ make plan           terraform plan
 make apply          terraform apply -auto-approve
 make import-all     Capture state, remove resources, re-import each by numeric ID
 make reconcile      terraform apply -auto-approve (settles immediate/exactly-once drift post-import)
-make drift-check    terraform plan — should show "No changes" after reconcile
+make drift-check    terraform plan: should show "No changes" after reconcile
 make destroy        terraform destroy -auto-approve
 make clean          Remove generated files (tf_state.json, _import_pairs.txt, etc.)
 ```
@@ -106,10 +106,10 @@ make KEYFACTOR_ENV_FILE=~/.env_prod SUFFIX=_STAGING lifecycle
 
 `make lab-update` runs two steps:
 
-1. **Update**: changes all variable schedule fields — `interval_minutes=30`, `daily_time="...T08:00:00Z"`, `weekly_days=["Wednesday","Friday"]`, `weekly_time="...T06:00:00Z"`, `monthly_day=15`, `monthly_time="...T10:00:00Z"`; applies; plans (expect "No changes").
+1. **Update**: changes all variable schedule fields: `interval_minutes=30`, `daily_time="...T08:00:00Z"`, `weekly_days=["Wednesday","Friday"]`, `weekly_time="...T06:00:00Z"`, `monthly_day=15`, `monthly_time="...T10:00:00Z"`; applies; plans (expect "No changes").
 2. **Revert**: restores all defaults; applies; plans (expect "No changes").
 
-Both steps verify in-place update — no application should be destroyed and re-created. `schedule_immediate` and `schedule_exactly_once_time` are one-shot triggers and are not parameterized.
+Both steps verify in-place update: no application should be destroyed and re-created. `schedule_immediate` and `schedule_exactly_once_time` are one-shot triggers and are not parameterized.
 
 ## How it works
 
@@ -143,7 +143,7 @@ Both steps verify in-place update — no application should be destroyed and re-
 | `keyfactor_application.exactly_once` | `Demo Exactly Once<SUFFIX>` | Once at 2025-06-01T06:00:00Z (one-shot) |
 
 > **One-shot schedules:** `schedule_immediate` and `schedule_exactly_once_time`
-> are one-shot triggers — after the job fires the server clears the schedule.
+> are one-shot triggers: after the job fires the server clears the schedule.
 > Subsequent plans show drift until `make reconcile` re-applies the config.
 
 ## Import identifier
@@ -154,7 +154,7 @@ Applications are imported by their **integer ID** (not name):
 terraform import keyfactor_application.no_schedule 42
 ```
 
-The `_export_ids.py` script automates this — it reads the Terraform state JSON
+The `_export_ids.py` script automates this: it reads the Terraform state JSON
 and writes one `tf_name id` line per application to `_import_pairs.txt`, which
 `import-all` then iterates.
 

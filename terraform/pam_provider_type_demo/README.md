@@ -9,7 +9,7 @@ Full-lifecycle smoke test for `keyfactor_pam_provider_type`, proving the
 
 ## Variables
 
-See `variables.tf` — `suffix`.
+See `variables.tf`: `suffix`.
 
 ## Running
 

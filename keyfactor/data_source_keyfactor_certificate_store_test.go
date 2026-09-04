@@ -56,7 +56,7 @@ func testAccDataSourceKeyfactorCertificateStoreBasic(resourceName string) string
 }
 
 // ---------------------------------------------------------------------------
-// Unit tests (VCR cassettes — no lab required)
+// Unit tests (VCR cassettes : no lab required)
 // ---------------------------------------------------------------------------
 
 // TestUnitKeyfactorCertificateStoreDataSource tests the certificate store

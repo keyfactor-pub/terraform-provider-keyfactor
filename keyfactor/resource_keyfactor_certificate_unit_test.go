@@ -59,8 +59,8 @@ func newCertUpdateMockClient(server *httptest.Server) *api.Client {
 //
 // Note: the second `certGetResp == nil` guard in Update is belt-and-suspenders
 // for a (nil, nil) GET response. That is NOT reproducible through this httptest
-// harness — every 200 yields a non-nil *GetCertificateResponse, and the only
-// nil-data branch returns a non-nil error — so that guard (and its
+// harness : every 200 yields a non-nil *GetCertificateResponse, and the only
+// nil-data branch returns a non-nil error : so that guard (and its
 // ERR_SUMMARY_CERTIFICATE_RESOURCE_UPDATE summary) is not directly exercised
 // here.
 func TestUnitKeyfactorCertificateResource_UpdateNilGetResponse(t *testing.T) {
@@ -90,7 +90,7 @@ func TestUnitKeyfactorCertificateResource_UpdateNilGetResponse(t *testing.T) {
 	// ExpiryWarningDays. The null list/map element types are required for
 	// Plan.Set / State.Set to succeed. Fields consumed only after the GET (key
 	// password, SAN lists, metadata, owner role, revoke-on-destroy, certificate
-	// format) are intentionally omitted — Update returns at hasAPIErrors before
+	// format) are intentionally omitted : Update returns at hasAPIErrors before
 	// they are read.
 	nullList := types.List{ElemType: types.StringType, Null: true}
 	nullMap := types.Map{ElemType: types.StringType, Null: true}

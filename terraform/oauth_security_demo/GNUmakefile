@@ -47,7 +47,7 @@ import-all:
 reconcile:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
-## drift-check: Plan after reconcile — should show "No changes"
+## drift-check: Plan after reconcile (should show "No changes"
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
@@ -63,7 +63,7 @@ clean:
 # Combined workflows
 # ---------------------------------------------------------------------------
 
-## all: Full workflow — build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
+## all: Full workflow: build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
 all: build init validate plan apply import-all reconcile drift-check destroy
 
 ## demo-no-destroy: Run workflow without final destroy (leaves resources on server)
@@ -90,7 +90,7 @@ lab-update:
 	$(LAB_ENV) TF_VAR_role_description="Updated Terraform role description" \
 	           TF_VAR_claim_description="Updated Terraform claim description" \
 	           $(MAKE) plan SUFFIX=$(SUFFIX)
-	@echo "==> Step 2: revert to defaults — verify no forced replacement..."
+	@echo "==> Step 2: revert to defaults; verify no forced replacement..."
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 	$(LAB_ENV) $(MAKE) plan SUFFIX=$(SUFFIX)
 

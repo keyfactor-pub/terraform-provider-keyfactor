@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_ga_release_deps.sh — release-hygiene gate.
+# check_ga_release_deps.sh : release-hygiene gate.
 #
 # Refuses to let a GA-shaped provider tag (e.g. v2.9.2) be cut while go.mod
 # pins a pre-release (-rc./-alpha./-beta.) version of any dependency that is
@@ -105,7 +105,7 @@ fi
 # _test.go files (e.g. the VCR test-cassette library and its own deps),
 # unlike a raw grep of go.mod's require block.
 DEPS_OUTPUT="$(cd "$REPO_ROOT" && go list -deps -f '{{with .Module}}{{.Path}} {{.Version}}{{end}}' . 2>&1)" || {
-    echo "check-ga-deps: 'go list -deps' failed — cannot verify dependency versions, refusing to proceed:" >&2
+    echo "check-ga-deps: 'go list -deps' failed : cannot verify dependency versions, refusing to proceed:" >&2
     echo "$DEPS_OUTPUT" >&2
     exit 2
 }
@@ -114,7 +114,7 @@ DEPS_OUTPUT="$(cd "$REPO_ROOT" && go list -deps -f '{{with .Module}}{{.Path}} {{
 offenders="$(printf '%s\n' "$DEPS_OUTPUT" | grep -E '^\S+ \S*-(rc|alpha|beta)\.[0-9A-Za-z.]+$' | sort -u || true)"
 
 if [ -n "$offenders" ]; then
-    echo "check-ga-deps: refusing to cut GA tag v$VERSION_NO_V — the release build pins pre-release dependency version(s) in go.mod:" >&2
+    echo "check-ga-deps: refusing to cut GA tag v$VERSION_NO_V : the release build pins pre-release dependency version(s) in go.mod:" >&2
     printf '%s\n' "$offenders" | sed 's/^/    /' >&2
     echo "" >&2
     echo "  Fix: bump the offending module(s) to a GA (non -rc./-alpha./-beta.) version in $REPO_ROOT/go.mod," >&2
@@ -142,7 +142,7 @@ fi
 pseudoversion_offenders="$(printf '%s\n' "$DEPS_OUTPUT" | grep -E '^(github\.com/Keyfactor/\S+|github\.com/spbsoluble/go-pkcs12) \S*[.-][0-9]{14}-[0-9a-f]{12}$' | sort -u || true)"
 
 if [ -n "$pseudoversion_offenders" ]; then
-    echo "check-ga-deps: refusing to cut GA tag v$VERSION_NO_V — the release build pins an untagged pseudo-version of a first-party Keyfactor dependency in go.mod:" >&2
+    echo "check-ga-deps: refusing to cut GA tag v$VERSION_NO_V : the release build pins an untagged pseudo-version of a first-party Keyfactor dependency in go.mod:" >&2
     printf '%s\n' "$pseudoversion_offenders" | sed 's/^/    /' >&2
     echo "" >&2
     echo "  Fix: bump the offending module(s) to a real tagged (GA) version in $REPO_ROOT/go.mod," >&2
@@ -175,14 +175,14 @@ fi
 # -deps` call above already effectively does; it does not affect anything
 # else in this script or its caller's environment.
 REPLACE_OUTPUT="$(cd "$REPO_ROOT" && GOFLAGS=-mod=mod go list -m -f '{{if .Replace}}{{.Path}} => {{.Replace}}{{end}}' all 2>&1)" || {
-    echo "check-ga-deps: 'go list -m all' failed — cannot verify replace directives, refusing to proceed:" >&2
+    echo "check-ga-deps: 'go list -m all' failed : cannot verify replace directives, refusing to proceed:" >&2
     echo "$REPLACE_OUTPUT" >&2
     exit 2
 }
 replace_offenders="$(printf '%s\n' "$REPLACE_OUTPUT" | grep -v '^\s*$' || true)"
 
 if [ -n "$replace_offenders" ]; then
-    echo "check-ga-deps: refusing to cut GA tag v$VERSION_NO_V — go.mod contains a replace directive:" >&2
+    echo "check-ga-deps: refusing to cut GA tag v$VERSION_NO_V : go.mod contains a replace directive:" >&2
     printf '%s\n' "$replace_offenders" | sed 's/^/    /' >&2
     echo "" >&2
     echo "  A GA release must not ship with any 'replace' directive in go.mod, regardless of its target" >&2

@@ -20,7 +20,7 @@ backend. This demo may either:
   strictly.
 
 `make lifecycle` treats a Create failure here as a clean `SKIPPED` (exit 0),
-not a harness failure — this demo exists to document the constraint.
+not a harness failure; this demo exists to document the constraint.
 
 ## Variables
 

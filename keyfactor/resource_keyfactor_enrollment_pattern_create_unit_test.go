@@ -14,7 +14,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression test — keyfactor_enrollment_pattern Create() fails with
+// Regression test : keyfactor_enrollment_pattern Create() fails with
 // "Value Conversion Error: ... unhandled unknown value" on a first apply
 // whenever any Computed-only/Optional+Computed attribute this schema derives
 // entirely from the server response is left undeclared in config.
@@ -269,7 +269,7 @@ func TestUnitEnrollmentPatternCreateResolvesUndeclaredComputedFieldsFromConfig(t
 }
 
 // ---------------------------------------------------------------------------
-// Regression test — keyfactor_enrollment_pattern ImportState() fails with
+// Regression test : keyfactor_enrollment_pattern ImportState() fails with
 // "cannot convert Set to tftypes.Value if ElemType field is not set".
 //
 // Originally reproduced live against kfclab via terraform/enrollment_pattern_
@@ -362,7 +362,7 @@ func TestUnitEnrollmentPatternImportStateSetsValidNullForWriteOnlyLists(t *testi
 }
 
 // ---------------------------------------------------------------------------
-// Regression test — a nested (object/list) Computed attribute that is NOT
+// Regression test : a nested (object/list) Computed attribute that is NOT
 // also Optional plans to an explicit Null on a brand-new resource's first
 // apply -- not "(known after apply)" -- because there is no prior Terraform
 // state for useStateOrNullModifier to carry forward. When Create()'s real

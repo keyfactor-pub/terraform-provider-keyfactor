@@ -1489,7 +1489,7 @@ func (r resourceCertificateAuthority) Delete(ctx context.Context, request tfsdk.
 		// the delete.  We check for "periodic task" / "task scheduler" in the
 		// body rather than the raw error code 0xA0110029, because that same code
 		// is also returned on EJBCA (HTTPS) labs when the CA has associated
-		// certificates — a completely different condition that must NOT trigger
+		// certificates : a completely different condition that must NOT trigger
 		// the clear-schedule path (which would corrupt the CA record).
 		isTaskSchedulerError := strings.Contains(strings.ToLower(body), "periodic task") ||
 			strings.Contains(strings.ToLower(body), "task scheduler")

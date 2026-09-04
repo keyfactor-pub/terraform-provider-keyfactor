@@ -9,7 +9,7 @@ import (
 // TestUnitPAMProviderTypeResponseToState_NilParameterFields verifies that when the server omits
 // DisplayName and InstanceLevel on a parameter, the resulting Terraform state values are Null
 // rather than the Go zero values ("" / false). This regression-tests the "inconsistent result
-// after apply" bug for keyfactor_pam_provider_type — both fields are Optional+Computed in the
+// after apply" bug for keyfactor_pam_provider_type : both fields are Optional+Computed in the
 // schema, so plan-vs-state must match across the Create/Read boundary.
 func TestUnitPAMProviderTypeResponseToState_NilParameterFields(t *testing.T) {
 	typeID := "abcd-1234"

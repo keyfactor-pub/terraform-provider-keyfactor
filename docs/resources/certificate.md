@@ -11,10 +11,10 @@ Manages a certificate in Keyfactor Command using the `/Enrollment` and `/Certifi
 
 ## Example Usage
 
-### Minimal PFX enrollment (certificate_template; pre-v25)
+### Minimal PFX enrollment (certificate_template — pre-v25)
 
 ```terraform
-# Minimal PFX enrollment: server generates the private key.
+# Minimal PFX enrollment — server generates the private key.
 # For Command v25+, replace certificate_template with certificate_enrollment_pattern.
 resource "keyfactor_certificate" "pfx" {
   common_name           = "my.example.com"
@@ -24,11 +24,11 @@ resource "keyfactor_certificate" "pfx" {
 }
 ```
 
-### Minimal PFX enrollment (certificate_enrollment_pattern; v25+)
+### Minimal PFX enrollment (certificate_enrollment_pattern — v25+)
 
 ```terraform
 # Minimal PFX enrollment using an enrollment pattern (Command v25+).
-# certificate_authority is optional; Command automatically selects a CA
+# certificate_authority is optional — Command automatically selects a CA
 # associated with the pattern. Specify it only to pin to a particular CA.
 resource "keyfactor_certificate" "pfx_pattern" {
   common_name                    = "my.example.com"
@@ -37,10 +37,10 @@ resource "keyfactor_certificate" "pfx_pattern" {
 }
 ```
 
-### Minimal CSR enrollment (certificate_template; pre-v25)
+### Minimal CSR enrollment (certificate_template — pre-v25)
 
 ```terraform
-# Minimal CSR enrollment: the private key never leaves the client.
+# Minimal CSR enrollment — the private key never leaves the client.
 resource "tls_private_key" "example" {
   algorithm = "RSA"
   rsa_bits  = 4096
@@ -60,11 +60,11 @@ resource "keyfactor_certificate" "csr" {
 }
 ```
 
-### Minimal CSR enrollment (certificate_enrollment_pattern; v25+)
+### Minimal CSR enrollment (certificate_enrollment_pattern — v25+)
 
 ```terraform
 # Minimal CSR enrollment using an enrollment pattern (Command v25+).
-# certificate_authority is optional; Command automatically selects a CA
+# certificate_authority is optional — Command automatically selects a CA
 # associated with the pattern. Specify it only to pin to a particular CA.
 resource "tls_private_key" "example_pattern" {
   algorithm = "RSA"
@@ -330,8 +330,8 @@ Expanded Change Owner Permission: A user who holds the Certificates > Expanded C
 
 Collections > Change Owner Permission:
 
-Global or Collection Level—No Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can set the certificate owner to any role they belong to if there is not a default value populated from the enrollment pattern or existing certificate on a renewal.
-Global or Collection Level—Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can change the default certificate owner to any role they belong to. If the default value populated from the enrollment pattern or existing certificate on a renewal is not a role held by the acting user, the this value will not be populated in the Certificate Owner Role field. The user will still be allowed to add a new owner value.
+Global or Collection Level:No Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can set the certificate owner to any role they belong to if there is not a default value populated from the enrollment pattern or existing certificate on a renewal.
+Global or Collection Level:Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can change the default certificate owner to any role they belong to. If the default value populated from the enrollment pattern or existing certificate on a renewal is not a role held by the acting user, the this value will not be populated in the Certificate Owner Role field. The user will still be allowed to add a new owner value.
 Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is required, not both. A certificate owner is required if the enrollment pattern or system-wide settings Certificate Owner Role policy has been configured as Required.
 
 **Important:** Only compatible with Keyfactor Command versions v12.3.0 and later.

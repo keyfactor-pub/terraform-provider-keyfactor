@@ -4,14 +4,14 @@ page_title: "keyfactor_oauth_security_claim Resource - terraform-provider-keyfac
 subcategory: ""
 description: |-
   Used to manage Keyfactor Command Security Claims using the V1 /Security/Claims API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct and its fields, please refer to the API documentation for Security Claims https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm.
-  ~> Note on eventual consistency: The Keyfactor Command Security Claims API exhibits eventual consistency on updates — the server may return the pre-update description immediately after a PUT. Terraform state is built from the requested values to avoid spurious plan drift; the server will reflect the correct value on the next read cycle.
+  ~> Note on eventual consistency: The Keyfactor Command Security Claims API exhibits eventual consistency on updates : the server may return the pre-update description immediately after a PUT. Terraform state is built from the requested values to avoid spurious plan drift; the server will reflect the correct value on the next read cycle.
 ---
 
 # keyfactor_oauth_security_claim (Resource)
 
 Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct and its fields, please refer to [the API documentation for Security Claims](https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityClaims.htm).
 
-~> **Note on eventual consistency:** The Keyfactor Command Security Claims API exhibits eventual consistency on updates — the server may return the pre-update `description` immediately after a PUT. Terraform state is built from the requested values to avoid spurious plan drift; the server will reflect the correct value on the next read cycle.
+~> **Note on eventual consistency:** The Keyfactor Command Security Claims API exhibits eventual consistency on updates : the server may return the pre-update `description` immediately after a PUT. Terraform state is built from the requested values to avoid spurious plan drift; the server will reflect the correct value on the next read cycle.
 
 ## Example Usage
 

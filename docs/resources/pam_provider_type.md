@@ -3,12 +3,12 @@
 page_title: "keyfactor_pam_provider_type Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  Manages a Keyfactor Command PAM Provider Type. There is no update endpoint for PAM provider types — any field change forces a new resource (delete + recreate).
+  Manages a Keyfactor Command PAM Provider Type. There is no update endpoint for PAM provider types : any field change forces a new resource (delete + recreate).
 ---
 
 # keyfactor_pam_provider_type (Resource)
 
-Manages a Keyfactor Command PAM Provider Type. There is no update endpoint for PAM provider types — any field change forces a new resource (delete + recreate).
+Manages a Keyfactor Command PAM Provider Type. There is no update endpoint for PAM provider types : any field change forces a new resource (delete + recreate).
 
 ## Example Usage
 

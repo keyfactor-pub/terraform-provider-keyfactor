@@ -72,7 +72,7 @@ func (v conflictsWithAttrValidator) Validate(
 }
 
 // atLeastOneOfValidator validates that at least one of this attribute or
-// the other named attribute is set. Both being set is allowed — the API
+// the other named attribute is set. Both being set is allowed : the API
 // handles precedence (enrollment pattern takes precedence over template).
 type atLeastOneOfValidator struct {
 	otherAttr string

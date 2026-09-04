@@ -105,8 +105,8 @@ type OAuthSecurityRoleClaimAssociation struct {
 // CommandCertificate represents a certificate entity in Keyfactor.
 //
 // NOTE: This struct has two ID-related fields due to a Terraform testing framework requirement:
-//   - ID  (tfsdk:"identifier") — The actual Keyfactor certificate identifier. Used throughout provider code.
-//   - TfId (tfsdk:"id")        — Read-only mirror of ID, required by the SDKv2 test harness.
+//   - ID  (tfsdk:"identifier") : The actual Keyfactor certificate identifier. Used throughout provider code.
+//   - TfId (tfsdk:"id")        : Read-only mirror of ID, required by the SDKv2 test harness.
 //     Do NOT read from or write to TfId directly; it is populated automatically via syncTfId().
 type CommandCertificate struct {
 	TfId types.String `tfsdk:"id"`         // Read-only mirror of ID for Terraform test framework. Use syncTfId() only.

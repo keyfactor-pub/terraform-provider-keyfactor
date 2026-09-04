@@ -19,7 +19,7 @@ func TestIntKeyfactorAgentsDataSource(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	agentID, clientMachine := discoverAgent(t, client)
 
-	// Test 1: No filters — should return at least one agent
+	// Test 1: No filters : should return at least one agent
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -38,7 +38,7 @@ func TestIntKeyfactorAgentsDataSource(t *testing.T) {
 		},
 	})
 
-	// Test 2: Filter by status=2 (Approved) — the discovered agent should be present
+	// Test 2: Filter by status=2 (Approved) : the discovered agent should be present
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -118,7 +118,7 @@ func TestUnitKeyfactorAgentsDataSource(t *testing.T) {
 
 	if os.Getenv("RECORD_CASSETTES") == "1" {
 		client := newTestClient(t)
-		// Just verify we can list agents — params file not needed for this data source
+		// Just verify we can list agents : params file not needed for this data source
 		agents, err := client.GetAgentList()
 		if err != nil {
 			t.Fatalf("Failed to list agents: %s", err)

@@ -71,7 +71,7 @@ func (r resourcePAMProviderResourceType) GetSchema(_ context.Context) (tfsdk.Sch
 				}),
 			},
 		},
-		Description: "Manages a Keyfactor Command PAM Provider. Secret parameter values are write-only — the server stores them as GUID references and never returns the plaintext, so provider reads preserve the configured values from state.",
+		Description: "Manages a Keyfactor Command PAM Provider. Secret parameter values are write-only : the server stores them as GUID references and never returns the plaintext, so provider reads preserve the configured values from state.",
 	}, nil
 }
 
@@ -106,7 +106,7 @@ type KeyfactorPAMParamValue struct {
 // param_values must be set separately from plan/state to preserve secret values.
 //
 // Remote and Area are nullable on the server (Remote *bool, Area *int32). When the server omits
-// them, the SDK getters return Go zero values (false / 0) — which would cause "inconsistent result
+// them, the SDK getters return Go zero values (false / 0) : which would cause "inconsistent result
 // after apply" diagnostics for Optional+Computed schema fields. Convert nil pointers to types.Null
 // instead so plan and state agree.
 func pamProviderResponseToMetadata(resp *v1.PAMProviderResponseLegacy) KeyfactorPAMProvider {

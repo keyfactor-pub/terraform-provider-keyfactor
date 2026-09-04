@@ -17,7 +17,7 @@ Directory identities only).
 `keyfactor_identity` manages **Active Directory identities only**. kfclab is
 Authentik-OAuth-only with no AD backend, so `apply` fails at Create with HTTP
 400 "This operation only supports Active Directory identities" for any
-account name — a structural lab gap, not a provider defect.
+account name: a structural lab gap, not a provider defect.
 
 `make lifecycle` defaults `SKIP_LAB_AD=1`: it prints `SKIPPED: ...` and exits
 0 without touching the lab. Set `SKIP_LAB_AD=0` and `ACCOUNT_NAME` to a real

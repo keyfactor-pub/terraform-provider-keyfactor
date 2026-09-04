@@ -34,9 +34,9 @@ data "keyfactor_agent" "agent_lookup_client_machine" {
 - `agent_id` (String) A string indicating the GUID of the orchestrator.
 - `agent_platform` (Number) An integer indicating the platform for the orchestrator.
 - `auth_certificate_reenrollment` (String) An integer indicating the value of the orchestrator certificate reenrollment request or require status. 
-0 -	None—Unset the value so that the orchestrator will not request a new client authentication certificate (based on this value).
-1 -	Requested—The orchestrator will request a new client authentication certificate when it next registers for a session. Orchestrator activity will be allowed to continue as usual.
-2 -	Required—The orchestrator will request a new client authentication certificate when it next registers for a session. A new session will not be granted and orchestrator activity will not be allowed to continue until the orchestrator acquires a new certificate.
+0 -	None:Unset the value so that the orchestrator will not request a new client authentication certificate (based on this value).
+1 -	Requested:The orchestrator will request a new client authentication certificate when it next registers for a session. Orchestrator activity will be allowed to continue as usual.
+2 -	Required:The orchestrator will request a new client authentication certificate when it next registers for a session. A new session will not be granted and orchestrator activity will not be allowed to continue until the orchestrator acquires a new certificate.
 - `blueprint` (String) A string indicating the name of the blueprint associated with the orchestrator.
 - `capabilities` (List of String) An array of strings indicating the capabilities reported by the orchestrator. These may be built-in or custom capabilities.
 - `client_machine` (String) A string indicating the client machine on which the orchestrator is installed.

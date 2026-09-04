@@ -67,7 +67,7 @@ output "certificate_pems" {
 }
 
 output "private_keys" {
-  description = "PEM private keys generated locally by the TLS provider. Store these securely — they live in Terraform state."
+  description = "PEM private keys generated locally by the TLS provider. Store these securely : they live in Terraform state."
   sensitive   = true
   value = {
     minimal = tls_private_key.minimal_csr.private_key_pem

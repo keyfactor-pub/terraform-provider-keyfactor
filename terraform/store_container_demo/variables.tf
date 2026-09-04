@@ -17,10 +17,10 @@ variable "inventory_schedule" {
     Inventory schedule applied to all K8S certificate stores.
 
     Accepted formats:
-      "immediate"          — trigger inventory on next orchestrator check-in (one-shot)
-      "Daily at HH:MM:SS"  — once per day at the specified UTC time (e.g. "Daily at 12:00:00")
+      "immediate"          : trigger inventory on next orchestrator check-in (one-shot)
+      "Daily at HH:MM:SS"  : once per day at the specified UTC time (e.g. "Daily at 12:00:00")
 
-    CAVEAT — "immediate" drift: Command treats "immediate" as a one-shot trigger.
+    CAVEAT : "immediate" drift: Command treats "immediate" as a one-shot trigger.
     Once the inventory job runs successfully (or exhausts retries) Command removes the
     schedule, so the next `terraform plan` will show the store drifting from "immediate"
     to an empty/daily schedule. This is expected behaviour.  Use a persistent schedule
@@ -41,7 +41,7 @@ variable "k8s_server_password_file" {
 }
 
 # ---------------------------------------------------------------------------
-# Issue #175 reproduction — container-clearing-on-unrelated-update.
+# Issue #175 reproduction : container-clearing-on-unrelated-update.
 # See repro175.tf for the resource and the GNUmakefile's repro175-* targets
 # for the seed/verify sequence.
 # ---------------------------------------------------------------------------

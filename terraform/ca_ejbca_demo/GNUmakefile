@@ -33,7 +33,7 @@ import-all:
 	 $(UNSET_BASIC) $(TF) state rm keyfactor_certificate_authority.demo 2>&1 | grep -E "Removed|Successfully" || true; \
 	 $(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" keyfactor_certificate_authority.demo "$$CA_ID"
 
-## drift-check: Plan after import — should show "No changes" (client_secret is write-only)
+## drift-check: Plan after import (should show "No changes" (client_secret is write-only)
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
@@ -45,7 +45,7 @@ destroy:
 clean:
 	rm -f tf_state.json terraform.tfstate terraform.tfstate.backup terraform.tfstate.*.backup
 
-## all: Full workflow — build, init, validate, plan, apply, import-all, drift-check, destroy
+## all: Full workflow: build, init, validate, plan, apply, import-all, drift-check, destroy
 all: build init validate plan apply import-all drift-check destroy
 
 ## lab-plan / lab-apply / lab-import-all / lab-drift-check / lab-destroy:
@@ -65,7 +65,7 @@ lab-update:
 	$(LAB_ENV) TF_VAR_ca_scope="ejbca_scope_updated" \
 	           TF_VAR_ca_audience="ejbca_audience_updated" \
 	           $(MAKE) plan SUFFIX=$(SUFFIX)
-	@echo "==> Step 2: revert to defaults — verify no forced replacement..."
+	@echo "==> Step 2: revert to defaults; verify no forced replacement..."
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 	$(LAB_ENV) $(MAKE) plan SUFFIX=$(SUFFIX)
 

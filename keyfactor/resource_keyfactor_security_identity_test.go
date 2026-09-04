@@ -141,7 +141,7 @@ resource "keyfactor_identity" "terraformer" {
 // Recording requires a lab with Active Directory integration; the test is skipped
 // in replay mode if no cassette has been recorded.
 // discoverCreatableIdentity returns an AD account name suitable for resource
-// create tests — the account must exist in AD but NOT already be in Keyfactor's
+// create tests : the account must exist in AD but NOT already be in Keyfactor's
 // security identities. Reads KEYFACTOR_SECURITY_IDENTITY_NEW env var, falling
 // back to the standard Windows Guest account (present on all AD domains).
 func discoverCreatableIdentity(t *testing.T) string {

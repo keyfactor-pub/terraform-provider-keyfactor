@@ -18,24 +18,24 @@ resource "keyfactor_certificate" "demo" {
 # ---------------------------------------------------------------------------
 # Deploy to all stores that support add-certificate operations.
 #
-# K8SNS and K8SCluster are discovery/inventory stores only — they discover
+# K8SNS and K8SCluster are discovery/inventory stores only : they discover
 # existing secrets across a namespace or the whole cluster but do not serve
 # as deployment targets.
 #
 # K8SCert manages Kubernetes CSR objects (certificates.k8s.io/v1) which are
-# read-only — the Add operation is not supported by this store type.
+# read-only : the Add operation is not supported by this store type.
 #
 # Alias format per store type (from k8s-orchestrator docs):
-#   K8STLSSecr  — Command's own CertificateStoreTypes metadata marks this store type
+#   K8STLSSecr  : Command's own CertificateStoreTypes metadata marks this store type
 #                 CustomAliasAllowed = "Forbidden": supplying certificate_alias (or
 #                 overwrite) is invalid and Command rejects the deploy request before
 #                 any orchestrator job is dispatched. The cert is placed into the
-#                 store's backing secret by store path alone — no alias needed.
-#   K8SSecret   — same as K8STLSSecr.
-#   K8SJKS      — "<CertificateDataFieldName>/<keystore-alias>"
+#                 store's backing secret by store path alone : no alias needed.
+#   K8SSecret   : same as K8STLSSecr.
+#   K8SJKS      : "<CertificateDataFieldName>/<keystore-alias>"
 #                 CertificateDataFieldName defaults to "jks" when not set.
 #                 Example: "jks/my-cert"
-#   K8SPKCS12   — "<CertificateDataFieldName>/<keystore-alias>"
+#   K8SPKCS12   : "<CertificateDataFieldName>/<keystore-alias>"
 #                 CertificateDataFieldName defaults to ".p12" when not set.
 #                 Example: ".p12/my-cert"
 # ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ resource "keyfactor_certificate" "demo" {
 resource "keyfactor_certificate_deployment" "tls_secret" {
   certificate_id       = keyfactor_certificate.demo.certificate_id
   certificate_store_id = keyfactor_certificate_store.k8s_tls_secret.id
-  # K8STLSSecr: no certificate_alias / overwrite here — see the CustomAliasAllowed
+  # K8STLSSecr: no certificate_alias / overwrite here : see the CustomAliasAllowed
   # note above. This resource uses full inventory-based verification (the default
   # apply behavior): the resource waits for the deployed certificate to appear in
   # the store's inventory before completing.

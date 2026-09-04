@@ -328,7 +328,7 @@ func discoverEnrollmentPatternTemplate(t *testing.T, client *api.Client, pattern
 // (in "DOMAIN\\user" format suitable for HCL with escaping).
 // Checks KEYFACTOR_SECURITY_IDENTITY_ACCOUNTNAME env var first, then discovers
 // from the lab by calling GetSecurityIdentities(). NOTE: this returns an identity
-// that ALREADY EXISTS in Keyfactor — use it for data source tests, not resource
+// that ALREADY EXISTS in Keyfactor : use it for data source tests, not resource
 // create tests.
 func discoverSecurityIdentity(t *testing.T, client *api.Client) string {
 	t.Helper()
@@ -523,7 +523,7 @@ func discoverApplication(t *testing.T, client *api.Client) string {
 
 	containers, err := client.GetStoreContainers()
 	if err != nil {
-		t.Logf("Failed to list store containers for discovery: %s — tests will run without a container", err)
+		t.Logf("Failed to list store containers for discovery: %s : tests will run without a container", err)
 		return ""
 	}
 
@@ -637,7 +637,7 @@ func requireActiveAgent(t *testing.T, client *api.Client) {
 
 	agents, err := client.GetAgentList()
 	if err != nil {
-		t.Skipf("WARN: could not list agents (%v) — skipping deploy test", err)
+		t.Skipf("WARN: could not list agents (%v) : skipping deploy test", err)
 		return
 	}
 
@@ -660,23 +660,23 @@ func requireActiveAgent(t *testing.T, client *api.Client) {
 		best = &agents[0]
 	}
 	if best == nil {
-		t.Skip("WARN: no orchestrator agents registered — skipping deploy test")
+		t.Skip("WARN: no orchestrator agents registered : skipping deploy test")
 		return
 	}
 
 	lastSeen, err := time.Parse(time.RFC3339Nano, best.LastSeen)
 	if err != nil {
-		t.Logf("WARN: could not parse agent LastSeen %q (%v) — proceeding anyway", best.LastSeen, err)
+		t.Logf("WARN: could not parse agent LastSeen %q (%v) : proceeding anyway", best.LastSeen, err)
 		return
 	}
 
 	elapsed := time.Since(lastSeen)
 	threshold := time.Duration(maxStaleHours * float64(time.Hour))
 	if elapsed > threshold {
-		t.Skipf("WARN: agent %s (machine: %s) last seen %.1f hours ago (threshold: %.0fh) — orchestrator appears offline, skipping deploy test",
+		t.Skipf("WARN: agent %s (machine: %s) last seen %.1f hours ago (threshold: %.0fh) : orchestrator appears offline, skipping deploy test",
 			best.AgentId, best.ClientMachine, elapsed.Hours(), maxStaleHours)
 	}
-	t.Logf("Agent %s last seen %.1f minutes ago — proceeding", best.AgentId, elapsed.Minutes())
+	t.Logf("Agent %s last seen %.1f minutes ago : proceeding", best.AgentId, elapsed.Minutes())
 }
 
 // ---------------------------------------------------------------------------
@@ -831,7 +831,7 @@ func normalizeCassettePath(p string) string {
 }
 
 // makeVCRMatcher builds a cassette.MatcherFunc that matches only on HTTP
-// method, normalised API path, and query string — ignoring host, headers,
+// method, normalised API path, and query string : ignoring host, headers,
 // body, and protocol details. This is intentionally lenient so that cassettes
 // recorded with real lab credentials can be replayed without any network or
 // credentials.
@@ -1505,13 +1505,13 @@ func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func
 // cassette interaction can be replayed more than once instead of being
 // consumed after its first match.
 //
-// This is safe — including for polling tests — whenever every repeated,
+// This is safe : including for polling tests : whenever every repeated,
 // identical-URL request in the flow must return the SAME response every time
 // (e.g. a poll loop that always observes the same terminal job/inventory
 // state). Use newVCRProviderFactories (consume-once) instead whenever
 // sequential requests to the same URL must return DIFFERENT responses in
 // order (e.g. an inventory poll that starts "not present" and later becomes
-// "present") — replayable interactions would incorrectly return the first
+// "present") : replayable interactions would incorrectly return the first
 // recorded response forever.
 func newVCRProviderFactoriesReplayable(t *testing.T, cassetteName string) (map[string]func() (tfprotov6.ProviderServer, error), func()) {
 	return newVCRProviderFactoriesOpts(t, cassetteName, true)
@@ -1822,7 +1822,7 @@ func skipOnKnownLabConstraint(t *testing.T, patterns ...string) func(error) erro
 		// Terraform wraps long error messages across multiple lines with
 		// indentation (e.g. "...Subject\n            Alternative Name"), so
 		// collapse all whitespace runs to single spaces before substring
-		// matching — otherwise a multi-word pattern never matches.
+		// matching : otherwise a multi-word pattern never matches.
 		msg := strings.Join(strings.Fields(err.Error()), " ")
 		for _, p := range patterns {
 			if strings.Contains(msg, strings.Join(strings.Fields(p), " ")) {
@@ -1839,7 +1839,7 @@ func skipOnKnownLabConstraint(t *testing.T, patterns ...string) func(error) erro
 //
 // Regression guard for the P7B chain-ordering bug: if DownloadCertificate returns
 // the root CA cert as the leaf (certs[0] from a root-first P7B), IsCA will be true
-// and this check will fail — even when subject.subject_common_name is unpopulated
+// and this check will fail : even when subject.subject_common_name is unpopulated
 // (e.g. enrollment-pattern certs).
 func testCheckCertPEMIsLeaf(resourceName, attrName string) sdkresource.TestCheckFunc {
 	return func(s *terraform.State) error {
@@ -1861,7 +1861,7 @@ func testCheckCertPEMIsLeaf(resourceName, attrName string) sdkresource.TestCheck
 		}
 		if cert.IsCA {
 			return fmt.Errorf(
-				"certificate in %q on %s is a CA cert (CN=%q IsCA=true); expected end-entity leaf cert — possible P7B chain ordering bug",
+				"certificate in %q on %s is a CA cert (CN=%q IsCA=true); expected end-entity leaf cert : possible P7B chain ordering bug",
 				attrName, resourceName, cert.Subject.CommonName,
 			)
 		}
@@ -1891,7 +1891,7 @@ func testCheckCertPEMCommonName(resourceName, attrName, expectedCN string) sdkre
 		}
 		if cert.Subject.CommonName != expectedCN {
 			return fmt.Errorf(
-				"certificate CN in %q on %s = %q, want %q — possible P7B chain ordering bug",
+				"certificate CN in %q on %s = %q, want %q : possible P7B chain ordering bug",
 				attrName, resourceName, cert.Subject.CommonName, expectedCN,
 			)
 		}
@@ -2057,7 +2057,7 @@ func generateRootFirstP7BCassette(t *testing.T, cassettePath string) string {
 	// Leaf cert PEM for enrollment response.
 	leafPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}))
 
-	// Root-first P7B: CA first, leaf second — the bug trigger.
+	// Root-first P7B: CA first, leaf second : the bug trigger.
 	sd, err := pkcs7.NewSignedData([]byte{})
 	if err != nil {
 		t.Fatalf("pkcs7.NewSignedData: %v", err)
@@ -2373,7 +2373,7 @@ func testAccCertCSRConfigWithFormat(enrollmentPattern, templateName, ca, csr, ce
 		formatLine = fmt.Sprintf("\n  certificate_format             = \"%s\"", certFormat)
 	}
 	if enrollmentPattern != "" {
-		// Enrollment pattern path uses a quoted string — CSR must be single-line.
+		// Enrollment pattern path uses a quoted string : CSR must be single-line.
 		singleLine := strings.ReplaceAll(strings.ReplaceAll(csr, "\r\n", `\n`), "\n", `\n`)
 		return fmt.Sprintf(`
 resource "keyfactor_certificate" "test" {
@@ -2972,8 +2972,8 @@ func certMetadataConfig(enrollmentPattern, templateName, ca, cn string, metadata
 // ---------------------------------------------------------------------------
 
 // certPFXKeyTypeTestParams extends certPFXTestParams with the key type fields
-// that should be used in the enrollment config. These are not auto-discovered —
-// they are fixed by the test case — so only the lab-dependent fields are stored.
+// that should be used in the enrollment config. These are not auto-discovered :
+// they are fixed by the test case : so only the lab-dependent fields are stored.
 type certPFXKeyTypeTestParams struct {
 	TemplateName      string `json:"template_name"`
 	CA                string `json:"ca"`
@@ -3096,7 +3096,7 @@ EOT
 }
 
 // ---------------------------------------------------------------------------
-// Certificate Collection helpers (direct REST calls — no client library support)
+// Certificate Collection helpers (direct REST calls : no client library support)
 // ---------------------------------------------------------------------------
 
 // buildCommandURL constructs a full URL for a Command API endpoint using the
@@ -3167,7 +3167,7 @@ func commandHTTPDo(client *api.Client, method, endpoint string, payload interfac
 // pre-marshalled body ([]byte).  queryParams is appended to the URL as a raw
 // query string (e.g. "forceSave=true").  This differs from commandHTTPDo in two
 // ways:
-//  1. The body is sent verbatim — no re-marshalling through Go structs that
+//  1. The body is sent verbatim : no re-marshalling through Go structs that
 //     might drop unknown JSON fields (e.g. UseForEnrollment).
 //  2. Query parameters are set via url.URL.RawQuery so they are never
 //     percent-encoded into the path segment.

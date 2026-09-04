@@ -4,7 +4,7 @@
 ## for all K8S store types (K8STLSSecr, K8SSecret, K8SCert, K8SJKS,
 ## K8SPKCS12, K8SNS, K8SCluster) including buddy-pass (PasswordIsK8SSecret) variants.
 ##
-## Prerequisites — set these environment variables before running:
+## Prerequisites: set these environment variables before running:
 ##   export KEYFACTOR_HOSTNAME=your-command-host.example.com
 ##   export KEYFACTOR_AUTH_CLIENT_ID=your-client-id
 ##   export KEYFACTOR_AUTH_CLIENT_SECRET=your-client-secret
@@ -13,21 +13,21 @@
 ##   export TF_VAR_k8s_server_password_file=/path/to/sa-context.json
 ##
 ## Optional TF variables (see variables.tf for full list):
-##   TF_VAR_inventory_schedule  — default "immediate"; use "Daily at HH:MM:SS" for a
+##   TF_VAR_inventory_schedule: default "immediate"; use "Daily at HH:MM:SS" for a
 ##                                persistent schedule and to avoid plan drift after apply.
-##   TF_VAR_create_if_missing   — default true; set false to skip store creation jobs.
-##   TF_VAR_namespace           — default "default"; Kubernetes namespace for store paths.
+##   TF_VAR_create_if_missing: default true; set false to skip store creation jobs.
+##   TF_VAR_namespace: default "default"; Kubernetes namespace for store paths.
 ##
 ## Certificate deployment alias formats (k8s-orchestrator docs):
-##   K8STLSSecr / K8SSecret  — no alias required; cert placed into the store's backing
+##   K8STLSSecr / K8SSecret: no alias required; cert placed into the store's backing
 ##                              secret by store path.
-##   K8SJKS                  — alias = "<field>.jks/<keystore-alias>"
+##   K8SJKS: alias = "<field>.jks/<keystore-alias>"
 ##                              (default field name "jks"; set via CertificateDataFieldName)
-##   K8SPKCS12               — alias = "<field>.p12/<keystore-alias>"
+##   K8SPKCS12: alias = "<field>.p12/<keystore-alias>"
 ##                              (default field name ".p12"; override via CertificateDataFieldName)
-##   K8SCert / K8SNS / K8SCluster — inventory/discovery only; Add not supported.
+##   K8SCert / K8SNS / K8SCluster: inventory/discovery only; Add not supported.
 ##
-## NOTE — "immediate" schedule drift:
+## NOTE: "immediate" schedule drift:
 ##   Command treats "immediate" as a one-shot trigger. After the inventory job runs
 ##   (or exhausts retries) Command removes the schedule, so subsequent plans show
 ##   inventory_schedule drifting from "immediate" to empty. This is expected.
@@ -83,7 +83,7 @@ import-all:
 reconcile:
 	$(UNSET_BASIC) $(TF) apply -auto-approve
 
-## drift-check: Plan after import — should show "No changes" (server_password is write-only)
+## drift-check: Plan after import (should show "No changes" (server_password is write-only)
 drift-check:
 	$(UNSET_BASIC) $(TF) plan
 
@@ -99,7 +99,7 @@ clean:
 # Combined workflows
 # ---------------------------------------------------------------------------
 
-## all: Full lifecycle — build, init, validate, plan, apply, import-all, drift-check, destroy
+## all: Full lifecycle: build, init, validate, plan, apply, import-all, drift-check, destroy
 all: build init validate plan apply import-all drift-check destroy
 
 ## demo-no-destroy: Run through drift-check but leave resources on server
@@ -131,7 +131,7 @@ lab-update:
 	$(LAB_ENV) TF_VAR_inventory_schedule="Daily at 14:00:00" \
 	           TF_VAR_create_if_missing=false \
 	           $(MAKE) plan
-	@echo "==> Step 2: revert to default values — verify no forced replacement..."
+	@echo "==> Step 2: revert to default values; verify no forced replacement..."
 	$(LAB_ENV) TF_VAR_inventory_schedule="Daily at 12:00:00" \
 	           TF_VAR_create_if_missing=true \
 	           $(MAKE) apply

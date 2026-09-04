@@ -1,7 +1,7 @@
 # certificate_template_demo
 
 Import + update demo for `keyfactor_certificate_template`. Templates cannot
-be created via the Command API — this resource is always **imported**, never
+be created via the Command API; this resource is always **imported**, never
 created.
 
 ## What it covers
@@ -19,7 +19,7 @@ Error updating template in Keyfactor: 'Policies' cannot be empty
 
 This looks like a genuine SDK/Command-API-version gap (`keyfactor-go-client/v3`'s
 `UpdateTemplateArg` has no `Policies` field at all). `make lab-update` reports
-this as a clear `FAIL`, not a harness crash — surfacing it is the point of
+this as a clear `FAIL`, not a harness crash; surfacing it is the point of
 this demo on labs with the gap.
 
 ## Variables

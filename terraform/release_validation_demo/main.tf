@@ -15,7 +15,7 @@ provider "keyfactor" {}
 provider "tls" {}
 
 # ---------------------------------------------------------------------------
-# release_validation_demo — trimmed release-smoke test.
+# release_validation_demo : trimmed release-smoke test.
 #
 # A compact end-to-end pass across the provider's most commonly used
 # surfaces in one apply: agent lookup, PFX + CSR certificate enrollment, all
@@ -178,7 +178,7 @@ resource "keyfactor_certificate_store" "k8s_cluster" {
 }
 
 # ---------------------------------------------------------------------------
-# Deployments — one per deployable store type (K8SNS/K8SCluster are
+# Deployments : one per deployable store type (K8SNS/K8SCluster are
 # discovery-only, not deployment targets)
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_deployment" "tls_secret" {

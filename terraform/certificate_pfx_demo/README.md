@@ -23,10 +23,10 @@ export KEYFACTOR_AUTH_CLIENT_ID=your-client-id
 export KEYFACTOR_AUTH_CLIENT_SECRET=your-client-secret
 export KEYFACTOR_AUTH_TOKEN_URL=https://auth.example.com/connect/token
 
-# Optional — skip TLS verification for self-signed certs
+# Optional: skip TLS verification for self-signed certs
 export KEYFACTOR_SKIP_VERIFY=true
 
-# Optional — extend HTTP timeout for slow servers (RSA-8192 needs ~5 min)
+# Optional: extend HTTP timeout for slow servers (RSA-8192 needs ~5 min)
 export KEYFACTOR_CLIENT_TIMEOUT=600   # seconds; default is 60
 
 # Certificate enrollment targets
@@ -50,7 +50,7 @@ export TF_VAR_certificate_template="AnyCA_lab-role"
 > above, the initial `rsa_8192` enrollment attempt has been observed to fail with
 > `http: ContentLength=160 with Body length 0` even with `KEYFACTOR_CLIENT_TIMEOUT`
 > raised (reproduced identically on two attempts, 2026-08-17). Command completes the
-> enrollment server-side despite the client-side failure — confirmed via direct API
+> enrollment server-side despite the client-side failure; confirmed via direct API
 > query against the lab, with orphaned certificate IDs 364, 367, and 369 observed and
 > left in place as acceptable lab noise, not cleaned up. A retry (e.g. re-running
 > `make lab-update` or `make apply` again) succeeds. This is a known lab/environment
@@ -58,7 +58,7 @@ export TF_VAR_certificate_template="AnyCA_lab-role"
 > symptom is superficially similar to the client-side-timeout shape that the
 > orphaned-PFX-recovery feature (`isTimeoutShapedError` in `keyfactor/helpers.go`)
 > already detects and recovers from, but a `ContentLength` mismatch does not match any
-> of that function's checks, so this case is NOT currently auto-recovered — a possible
+> of that function's checks, so this case is NOT currently auto-recovered: a possible
 > gap for future investigation, not addressed here.
 
 ## Files
@@ -90,10 +90,10 @@ make lifecycle
 # 3b. Or set env vars manually and run individual steps
 export KEYFACTOR_HOSTNAME=... # see Environment variables above
 make apply
-make lab-update        # modify metadata / renew_days — should show in-place change only
+make lab-update        # modify metadata / renew_days: should show in-place change only
 make plan              # verify no drift
 make import-all
-make apply             # reconcile — writes write-only params (key_password, etc.) into state
+make apply             # reconcile: writes write-only params (key_password, etc.) into state
 make drift-check       # should show "No changes"
 make destroy
 
@@ -110,7 +110,7 @@ make validate       terraform validate
 make plan           terraform plan
 make apply          terraform apply -auto-approve (enrolls 11 certificates)
 make import-all     Capture state, remove resources, re-import each by certificate ID
-make drift-check    terraform plan — only write-only fields (key_password) may appear after import
+make drift-check    terraform plan: only write-only fields (key_password) may appear after import
 make destroy        terraform destroy -auto-approve
 make clean          Remove generated files
 ```
@@ -125,7 +125,7 @@ These targets source `KEYFACTOR_ENV_FILE` (default: `~/.env_kfclab`) automatical
 make lifecycle        Full test: apply → update → plan → import-all → apply (reconcile) → drift-check → destroy
 make lab-plan         Plan using lab credentials
 make lab-apply        Apply using lab credentials
-make lab-update       Apply with updated metadata/renew_days — verifies in-place update path
+make lab-update       Apply with updated metadata/renew_days: verifies in-place update path
 make lab-import-all   Import all certificates using lab credentials
 make lab-drift-check  Drift-check using lab credentials
 make lab-destroy      Destroy using lab credentials

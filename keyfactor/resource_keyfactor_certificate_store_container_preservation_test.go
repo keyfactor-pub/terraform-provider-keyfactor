@@ -20,14 +20,14 @@
 //  2. Out-of-band (bypassing Terraform entirely): assign the store to an
 //     existing lab container/application via the real
 //     PUT /CertificateStores/AssignContainer endpoint. This step only runs
-//     during cassette recording (RECORD_CASSETTES=1) — it is a genuine,
+//     during cassette recording (RECORD_CASSETTES=1) : it is a genuine,
 //     unrecorded network call against the lab, simulating a portal-driven
 //     assignment that Terraform never declared.
 //  3. Apply an unrelated attribute change (inventory_schedule) with a config
 //     that still declares no application_name/container_name.
 //  4. Assert: the apply succeeds with no "inconsistent result after apply";
 //     container_id in the final state matches the out-of-band assignment;
-//     and — the wire-level check — the captured PUT request body sent
+//     and : the wire-level check : the captured PUT request body sent
 //     during step 3's Update() contains "ContainerId":<N> for the preserved,
 //     nonzero container ID.
 //
@@ -37,7 +37,7 @@
 // in ModeReplayOnly (see requestHandler's early return for that mode), so
 // the request body reaching our capturing transport is exactly what
 // resourceCertificateStore.Update() constructed and serialized this test
-// run — not anything baked into the cassette file.
+// run : not anything baked into the cassette file.
 package keyfactor
 
 import (
@@ -123,7 +123,7 @@ func (b *bodyCapturingRoundTripper) capturedPUTBodiesTo(pathSubstr string) []str
 // newVCRProviderFactoriesOpts (test_helpers_test.go) that, in replay mode,
 // wraps the recorder's http.RoundTripper with a bodyCapturingRoundTripper so
 // the test can assert on the literal outgoing request bodies. In recording
-// mode it delegates entirely to newVCRProviderFactories (no capture needed —
+// mode it delegates entirely to newVCRProviderFactories (no capture needed :
 // this test's wire-level assertion is skipped when RECORD_CASSETTES=1).
 func newVCRProviderFactoriesCapturingPUTBodies(t *testing.T, cassetteName string) (map[string]func() (tfprotov6.ProviderServer, error), func(), *bodyCapturingRoundTripper) {
 	t.Helper()
@@ -195,7 +195,7 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 
 		containerName = discoverApplication(t, client)
 		if containerName == "" {
-			t.Skip("No application/container available in the lab — cannot record the container preservation regression cassette")
+			t.Skip("No application/container available in the lab : cannot record the container preservation regression cassette")
 		}
 		ct, err := client.GetStoreContainer(containerName)
 		if err != nil || ct == nil || ct.Id == nil {
@@ -220,7 +220,7 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 		containerName = params.ContainerName
 		containerID = params.ContainerID
 		if containerName == "" || containerID == 0 {
-			t.Skip("cassette params missing container info — record the cassette first (see RECORD_CASSETTES instructions above)")
+			t.Skip("cassette params missing container info : record the cassette first (see RECORD_CASSETTES instructions above)")
 		}
 	}
 
@@ -234,7 +234,7 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 	// /CertificateStores/AssignContainer call directly against the lab,
 	// bypassing Terraform and the VCR recorder entirely. This simulates a
 	// container/application assignment made out-of-band (e.g. via the
-	// Command portal) that Terraform's own config never declared — the
+	// Command portal) that Terraform's own config never declared : the
 	// exact precondition for the bug this test guards against. It only runs while recording;
 	// in replay mode it is a no-op so the test stays network-free.
 	assignContainerOutOfBand := func() {
@@ -296,7 +296,7 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 			},
 			{
 				// Step 2: out-of-band assignment happens in PreConfig, before
-				// this step's refresh/plan/apply — mirroring the customer
+				// this step's refresh/plan/apply : mirroring the customer
 				// repro exactly. The config here changes only
 				// inventory_schedule and STILL declares no
 				// application_name/container_name. Before the fix in commit
@@ -327,14 +327,14 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 	// ---------------------------------------------------------------------
 	//
 	// The above resource.UnitTest run already proves state consistency (no
-	// "inconsistent result after apply" — the test would have failed
+	// "inconsistent result after apply" : the test would have failed
 	// outright otherwise) and that container_id survived the update. This
 	// section additionally proves WHY: the literal PUT request body sent to
 	// /KeyfactorAPI/CertificateStores during step 2's Update() call must
 	// contain the preserved, nonzero ContainerId. If
 	// resolveContainerAssignmentForUpdate/containerNameArgPointer ever
 	// regress to the pre-fix behavior, containerId resolves to 0 and
-	// intToPointer(0) drops the field from the JSON body entirely — this
+	// intToPointer(0) drops the field from the JSON body entirely : this
 	// assertion is what would catch that at the wire level.
 	putBodies := capture.capturedPUTBodiesTo("CertificateStores")
 	if len(putBodies) == 0 {
@@ -356,7 +356,7 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 		t.Fatalf(
 			"regression: expected the Update() PUT body to /KeyfactorAPI/CertificateStores to contain %q "+
 				"(the container assignment preserved from state when config declares no application_name/container_name), "+
-				"but none of the captured PUT bodies did: %v — this is exactly the failure mode of the bug: "+
+				"but none of the captured PUT bodies did: %v : this is exactly the failure mode of the bug: "+
 				"resolveContainerAssignmentForUpdate/containerNameArgPointer resolved containerId to 0, "+
 				"intToPointer(0) dropped ContainerId from the wire (json:\"ContainerId,omitempty\"), "+
 				"and Command would silently clear a real, live out-of-band container assignment",

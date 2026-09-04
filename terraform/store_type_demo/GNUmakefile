@@ -59,7 +59,7 @@ import-all:
 	  fi; \
 	done < _import_pairs.txt
 
-## drift-check: Plan after import — should show "No changes"
+## drift-check: Plan after import (should show "No changes"
 drift-check:
 	$(UNSET_BASIC) $(TF) plan
 
@@ -75,7 +75,7 @@ clean:
 # Combined workflows
 # ---------------------------------------------------------------------------
 
-## all: Full workflow — build, init, validate, apply-data, generate, plan, apply, import-all, drift-check, destroy
+## all: Full workflow: build, init, validate, apply-data, generate, plan, apply, import-all, drift-check, destroy
 all: build init validate generate plan apply import-all drift-check destroy
 
 ## demo-no-destroy: Run workflow without final destroy (leaves resources on server)
@@ -97,7 +97,7 @@ lab-plan:
 lab-apply:
 	$(LAB_ENV) $(MAKE) apply
 
-## lab-update: Re-apply to verify idempotency (store type fields are fully managed — re-apply = no-op)
+## lab-update: Re-apply to verify idempotency (store type fields are fully managed; re-apply = no-op)
 ## Also verifies zero drift immediately after apply.
 lab-update:
 	@echo "==> Verifying idempotent re-apply (in-place update with no config change)..."

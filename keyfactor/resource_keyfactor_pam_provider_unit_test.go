@@ -9,7 +9,7 @@ import (
 // TestUnitPAMProviderResponseToMetadata_NilPointerFields verifies that when the server omits
 // Remote and Area in the response, the resulting Terraform state values are Null rather than
 // the Go zero values (false / 0). This regression-tests the "inconsistent result after apply"
-// bug for keyfactor_pam_provider — the schema marks both fields Optional+Computed, so a plan
+// bug for keyfactor_pam_provider : the schema marks both fields Optional+Computed, so a plan
 // that omits them must round-trip to Null after Create/Read, not false/0.
 func TestUnitPAMProviderResponseToMetadata_NilPointerFields(t *testing.T) {
 	id := int32(7)

@@ -6,7 +6,7 @@ role's existing permissions instead of crashing with "Provider produced
 inconsistent result after apply."
 
 This is a separate demo from `security_role_demo/` (which proves a different
-fix — out-of-band drift detection).
+fix: out-of-band drift detection).
 
 ## What it covers
 

@@ -85,7 +85,7 @@ func (r dataSourceAgentType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Di
 			"auth_certificate_reenrollment": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "An integer indicating the value of the orchestrator certificate reenrollment request or require status. \n0 -\tNone—Unset the value so that the orchestrator will not request a new client authentication certificate (based on this value).\n1 -\tRequested—The orchestrator will request a new client authentication certificate when it next registers for a session. Orchestrator activity will be allowed to continue as usual.\n2 -\tRequired—The orchestrator will request a new client authentication certificate when it next registers for a session. A new session will not be granted and orchestrator activity will not be allowed to continue until the orchestrator acquires a new certificate.",
+				Description: "An integer indicating the value of the orchestrator certificate reenrollment request or require status. \n0 -\tNone:Unset the value so that the orchestrator will not request a new client authentication certificate (based on this value).\n1 -\tRequested:The orchestrator will request a new client authentication certificate when it next registers for a session. Orchestrator activity will be allowed to continue as usual.\n2 -\tRequired:The orchestrator will request a new client authentication certificate when it next registers for a session. A new session will not be granted and orchestrator activity will not be allowed to continue until the orchestrator acquires a new certificate.",
 			},
 			"last_thumbprint_used": {
 				Type:        types.StringType,

@@ -3,7 +3,7 @@
 End-to-end demonstration of `keyfactor_certificate` CSR enrollment: eleven certificates
 covering the minimal case, a fully configured example, and one certificate per key
 algorithm (RSA-2048/3072/4096/8192, ECC P-256/P-384/P-521, Ed25519, Ed448). Private keys
-are generated locally — RSA and ECC via `hashicorp/tls`, Ed448 via OpenSSL through the
+are generated locally: RSA and ECC via `hashicorp/tls`, Ed448 via OpenSSL through the
 `hashicorp/external` data source. Includes import and zero-drift verification.
 
 > **Security note:** Private keys are stored in Terraform state. Use a remote backend
@@ -28,7 +28,7 @@ export KEYFACTOR_AUTH_CLIENT_ID=your-client-id
 export KEYFACTOR_AUTH_CLIENT_SECRET=your-client-secret
 export KEYFACTOR_AUTH_TOKEN_URL=https://auth.example.com/connect/token
 
-# Optional — skip TLS verification for self-signed certs
+# Optional: skip TLS verification for self-signed certs
 export KEYFACTOR_SKIP_VERIFY=true
 
 # Certificate enrollment targets
@@ -77,7 +77,7 @@ export KEYFACTOR_HOSTNAME=... # see Environment variables above
 make apply
 make lab-update    # modify metadata/renew_days; also tests full→minimal (omit block = clear from server)
 make import-all
-make apply         # reconcile — writes write-only params (enrollment_pattern, CSR) into state
+make apply         # reconcile: writes write-only params (enrollment_pattern, CSR) into state
 make drift-check   # should show "No changes"
 make destroy
 
@@ -94,7 +94,7 @@ make validate       terraform validate
 make plan           terraform plan
 make apply          Generate keys + CSRs, enroll 11 certificates
 make import-all     Capture state, remove certificates, re-import each by certificate ID
-make drift-check    terraform plan — should show "No changes" after import
+make drift-check    terraform plan: should show "No changes" after import
 make destroy        terraform destroy -auto-approve
 make clean          Remove generated files
 ```
@@ -171,5 +171,5 @@ terraform import keyfactor_certificate.rsa_2048 1042
 | Key generation | Keyfactor Command (server-side) | Local (`hashicorp/tls`) |
 | Private key in state | Yes (via `private_key` attribute) | Yes (via `tls_private_key`) |
 | `key_password` required | Yes | No |
-| `key_type` / `key_size` / `curve` | Set in HCL | Embedded in CSR — **cannot** be set in HCL |
+| `key_type` / `key_size` / `curve` | Set in HCL | Embedded in CSR: **cannot** be set in HCL |
 | Key recovery on import | Attempted via Command key archival API during `import`; run reconcile `apply` with `key_password` to populate `private_key` in state | Key stays local; import recovers cert only |

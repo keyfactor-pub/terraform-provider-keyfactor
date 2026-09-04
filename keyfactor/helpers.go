@@ -758,11 +758,11 @@ func recoverPrivateKeyFromKeyfactorCommand(
 		pfxPrivateKey, pfxLeaf, pfxChain, unpackErr := api.UnpackPkcs12(rawBytes, lookupPassword)
 		if unpackErr != nil {
 			// Unknown algorithm (e.g. Ed448 OID 1.3.101.113) means Go's pkcs12/x509
-			// library cannot parse the key — log a warning and return empty strings
+			// library cannot parse the key : log a warning and return empty strings
 			// without adding an error so callers can fall back gracefully.
 			if strings.Contains(unpackErr.Error(), "unknown algorithm") {
 				tflog.Warn(ctx, fmt.Sprintf(
-					"Cannot unpack PFX for certificate %d — unsupported key algorithm: %v",
+					"Cannot unpack PFX for certificate %d : unsupported key algorithm: %v",
 					certId, unpackErr,
 				))
 				return "", "", "", rawBytes, diags
@@ -1259,13 +1259,13 @@ func recoverOrDownloadCertificate(
 		certificateFormat,
 	)
 
-	// For binary formats (PFX/JKS/ZIP), recovery is the only path — the P7B
+	// For binary formats (PFX/JKS/ZIP), recovery is the only path : the P7B
 	// download fallback only produces PEM data so it cannot help.  If we got
 	// rawBytes back that's success for a binary format even without leafPEM.
 	effectiveFmt := effectiveCertificateFormat(certificateFormat)
 	if effectiveFmt == "PFX" || effectiveFmt == "JKS" || effectiveFmt == "ZIP" {
 		if rawBytes != nil && *rawBytes != "" {
-			// Recovery succeeded — clear any non-fatal diagnostics that may
+			// Recovery succeeded : clear any non-fatal diagnostics that may
 			// have been added (e.g. "private key not returned").
 			diags = diag.Diagnostics{}
 		}
@@ -2873,7 +2873,7 @@ func parseAllCerts(pemData string) []*x509.Certificate {
 // reselectLeafFromChain re-derives the true end-entity leaf from the combined
 // set of certificates (leafPEM + chainPEM). It guards against upstream leaf
 // selection that can mis-label a CA/root as the leaf when Keyfactor Command
-// returns a chain that is not ordered leaf-first — e.g. the positional
+// returns a chain that is not ordered leaf-first : e.g. the positional
 // certificates[0] in api.UnpackPEM, or pkcs12.DecodeChain's last-cert fallback.
 //
 // The leaf is the certificate whose Subject is not the Issuer of any other cert
@@ -2904,7 +2904,7 @@ func reselectLeafFromChain(ctx context.Context, leafPEM, chainPEM string) (strin
 		chain = append(chain, c)
 	}
 	if leaf == nil {
-		// Cannot distinguish a leaf (e.g. all certs are self-signed) — leave as-is.
+		// Cannot distinguish a leaf (e.g. all certs are self-signed) : leave as-is.
 		return leafPEM, chainPEM
 	}
 
@@ -3320,7 +3320,7 @@ func normalizeThumbprint(tp string) string {
 // The Keyfactor Command API and the SDK wrapping it do not expose a
 // structured "not found" sentinel distinct from other errors (a 404 is
 // collapsed into a plain error string alongside network/permission/5xx
-// failures — see keyfactor-go-client's client.go response handling), so this
+// failures : see keyfactor-go-client's client.go response handling), so this
 // function cannot definitively tell "the container was deleted" apart from
 // "the lookup failed for an unrelated, possibly transient reason." Given that
 // ambiguity, an erroring by-ID lookup is NOT treated as proof the container is
@@ -3335,7 +3335,7 @@ func normalizeThumbprint(tp string) string {
 // name to fall back to) would otherwise permanently null
 // out the name fields even though container_id correctly reflects a real
 // assignment. Note that nulling the *name* fields here is a cosmetic
-// annoyance, not data loss on its own — Update()'s containerId resolution
+// annoyance, not data loss on its own : Update()'s containerId resolution
 // (resolveContainerAssignmentForUpdate) is the load-bearing safeguard against
 // actually clearing the assignment server-side; this function only reduces
 // how often the cosmetic drift happens.
@@ -3352,7 +3352,7 @@ func lookupContainerNameByID(ctx context.Context, client *api.Client, containerI
 		return container.Name
 	}
 	if err != nil {
-		tflog.Warn(ctx, fmt.Sprintf("Failed to resolve container name for ID %d via by-ID lookup: %s — retrying via the list endpoint before falling back to hint %q", containerId, err.Error(), hint))
+		tflog.Warn(ctx, fmt.Sprintf("Failed to resolve container name for ID %d via by-ID lookup: %s : retrying via the list endpoint before falling back to hint %q", containerId, err.Error(), hint))
 	}
 
 	if containers, listErr := client.GetStoreContainers(); listErr == nil && containers != nil {
@@ -3362,7 +3362,7 @@ func lookupContainerNameByID(ctx context.Context, client *api.Client, containerI
 			}
 		}
 	} else if listErr != nil {
-		tflog.Warn(ctx, fmt.Sprintf("Failed to resolve container name for ID %d via list-endpoint fallback: %s — falling back to hint %q", containerId, listErr.Error(), hint))
+		tflog.Warn(ctx, fmt.Sprintf("Failed to resolve container name for ID %d via list-endpoint fallback: %s : falling back to hint %q", containerId, listErr.Error(), hint))
 	}
 
 	if hint == "" {

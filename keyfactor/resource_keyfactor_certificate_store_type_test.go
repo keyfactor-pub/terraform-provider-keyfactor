@@ -11,7 +11,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// TestAcc — full lifecycle (legacy, requires many env vars)
+// TestAcc : full lifecycle (legacy, requires many env vars)
 // ---------------------------------------------------------------------------
 
 func TestAccKeyfactorCertificateStoreTypeResource(t *testing.T) {
@@ -38,7 +38,7 @@ func TestAccKeyfactorCertificateStoreTypeResource(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "private_key_allowed"),
 				),
 			},
-			// Update name (short_name cannot change — would force replace)
+			// Update name (short_name cannot change : would force replace)
 			{
 				Config: testAccCertStoreTypeConfig(name+"-updated", shortName),
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -84,7 +84,7 @@ func TestAccKeyfactorCertificateStoreTypeResourceWithProperties(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestInt — auto-discovery, only need connection env vars
+// TestInt : auto-discovery, only need connection env vars
 // ---------------------------------------------------------------------------
 
 func TestIntKeyfactorCertificateStoreTypeResource(t *testing.T) {
@@ -316,7 +316,7 @@ func TestUnitKeyfactorCertificateStoreTypeDataSource(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Regression: store_path_type / store_path_value write-only preservation
-// Issue #168 — API never returns StorePathType/StorePathValue in GET;
+// Issue #168 : API never returns StorePathType/StorePathValue in GET;
 // without UseStateForUnknown + preservation logic, apply fails with
 // "provider produced inconsistent result after apply".
 // ---------------------------------------------------------------------------
@@ -345,7 +345,7 @@ func TestIntKeyfactorCertificateStoreTypeResource_StorePathType(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "store_path_type", "Freeform"),
 				),
 			},
-			// Step 2: Re-apply same config — no drift expected.
+			// Step 2: Re-apply same config : no drift expected.
 			// Validates UseStateForUnknown preserves the value across plans.
 			{
 				Config:             testAccCertStoreTypeConfigWithPathType(name, shortName, "Freeform", ""),

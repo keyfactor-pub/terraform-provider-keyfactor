@@ -3,12 +3,12 @@
 page_title: "keyfactor_pam_provider Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  Manages a Keyfactor Command PAM Provider. Secret parameter values are write-only — the server stores them as GUID references and never returns the plaintext, so provider reads preserve the configured values from state.
+  Manages a Keyfactor Command PAM Provider. Secret parameter values are write-only : the server stores them as GUID references and never returns the plaintext, so provider reads preserve the configured values from state.
 ---
 
 # keyfactor_pam_provider (Resource)
 
-Manages a Keyfactor Command PAM Provider. Secret parameter values are write-only — the server stores them as GUID references and never returns the plaintext, so provider reads preserve the configured values from state.
+Manages a Keyfactor Command PAM Provider. Secret parameter values are write-only : the server stores them as GUID references and never returns the plaintext, so provider reads preserve the configured values from state.
 
 ## Example Usage
 

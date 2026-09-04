@@ -1,7 +1,7 @@
 # store_container_demo
 
 Validates that `container_name` (pre-v25 style) and `application_name`
-(v25+ alias) are interchangeable on `keyfactor_certificate_store` resources —
+(v25+ alias) are interchangeable on `keyfactor_certificate_store` resources:
 both link the store to the same Keyfactor application/container without
 forcing resource replacement.
 
@@ -20,11 +20,11 @@ config never declares `application_name`/`container_name`.
 
 ## Variables
 
-See `variables.tf` — `suffix`, `namespace`, `inventory_schedule`,
+See `variables.tf`: `suffix`, `namespace`, `inventory_schedule`,
 `create_if_missing`, `k8s_server_password_file`, `repro175_inventory_schedule`.
 
 kfclab's K8S orchestrators use in-cluster pod-identity auth by default (no
-kubeconfig needed — see `stores.tf`). Only set `k8s_server_password_file`
+kubeconfig needed; see `stores.tf`). Only set `k8s_server_password_file`
 for orchestrators without that RBAC binding.
 
 ## Running

@@ -38,7 +38,7 @@ func (r dataSourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Sche
 			"identity_type": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: "A string indicating the type of identity—User or Group.",
+				Description: "A string indicating the type of identity:User or Group.",
 			},
 			"valid": {
 				Type:        types.BoolType,

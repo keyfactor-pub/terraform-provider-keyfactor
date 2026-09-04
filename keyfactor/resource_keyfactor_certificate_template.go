@@ -44,7 +44,7 @@ func (m useStateOrNullModifier) Modify(_ context.Context, req tfsdk.ModifyAttrib
 	if req.AttributeConfig.IsUnknown() {
 		return
 	}
-	// When state is unknown, we have nothing useful — leave plan as-is.
+	// When state is unknown, we have nothing useful : leave plan as-is.
 	if req.AttributeState.IsUnknown() {
 		return
 	}
@@ -1614,10 +1614,10 @@ func (r resourceCertificateTemplate) Delete(
 	request tfsdk.DeleteResourceRequest,
 	response *tfsdk.DeleteResourceResponse,
 ) {
-	// Templates cannot be deleted via API — just remove from state.
+	// Templates cannot be deleted via API : just remove from state.
 	tflog.Info(
 		ctx,
-		"Delete called on certificate template — removing from state only. Templates must be removed from the CA directly.",
+		"Delete called on certificate template : removing from state only. Templates must be removed from the CA directly.",
 	)
 }
 

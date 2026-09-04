@@ -96,7 +96,7 @@ func TestUnitKeyfactorCertificateDeployResource(t *testing.T) {
 //
 // The cassette must capture a GetCertificateStoreByID response where all
 // InventorySchedule sub-fields (Immediate, Interval, Daily, ExactlyOnce) are
-// nil/absent. Use a K8SPKCS12 store for recording — it exhibits this behavior
+// nil/absent. Use a K8SPKCS12 store for recording : it exhibits this behavior
 // by default unless an inventory_schedule is explicitly configured.
 //
 // To record: RECORD_CASSETTES=1 go test -run TestUnitKeyfactorCertificateDeployResource_NoInvSchedule -v
@@ -110,7 +110,7 @@ func TestUnitKeyfactorCertificateDeployResource_NoInvSchedule(t *testing.T) {
 		client := testAccIntegrationPreCheck(t)
 		agentID, clientMachine := discoverAgent(t, client)
 
-		// Use K8SPKCS12 specifically — it requires a separate inventory job,
+		// Use K8SPKCS12 specifically : it requires a separate inventory job,
 		// so stores created without inventory_schedule trigger the warning path.
 		storeType := "K8SPKCS12"
 		if k8sStoreCredentials() == "" {
@@ -153,7 +153,7 @@ func TestUnitKeyfactorCertificateDeployResource_NoInvSchedule(t *testing.T) {
 	} else {
 		certConfig = testAccCertPFXConfig(params.TemplateName, params.CAName, params.CN)
 	}
-	// Store config without inventory_schedule — triggers the no-inv-schedule warning path.
+	// Store config without inventory_schedule : triggers the no-inv-schedule warning path.
 	storeConfig := testAccCertStoreConfig(params.StoreType, params.ClientMachine, params.AgentID, params.StorePath)
 	deployConfig := testAccCertDeployConfig("keyfactor_certificate.test", "keyfactor_certificate_store.test")
 
@@ -361,7 +361,7 @@ func TestIntKeyfactorCertificateDeployResource_BothPaths(t *testing.T) {
 				),
 			},
 			{
-				// Step 2: Add inventory_schedule — provider now polls validateDeployment.
+				// Step 2: Add inventory_schedule : provider now polls validateDeployment.
 				// Requires orchestrator online; times out at 10 minutes via AfterFunc above.
 				Config: certConfig + "\n" + storeConfigWithSchedule + "\n" + deployConfig,
 				Check: resource.ComposeAggregateTestCheckFunc(

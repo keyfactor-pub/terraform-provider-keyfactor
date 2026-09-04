@@ -10,7 +10,7 @@ Full-lifecycle smoke test for `keyfactor_template_role_binding`.
 ## Known lab constraint
 
 Some Command instances reject **any** template update with `"'Policies'
-cannot be empty"` (see `main.tf` header — the same gap surfaced
+cannot be empty"` (see `main.tf` header; the same gap surfaced
 independently by `certificate_template_demo/`). `apply` may fail here until
 that SDK/Command-API-version gap is addressed.
 

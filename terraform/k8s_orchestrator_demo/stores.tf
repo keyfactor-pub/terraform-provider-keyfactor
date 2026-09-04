@@ -26,14 +26,14 @@ locals {
 
 # ---------------------------------------------------------------------------
 # inventory_schedule caveat:
-# "immediate" is a one-shot trigger — Command removes the schedule once the
+# "immediate" is a one-shot trigger : Command removes the schedule once the
 # inventory job completes (or exhausts retries).  The next terraform plan
 # will show drift from "immediate" → empty/daily.  To avoid perpetual drift
 # after the first apply, set var.inventory_schedule = "Daily at HH:MM:SS".
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# K8STLSSecr — TLS secrets (certificate + private key in a tls-type secret)
+# K8STLSSecr : TLS secrets (certificate + private key in a tls-type secret)
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_store" "k8s_tls_secret" {
   client_machine     = local.client_machine
@@ -51,7 +51,7 @@ resource "keyfactor_certificate_store" "k8s_tls_secret" {
 }
 
 # ---------------------------------------------------------------------------
-# K8SSecret — Opaque secrets (PEM cert/key stored in opaque K8S secret)
+# K8SSecret : Opaque secrets (PEM cert/key stored in opaque K8S secret)
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_store" "k8s_opaque_secret" {
   client_machine     = local.client_machine
@@ -69,7 +69,7 @@ resource "keyfactor_certificate_store" "k8s_opaque_secret" {
 }
 
 # ---------------------------------------------------------------------------
-# K8SCert — Certificate-only secrets (public cert, no private key)
+# K8SCert : Certificate-only secrets (public cert, no private key)
 #
 # K8SCert's actual property set (GET /CertificateStoreTypes/102, confirmed
 # 2026-08-07) is ServerUsername/ServerPassword/ServerUseSsl/KubeSecretName --
@@ -93,7 +93,7 @@ resource "keyfactor_certificate_store" "k8s_cert" {
 }
 
 # ---------------------------------------------------------------------------
-# K8SJKS — Java KeyStore secrets
+# K8SJKS : Java KeyStore secrets
 #
 # PasswordIsK8SSecret/StorePasswordPath are DELIBERATELY NOT SET below.
 # This lab's k8s-orchestrator extension version does not define either
@@ -138,7 +138,7 @@ resource "kubernetes_secret" "jks_buddy_pwd" {
   }
 }
 
-# K8SJKS — "buddy" store at a distinct path. See header comment: this lab's
+# K8SJKS : "buddy" store at a distinct path. See header comment: this lab's
 # K8SJKS store type does not support PasswordIsK8SSecret/StorePasswordPath,
 # so this uses the same inline-password config as k8s_jks above rather than
 # actually referencing kubernetes_secret.jks_buddy_pwd.
@@ -161,7 +161,7 @@ resource "keyfactor_certificate_store" "k8s_jks_buddy" {
 }
 
 # ---------------------------------------------------------------------------
-# K8SPKCS12 — PKCS12 secrets
+# K8SPKCS12 : PKCS12 secrets
 # CertificateDataFieldName is required by Command (default ".p12" must be explicit).
 # PasswordIsK8SSecret/StorePasswordPath omitted for the same reason as K8SJKS above.
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ resource "kubernetes_secret" "pkcs12_buddy_pwd" {
   }
 }
 
-# K8SPKCS12 — "buddy" store at a distinct path; see k8s_jks_buddy comment above.
+# K8SPKCS12 : "buddy" store at a distinct path; see k8s_jks_buddy comment above.
 resource "keyfactor_certificate_store" "k8s_pkcs12_buddy" {
   depends_on         = [kubernetes_secret.pkcs12_buddy_pwd]
   client_machine     = local.client_machine
@@ -213,8 +213,8 @@ resource "keyfactor_certificate_store" "k8s_pkcs12_buddy" {
 }
 
 # ---------------------------------------------------------------------------
-# K8SNS — Namespace-scoped store (discovers all secrets in a namespace)
-# No KubeSecretType property — not supported by this store type.
+# K8SNS : Namespace-scoped store (discovers all secrets in a namespace)
+# No KubeSecretType property : not supported by this store type.
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_store" "k8s_ns" {
   client_machine     = local.client_machine
@@ -229,8 +229,8 @@ resource "keyfactor_certificate_store" "k8s_ns" {
 }
 
 # ---------------------------------------------------------------------------
-# K8SCluster — Cluster-wide store (discovers all secrets across all namespaces)
-# No KubeSecretType property — not supported by this store type.
+# K8SCluster : Cluster-wide store (discovers all secrets across all namespaces)
+# No KubeSecretType property : not supported by this store type.
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_store" "k8s_cluster" {
   client_machine     = local.client_machine

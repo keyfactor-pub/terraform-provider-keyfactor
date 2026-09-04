@@ -71,7 +71,7 @@ func testAccDataSourceKeyfactorCertificateBasic(resourceName string, id string, 
 }
 
 // ---------------------------------------------------------------------------
-// Unit tests (VCR cassettes — no lab required)
+// Unit tests (VCR cassettes : no lab required)
 // ---------------------------------------------------------------------------
 
 // TestUnitKeyfactorCertificateDataSource tests the certificate data source
@@ -82,7 +82,7 @@ func testAccDataSourceKeyfactorCertificateBasic(resourceName string, id string, 
 //	KEYFACTOR_CERTIFICATE_ID=<id> RECORD_CASSETTES=1 make testunit
 func TestUnitKeyfactorCertificateDataSource(t *testing.T) {
 	// The data source reads an existing cert. In recording mode, first create one
-	// to get a stable ID, then read it back — just like TestIntKeyfactorCertificateDataSource.
+	// to get a stable ID, then read it back : just like TestIntKeyfactorCertificateDataSource.
 	// In replay mode, use the cert resource + data source combo config so the cassette
 	// interactions match (certificate ID is resolved via the resource reference).
 	resourceName := "data.keyfactor_certificate.test"

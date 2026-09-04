@@ -14,7 +14,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Unit tests — keyfactor_certificate_template Update() resetting fields
+// Unit tests : keyfactor_certificate_template Update() resetting fields
 // besides allowed_requesters.
 //
 // Live repro (provider fix/harness-bugs @ 51f4dc1 -> kfclab, Command 25.5):

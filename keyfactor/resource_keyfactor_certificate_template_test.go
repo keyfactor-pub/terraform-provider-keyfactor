@@ -13,7 +13,7 @@ import (
 // ---------------------------------------------------------------------------
 // Integration tests
 //
-// Templates cannot be created via API — they are imported from the CA.
+// Templates cannot be created via API : they are imported from the CA.
 // These tests discover an existing template and exercise import + update.
 // ---------------------------------------------------------------------------
 
@@ -83,7 +83,7 @@ func TestIntKeyfactorCertificateTemplateResourceUpdate(t *testing.T) {
 			CheckDestroy:             nil, // delete is a no-op
 			Steps: []resource.TestStep{
 				{
-					// Step 1: import — persist state so Step 2 sees an existing resource
+					// Step 1: import : persist state so Step 2 sees an existing resource
 					Config:             testAccCertificateTemplateImportConfig(),
 					ResourceName:       resourceName,
 					ImportState:        true,
@@ -203,7 +203,7 @@ func TestUnitKeyfactorCertificateTemplateResource_Update(t *testing.T) {
 			CheckDestroy:             nil,
 			Steps: []resource.TestStep{
 				{
-					// Step 1: import — persist state so Step 2 sees an existing resource
+					// Step 1: import : persist state so Step 2 sees an existing resource
 					Config:             testAccCertificateTemplateImportConfig(),
 					ResourceName:       resourceName,
 					ImportState:        true,

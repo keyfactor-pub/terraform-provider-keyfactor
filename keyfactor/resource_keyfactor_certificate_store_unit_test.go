@@ -51,7 +51,7 @@ func newContainerLookupClient(server *httptest.Server) *api.Client {
 // GetStoreContainers(), which is paginated server-side (default 50/page). A
 // container created earlier in the same apply may not appear on the first
 // page, causing the resolver to return "" and silently null out
-// application_name/container_name in state — disagreeing with the plan.
+// application_name/container_name in state : disagreeing with the plan.
 //
 // This test runs against an httptest server that returns an EMPTY list from
 // the paginated endpoint while serving the just-created container only via
@@ -169,11 +169,11 @@ func TestUnitLookupContainerNameByID_ListEndpointFallback(t *testing.T) {
 // UpdateStoreFctArgs.ContainerId is `json:"ContainerId,omitempty"` and
 // intToPointer(0) returns nil, containerId==0 is dropped from the PUT body
 // entirely, and Command interprets the omitted field as "clear the
-// assignment" — deleting a real, live assignment out from under the user.
+// assignment" : deleting a real, live assignment out from under the user.
 //
 // This test constructs a plan/state pair matching that exact scenario
 // (config never declares application_name/container_name; state shows a real
-// nonzero container_id — e.g. from a container assigned out-of-band) and
+// nonzero container_id : e.g. from a container assigned out-of-band) and
 // calls resolveContainerAssignmentForUpdate directly. No network is
 // required: the "preserve" branch this test exercises never calls the API
 // client when state already has a resolved name.
@@ -196,7 +196,7 @@ func TestUnitCertificateStoreUpdate_PreservesContainerAssignmentWhenNameNotDecla
 	}
 	if containerId != 500 {
 		t.Fatalf(
-			"expected containerId to be preserved from state (500) when plan declares no application_name/container_name, got %d — "+
+			"expected containerId to be preserved from state (500) when plan declares no application_name/container_name, got %d : "+
 				"this reproduces the bug: Update() would omit ContainerId from the PUT body, and Command would clear the assignment",
 			containerId,
 		)
@@ -209,7 +209,7 @@ func TestUnitCertificateStoreUpdate_PreservesContainerAssignmentWhenNameNotDecla
 // TestUnitCertificateStoreUpdate_NoPreservationNeededWhenNeverAssigned covers
 // the companion case: if the store never had a container/application
 // assignment (state.ContainerID == 0) and the plan still declares none, there
-// is nothing to preserve — containerId must resolve to 0 as before, and no
+// is nothing to preserve : containerId must resolve to 0 as before, and no
 // warning-worthy "preserving an assignment" behavior should be inferred.
 func TestUnitCertificateStoreUpdate_NoPreservationNeededWhenNeverAssigned(t *testing.T) {
 	r := resourceCertificateStore{p: provider{}}
@@ -239,7 +239,7 @@ func TestUnitCertificateStoreUpdate_NoPreservationNeededWhenNeverAssigned(t *tes
 // never .IsNull(), so it collapses "the attribute was never declared" and
 // "the attribute was explicitly set to \"\"" into the same nameIsNull=true
 // signal. The preservation logic must NOT treat an explicit
-// application_name = "" (or container_name = "") as "never declared" — that
+// application_name = "" (or container_name = "") as "never declared" : that
 // is a deliberate user instruction to clear the assignment, and must still
 // resolve containerId to 0 exactly as it did before the preservation fix above.
 func TestUnitCertificateStoreUpdate_ExplicitEmptyNameClearsAssignment(t *testing.T) {
@@ -250,7 +250,7 @@ func TestUnitCertificateStoreUpdate_ExplicitEmptyNameClearsAssignment(t *testing
 		ContainerName:   types.String{Value: "existing-app", Null: false},
 		ApplicationName: types.String{Value: "existing-app", Null: false},
 	}
-	// The user explicitly set application_name = "" in config — a known,
+	// The user explicitly set application_name = "" in config : a known,
 	// non-null (empty) value, NOT an undeclared attribute. container_name is
 	// left undeclared (null); application_name still wins per
 	// effectiveContainerName()'s precedence, but either field being
@@ -266,7 +266,7 @@ func TestUnitCertificateStoreUpdate_ExplicitEmptyNameClearsAssignment(t *testing
 	}
 	if containerId != 0 {
 		t.Fatalf(
-			"expected containerId 0 when application_name is explicitly cleared to \"\", got %d — "+
+			"expected containerId 0 when application_name is explicitly cleared to \"\", got %d : "+
 				"an explicit clear was incorrectly treated as \"never declared\" and the existing assignment was preserved instead of cleared",
 			containerId,
 		)
@@ -280,9 +280,9 @@ func TestUnitCertificateStoreUpdate_ExplicitEmptyNameClearsAssignment(t *testing
 // regression test for a second bug caught in code review: when
 // resolveContainerAssignmentForUpdate preserves a real container_id from
 // state but cannot resolve its name (neither state nor a fresh API lookup
-// has it — the exact scenario that arises on the very first Read() after
+// has it : the exact scenario that arises on the very first Read() after
 // an out-of-band assignment), the outgoing UpdateStoreFctArgs must never pair
-// a nonzero ContainerId with a literal empty-string ContainerName — an
+// a nonzero ContainerId with a literal empty-string ContainerName : an
 // untested combination whose handling by Command's UpdateStore endpoint is
 // unverified. containerNameArgPointer must omit ContainerName (nil, dropped
 // by `omitempty`) in that case, while still preserving the long-standing,
@@ -338,8 +338,8 @@ func TestUnitContainerNameArgPointer_NeverPairsNonzeroIdWithEmptyName(t *testing
 }
 
 // TestUnitCertificateStoreUpdate_PreservedAssignmentNeverPairsWithEmptyName
-// combines resolveContainerAssignmentForUpdate and containerNameArgPointer —
-// the same two steps Update() performs — to directly assert the exact
+// combines resolveContainerAssignmentForUpdate and containerNameArgPointer :
+// the same two steps Update() performs : to directly assert the exact
 // outgoing request shape code review flagged: preserving a real container_id
 // whose name cannot be resolved (client is nil here, so both the by-ID and
 // list-endpoint lookups inside lookupContainerNameByID no-op and return "")
@@ -371,7 +371,7 @@ func TestUnitCertificateStoreUpdate_PreservedAssignmentNeverPairsWithEmptyName(t
 	namePtr := containerNameArgPointer(containerId, effectiveName)
 	if containerId != 0 && namePtr != nil {
 		t.Fatalf(
-			"never send a nonzero ContainerId (%d) paired with a literal empty ContainerName — got pointer to %q; "+
+			"never send a nonzero ContainerId (%d) paired with a literal empty ContainerName : got pointer to %q; "+
 				"ContainerName must be omitted (nil) instead",
 			containerId,
 			*namePtr,

@@ -30,12 +30,12 @@ variable "inventory_schedule" {
     Inventory schedule applied to all K8S certificate stores.
 
     Accepted formats:
-      "immediate"          — trigger inventory on next orchestrator check-in (one-shot)
-      "Nm"                 — every N minutes (e.g. "30m")
-      "Nh"                 — every N hours, N < 24 (e.g. "6h")
-      "Daily at HH:MM:SS"  — once per day at the specified UTC time (e.g. "Daily at 12:00:00")
+      "immediate"          : trigger inventory on next orchestrator check-in (one-shot)
+      "Nm"                 : every N minutes (e.g. "30m")
+      "Nh"                 : every N hours, N < 24 (e.g. "6h")
+      "Daily at HH:MM:SS"  : once per day at the specified UTC time (e.g. "Daily at 12:00:00")
 
-    CAVEAT — "immediate" drift: Command treats "immediate" as a one-shot trigger.
+    CAVEAT : "immediate" drift: Command treats "immediate" as a one-shot trigger.
     Once the inventory job runs successfully (or exhausts retries) Command removes the
     schedule, so the next `terraform plan` will show the store drifting from "immediate"
     to an empty/daily schedule. This is expected behaviour.  Use a persistent schedule

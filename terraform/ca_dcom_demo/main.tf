@@ -10,7 +10,7 @@ terraform {
 provider "keyfactor" {}
 
 # ---------------------------------------------------------------------------
-# keyfactor_certificate_authority — DCOM (ca_type=0) record-only demo.
+# keyfactor_certificate_authority : DCOM (ca_type=0) record-only demo.
 #
 # This is a RECORD-ONLY registration for a fictitious Windows/DCOM CA -- it
 # never points at a real, reachable AD CS server. The provider itself does

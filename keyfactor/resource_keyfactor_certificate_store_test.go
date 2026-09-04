@@ -157,7 +157,7 @@ resource "keyfactor_certificate_store" "tf_k8s_acc_test" {
 }
 
 // ---------------------------------------------------------------------------
-// Unit tests (VCR cassettes — no lab required)
+// Unit tests (VCR cassettes : no lab required)
 // ---------------------------------------------------------------------------
 
 // TestUnitKeyfactorCertificateStoreResource tests the full create/read/destroy
@@ -351,7 +351,7 @@ func TestUnitKeyfactorCertificateStoreResource_Import_StoresPrefix(t *testing.T)
 	var storeType, clientMachine, agentID, storePath string
 
 	if os.Getenv("RECORD_CASSETTES") == "1" {
-		t.Skip("This test reuses the existing certificate_store_resource_import cassette — record via TestUnitKeyfactorCertificateStoreResource_Import")
+		t.Skip("This test reuses the existing certificate_store_resource_import cassette : record via TestUnitKeyfactorCertificateStoreResource_Import")
 	}
 	params := readStoreTestParams(cassettePath)
 	storeType = params.StoreType
@@ -377,7 +377,7 @@ func TestUnitKeyfactorCertificateStoreResource_Import_StoresPrefix(t *testing.T)
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: false,
-				// Prepend "stores/" to the GUID — should resolve identically to a bare GUID.
+				// Prepend "stores/" to the GUID : should resolve identically to a bare GUID.
 				ImportStateIdFunc: func(s *terraform.State) (string, error) {
 					rs, ok := s.RootModule().Resources[resourceName]
 					if !ok {
@@ -443,7 +443,7 @@ func TestUnitKeyfactorCertificateStoreResource_Import_ContainersPath(t *testing.
 		containerName = params.ContainerName
 		containerID = params.ContainerID
 		if containerName == "" || containerID == 0 {
-			t.Skip("cassette params missing container info — record cassette first")
+			t.Skip("cassette params missing container info : record cassette first")
 		}
 	}
 
@@ -526,7 +526,7 @@ func TestUnitKeyfactorCertificateStoreResource_Import_BadFormat(t *testing.T) {
 // application_name and container_name must be synced in state.
 //
 // This test uses the existing "certificate_store_resource" cassette which was
-// recorded WITHOUT a container — it validates the null/null sync case. A
+// recorded WITHOUT a container : it validates the null/null sync case. A
 // separate cassette "certificate_store_resource_application_name" is needed for
 // the non-null case; in replay mode the test skips if that cassette is missing.
 //
@@ -732,7 +732,7 @@ func TestIntKeyfactorCertificateStoreResource_ApplicationName(t *testing.T) {
 
 	containerName := discoverApplication(t, client)
 	if containerName == "" {
-		t.Skip("No application/container available in the lab — cannot test application_name")
+		t.Skip("No application/container available in the lab : cannot test application_name")
 	}
 
 	storePath := fmt.Sprintf("default/tf-int-appname-%d", time.Now().UnixNano())
@@ -778,7 +778,7 @@ func TestIntKeyfactorCertificateStoreResource_ContainerNameBackwardsCompat(t *te
 
 	containerName := discoverApplication(t, client)
 	if containerName == "" {
-		t.Skip("No application/container available in the lab — cannot test container_name backwards compat")
+		t.Skip("No application/container available in the lab : cannot test container_name backwards compat")
 	}
 
 	storePath := fmt.Sprintf("default/tf-int-container-%d", time.Now().UnixNano())
@@ -809,7 +809,7 @@ func TestIntKeyfactorCertificateStoreResource_ContainerNameBackwardsCompat(t *te
 // path uses GetCertificateStoreByContainerID instead of GetCertificateStoreByID.
 //
 // This test creates its own keyfactor_application (container) so it does not
-// depend on the lab having a pre-existing container — and so it does not
+// depend on the lab having a pre-existing container : and so it does not
 // accidentally bind to a leftover artifact from a previous test run.
 func TestIntKeyfactorCertificateStoreResource_Import_ViaContainer(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)

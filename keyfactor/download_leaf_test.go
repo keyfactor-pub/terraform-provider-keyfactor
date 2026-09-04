@@ -3,13 +3,13 @@ package keyfactor
 // Regression tests for the P7B/PFX chain-ordering bug (reported against v2.7.1).
 // When Certificates/Download returns a root-first P7B, or Certificates/Recover
 // returns a PFX with certs ordered CA-before-leaf, the provider was returning the
-// root CA as the leaf — causing forced replacement on every terraform plan.
+// root CA as the leaf : causing forced replacement on every terraform plan.
 //
 // Fixed in:
 //   - keyfactor-go-client v3.5.2+: findLeafCert() (P7B path)
 //   - go-pkcs12 v0.4.0: localKeyID matching in DecodeChain (PFX path)
 //
-// Tests here use in-process mock HTTPS servers and Go crypto — no lab required.
+// Tests here use in-process mock HTTPS servers and Go crypto : no lab required.
 //
 // Run with:
 //
@@ -173,7 +173,7 @@ func assertLeaf(t *testing.T, leafPEM string) {
 		t.Fatalf("parse returned cert: %v", err)
 	}
 	if cert.IsCA {
-		t.Errorf("BUG: returned cert is a CA (CN=%q IsCA=true) — leaf selection is broken", cert.Subject.CommonName)
+		t.Errorf("BUG: returned cert is a CA (CN=%q IsCA=true) : leaf selection is broken", cert.Subject.CommonName)
 	}
 	if cert.Subject.CommonName != "leaf.example.com" {
 		t.Errorf("returned cert CN=%q, want %q", cert.Subject.CommonName, "leaf.example.com")
@@ -185,7 +185,7 @@ func assertLeaf(t *testing.T, leafPEM string) {
 // the end-entity leaf from a root-first two-cert chain (root + leaf).
 func TestLeafSelectionP7B_TwoChain(t *testing.T) {
 	root, _, leaf, _ := buildChain(t, false)
-	p7b64 := buildRootFirstP7B(t, root, leaf) // root first — bug trigger
+	p7b64 := buildRootFirstP7B(t, root, leaf) // root first : bug trigger
 
 	body, _ := json.Marshal(map[string]string{"Content": p7b64})
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +208,7 @@ func TestLeafSelectionP7B_TwoChain(t *testing.T) {
 // matching the DigiCert PKIaaS chain topology that triggered the customer bug.
 func TestLeafSelectionP7B_ThreeChain(t *testing.T) {
 	root, intermediate, leaf, _ := buildChain(t, true)
-	p7b64 := buildRootFirstP7B(t, root, intermediate, leaf) // root first — bug trigger
+	p7b64 := buildRootFirstP7B(t, root, intermediate, leaf) // root first : bug trigger
 
 	body, _ := json.Marshal(map[string]string{"Content": p7b64})
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -244,7 +244,7 @@ func TestLeafSelectionPFX(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.Contains(r.URL.Path, "Download") {
-			t.Errorf("Download endpoint called — Recover should have succeeded")
+			t.Errorf("Download endpoint called : Recover should have succeeded")
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}

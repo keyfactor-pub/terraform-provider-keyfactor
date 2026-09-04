@@ -17,7 +17,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Unit tests — keyfactor_certificate_template Update() dropping
+// Unit tests : keyfactor_certificate_template Update() dropping
 // allowed_requesters.
 //
 // Live repro: a keyfactor_certificate_template

@@ -126,30 +126,30 @@ func (m privateKeyPlanModifier) Modify(ctx context.Context, req tfsdk.ModifyAttr
 	// can populate (or clear) private_key as appropriate for the new format.
 	if configOk && stateOk {
 		if effectiveCertificateFormat(config.CertificateFormat.Value) != effectiveCertificateFormat(state.CertificateFormat.Value) {
-			return // leave Unknown — format is changing
+			return // leave Unknown : format is changing
 		}
 	}
 
-	// State has a known value — preserve it.
+	// State has a known value : preserve it.
 	if !req.AttributeState.IsNull() {
 		resp.AttributePlan = req.AttributeState
 		return
 	}
 	// State is null (e.g. first plan after import). If key_password is set in
-	// the config, recovery is possible in Update — leave plan as Unknown.
+	// the config, recovery is possible in Update : leave plan as Unknown.
 	if configOk {
 		if !config.KeyPassword.IsNull() && !config.KeyPassword.Unknown && config.KeyPassword.Value != "" {
-			return // leave plan Unknown — Update will attempt recovery
+			return // leave plan Unknown : Update will attempt recovery
 		}
 	}
 	// Also allow recovery if enrollment_password is already in state (prior
 	// enrollment with auto-generated password).
 	if stateOk {
 		if !state.EnrollmentPassword.IsNull() && state.EnrollmentPassword.Value != "" {
-			return // leave plan Unknown — Update can use enrollment_password
+			return // leave plan Unknown : Update can use enrollment_password
 		}
 	}
-	// No recovery path available — resolve to null.
+	// No recovery path available : resolve to null.
 	resp.AttributePlan = req.AttributeState
 }
 
@@ -195,9 +195,9 @@ func (m formatDependentModifier) Modify(ctx context.Context, req tfsdk.ModifyAtt
 		return
 	}
 	if effectiveCertificateFormat(config.CertificateFormat.Value) != effectiveCertificateFormat(state.CertificateFormat.Value) {
-		return // leave Unknown — format is changing, value will differ
+		return // leave Unknown : format is changing, value will differ
 	}
-	// Format is stable — preserve state (or null if state is null).
+	// Format is stable : preserve state (or null if state is null).
 	resp.AttributePlan = req.AttributeState
 }
 
@@ -436,8 +436,8 @@ Expanded Change Owner Permission: A user who holds the Certificates > Expanded C
 
 Collections > Change Owner Permission:
 
-Global or Collection Level—No Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can set the certificate owner to any role they belong to if there is not a default value populated from the enrollment pattern or existing certificate on a renewal.
-Global or Collection Level—Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can change the default certificate owner to any role they belong to. If the default value populated from the enrollment pattern or existing certificate on a renewal is not a role held by the acting user, the this value will not be populated in the Certificate Owner Role field. The user will still be allowed to add a new owner value.
+Global or Collection Level:No Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can set the certificate owner to any role they belong to if there is not a default value populated from the enrollment pattern or existing certificate on a renewal.
+Global or Collection Level:Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can change the default certificate owner to any role they belong to. If the default value populated from the enrollment pattern or existing certificate on a renewal is not a role held by the acting user, the this value will not be populated in the Certificate Owner Role field. The user will still be allowed to add a new owner value.
 Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is required, not both. A certificate owner is required if the enrollment pattern or system-wide settings Certificate Owner Role policy has been configured as Required.
 
 **Important:** Only compatible with Keyfactor Command versions v12.3.0 and later.
@@ -1992,9 +1992,9 @@ func (r resourceCommandCertificate) Update(
 		// populated on the first reconcile apply after import.
 		//
 		// If recovery fails (e.g. key is not archived in Command) we simply
-		// store null — the plan was Unknown so either outcome is valid and no
+		// store null : the plan was Unknown so either outcome is valid and no
 		// "inconsistent result" error is raised.
-		// Only attempt key recovery when the effective format is PEM — for PFX/JKS/ZIP
+		// Only attempt key recovery when the effective format is PEM : for PFX/JKS/ZIP
 		// the private key is embedded in the binary blob; private_key must stay null.
 		if plan.PrivateKey.Unknown && certGetResp != nil && certGetResp.HasPrivateKey &&
 			effectivePlanFmt == "PEM" {
@@ -2867,7 +2867,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 
 	} else if !plan.CertificateTemplate.IsNull() && plan.CertificateTemplate.Value != "" {
 		// No enrollment pattern specified but a template was given.  On v25+
-		// Command servers require an enrollment pattern — look up the default
+		// Command servers require an enrollment pattern : look up the default
 		// one for this template. On pre-v25 servers this returns (0, nil) and
 		// enrollment proceeds with the template name alone.
 		var epErr error
@@ -2926,7 +2926,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		},
 	}
 	if !plan.KeyType.Null && !plan.KeyType.Unknown && plan.KeyType.Value != "" {
-		// Normalize "ECDSA" → "ECC" — the Command API only accepts "ECC".
+		// Normalize "ECDSA" → "ECC" : the Command API only accepts "ECC".
 		kt := plan.KeyType.Value
 		if strings.EqualFold(kt, "ECDSA") {
 			kt = "ECC"
@@ -3312,10 +3312,10 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		if pfxErr != nil {
 			// If the PKCS#12 contains a key algorithm unsupported by Go's pkcs12/x509
 			// libraries (e.g. Ed448, OID 1.3.101.113), private key extraction is not
-			// possible at all — skip it and fall back to a PEM download for cert data.
+			// possible at all : skip it and fall back to a PEM download for cert data.
 			if strings.Contains(pfxErr.Error(), "unknown algorithm") {
 				tflog.Warn(ctx, fmt.Sprintf(
-					"Cannot extract private key from PFX for certificate %d — unsupported algorithm: %v",
+					"Cannot extract private key from PFX for certificate %d : unsupported algorithm: %v",
 					enrolledId, pfxErr,
 				))
 				leafPEM, chainPEM, _, _ = downloadCertificateFromKeyfactorCommand(ctx, enrolledId, collectionIdInt, r.p.client)
@@ -3497,9 +3497,9 @@ func resolveTemplateIDByName(ctx context.Context, client *api.Client, templateNa
 // LookupEnrollmentPatternIDByTemplateName finds the enrollment pattern for the
 // given template short name. The resolution policy is:
 //
-//   - 0 matches → return (0, nil) — fall through to direct template enrollment
+//   - 0 matches → return (0, nil) : fall through to direct template enrollment
 //     (pre-v25 / standalone CA).
-//   - 1 match → return that pattern's ID — unambiguous.
+//   - 1 match → return that pattern's ID : unambiguous.
 //   - 2+ matches, exactly one has TemplateDefault=true → return the default's ID.
 //   - 2+ matches, zero or 2+ have TemplateDefault=true → return an error so the
 //     user must set certificate_enrollment_pattern explicitly.
@@ -3510,7 +3510,7 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByTemplateName(
 	tflog.Debug(ctx, fmt.Sprintf("Looking up default enrollment pattern for template: %s", templateName))
 	patterns, err := r.p.client.GetEnrollmentPatterns()
 	if err != nil {
-		// Pre-v25 servers may return 404/501 — treat as "not found" and fall through.
+		// Pre-v25 servers may return 404/501 : treat as "not found" and fall through.
 		tflog.Warn(ctx, fmt.Sprintf("Could not list enrollment patterns (may be pre-v25): %s", err.Error()))
 		return 0, nil
 	}
@@ -3543,7 +3543,7 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByTemplateName(
 		))
 		return matches[0].id, nil
 	default:
-		// 2+ matches — look for a unique default.
+		// 2+ matches : look for a unique default.
 		var defaults []match
 		for _, m := range matches {
 			if m.templateDefault {
@@ -3764,7 +3764,7 @@ func (r resourceCommandCertificate) enrollCSR(
 
 	} else if !plan.CertificateTemplate.IsNull() && plan.CertificateTemplate.Value != "" {
 		// No enrollment pattern specified but a template was given.  On v25+
-		// Command servers require an enrollment pattern — look up the default
+		// Command servers require an enrollment pattern : look up the default
 		// one for this template. On pre-v25 servers this returns (0, nil) and
 		// enrollment proceeds with the template name alone.
 		var epErr error

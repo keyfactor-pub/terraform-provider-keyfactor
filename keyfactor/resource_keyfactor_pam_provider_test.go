@@ -46,7 +46,7 @@ func TestIntKeyfactorPAMProviderResource(t *testing.T) {
 				),
 			},
 			{
-				// Import by integer ID — param_values are write-only and cannot be recovered
+				// Import by integer ID : param_values are write-only and cannot be recovered
 				ResourceName:            "keyfactor_pam_provider.test",
 				ImportState:             true,
 				ImportStateVerify:       true,

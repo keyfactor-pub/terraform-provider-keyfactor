@@ -574,7 +574,7 @@ func TestIntKeyfactorCertificateResource_PFX(t *testing.T) {
 	cn := randomTestCN("tf-int-pfx")
 
 	// Try enrollment pattern first (Command v25+), fall back to template+CA.
-	// On v25+ labs, omit certificate_authority — the enrollment pattern
+	// On v25+ labs, omit certificate_authority : the enrollment pattern
 	// auto-selects the CA and avoids permission errors.
 	enrollmentPattern := discoverEnrollmentPattern(t, client)
 	var config string
@@ -628,7 +628,7 @@ func TestIntKeyfactorCertificateResource_PFX_TemplateOnly(t *testing.T) {
 		t.Skip("skipping template-only auto-lookup test: no enrollment patterns available (pre-v25 lab)")
 	}
 
-	// Get the template linked to the default enrollment pattern — this is the
+	// Get the template linked to the default enrollment pattern : this is the
 	// template we'll pass to the provider and expect it to auto-resolve.
 	templateName := discoverEnrollmentPatternTemplate(t, client, enrollmentPattern)
 	cn := randomTestCN("tf-int-pfx-tplonly")
@@ -704,7 +704,7 @@ func checkFormatFields(format string, hasPrivateKey bool, originalID *string) re
 		for _, f := range pemFields {
 			checks = append(checks, resource.TestCheckNoResourceAttr(res, f))
 		}
-		// private_key must be null for binary formats — the key is embedded in the blob.
+		// private_key must be null for binary formats : the key is embedded in the blob.
 		// Regression: post-import recovery block was overwriting the null set by the
 		// format-change block, causing private_key to leak into state for PFX/JKS/ZIP.
 		checks = append(checks, resource.TestCheckNoResourceAttr(res, "private_key"))
@@ -994,7 +994,7 @@ resource "keyfactor_certificate" "test" {
 }
 
 // ---------------------------------------------------------------------------
-// Unit tests (VCR cassettes — no lab required)
+// Unit tests (VCR cassettes : no lab required)
 // ---------------------------------------------------------------------------
 
 // TestUnitKeyfactorCertificateResource_BothTemplateAndPattern verifies that
@@ -1054,7 +1054,7 @@ func TestUnitKeyfactorCertificateResource_BothTemplateAndPattern(t *testing.T) {
 
 // TestUnitKeyfactorCertificateResource_NeitherTemplateNorPattern verifies that
 // specifying neither certificate_template nor certificate_enrollment_pattern
-// is rejected by the provider validation. No cassette needed — validation
+// is rejected by the provider validation. No cassette needed : validation
 // runs before any API calls. (Fixes #146)
 func TestUnitKeyfactorCertificateResource_NeitherTemplateNorPattern(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
@@ -1077,7 +1077,7 @@ resource "keyfactor_certificate" "test" {
 // TestUnitKeyfactorCertificateResource_FormatChange verifies that changing
 // certificate_format does NOT force resource recreation and that the correct
 // format-specific fields are populated for each format. (VCR version of
-// TestIntKeyfactorCertificateResource_FormatChange — Fixes #150)
+// TestIntKeyfactorCertificateResource_FormatChange : Fixes #150)
 //
 // Test flow: default → PEM → default
 //
@@ -1146,7 +1146,7 @@ func TestUnitKeyfactorCertificateResource_FormatChange(t *testing.T) {
 				Config: certFormatConfig(enrollmentPattern, templateName, ca, cn, "PEM"),
 				Check:  checkFormatFields("PEM", true, &originalID),
 			},
-			// Step 3: PEM → PFX — regression for "provider produced inconsistent
+			// Step 3: PEM → PFX : regression for "provider produced inconsistent
 			// result" bug: plan modifiers locked in old PEM state values while
 			// Update correctly nulled them out for the new format.
 			{
@@ -1180,7 +1180,7 @@ func TestUnitKeyfactorCertificateResource_FormatChange(t *testing.T) {
 // TestUnitKeyfactorCertificateResource_FormatChange_CSR verifies format changes
 // for a CSR-enrolled certificate (no private key stored in Command).
 //
-// Unlike PFX enrollment, CSR certs never have HasPrivateKey=true — private_key
+// Unlike PFX enrollment, CSR certs never have HasPrivateKey=true : private_key
 // must be null for every format. This is the "no private key" counterpart to
 // TestUnitKeyfactorCertificateResource_FormatChange.
 //
@@ -1223,7 +1223,7 @@ func TestUnitKeyfactorCertificateResource_FormatChange_CSR(t *testing.T) {
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
-			// Step 1: default format — cert_pem set, private_key always null for CSR
+			// Step 1: default format : cert_pem set, private_key always null for CSR
 			{
 				Config: testAccCertCSRConfigWithFormat(enrollmentPattern, templateName, ca, csrPEM, ""),
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -1232,7 +1232,7 @@ func TestUnitKeyfactorCertificateResource_FormatChange_CSR(t *testing.T) {
 					checkFormatFields("", false, &originalID),
 				),
 			},
-			// Step 2: explicit PEM — private_key still null (no archived key)
+			// Step 2: explicit PEM : private_key still null (no archived key)
 			{
 				Config: testAccCertCSRConfigWithFormat(enrollmentPattern, templateName, ca, csrPEM, "PEM"),
 				Check:  checkFormatFields("PEM", false, &originalID),
@@ -1428,7 +1428,7 @@ func TestUnitKeyfactorCertificateResource_PFX_PrivateKeyRead(t *testing.T) {
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				// Step 1: create — private_key populated from enrollment response.
+				// Step 1: create : private_key populated from enrollment response.
 				Config: config,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "thumbprint"),
@@ -1494,7 +1494,7 @@ func TestUnitKeyfactorCertificateResource_CSR(t *testing.T) {
 	defer cleanup()
 
 	// Derive the expected CN from the stored CSR to assert the downloaded cert is the
-	// enrolled end-entity — regression guard for the P7B chain ordering bug.
+	// enrolled end-entity : regression guard for the P7B chain ordering bug.
 	csrParams := readCertCSRTestParams(cassettePath)
 	enrolledCN := parseCNFromCSRPEM(csrParams.CSRPem)
 
@@ -1524,7 +1524,7 @@ func TestUnitKeyfactorCertificateResource_CSR(t *testing.T) {
 // TestUnitKeyfactorCertificateResource_CSR_CRLFNormalization is a regression test
 // for normalizePEMLineEndings in the CSR enrollment path. It uses a fabricated
 // cassette (certificate_resource_csr_crlf) in which the server's Certificates
-// response bodies contain \r\n line endings inside PEM blocks — as can occur with
+// response bodies contain \r\n line endings inside PEM blocks : as can occur with
 // Windows-hosted Command instances. The test asserts that the provider strips \r
 // before storing certificate_pem, ca_certificate, and certificate_chain in state.
 //
@@ -1533,7 +1533,7 @@ func TestUnitKeyfactorCertificateResource_CSR(t *testing.T) {
 //	go test ./keyfactor -run TestUnitKeyfactorCertificateResource_CSR_CRLFNormalization -timeout 5m -v
 func TestUnitKeyfactorCertificateResource_CSR_CRLFNormalization(t *testing.T) {
 	cassettePath := filepath.Join("testdata", "cassettes", "certificate_resource_csr_crlf")
-	// Always replay — cassette is fabricated from certificate_resource_csr.yaml with
+	// Always replay : cassette is fabricated from certificate_resource_csr.yaml with
 	// \r\n injected into PEM blocks; never recorded against a live server.
 	params := readCertCSRTestParams(cassettePath)
 	csr := params.CSRPem
@@ -1595,7 +1595,7 @@ func TestUnitKeyfactorCertificateResource_PFX_NoCA(t *testing.T) {
 		client := newTestClient(t)
 		enrollmentPattern := discoverEnrollmentPattern(t, client)
 		if enrollmentPattern == "" {
-			t.Skip("no enrollment pattern available — cannot record no-CA cassette")
+			t.Skip("no enrollment pattern available : cannot record no-CA cassette")
 		}
 		cn := randomTestCN("tf-unit-pfx-noca")
 		config = testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn)
@@ -1606,7 +1606,7 @@ func TestUnitKeyfactorCertificateResource_PFX_NoCA(t *testing.T) {
 	} else {
 		params := readCertPFXTestParams(cassettePath)
 		if params.EnrollmentPattern == "" {
-			t.Skip("no enrollment pattern in params — cassette not recorded for no-CA test")
+			t.Skip("no enrollment pattern in params : cassette not recorded for no-CA test")
 		}
 		config = testAccCertPFXConfigEnrollmentPatternNoCA(params.EnrollmentPattern, params.CN)
 	}
@@ -1659,7 +1659,7 @@ func TestUnitKeyfactorCertificateResource_CSR_NoCA(t *testing.T) {
 		client := newTestClient(t)
 		enrollmentPattern := discoverEnrollmentPattern(t, client)
 		if enrollmentPattern == "" {
-			t.Skip("no enrollment pattern available — cannot record no-CA cassette")
+			t.Skip("no enrollment pattern available : cannot record no-CA cassette")
 		}
 		cn := randomTestCN("tf-unit-csr-noca")
 		csr := generateSimpleCSR(t, cn)
@@ -1671,7 +1671,7 @@ func TestUnitKeyfactorCertificateResource_CSR_NoCA(t *testing.T) {
 	} else {
 		params := readCertCSRTestParams(cassettePath)
 		if params.EnrollmentPattern == "" {
-			t.Skip("no enrollment pattern in params — cassette not recorded for no-CA test")
+			t.Skip("no enrollment pattern in params : cassette not recorded for no-CA test")
 		}
 		csr := params.CSRPem
 		if csr == "" {
@@ -1857,10 +1857,10 @@ func TestUnitKeyfactorCertificateResource_CSR_Import(t *testing.T) {
 //
 // The bug lives in the Read path (DownloadCertificate returns certs[0] as leaf,
 // but certs[0] is the CA when the P7B is root-first). The Create path is
-// unaffected — it uses the enrollment response's Certificates[0], which is
+// unaffected : it uses the enrollment response's Certificates[0], which is
 // always the correct leaf. To exercise the Read path we use a two-step test:
-//   - Step 1: Create (no checks — enrollment state is correct regardless)
-//   - Step 2: RefreshState — triggers ReadResource, which calls
+//   - Step 1: Create (no checks : enrollment state is correct regardless)
+//   - Step 2: RefreshState : triggers ReadResource, which calls
 //     DownloadCertificate. The testCheckCertPEMIsLeaf check then runs against
 //     the refreshed state and FAILS with the bug / PASSES after the fix.
 func TestUnitKeyfactorCertificateResource_CSR_RootFirstChain(t *testing.T) {
@@ -1871,7 +1871,7 @@ func TestUnitKeyfactorCertificateResource_CSR_RootFirstChain(t *testing.T) {
 	cassetteName := "certificate_resource_csr_rootfirst"
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
 
-	// Always regenerate the synthetic cassette — it is built from Go crypto,
+	// Always regenerate the synthetic cassette : it is built from Go crypto,
 	// not recorded from a real lab.
 	leafCN := generateRootFirstP7BCassette(t, cassettePath)
 	csr := generateSimpleCSR(t, leafCN)
@@ -1883,7 +1883,7 @@ func TestUnitKeyfactorCertificateResource_CSR_RootFirstChain(t *testing.T) {
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				// Step 1: Create only. No checks — the enrollment response always
+				// Step 1: Create only. No checks : the enrollment response always
 				// returns the correct leaf cert, so the Create state is clean.
 				Config: testAccCertCSRConfig("TestTemplate", "TestCA", csr),
 			},
@@ -1947,7 +1947,7 @@ func TestIntKeyfactorCertificateResource_PFX_NoCA(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	enrollmentPattern := discoverEnrollmentPattern(t, client)
 	if enrollmentPattern == "" {
-		t.Skip("no enrollment pattern available — requires Command v25+")
+		t.Skip("no enrollment pattern available : requires Command v25+")
 	}
 	cn := randomTestCN("tf-int-pfx-noca")
 	config := testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn)
@@ -1981,7 +1981,7 @@ func TestIntKeyfactorCertificateResource_CSR_NoCA(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 	enrollmentPattern := discoverEnrollmentPattern(t, client)
 	if enrollmentPattern == "" {
-		t.Skip("no enrollment pattern available — requires Command v25+")
+		t.Skip("no enrollment pattern available : requires Command v25+")
 	}
 	cn := randomTestCN("tf-int-csr-noca")
 	csr := generateSimpleCSR(t, cn)
@@ -2011,8 +2011,8 @@ func TestIntKeyfactorCertificateResource_CSR_NoCA(t *testing.T) {
 // It enrolls a real CSR certificate against the lab and uses a two-step test to
 // exercise the Read path specifically:
 //
-//   - Step 1: Create — enrollment response always carries the correct leaf cert.
-//   - Step 2: RefreshState — triggers ReadResource → DownloadCertificate.
+//   - Step 1: Create : enrollment response always carries the correct leaf cert.
+//   - Step 2: RefreshState : triggers ReadResource → DownloadCertificate.
 //     If the P7B returned by the server is root-first, DownloadCertificate will
 //     pick the CA cert as certs[0]. testCheckCertPEMIsLeaf will then FAIL,
 //     confirming the bug. After the fix it PASSES.
@@ -2036,7 +2036,7 @@ func TestIntKeyfactorCertificateResource_CSR_RootFirstChain(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				// Step 1: Create. No chain-ordering check here — the enrollment
+				// Step 1: Create. No chain-ordering check here : the enrollment
 				// response's Certificates[0] is always the correct leaf.
 				Config: config,
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -2047,7 +2047,7 @@ func TestIntKeyfactorCertificateResource_CSR_RootFirstChain(t *testing.T) {
 			{
 				// Step 2: RefreshState triggers ReadResource → DownloadCertificate.
 				// If the server returns a root-first P7B, certs[0] is the CA cert
-				// and testCheckCertPEMIsLeaf will FAIL — catching the bug.
+				// and testCheckCertPEMIsLeaf will FAIL : catching the bug.
 				RefreshState: true,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("keyfactor_certificate.test_csr", "certificate_pem"),
@@ -2220,7 +2220,7 @@ func TestIntKeyfactorCertificateResource_SANs(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Unit tests: Key types — PFX and CSR (VCR cassettes)
+// Unit tests: Key types : PFX and CSR (VCR cassettes)
 // ---------------------------------------------------------------------------
 
 // TestUnitKeyfactorCertificateResource_PFX_KeyTypes verifies PFX enrollment with
@@ -2656,7 +2656,7 @@ func TestUnitKeyfactorCertificateResource_IP_SANs(t *testing.T) {
 // TestUnitKeyfactorCertificateResource_URI_SANs exercises URI SANs with 0, 1,
 // and 10 entries. URI SANs are reparsed from the issued certificate on Read
 // (unlike DNS/IP which are preserved from plan), so exact values are not
-// checked here — only the count for the 0-URI case.
+// checked here : only the count for the 0-URI case.
 func TestUnitKeyfactorCertificateResource_URI_SANs(t *testing.T) {
 	cassetteName := "certificate_resource_uri_sans"
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
@@ -3146,7 +3146,7 @@ func TestUnitKeyfactorCertificateResource_CollectionId(t *testing.T) {
 					},
 				),
 			},
-			// Step 2: add collection_id — regression: must NOT force replacement
+			// Step 2: add collection_id : regression: must NOT force replacement
 			{
 				Config: certCollectionIdConfig(enrollmentPattern, templateName, ca, cn, collectionId),
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -3162,7 +3162,7 @@ func TestUnitKeyfactorCertificateResource_CollectionId(t *testing.T) {
 					}),
 				),
 			},
-			// Step 3: remove collection_id — must NOT force replacement
+			// Step 3: remove collection_id : must NOT force replacement
 			{
 				Config: certCollectionIdConfig(enrollmentPattern, templateName, ca, cn, 0),
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -3276,7 +3276,7 @@ func TestIntKeyfactorCertificateResource_CollectionIdInPlaceUpdate(t *testing.T)
 					idStabilityCheck(),
 				),
 			},
-			// Step 2: Add collection_id — must be in-place update, NOT replacement
+			// Step 2: Add collection_id : must be in-place update, NOT replacement
 			{
 				Config: testAccCertPFXConfigCollectionIdTest(enrollmentPattern, templateName, ca, cn, collectionId),
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -3284,7 +3284,7 @@ func TestIntKeyfactorCertificateResource_CollectionIdInPlaceUpdate(t *testing.T)
 					resource.TestCheckResourceAttr(res, "collection_id", strconv.Itoa(collectionId)),
 				),
 			},
-			// Step 3: Remove collection_id — must be in-place update, NOT replacement
+			// Step 3: Remove collection_id : must be in-place update, NOT replacement
 			{
 				Config: testAccCertPFXConfigCollectionIdTest(enrollmentPattern, templateName, ca, cn, 0),
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -3367,7 +3367,7 @@ resource "keyfactor_certificate" "test" {
 // though Create stored the plan values. After the fix, Read preserves these
 // write-only enrollment parameters from state.
 //
-// This test uses the two-step pattern (Create -> RefreshState) — RefreshState
+// This test uses the two-step pattern (Create -> RefreshState) : RefreshState
 // exercises the full Read path without re-applying the config. If Read returned
 // null for any of these three fields the framework would surface either an
 // "inconsistent result after apply" error during Step 1 or a non-empty plan after
@@ -3382,7 +3382,7 @@ resource "keyfactor_certificate" "test" {
 //
 // To reproduce the original bug against this test (verify the test fails on
 // the regressed code path), check out the exact commit that introduced the
-// regression — b132d59 ("fix(certificate): fix import drift — CA name
+// regression : b132d59 ("fix(certificate): fix import drift : CA name
 // normalization, template suppression, RequiresReplaceIfPreviouslySet"):
 //
 //	git checkout b132d59 -- keyfactor/resource_keyfactor_certificate.go
@@ -3437,7 +3437,7 @@ func TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				// Step 1: Create — implicit post-apply Read must NOT change the
+				// Step 1: Create : implicit post-apply Read must NOT change the
 				// values for collection_id, friendly_name, or use_cn_as_friendly_name.
 				// Pre-fix this caused "Provider produced inconsistent result after apply".
 				Config: config,
@@ -3471,9 +3471,9 @@ func TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved
 // apply" the first time Terraform compared the post-apply Read output to
 // the planned value.
 //
-// The test calls preserveWriteOnlyEnrollmentFieldsFromState — the helper
+// The test calls preserveWriteOnlyEnrollmentFieldsFromState : the helper
 // that the Read path uses to copy these write-only enrollment fields from
-// the prior state into the result struct — and asserts that all three
+// the prior state into the result struct : and asserts that all three
 // fields are preserved.
 //
 // Red/green proof of the fix:
@@ -3481,12 +3481,12 @@ func TestUnitKeyfactorCertificateResource_PFX_FriendlyNameAndCollectionPreserved
 //     assignments hardcode types.{Bool,Int64,String}{Null: true}. Checking
 //     out v2.8.0 of resource_keyfactor_certificate.go therefore removes
 //     this helper entirely; the test file fails to compile and `go test`
-//     reports a build-level FAIL — the regression is detectable.
+//     reports a build-level FAIL : the regression is detectable.
 //   - With the fix in place the helper preserves state values; the test
 //     passes.
 //
 // This test is intentionally a TestUnit* test with no VCR cassette and no
-// network calls — it exercises the state-preservation contract directly.
+// network calls : it exercises the state-preservation contract directly.
 func TestUnitCertificateResourceReadPreservesWriteOnlyFields(t *testing.T) {
 	cases := []struct {
 		name  string

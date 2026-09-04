@@ -1,7 +1,7 @@
 # certificate_authority_demo
 
 Import/read smoke test for `keyfactor_certificate_authority`. Deliberately
-**import-only**, with `lifecycle { prevent_destroy = true }` — this demo never
+**import-only**, with `lifecycle { prevent_destroy = true }`; this demo never
 creates, updates, or destroys a CA connection; it targets the lab's real,
 already-configured "OpenBao PKI" CA (id 2).
 
@@ -27,4 +27,4 @@ make lab-import-existing CA_ID=2
 make lab-drift-check
 ```
 
-`make apply` / `make destroy` are intentionally disabled — see `GNUmakefile`.
+`make apply` / `make destroy` are intentionally disabled; see `GNUmakefile`.

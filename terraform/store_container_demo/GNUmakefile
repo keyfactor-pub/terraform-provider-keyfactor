@@ -1,12 +1,12 @@
 ## store_container_demo/GNUmakefile
 ##
 ## Validates that container_name (pre-v25 style) and application_name (v25+ alias)
-## are interchangeable on keyfactor_certificate_store resources — both link the store
+## are interchangeable on keyfactor_certificate_store resources (both link the store
 ## to the same Keyfactor application/container without forcing resource replacement.
 ##
 ## Two K8STLSSecr stores are created and linked to a single keyfactor_application:
-##   container_name_style  — uses container_name = application.name  (pre-v25)
-##   application_name_style — uses application_name = application.name (v25+)
+##   container_name_style: uses container_name = application.name  (pre-v25)
+##   application_name_style: uses application_name = application.name (v25+)
 ##
 ## A THIRD store (repro175, see repro175.tf) reproduces GitHub issue #175:
 ## Update() silently clears a container assignment made out-of-band whenever
@@ -14,7 +14,7 @@
 ## repro175` for the standalone reproduction sequence (seed → unrelated
 ## update → verify); see repro175.tf's header comment for full detail.
 ##
-## Prerequisites — set these environment variables before running:
+## Prerequisites: set these environment variables before running:
 ##   export KEYFACTOR_HOSTNAME=your-command-host.example.com
 ##   export KEYFACTOR_AUTH_CLIENT_ID=your-client-id
 ##   export KEYFACTOR_AUTH_CLIENT_SECRET=your-client-secret
@@ -65,7 +65,7 @@ import-all:
 	  fi; \
 	done < _import_pairs.txt
 
-## drift-check: Plan after import — only write-only fields should appear as "to change"
+## drift-check: Plan after import (only write-only fields should appear as "to change"
 drift-check:
 	$(UNSET_BASIC) $(TF) plan
 
@@ -81,7 +81,7 @@ clean:
 # Combined workflows
 # ---------------------------------------------------------------------------
 
-## all: Full lifecycle — build, init, validate, plan, apply, import-all, drift-check, destroy
+## all: Full lifecycle: build, init, validate, plan, apply, import-all, drift-check, destroy
 all: build init validate plan apply import-all drift-check destroy
 
 ## demo-no-destroy: Run through drift-check but leave resources on server
@@ -105,7 +105,7 @@ lab-apply:
 ## lab-update: Apply with updated inventory_schedule and create_if_missing to verify
 ## in-place update path (no resource replacement).
 ## Step 1: change schedule + disable create_if_missing.
-## Step 2: revert — confirm no forced replacement occurs (validates backwards compat).
+## Step 2: revert (confirm no forced replacement occurs (validates backwards compat).
 lab-update:
 	@echo "==> Step 1: update inventory_schedule and create_if_missing (in-place update)..."
 	$(LAB_ENV) TF_VAR_inventory_schedule="Daily at 14:00:00" \
@@ -114,7 +114,7 @@ lab-update:
 	$(LAB_ENV) TF_VAR_inventory_schedule="Daily at 14:00:00" \
 	           TF_VAR_create_if_missing=false \
 	           $(MAKE) plan
-	@echo "==> Step 2: revert to default values — verify no forced replacement..."
+	@echo "==> Step 2: revert to default values; verify no forced replacement..."
 	$(LAB_ENV) TF_VAR_inventory_schedule="Daily at 12:00:00" \
 	           TF_VAR_create_if_missing=true \
 	           $(MAKE) apply
@@ -180,7 +180,7 @@ lifecycle:
 	 if [ $$HARNESS_FAIL -ne 0 ] || [ $$REPRO175_EXIT -ne 0 ]; then exit 1; fi
 
 # ---------------------------------------------------------------------------
-# Issue #175 reproduction — see repro175.tf for the full writeup.
+# Issue #175 reproduction: see repro175.tf for the full writeup.
 #
 #   1. repro175-apply        -- create the repro store with NO container
 #                                assignment declared in config

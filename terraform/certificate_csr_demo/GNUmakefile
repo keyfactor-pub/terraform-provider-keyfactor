@@ -5,7 +5,7 @@
 ##
 ##   build → init → validate → plan → apply → import → drift-check → destroy
 ##
-## Prerequisites — set these environment variables before running:
+## Prerequisites: set these environment variables before running:
 ##   export KEYFACTOR_HOSTNAME=your-command-host.example.com
 ##   export KEYFACTOR_AUTH_CLIENT_ID=your-client-id
 ##   export KEYFACTOR_AUTH_CLIENT_SECRET=your-client-secret
@@ -63,7 +63,7 @@ import-all:
 reconcile:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
-## drift-check: Plan after import — should show "No changes"
+## drift-check: Plan after import (should show "No changes"
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
@@ -79,7 +79,7 @@ clean:
 # Combined workflows
 # ---------------------------------------------------------------------------
 
-## all: Full workflow — build, init, validate, plan, apply, import-all, drift-check, destroy
+## all: Full workflow: build, init, validate, plan, apply, import-all, drift-check, destroy
 all: build init validate plan apply import-all drift-check destroy
 
 ## demo-no-destroy: Run workflow without final destroy (leaves certificates on server)
@@ -107,7 +107,7 @@ lab-update:
 	$(LAB_ENV) TF_VAR_metadata_email="ops@example.com" \
 	           TF_VAR_renew_days=60 \
 	           $(MAKE) plan
-	@echo "==> Step 2: full→minimal — remove metadata and renewal_config from config..."
+	@echo "==> Step 2: full to minimal: remove metadata and renewal_config from config..."
 	@echo "==>   Expect: 1 in-place change (metadata + renewal cleared), 0 to destroy"
 	$(LAB_ENV) TF_VAR_metadata_email="" \
 	           TF_VAR_renew_days=0 \

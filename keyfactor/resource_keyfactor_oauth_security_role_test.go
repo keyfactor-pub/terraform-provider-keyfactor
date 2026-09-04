@@ -406,7 +406,7 @@ func TestUnitKeyfactorOAuthRoleResource_NilIdImport(t *testing.T) {
 				),
 			},
 			{
-				// Step 2: Import by name — query returns null Id.
+				// Step 2: Import by name : query returns null Id.
 				ResourceName:  r.resourcePath,
 				ImportState:   true,
 				ImportStateId: roleName,

@@ -324,7 +324,7 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testing
 }
 
 // ---------------------------------------------------------------------------
-// Multi-claim association tests — regression path for role Update preserving claims
+// Multi-claim association tests : regression path for role Update preserving claims
 // ---------------------------------------------------------------------------
 
 // testAccOAuthRoleClaimAssocMultiConfig creates 1 role + 2 claims + 2 associations.
@@ -425,7 +425,7 @@ func TestUnitKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T)
 				),
 			},
 			{
-				// Step 2: Update role description — both associations must survive
+				// Step 2: Update role description : both associations must survive
 				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Updated description", claimValue1, claimValue2),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(assoc1Path, "id"),
@@ -472,7 +472,7 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T) 
 				),
 			},
 			{
-				// Step 2: Update role description — both associations must survive
+				// Step 2: Update role description : both associations must survive
 				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Updated description", claimValue1, claimValue2),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(assoc1Path, "id"),

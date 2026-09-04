@@ -11,7 +11,7 @@ locals {
 }
 
 # ---------------------------------------------------------------------------
-# Store A: pre-v25 style — uses container_name to link to the application.
+# Store A: pre-v25 style : uses container_name to link to the application.
 # ---------------------------------------------------------------------------
 resource "keyfactor_certificate_store" "container_name_style" {
   depends_on = [keyfactor_application.demo]
@@ -32,7 +32,7 @@ resource "keyfactor_certificate_store" "container_name_style" {
 }
 
 # ---------------------------------------------------------------------------
-# Store B: v25+ style — uses application_name (alias for container_name).
+# Store B: v25+ style : uses application_name (alias for container_name).
 # Both stores are linked to the same application; the two attribute names are
 # interchangeable and must NOT force resource replacement when switched.
 # ---------------------------------------------------------------------------

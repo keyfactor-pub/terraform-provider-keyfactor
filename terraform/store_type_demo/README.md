@@ -24,7 +24,7 @@ export KEYFACTOR_AUTH_CLIENT_ID=your-client-id
 export KEYFACTOR_AUTH_CLIENT_SECRET=your-client-secret
 export KEYFACTOR_AUTH_TOKEN_URL=https://auth.example.com/connect/token
 
-# Optional — skip TLS verification for self-signed certs
+# Optional: skip TLS verification for self-signed certs
 export KEYFACTOR_SKIP_VERIFY=true
 ```
 
@@ -36,11 +36,11 @@ export KEYFACTOR_SKIP_VERIFY=true
 | File | Purpose |
 |---|---|
 | `main.tf` | Provider config + data source that discovers all store types |
-| `store_types.tf` | **Generated** — one `keyfactor_certificate_store_type` resource per discovered type |
+| `store_types.tf` | **Generated**: one `keyfactor_certificate_store_type` resource per discovered type |
 | `gen_store_types.py` | Python generator: reads `tf_state.json`, emits `store_types.tf` |
 | `.terraformrc` | Dev override pointing Terraform at the locally built provider binary |
 | `GNUmakefile` | All workflow targets |
-| `tf_state.json` | **Generated** — captured from `terraform show -json` |
+| `tf_state.json` | **Generated**: captured from `terraform show -json` |
 
 ## Quickstart
 
@@ -69,7 +69,7 @@ make generate       Capture state + run gen_store_types.py → store_types.tf
 make plan           terraform plan (requires store_types.tf to exist)
 make apply          terraform apply -auto-approve
 make import-all     Remove all resources from state, then re-import by short_name
-make drift-check    terraform plan — should show "No changes" after import
+make drift-check    terraform plan: should show "No changes" after import
 make destroy        terraform destroy -auto-approve
 make clean          Remove generated files (tf_state.json, store_types.tf, etc.)
 ```
@@ -111,7 +111,7 @@ make KEYFACTOR_ENV_FILE=~/.env_prod SUFFIX=_STAGING lifecycle
    then re-imports each one using its `short_name` as the import identifier.
    This validates that `terraform import` works for every store type variant.
 
-5. **`make drift-check`** runs `terraform plan` and asserts `No changes` — proving
+5. **`make drift-check`** runs `terraform plan` and asserts `No changes`, proving
    that the imported state exactly matches the generated configuration.
 
 6. **`make destroy`** deletes all created store types from the Command instance.

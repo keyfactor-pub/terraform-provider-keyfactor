@@ -3,12 +3,12 @@
 page_title: "keyfactor_template_role_binding Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  
+  Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the "/Templates" PUT API. On Keyfactor Command v25.0+, enrollment patterns provide an additional enrollment-configuration layer alongside certificate templates.
 ---
 
 # keyfactor_template_role_binding (Resource)
 
-
+Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the "/Templates" PUT API. On Keyfactor Command v25.0+, enrollment patterns provide an additional enrollment-configuration layer alongside certificate templates.
 
 ## Example Usage
 

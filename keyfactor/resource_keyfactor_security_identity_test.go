@@ -188,13 +188,22 @@ func TestUnitKeyfactorIdentityResource(t *testing.T) {
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				// Create identity with no roles.
+				// Create identity with no roles declared in config.
 				// identity_type and valid are populated by Read, not Create,
 				// so we only check id and account_name here.
-				// ExpectNonEmptyPlan: the resource has known drift after refresh
-				// (roles [] vs null, computed fields reset) — pre-existing resource bug.
-				Config:             testAccSecurityIdentityResourceConfig(accountName),
-				ExpectNonEmptyPlan: true,
+				//
+				// This step used to carry ExpectNonEmptyPlan: true to tolerate
+				// a known post-refresh drift on `roles` (planned null vs a
+				// concrete [] in state) -- the exact "Provider produced
+				// inconsistent result after apply" bug fixed by making roles
+				// Optional+Computed with a UseStateForUnknown plan modifier
+				// (see identityRolesDeclared's doc comment in
+				// resource_keyfactor_security_identity.go). With that fix,
+				// Terraform Core's post-apply plan is genuinely empty, so
+				// ExpectNonEmptyPlan is removed: if this regresses, this step
+				// starts failing with "Expected an empty plan, but got a
+				// non-empty plan" instead of silently tolerating drift again.
+				Config: testAccSecurityIdentityResourceConfig(accountName),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(resourceName, "id"),
 					resource.TestCheckResourceAttr(resourceName, "account_name", stateAccountName),

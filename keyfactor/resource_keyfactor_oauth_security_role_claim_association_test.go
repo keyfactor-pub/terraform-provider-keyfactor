@@ -238,9 +238,9 @@ func TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testin
 // ---------------------------------------------------------------------------
 
 func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
-	testAccIntegrationPreCheck(t)
+	client := testAccIntegrationPreCheck(t)
 
-	authScheme := discoverOAuthAuthScheme(t)
+	authScheme := discoverOAuthAuthScheme(t, client)
 	_ = authScheme // The existing HCL config hardcodes "System"; integration test reuses that config
 
 	r := oauthSecurityRoleClaimAssociationTestCase{
@@ -286,9 +286,9 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 // an existing role-claim association can be imported by its composite ID and that
 // state is fully populated after import.
 func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testing.T) {
-	testAccIntegrationPreCheck(t)
+	client := testAccIntegrationPreCheck(t)
 
-	authScheme := discoverOAuthAuthScheme(t)
+	authScheme := discoverOAuthAuthScheme(t, client)
 	_ = authScheme
 
 	r := oauthSecurityRoleClaimAssociationTestCase{
@@ -444,9 +444,9 @@ func TestUnitKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T)
 // variant of the multi-claim regression test. It verifies against a live lab that
 // updating a role's description preserves all claim associations.
 func TestIntKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T) {
-	_ = testAccIntegrationPreCheck(t)
+	client := testAccIntegrationPreCheck(t)
 
-	authScheme := discoverOAuthAuthScheme(t)
+	authScheme := discoverOAuthAuthScheme(t, client)
 	_ = authScheme // HCL config hardcodes "System"; kept for documentation
 
 	roleName := acctest.RandomWithPrefix("tf-int-multi-assoc")

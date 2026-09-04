@@ -136,8 +136,7 @@ Global or Collection Level—No Default Value: A user who holds only the Certifi
 Global or Collection Level—Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can change the default certificate owner to any role they belong to. If the default value populated from the enrollment pattern or existing certificate on a renewal is not a role held by the acting user, the this value will not be populated in the Certificate Owner Role field. The user will still be allowed to add a new owner value.
 Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is required, not both. A certificate owner is required if the enrollment pattern or system-wide settings Certificate Owner Role policy has been configured as Required.
 
-> [!IMPORTANT]
-> Only compatible with Keyfactor Command versions v12.3.0+ and later.
+**Important:** Only compatible with Keyfactor Command versions v12.3.0+ and later.
 `,
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},

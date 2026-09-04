@@ -21,6 +21,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -33,6 +34,7 @@ import (
 	circlEd448 "github.com/cloudflare/circl/sign/ed448"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
@@ -192,8 +194,9 @@ func discoverCA(t *testing.T, client *api.Client) string {
 
 // discoverEnrollmentPattern returns an enrollment pattern name.
 // Checks KEYFACTOR_ENROLLMENT_PATTERN env var first, then discovers from the lab.
-// Prefers the "Default" pattern if present. Returns empty string if enrollment
-// patterns are not available (pre-v25).
+// Prefers the "Default" pattern if present, then a TemplateDefault pattern that
+// isn't backed by a short-lived "lab-role" issuer (see kfclab note below).
+// Returns empty string if enrollment patterns are not available (pre-v25).
 func discoverEnrollmentPattern(t *testing.T, client *api.Client) string {
 	t.Helper()
 
@@ -222,12 +225,32 @@ func discoverEnrollmentPattern(t *testing.T, client *api.Client) string {
 		}
 	}
 
-	// Fall back to first pattern with TemplateDefault set
+	// Among TemplateDefault patterns, avoid short-lived "lab-role" backends: on
+	// kfclab, "Lab - AnyCA (lab-role)" is backed by an OpenBao PKI role with a
+	// TTL short enough that certificates enrolled through it can appear expired
+	// (is_expired=true) within the few minutes a test takes to enroll and read
+	// them back. "Lab - AnyCA (lab-root-role)" (or any other pattern whose name
+	// doesn't contain "lab-role") uses a longer-lived backend and is safe for
+	// tests that assert on certificate validity shortly after enrollment.
+	var fallbackTemplateDefault string
+	var fallbackTemplateDefaultID int
 	for _, p := range patterns {
-		if p.TemplateDefault {
-			t.Logf("Discovered enrollment pattern (template default): %s (ID: %d)", p.Name, p.ID)
+		if !p.TemplateDefault {
+			continue
+		}
+		lower := strings.ToLower(p.Name)
+		if strings.Contains(lower, "root") || !strings.Contains(lower, "lab-role") {
+			t.Logf("Discovered enrollment pattern (template default, non-short-lived): %s (ID: %d)", p.Name, p.ID)
 			return p.Name
 		}
+		if fallbackTemplateDefault == "" {
+			fallbackTemplateDefault = p.Name
+			fallbackTemplateDefaultID = p.ID
+		}
+	}
+	if fallbackTemplateDefault != "" {
+		t.Logf("Discovered enrollment pattern (template default): %s (ID: %d)", fallbackTemplateDefault, fallbackTemplateDefaultID)
+		return fallbackTemplateDefault
 	}
 
 	t.Logf("Discovered enrollment pattern: %s (ID: %d)", patterns[0].Name, patterns[0].ID)
@@ -405,9 +428,16 @@ func discoverStoreTypeByID(t *testing.T, client *api.Client, storeTypeID int) st
 }
 
 // discoverOAuthAuthScheme returns an OAuth authentication scheme name.
-// Checks KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME env var first.
-// Falls back to "System" which is always present in OAuth-enabled Command instances.
-func discoverOAuthAuthScheme(t *testing.T) string {
+// Checks KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME env var first,
+// then falls back to querying Command's /IdentityProviders API for an
+// enabled OAuth identity provider and using its AuthenticationScheme.
+//
+// The built-in "System" scheme is NOT guaranteed to exist on every
+// OAuth-enabled Command instance: labs backed by an external OIDC provider
+// (e.g. Authentik) may have no "System" scheme at all, and Command returns
+// a 404 for it. Querying the identity providers directly works against any
+// OAuth-enabled Command instance without manual env var configuration.
+func discoverOAuthAuthScheme(t *testing.T, client *api.Client) string {
 	t.Helper()
 
 	if scheme := os.Getenv("KEYFACTOR_OAUTH_SECURITY_CLAIM_AUTHENTICATION_SCHEME"); scheme != "" {
@@ -415,9 +445,27 @@ func discoverOAuthAuthScheme(t *testing.T) string {
 		return scheme
 	}
 
-	// "System" is the built-in authentication scheme in Command OAuth installations
-	t.Logf("Using default OAuth auth scheme: System")
-	return "System"
+	sdkClient := keyfactor.NewAPIClientWithAuth(client.AuthClient)
+	providers, _, err := sdkClient.V1.IdentityProviderApi.
+		NewGetIdentityProvidersRequest(context.Background()).
+		Execute()
+	if err != nil {
+		t.Skipf("Failed to list identity providers for OAuth auth scheme discovery: %s", err)
+	}
+
+	for _, p := range providers {
+		if p.GetAuthenticationEnabled() && p.GetAuthenticationScheme() != "" {
+			t.Logf(
+				"Discovered OAuth auth scheme: %s (identity provider: %s)",
+				p.GetAuthenticationScheme(),
+				p.GetDisplayName(),
+			)
+			return p.GetAuthenticationScheme()
+		}
+	}
+
+	t.Skip("No enabled OAuth identity providers available in the lab for auth scheme discovery")
+	return ""
 }
 
 // discoverApplication returns the name of an existing certificate store
@@ -629,6 +677,55 @@ func newVCRServer(baseURL string) *auth_providers.Server {
 		Domain:        "TEST",
 		SkipTLSVerify: true,
 	}
+}
+
+// mockAuthConfig implements the AuthConfig-shaped interfaces required by both
+// api.Client (keyfactor-go-client v3) and the keyfactor-go-client-sdk v24
+// v1/v2 API clients, backed by an httptest server.
+//
+// apiPath and stripScheme cover the one real difference between the two
+// consumers: api.Client wants Host as a full URL (scheme included) plus an
+// explicit APIPath segment, while the SDK v24 clients' prepareRequest sets
+// url.Scheme = "https" itself and takes Host verbatim -- passing it a
+// scheme-prefixed URL would double up the scheme, so Host must be the bare
+// "host:port" form for that caller (see newSDKMockAuthConfig).
+type mockAuthConfig struct {
+	server      *httptest.Server
+	apiPath     string
+	stripScheme bool
+}
+
+func (m *mockAuthConfig) GetServerConfig() *auth_providers.Server {
+	host := m.server.URL
+	if m.stripScheme {
+		host = strings.TrimPrefix(host, "https://")
+	}
+	return &auth_providers.Server{
+		Host:          host,
+		APIPath:       m.apiPath,
+		SkipTLSVerify: true,
+	}
+}
+
+func (m *mockAuthConfig) GetHttpClient() (*http.Client, error) {
+	return m.server.Client(), nil
+}
+
+func (m *mockAuthConfig) Authenticate() error       { return nil }
+func (m *mockAuthConfig) GetCommandVersion() string { return "25.1.0.0" }
+
+// newCertAPIMockAuthConfig builds a mockAuthConfig suitable for api.Client
+// (keyfactor-go-client v3), which wants a scheme-prefixed Host plus an
+// explicit APIPath.
+func newCertAPIMockAuthConfig(server *httptest.Server) *mockAuthConfig {
+	return &mockAuthConfig{server: server, apiPath: "KeyfactorAPI"}
+}
+
+// newSDKMockAuthConfig builds a mockAuthConfig suitable for the
+// keyfactor-go-client-sdk v24 v1/v2 API clients, which want a bare
+// "host:port" Host with no scheme prefix.
+func newSDKMockAuthConfig(server *httptest.Server) *mockAuthConfig {
+	return &mockAuthConfig{server: server, stripScheme: true}
 }
 
 // cassetteInfo holds the recording host and API path extracted from a cassette file.
@@ -1363,12 +1460,18 @@ func newVCRProviderFactories(t *testing.T, cassetteName string) (map[string]func
 }
 
 // newVCRProviderFactoriesReplayable is like newVCRProviderFactories but
-// configures the replay recorder with WithReplayableInteractions(true).
-// Use this ONLY for tests that issue purely idempotent read-only requests
-// (e.g. data-source lookups) where repeated identical URL calls always return
-// the same body. Do NOT use for polling/stateful tests (e.g. inventory polls
-// that expect different responses across sequential identical-URL calls) —
-// those rely on consume-once ordering and must use newVCRProviderFactories.
+// configures the replay recorder with WithReplayableInteractions(true), so a
+// cassette interaction can be replayed more than once instead of being
+// consumed after its first match.
+//
+// This is safe — including for polling tests — whenever every repeated,
+// identical-URL request in the flow must return the SAME response every time
+// (e.g. a poll loop that always observes the same terminal job/inventory
+// state). Use newVCRProviderFactories (consume-once) instead whenever
+// sequential requests to the same URL must return DIFFERENT responses in
+// order (e.g. an inventory poll that starts "not present" and later becomes
+// "present") — replayable interactions would incorrectly return the first
+// recorded response forever.
 func newVCRProviderFactoriesReplayable(t *testing.T, cassetteName string) (map[string]func() (tfprotov6.ProviderServer, error), func()) {
 	return newVCRProviderFactoriesOpts(t, cassetteName, true)
 }
@@ -1532,12 +1635,20 @@ resource "keyfactor_certificate" "test" {
 // testAccCertPFXConfigEnrollmentPatternNoCA generates HCL for a PFX certificate
 // resource test using an enrollment pattern without specifying certificate_authority.
 // Command v25.5+ auto-selects the CA from CAs associated with the enrollment pattern.
+//
+// use_cn_as_friendly_name is explicitly disabled: some AnyCA gateway backends
+// (e.g. kfclab's AnyCA/OpenBao tenant) reject CustomFriendlyName on enrollment
+// with "Friendly Name is not allowed" unless the gateway is separately
+// configured to allow it. The provider defaults use_cn_as_friendly_name to
+// true for backwards compatibility, so tests that don't care about the
+// friendly name value must opt out explicitly.
 func testAccCertPFXConfigEnrollmentPatternNoCA(enrollmentPattern, cn string) string {
 	return fmt.Sprintf(`
 resource "keyfactor_certificate" "test" {
   common_name                      = "%s"
   certificate_enrollment_pattern   = "%s"
   key_password                     = "Tftest123456"
+  use_cn_as_friendly_name          = false
 }
 `, cn, enrollmentPattern)
 }

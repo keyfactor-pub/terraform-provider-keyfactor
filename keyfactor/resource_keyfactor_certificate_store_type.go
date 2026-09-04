@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -418,13 +417,13 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 		Name:               types.String{Value: resp.Name},
 		ShortName:          types.String{Value: resp.ShortName},
 		Capability:         types.String{Value: resp.Capability},
-		LocalStore:         types.Bool{Value: resp.LocalStore},
+		LocalStore:         boolPtrToTfBool(resp.LocalStore),
 		StorePathType:      types.String{Value: resp.StorePathType},
 		StorePathValue:     types.String{Value: resp.StorePathValue},
 		PrivateKeyAllowed:  types.String{Value: resp.PrivateKeyAllowed},
-		ServerRequired:     types.Bool{Value: resp.ServerRequired},
-		PowerShell:         types.Bool{Value: resp.PowerShell},
-		BlueprintAllowed:   types.Bool{Value: resp.BlueprintAllowed},
+		ServerRequired:     boolPtrToTfBool(resp.ServerRequired),
+		PowerShell:         boolPtrToTfBool(resp.PowerShell),
+		BlueprintAllowed:   boolPtrToTfBool(resp.BlueprintAllowed),
 		CustomAliasAllowed: types.String{Value: resp.CustomAliasAllowed},
 		ImportType:         types.Int64{Value: int64(resp.ImportType)},
 		ServerRegistration: types.Int64{Value: int64(resp.ServerRegistration)},
@@ -449,8 +448,19 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 		state.PasswordStyle = types.String{Value: resp.PasswordOptions.Style}
 	}
 
-	state.Properties = nil
+	// Command's GET response for a store type's Properties/EntryParameters
+	// is a JSON array that is empty ([]), not null, whenever the store type
+	// has none. Build a non-nil (possibly zero-length) Go slice whenever the
+	// API returned the field at all, so this function has full fidelity to
+	// what the server actually sent; a nil pointer (field truly absent) is
+	// the only case that yields a nil slice here. Callers in Create/Read/
+	// Update additionally reconcile this against the plan/prior state via
+	// preserveListEmptyVsNull so that "declared empty in config" reads back
+	// as [] while "left unset" still reads back as null -- see
+	// preserveListEmptyVsNull's doc comment for why that distinction cannot
+	// be made from the server response alone. See issue #192.
 	if resp.Properties != nil {
+		state.Properties = make([]CertStoreTypeProperty, 0, len(*resp.Properties))
 		for _, p := range *resp.Properties {
 			state.Properties = append(state.Properties, CertStoreTypeProperty{
 				Name:         types.String{Value: p.Name},
@@ -461,10 +471,12 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 				Required:     types.Bool{Value: p.Required},
 			})
 		}
+	} else {
+		state.Properties = nil
 	}
 
-	state.EntryParameters = nil
 	if resp.EntryParameters != nil {
+		state.EntryParameters = make([]CertStoreTypeEntryParam, 0, len(*resp.EntryParameters))
 		for _, ep := range *resp.EntryParameters {
 			state.EntryParameters = append(state.EntryParameters, CertStoreTypeEntryParam{
 				Name:          types.String{Value: ep.Name},
@@ -479,9 +491,59 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 				ReqOnReenroll: types.Bool{Value: ep.RequiredWhen.OnReenrollment},
 			})
 		}
+	} else {
+		state.EntryParameters = nil
 	}
 
 	return state
+}
+
+// preserveListEmptyVsNull reconciles the null-vs-empty shape of a
+// Optional+Computed list attribute against what was actually declared in
+// config/prior state, rather than trusting the server response's shape
+// alone.
+//
+// Background: the terraform-plugin-framework reflection layer encodes a nil
+// Go slice as a null list and a non-nil-but-zero-length Go slice as an empty
+// (known) list -- see internal/reflect/slice.go's FromSlice, which special-
+// cases val.IsNil(). Command's certificate store type API always returns
+// Properties/EntryParameters as [] (never null) once a store type is
+// created, whether or not the user's config declared the attribute at all.
+// certStoreTypeDefToState therefore cannot, by itself, tell "user wrote
+// entry_parameters = []" apart from "user never mentioned entry_parameters"
+// -- both produce an empty API response. Left alone this collapses either
+// into a permanent mismatch against a numeric-empty config (issue #192,
+// "Provider produced inconsistent result after apply") or spurious drift on
+// every refresh of an undeclared attribute.
+//
+// The fix: after computing state from the server response, if the resulting
+// list is empty, fall back to whatever null-ness the plan/prior state
+// (decoded from config/prior state, which the reflection layer *does*
+// represent faithfully) already had. A populated list from the server is
+// left untouched -- there both shapes agree.
+func preserveListEmptyVsNull[T any](target *[]T, reference []T) {
+	if len(*target) > 0 {
+		return
+	}
+	if reference != nil {
+		*target = []T{}
+	} else {
+		*target = nil
+	}
+}
+
+// tfBoolToBoolPtr converts a types.Bool from plan/config into a *bool for the
+// SDK request. Null or Unknown becomes nil so an unset/undetermined attribute
+// is omitted from the request (the CertificateStoreType JSON tags carry
+// omitempty) rather than coercing it to an explicit false the user never
+// asked for; a known value -- including explicit false -- is sent as-is,
+// since a non-nil *bool is not subject to Go's zero-value omitempty elision.
+func tfBoolToBoolPtr(v types.Bool) *bool {
+	if v.Null || v.Unknown {
+		return nil
+	}
+	val := v.Value
+	return &val
 }
 
 func certStoreTypeDefToAPIRequest(plan KeyfactorCertStoreTypeDef) api.CertificateStoreType {
@@ -489,13 +551,13 @@ func certStoreTypeDefToAPIRequest(plan KeyfactorCertStoreTypeDef) api.Certificat
 		Name:               plan.Name.Value,
 		ShortName:          plan.ShortName.Value,
 		Capability:         plan.Capability.Value,
-		LocalStore:         plan.LocalStore.Value,
+		LocalStore:         tfBoolToBoolPtr(plan.LocalStore),
 		StorePathType:      plan.StorePathType.Value,
 		StorePathValue:     plan.StorePathValue.Value,
 		PrivateKeyAllowed:  plan.PrivateKeyAllowed.Value,
-		ServerRequired:     plan.ServerRequired.Value,
-		PowerShell:         plan.PowerShell.Value,
-		BlueprintAllowed:   plan.BlueprintAllowed.Value,
+		ServerRequired:     tfBoolToBoolPtr(plan.ServerRequired),
+		PowerShell:         tfBoolToBoolPtr(plan.PowerShell),
+		BlueprintAllowed:   tfBoolToBoolPtr(plan.BlueprintAllowed),
 		CustomAliasAllowed: plan.CustomAliasAllowed.Value,
 		SupportedOperations: &api.StoreTypeSupportedOperations{
 			Add:        plan.SupportsAdd.Value,
@@ -589,6 +651,15 @@ func (r resourceCertStoreTypeDef) Create(ctx context.Context, request tfsdk.Crea
 		state.StorePathValue = plan.StorePathValue
 	}
 
+	// Command always returns Properties/EntryParameters as [] (never null)
+	// once a store type exists, so an empty result from the server does not
+	// by itself tell us whether the user declared an empty list or left the
+	// attribute unset. Reconcile against the plan so a config-declared empty
+	// list reads back as [] while an undeclared attribute stays null. See
+	// preserveListEmptyVsNull and issue #192.
+	preserveListEmptyVsNull(&state.Properties, plan.Properties)
+	preserveListEmptyVsNull(&state.EntryParameters, plan.EntryParameters)
+
 	diags = response.State.Set(ctx, &state)
 	response.Diagnostics.Append(diags...)
 	LogFunctionExit(ctx, "resourceCertStoreTypeDef.Create")
@@ -617,7 +688,7 @@ func (r resourceCertStoreTypeDef) Read(ctx context.Context, request tfsdk.ReadRe
 
 	resp, err := r.p.client.GetCertificateStoreTypeById(id)
 	if err != nil {
-		if strings.Contains(err.Error(), "404") {
+		if isNotFoundError(err) {
 			tflog.Info(ctx, fmt.Sprintf("Certificate store type %d not found, removing from state", id))
 			response.State.RemoveResource(ctx)
 			return
@@ -639,6 +710,12 @@ func (r resourceCertStoreTypeDef) Read(ctx context.Context, request tfsdk.ReadRe
 	if newState.StorePathValue.Value == "" && !state.StorePathValue.Null {
 		newState.StorePathValue = state.StorePathValue
 	}
+
+	// See the identical reconciliation in Create for why this is necessary
+	// (issue #192): reconcile against prior state rather than the server
+	// response's shape alone.
+	preserveListEmptyVsNull(&newState.Properties, state.Properties)
+	preserveListEmptyVsNull(&newState.EntryParameters, state.EntryParameters)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -692,6 +769,12 @@ func (r resourceCertStoreTypeDef) Update(ctx context.Context, request tfsdk.Upda
 	if newState.StorePathValue.Value == "" && !plan.StorePathValue.Null && !plan.StorePathValue.Unknown {
 		newState.StorePathValue = plan.StorePathValue
 	}
+
+	// See the identical reconciliation in Create for why this is necessary
+	// (issue #192): reconcile against plan rather than the server response's
+	// shape alone.
+	preserveListEmptyVsNull(&newState.Properties, plan.Properties)
+	preserveListEmptyVsNull(&newState.EntryParameters, plan.EntryParameters)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)

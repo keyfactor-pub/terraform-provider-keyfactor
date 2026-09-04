@@ -3,12 +3,12 @@
 page_title: "keyfactor_role Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource, keyfactor_oauth_security_role.
+  IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource, keyfactor_oauth_security_role. NOTE: Read performs a live lookup against Keyfactor Command on every plan/refresh; a role deleted outside Terraform is removed from state and planned for re-creation.
 ---
 
 # keyfactor_role (Resource)
 
-IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource, `keyfactor_oauth_security_role`.
+IMPORTANT:  This has been deprecated since it supports Active Directory identities only. It is retained for backwards compatibility, but all new development should use methods that provide support for alternate identity providers and the newer claims-based authentication model that accompanies this. These newer methods support both Active Directory and other identity providers. See version 2 of this resource, `keyfactor_oauth_security_role`. NOTE: Read performs a live lookup against Keyfactor Command on every plan/refresh; a role deleted outside Terraform is removed from state and planned for re-creation.
 
 ## Example Usage
 
@@ -54,7 +54,7 @@ resource "keyfactor_role" "kf_terraform_role" {
 
 ### Optional
 
-- `permissions` (List of String) An array containing the permissions assigned to the role in a list of Name:Value pairs. For more information about allowed permission values, please refer to the Keyfactor Command [Version One Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version1).
+- `permissions` (List of String) An array containing the permissions assigned to the role in a list of Name:Value pairs. For more information about allowed permission values, please refer to the Keyfactor Command [Version One Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version1). Omitting this attribute leaves permissions unmanaged/preserved (server-side changes are not corrected); an explicit empty list (`[]`) declaratively clears all permissions.
 
 ### Read-Only
 
@@ -65,5 +65,5 @@ resource "keyfactor_role" "kf_terraform_role" {
 Import is supported using the following syntax:
 
 ```shell
-terraform import keyfactor_security_role.myrole "My Role" # The name of the role to import
+terraform import keyfactor_role.myrole "My Role" # The name of the role to import
 ```

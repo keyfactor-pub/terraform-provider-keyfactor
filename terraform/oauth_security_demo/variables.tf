@@ -21,3 +21,9 @@ variable "claim_description" {
   default     = "Terraform-managed OAuth client ID claim"
   description = "Description for the OAuth security claim."
 }
+
+variable "provider_authentication_scheme" {
+  type        = string
+  default     = "Authentik"
+  description = "The Command OAuth security claim provider authentication scheme. Defaults to Authentik because that is the IdP scheme configured on kfclab; set TF_VAR_provider_authentication_scheme to override for other labs (e.g. \"System\")."
+}

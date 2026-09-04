@@ -7,8 +7,8 @@ interactions:
         proto_major: 1
         proto_minor: 1
         content_length: 81
-        host: int25-4-1.kftestlab.com
-        body: '{"Name":"tf-unit-role-457919000","Description":"Unit test role","Permissions":[]}'
+        host: command.lab.local
+        body: '{"Name":"tf-unit-role-975116000","Description":"Unit test role","Permissions":[]}'
         headers:
             Accept:
                 - application/json
@@ -18,86 +18,41 @@ interactions:
                 - "1"
             X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Security/Roles
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles
         method: POST
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 245
-        body: '{"Id":109,"Description":"Unit test role","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"tf-unit-role-457919000","Permissions":[]}'
+        content_length: 244
+        body: '{"Id":28,"Description":"Unit test role","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"tf-unit-role-975116000","Permissions":[]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
+            Connection:
+                - keep-alive
             Content-Length:
-                - "245"
+                - "244"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Thu, 19 Mar 2026 23:15:14 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "147"
+                - Tue, 18 Aug 2026 02:36:32 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - ca28d198-539e-456a-9963-917cd4c5cd45
+                - c5f34118-a94e-4f75-89ef-6130004fc316
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 986.251832ms
+        duration: 10.650731125s
     - id: 1
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 145
-        host: int25-4-1.kftestlab.com
-        body: '{"Id":109,"Name":"tf-unit-role-457919000","Description":"Unit test role updated","Permissions":["Certificates:EditMetadata","Certificates:Read"]}'
-        headers:
-            Accept:
-                - application/json
-            Content-Type:
-                - application/json
-            X-Keyfactor-Api-Version:
-                - "1"
-            X-Keyfactor-Requested-With:
-                - APIClient
-        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Security/Roles
-        method: PUT
-      response:
-        proto: HTTP/1.1
-        proto_major: 1
-        proto_minor: 1
-        content_length: 300
-        body: '{"Id":109,"Description":"Unit test role updated","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"tf-unit-role-457919000","Permissions":["Certificates:EditMetadata","Certificates:Read"]}'
-        headers:
-            Api-Supported-Versions:
-                - 1.0, 2
-            Content-Length:
-                - "300"
-            Content-Type:
-                - application/json; charset=utf-8
-            Date:
-                - Thu, 19 Mar 2026 23:15:17 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "176"
-            X-Keyfactor-Correlation-Id:
-                - a9489795-f393-403e-ba08-8b9db45093ba
-            X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
-        status: 200 OK
-        code: 200
-        duration: 300.101154ms
-    - id: 2
-      request:
-        proto: HTTP/1.1
-        proto_major: 1
-        proto_minor: 1
         content_length: 4
-        host: int25-4-1.kftestlab.com
+        host: command.lab.local
         body: "null"
         headers:
             Accept:
@@ -108,7 +63,232 @@ interactions:
                 - "1"
             X-Keyfactor-Requested-With:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com/Keyfactor/API/Security/Roles/109
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/28
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 244
+        body: '{"Id":28,"Description":"Unit test role","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"tf-unit-role-975116000","Permissions":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "244"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Tue, 18 Aug 2026 02:36:43 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 6f57058c-f5de-4668-b169-3dc02f3aaad0
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 27.792963ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/28
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 244
+        body: '{"Id":28,"Description":"Unit test role","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"tf-unit-role-975116000","Permissions":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "244"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Tue, 18 Aug 2026 02:36:44 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - a9ca50e3-1df7-431f-9e92-f21756d6387b
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 137.950985ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/28
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 244
+        body: '{"Id":28,"Description":"Unit test role","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"tf-unit-role-975116000","Permissions":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "244"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Tue, 18 Aug 2026 02:36:45 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 7182e86c-259d-4867-80c6-6dc2f2e14caf
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 35.931577ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 160
+        host: command.lab.local
+        body: '{"Id":28,"Name":"tf-unit-role-975116000","Description":"Unit test role updated","Permissions":["Certificates:EditMetadata","Certificates:Read"],"Identities":[]}'
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 299
+        body: '{"Id":28,"Description":"Unit test role updated","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"tf-unit-role-975116000","Permissions":["Certificates:EditMetadata","Certificates:Read"]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "299"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Tue, 18 Aug 2026 02:36:45 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - a488e623-ea06-4d08-a5d7-a415fb88bb66
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 148.434751ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/28
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 299
+        body: '{"Id":28,"Description":"Unit test role updated","EmailAddress":null,"Enabled":true,"Immutable":false,"Valid":true,"Private":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Identities":[],"Name":"tf-unit-role-975116000","Permissions":["Certificates:EditMetadata","Certificates:Read"]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "299"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Tue, 18 Aug 2026 02:36:46 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 603a1782-626e-4ae3-bbdb-2bbc61baddb9
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 28.265234ms
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 4
+        host: command.lab.local
+        body: "null"
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            X-Keyfactor-Api-Version:
+                - "1"
+            X-Keyfactor-Requested-With:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/28
         method: DELETE
       response:
         proto: HTTP/1.1
@@ -119,16 +299,16 @@ interactions:
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
+            Connection:
+                - keep-alive
             Date:
-                - Thu, 19 Mar 2026 23:15:18 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "103"
+                - Tue, 18 Aug 2026 02:36:47 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 5b15f104-1cd6-4165-9ffc-35b4e0183fbb
+                - 8bfa588a-bbfb-4a0b-a132-e321c3a214d3
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 204 No Content
         code: 204
-        duration: 209.407166ms
+        duration: 36.80609ms

@@ -46,6 +46,7 @@ func (r dataSourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Sche
 				Description: "A Boolean that indicates whether the security identity's audit XML is valid (true) or not (false). A security identity may become invalid if Keyfactor Command determines that it appears to have been tampered with.",
 			},
 		},
+		Description: "Reads an existing Keyfactor Command security identity (user or group) by account name, including its assigned roles.",
 	}, nil
 }
 

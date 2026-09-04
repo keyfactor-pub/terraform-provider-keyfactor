@@ -1,0 +1,7 @@
+authcert.pfx
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfstate.*.backup
+tf_state.json
+.terraform/
+.terraform.lock.hcl

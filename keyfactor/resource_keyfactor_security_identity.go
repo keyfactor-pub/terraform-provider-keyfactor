@@ -3,8 +3,6 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"log"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -33,8 +31,20 @@ func (r resourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Schema
 				Type: types.ListType{
 					ElemType: types.StringType,
 				},
-				Optional:    true,
-				Description: "An array containing the role IDs that the identity is attached to.",
+				Optional: true,
+				Computed: true,
+				Description: "An array of role names or numeric role IDs that the identity is attached to. " +
+					"Role names are matched case-insensitively against Keyfactor Command's role names, so a " +
+					"declared spelling that only differs in case from the server is not reported as drift. " +
+					"A declared entry that parses as an integer is looked up by role ID first, falling back " +
+					"to a name-based lookup only if no role has that ID (this preserves resolving a role " +
+					"whose Name is itself a numeric string, e.g. a role literally named \"123\"). Resolving " +
+					"via the numeric-ID path always surfaces a warning in the plan/apply output, so a match " +
+					"found only by ID -- rather than by name -- is never silent. Omit to leave role " +
+					"membership unmanaged (preserved on update); set [] explicitly to remove all roles.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.UseStateForUnknown(),
+				},
 			},
 			"id": {
 				Type:        types.Int64Type,
@@ -104,41 +114,28 @@ func (r resourceSecurityIdentity) Read(
 		//	break
 		//}
 		if accountName == identity.AccountName {
-			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %s", accountName))
+			// accountName is logged %q-quoted (escaping embedded control
+			// characters like \r\n) rather than with %s, so an account name
+			// crafted to contain a CRLF sequence can't forge fake log lines
+			// under TF_LOG=INFO (CWE-117 log injection); see the identical
+			// rationale on roleLookupLogMessage in this file.
+			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %q", accountName))
 
-			var validRoles []attr.Value
-			var validRolesInterface []interface{}
-			for _, role := range state.Roles.Elems {
-				//validRoles = append(validRoles.Elems, role.Name.Value)
-				tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
-				tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
-
-				//TODO: Verify role exists in Keyfactor or throw warning
-				re, _ := regexp.Compile(`[^\w]`)
-				roleStr := re.ReplaceAllString(role.String(), "")
-				kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
-				if roleLookupErr != nil || kfRole == nil {
-					tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
-					response.Diagnostics.AddWarning(
-						"Error looking up role on Keyfactor.",
-						fmt.Sprintf(
-							"Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.",
-							roleStr,
-							state.AccountName.Value,
-							roleStr,
-						),
-					)
-					continue
-				}
-				validRoles = append(validRoles, types.String{Value: fmt.Sprintf("%s", roleStr)})
-				validRolesInterface = append(validRolesInterface, kfRole.Id)
-			}
-
+			// identityRolesResultForRead builds the roles list from the
+			// freshly-fetched identity.Roles when it genuinely differs from
+			// the prior state (so real server-side role drift -- roles
+			// changed out-of-band -- is detected, unlike the old code which
+			// just echoed back whatever was already in state), but preserves
+			// the prior state's declared spelling/order when the role sets
+			// are semantically the same (case-insensitive name or numeric
+			// ID), so Read doesn't itself manufacture a spurious diff by
+			// rewriting a user's declared casing/ID-form to Command's
+			// canonical name.
 			state = SecurityIdentity{
 				ID:           types.Int64{Value: int64(identity.Id)},
 				AccountName:  types.String{Value: identity.AccountName},
 				IdentityType: types.String{Value: identity.IdentityType},
-				Roles:        types.List{Elems: validRoles, ElemType: types.StringType},
+				Roles:        identityRolesResultForRead(state.Roles, identity.Roles),
 				Valid:        types.Bool{Value: identity.Valid},
 			}
 			break
@@ -153,6 +150,226 @@ func (r resourceSecurityIdentity) Read(
 	}
 }
 
+// identityRolesDeclared reports whether the config explicitly declares the
+// roles attribute. A Null value means the user omitted it from config
+// (preserve existing assignments), while a non-null value — including an
+// explicit empty list — is a full-replace instruction (an empty list clears
+// all roles).
+//
+// This must be evaluated against the CONFIG, not the plan. roles is
+// Optional+Computed (with a UseStateForUnknown plan modifier, added to fix
+// "Provider produced inconsistent result after apply" when an unrelated
+// Update omitted roles from config): when the attribute is genuinely
+// undeclared, Terraform Core still resolves request.Plan.Roles to the prior
+// state's value (copied forward by the plan modifier so the CLI doesn't show
+// spurious "(known after apply)" noise on every unrelated plan). Checking
+// plan.Roles.Null here would therefore always be false, indistinguishable
+// from a real declaration of the same list. request.Config.Roles is never
+// touched by plan modifiers, so it still reports Null exactly when the user
+// omitted the attribute.
+func identityRolesDeclared(config SecurityIdentity) bool {
+	return !config.Roles.Null && !config.Roles.Unknown
+}
+
+// identityRolesCanonical builds a types.List of the server's canonical role
+// names, for writing server-reported roles into state when they genuinely
+// differ from the prior state.
+func identityRolesCanonical(serverRoles []api.SecurityRoleInformation) types.List {
+	elems := make([]attr.Value, 0, len(serverRoles))
+	for _, role := range serverRoles {
+		elems = append(elems, types.String{Value: role.Name})
+	}
+	return types.List{ElemType: types.StringType, Elems: elems}
+}
+
+// identityRolesResultForRead decides what to write into state's Roles after
+// Read: if the prior state's role list is semantically equal to the server's
+// role list -- every state entry matched bijectively to a distinct server
+// role, either by numeric role ID or by case-insensitive role name -- the
+// prior state is returned VERBATIM, preserving the user's declared
+// spelling/order/ID-vs-name form. Otherwise the server's canonical role names
+// are returned, so genuine out-of-band role drift (a role added, removed, or
+// actually renamed) surfaces on the next plan instead of being silently
+// overwritten by Read.
+//
+// This mirrors permissionsResultForUpdate's order-vs-drift invariant
+// (resource_keyfactor_security_role.go) applied to security_identity's roles
+// attribute: the roles schema description documents that entries may be role
+// names OR numeric role IDs, and that role names match case-insensitively
+// (GetSecurityRole's lookup and Command's role names themselves are
+// case-insensitive), so a declared casing difference or ID-vs-name form must
+// not be reported as drift merely because Read rewrote it to the server's
+// spelling.
+//
+// A Null/Unknown stateRoles (nothing declared/known yet) has nothing to
+// preserve and always returns the server's canonical names. A state list
+// whose length doesn't match the server's, or that contains an element that
+// cannot be bijectively matched to a distinct server role, is treated as
+// real drift and also returns the server's canonical names.
+func identityRolesResultForRead(stateRoles types.List, serverRoles []api.SecurityRoleInformation) types.List {
+	if stateRoles.Null || stateRoles.Unknown {
+		return identityRolesCanonical(serverRoles)
+	}
+	if len(stateRoles.Elems) != len(serverRoles) {
+		return identityRolesCanonical(serverRoles)
+	}
+
+	// Require a bijective (1:1) match: each server role may satisfy at most
+	// one state entry, so duplicate/ambiguous entries can't false-positive a
+	// match against a single server role.
+	claimed := make([]bool, len(serverRoles))
+	for _, elem := range stateRoles.Elems {
+		s, ok := elem.(types.String)
+		if !ok {
+			return identityRolesCanonical(serverRoles)
+		}
+
+		matched := false
+		if id, err := strconv.Atoi(s.Value); err == nil {
+			for i, role := range serverRoles {
+				if !claimed[i] && role.Id == id {
+					claimed[i] = true
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			for i, role := range serverRoles {
+				if !claimed[i] && strings.EqualFold(role.Name, s.Value) {
+					claimed[i] = true
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			return identityRolesCanonical(serverRoles)
+		}
+	}
+
+	return stateRoles
+}
+
+// roleLookupLogMessage builds the tflog.Debug message logged before looking
+// up a declared `roles` entry. roleStr is a declared config value -- not a
+// shape this provider controls -- so it is logged %q-quoted (escaping
+// embedded control characters like \r\n) rather than with %v/%s, so a role
+// string crafted to contain a CRLF sequence can't forge fake log lines under
+// TF_LOG=DEBUG/TRACE (CWE-117 log injection). hclog's plain-text writer
+// emits the message string verbatim with no control-character escaping of
+// its own, so the escaping has to happen here.
+func roleLookupLogMessage(roleStr string) string {
+	return fmt.Sprintf("Looking up role %q in Keyfactor", roleStr)
+}
+
+// resolveDeclaredSecurityRole resolves a single entry from the `roles`
+// attribute against Keyfactor Command. It is shared by Create() and Update()
+// so their role-resolution loops can't drift out of sync with each other.
+//
+// Resolution order, for a declared role string that parses cleanly as an
+// integer (e.g. "7") -- a parseable-int string is more likely intended as a
+// role ID than as a literal role name, and the schema has always documented
+// "role IDs" as an accepted form:
+//
+//  1. The ID-path lookup (api.Client.GetSecurityRole(int), a real
+//     Security/Roles/{id} request) is tried FIRST. This both matches the
+//     more likely intent for a numeric declaration and saves an API call in
+//     the common numeric-ID case.
+//  2. If that ID lookup resolves a real role, this unconditionally appends a
+//     WARNING diagnostic to diags (never silent) before returning it: this
+//     is the specific, previously-impossible outcome this change enables --
+//     a declared numeric string that used to always fail to resolve (every
+//     release before this one only ever looked up roles by name, and a
+//     purely numeric string almost never matches an actual role Name) can
+//     now silently start granting a real, possibly highly-privileged role on
+//     nothing more than a routine provider upgrade, purely because Command
+//     happens to have a role with that literal numeric ID. The warning
+//     surfaces that in `terraform plan`/`apply` output so an operator
+//     notices, without blocking the apply. diags may be nil (defensive;
+//     every real caller passes &response.Diagnostics), in which case the ID
+//     lookup still resolves but no warning can be emitted.
+//  3. If the ID lookup fails (an error, a 404/not-found, or a nil result),
+//     this falls back to the case-insensitive name-based lookup
+//     (resolveDeclaredSecurityRoleByName). This preserves the one
+//     pre-existing case that already worked before any numeric-ID
+//     resolution existed: a role whose Name is itself a numeric string
+//     (e.g. a role literally named "123") always resolved via name lookup,
+//     and still does. NO warning is emitted for this fallback, whether it
+//     succeeds or fails: name-based resolution of a numeric string was
+//     already possible pre-this-PR, so it is not new, surprising behavior.
+//
+// A declared string that does not parse as an integer skips straight to the
+// name-based lookup, with no warning, exactly as before.
+//
+// This is unrelated to identityRolesResultForRead (used by Read purely for
+// drift-detection/state-hygiene display -- it never grants or mutates
+// anything), which independently recognizes a declared numeric string as
+// matching a server role by ID when comparing prior state to the server's
+// actual roles.
+func resolveDeclaredSecurityRole(client *api.Client, roleStr string, diags *diag.Diagnostics) (*api.GetSecurityRoleResponse, error) {
+	if id, convErr := strconv.Atoi(roleStr); convErr == nil {
+		idRole, idErr := client.GetSecurityRole(id)
+		if idErr == nil && idRole != nil {
+			if diags != nil {
+				diags.AddWarning(
+					"Role resolved by numeric ID.",
+					fmt.Sprintf(
+						"Declared role '%s' was not found by name; it resolved as Keyfactor role ID %s instead. "+
+							"If this is unexpected, verify this is the role you intended -- a numeric 'roles' entry "+
+							"that previously failed to resolve will now be treated as a role ID.",
+						roleStr, roleStr,
+					),
+				)
+			}
+			return idRole, nil
+		}
+		// ID lookup failed/not-found -- fall back to name lookup. This
+		// preserves the one pre-existing edge case that already worked
+		// before any of this round's changes: a role whose Name is itself a
+		// numeric string (e.g. a role literally named "123") always resolved
+		// via name lookup, and still should -- no warning needed here since
+		// name-based resolution of a numeric string was already possible
+		// before this PR, unlike the ID path.
+		return resolveDeclaredSecurityRoleByName(client, roleStr)
+	}
+	return resolveDeclaredSecurityRoleByName(client, roleStr)
+}
+
+// resolveDeclaredSecurityRoleByName performs the case-insensitive name-based
+// lookup and verification that resolveDeclaredSecurityRole delegates to for
+// every declared role string.
+//
+// GetSecurityRole's string branch builds `name -eq "<value>"` PQL with ZERO
+// escaping of the value (keyfactor-go-client v3/api/security.go). Before this
+// resource's roles attribute accepted arbitrary role name strings, a `[^\w]`
+// regex used to strip every non-word character -- including quotes and PQL
+// operators -- before the lookup, which accidentally closed off query
+// injection via a role name containing an embedded `"`. That regex was
+// removed because it also mangled legitimate names (e.g. "Power Users" ->
+// "PowerUsers"), but nothing replaced the safeguard it happened to provide: a
+// role string like `Foo" -or name -eq "Administrators` reaches Command's
+// predicate-query parser unescaped, and if Command's parser honors the
+// injected clause, GetSecurityRole could return an unintended (possibly
+// higher-privileged) role. Since the escaping itself isn't fixed here (that's
+// the go-client library's responsibility, out of scope for this
+// provider-side change), this instead verifies the returned role's Name
+// actually matches the declared string -- case-insensitively, consistent with
+// identityRolesResultForRead's role-name matching convention -- before
+// trusting kfRole.Id. A mismatch is treated as unresolved ((nil, nil), same
+// shape as a genuine "not found") so callers' existing not-found handling
+// rejects it rather than silently trusting an unverified query match.
+func resolveDeclaredSecurityRoleByName(client *api.Client, roleStr string) (*api.GetSecurityRoleResponse, error) {
+	kfRole, err := client.GetSecurityRole(roleStr)
+	if err != nil || kfRole == nil {
+		return kfRole, err
+	}
+	if !strings.EqualFold(kfRole.Name, roleStr) {
+		return nil, nil
+	}
+	return kfRole, nil
+}
+
 func (r resourceSecurityIdentity) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -161,6 +378,16 @@ func (r resourceSecurityIdentity) Update(
 	// Get plan values
 	var plan SecurityIdentity
 	diags := request.Plan.Get(ctx, &plan)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	// Get config values. roles is Optional+Computed, so request.Plan.Roles is
+	// no longer a reliable signal of whether the user declared the attribute
+	// (see identityRolesDeclared's doc comment) — request.Config.Roles is.
+	var config SecurityIdentity
+	diags = request.Config.Get(ctx, &config)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -177,52 +404,118 @@ func (r resourceSecurityIdentity) Update(
 		return
 	}
 
-	// Generate API request body from plan
-	//var validRoles types.List
-	var validRoles []attr.Value
-	var validRolesInterface []interface{}
-	for _, role := range plan.Roles.Elems {
-		//validRoles = append(validRoles.Elems, role.Name.Value)
-		tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
-		tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
-
-		//TODO: Verify role exists in Keyfactor or throw warning
-		re, err := regexp.Compile(`[^\w]`)
-		if err != nil {
-			log.Fatal(err)
-		}
-		roleStr := re.ReplaceAllString(role.String(), "")
-		tflog.Debug(ctx, fmt.Sprintf("Role string: %s", roleStr))
-		kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
-		if roleLookupErr != nil || kfRole == nil {
-			tflog.Warn(ctx, fmt.Sprintf("Error looking up role %s on Keyfactor.", role))
-			response.Diagnostics.AddWarning(
-				"Error looking up role on Keyfactor.",
-				fmt.Sprintf(
-					"Error looking up role '%s' on Keyfactor. '%s' will not have role '%s'.",
-					roleStr,
-					state.AccountName.Value,
-					roleStr,
-				),
-			)
-			continue
-		}
-		validRoles = append(validRoles, types.String{Value: fmt.Sprintf("%s", roleStr)})
-		validRolesInterface = append(validRolesInterface, kfRole.Id)
-	}
-
-	//Update role identities
-	err := setIdentityRole(ctx, r.p.client, state.AccountName.Value, validRolesInterface)
-	if err != nil {
-		response.Diagnostics.AddError("Error updating identity roles.", "Error updating identity roles: "+err.Error())
-	}
-
-	var result = SecurityIdentity{
+	// setIdentityRole is a full-replace sync of the identity's role assignments.
+	// Only run it when the plan explicitly declares the roles attribute. When
+	// roles is genuinely undeclared (Null) — the user simply omitted it from
+	// config — Null must not be conflated with an explicit empty list; the former
+	// preserves the identity's existing roles, the latter clears them. Running
+	// the full-replace sync on an undeclared Null plan stripped every real role
+	// assignment on any unrelated Update.
+	result := SecurityIdentity{
 		ID:           types.Int64{Value: int64(state.ID.Value)},
 		AccountName:  types.String{Value: state.AccountName.Value},
 		IdentityType: types.String{Value: state.IdentityType.Value},
 		Valid:        types.Bool{Value: state.Valid.Value},
-		Roles:        plan.Roles,
+		Roles:        state.Roles,
+	}
+
+	if identityRolesDeclared(config) {
+		// Generate API request body from plan. Every declared role MUST
+		// resolve to a real Keyfactor role before setIdentityRole is ever
+		// called: setIdentityRole performs a full-replace sync of the
+		// identity's role membership, so silently dropping a role here (e.g.
+		// on a lookup error or "not found") would cause setIdentityRole to
+		// actively REVOKE the identity's existing membership in that role —
+		// a silent access change on what looks like a successful apply. A
+		// lookup failure for a declared role must fail the apply with
+		// nothing mutated, matching this project's standing rule that
+		// transient/lookup errors are surfaced, never swallowed.
+		var validRolesInterface []interface{}
+		for _, role := range plan.Roles.Elems {
+			tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
+
+			// Use the role's underlying string value directly. role.String()
+			// returns the framework's %q-quoted representation, and the old
+			// `[^\w]` sanitizer stripped more than just the surrounding
+			// quotes -- it also stripped spaces and hyphens from legitimate
+			// role names (e.g. "Power Users" -> "PowerUsers"), causing the
+			// lookup below to look for a role that doesn't exist.
+			roleVal, ok := role.(types.String)
+			if !ok {
+				response.Diagnostics.AddError(
+					"Unexpected role value type.",
+					fmt.Sprintf("Expected role element to be a string, got %T.", role),
+				)
+				return
+			}
+			roleStr := roleVal.Value
+			tflog.Debug(ctx, roleLookupLogMessage(roleStr))
+			kfRole, roleLookupErr := resolveDeclaredSecurityRole(r.p.client, roleStr, &response.Diagnostics)
+			if roleLookupErr != nil {
+				response.Diagnostics.AddError(
+					"Error looking up role on Keyfactor.",
+					fmt.Sprintf(
+						"Error looking up role '%s' on Keyfactor: %s. Update aborted before applying any role changes to '%s' to avoid silently revoking its existing role membership.",
+						roleStr,
+						roleLookupErr.Error(),
+						state.AccountName.Value,
+					),
+				)
+				return
+			}
+			if kfRole == nil {
+				response.Diagnostics.AddError(
+					"Role not found on Keyfactor.",
+					fmt.Sprintf(
+						"Role '%s' declared for identity '%s' was not found on Keyfactor. Update aborted before applying any role changes to avoid silently revoking existing role membership.",
+						roleStr,
+						state.AccountName.Value,
+					),
+				)
+				return
+			}
+			validRolesInterface = append(validRolesInterface, kfRole.Id)
+		}
+
+		//Update role identities (full-replace; an explicit empty list clears them)
+		err := setIdentityRole(ctx, r.p.client, state.AccountName.Value, validRolesInterface)
+		if err != nil {
+			// setIdentityRole is NOT atomic: it issues one Command API call per
+			// role addition, then one per role removal (see its sequential
+			// add-loop/remove-loop below). A failure partway through means
+			// Command's actual role membership may already have diverged from
+			// BOTH the prior state and the plan -- e.g. the 2nd of 3 adds
+			// succeeded before the 3rd failed. Returning here without an
+			// explicit State.Set would rely on the framework's implicit
+			// default (terraform-plugin-framework's server_updateresource.go
+			// pre-seeds updateResp.State from req.PriorState before calling
+			// Update, so an early return silently persists the untouched OLD
+			// state) -- technically safe (it doesn't claim the plan's roles
+			// were granted), but it gives the operator zero indication that a
+			// partial mutation may have happened on Command itself. Make that
+			// persistence explicit and make the diagnostic say so: state is
+			// left as the untouched prior values (state, not result, since
+			// result.Roles was never advanced to plan.Roles on this path), and
+			// the next `terraform plan`/refresh will run Read()'s existing
+			// drift-detection logic (identityRolesResultForRead), which
+			// compares state.Roles against Command's actual current roles and
+			// will surface any real change automatically.
+			response.Diagnostics.AddError(
+				"Error updating identity roles.",
+				fmt.Sprintf(
+					"Error updating identity roles for '%s': %s. Role membership may have been partially "+
+						"changed on Keyfactor Command before this error occurred (setIdentityRole applies role "+
+						"additions and removals as a sequence of separate API calls, not atomically). The prior "+
+						"state has been preserved; run `terraform plan` again to detect and reconcile any actual "+
+						"drift in role membership, or verify role membership manually on Keyfactor Command.",
+					state.AccountName.Value, err.Error(),
+				),
+			)
+			stateDiags := response.State.Set(ctx, state)
+			response.Diagnostics.Append(stateDiags...)
+			return
+		}
+		result.Roles = plan.Roles
 	}
 
 	// Set state
@@ -310,54 +603,110 @@ func (r resourceSecurityIdentity) Create(
 	// for more information on logging from providers, refer to
 	// https://pkg.go.dev/github.com/hashicorp/terraform-plugin-log/tflog
 	tflog.Trace(ctx, "created security id", map[string]interface{}{"identity_account_name": plan.AccountName.Value})
-	var validRoles []attr.Value
-	if len(plan.Roles.Elems) > 0 {
-		var validRolesInterface []interface{}
-		for _, role := range plan.Roles.Elems {
-			//validRoles = append(validRoles.Elems, role.Name.Value)
-			tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
-			tflog.Debug(ctx, fmt.Sprintf("Looking up role %v in Keyfactor", role))
 
-			//TODO: Verify role exists in Keyfactor or throw warning
-			re, _ := regexp.Compile(`[^\w]`)
-			roleStr := re.ReplaceAllString(role.String(), "")
-			tflog.Debug(ctx, fmt.Sprintf("Role string: %s", roleStr))
-			kfRole, roleLookupErr := r.p.client.GetSecurityRole(roleStr)
-			if roleLookupErr != nil || kfRole == nil {
-				tflog.Warn(ctx, fmt.Sprintf("Error looking up role with id: %s", role))
-				response.Diagnostics.AddWarning(
-					"Error looking up role on Keyfactor.",
-					fmt.Sprintf(
-						"Error looking up role '%s' on Keyfactor. %s will not have role %s.",
-						roleStr,
-						accountName,
-						roleStr,
-					),
-				)
-				continue
-			}
-			validRoles = append(validRoles, types.String{Value: fmt.Sprintf("%s", roleStr)})
-			validRolesInterface = append(validRolesInterface, kfRole.Id)
-		}
-		err = setIdentityRole(ctx, kfClient, identityArg.AccountName, validRolesInterface)
-		if err != nil {
-			response.Diagnostics.AddError(
-				"Error updating identity roles.",
-				"Error updating identity roles: "+err.Error(),
-			)
-		}
-	}
-
-	if validRoles == nil {
-		validRoles = plan.Roles.Elems
-	}
-	// Generate resource state struct
-	var result = SecurityIdentity{
+	// The identity has ALREADY been created on Keyfactor Command by this point
+	// (createResponse is a real response from a completed POST). Build the
+	// baseline result now so that any error encountered while resolving/applying
+	// the declared roles below can still persist a tracked, if incomplete,
+	// resource -- mirroring this repo's precedent for "already created
+	// upstream, but a later step failed" (see the certificate deployment
+	// resource's Create(), which persists tainted state on a failed post-submit
+	// job wait rather than leaving a Command-side object with no Terraform
+	// record at all). Losing this identity out of state entirely would be
+	// strictly worse than surfacing an error alongside a resource the user can
+	// still see, re-apply, import, or destroy.
+	//
+	// Roles starts at an empty list, not plan.Roles: at this point in Create no
+	// role has actually been granted yet (setIdentityRole is only called below,
+	// after every declared role has resolved), so an empty list is the only
+	// value that doesn't overclaim what actually happened on the server.
+	result := SecurityIdentity{
 		ID:           types.Int64{Value: int64(createResponse.Id)},
 		AccountName:  types.String{Value: accountName},
 		IdentityType: types.String{Value: plan.IdentityType.Value},
 		Valid:        types.Bool{Value: plan.Valid.Value},
-		Roles:        plan.Roles,
+		Roles:        types.List{ElemType: types.StringType, Elems: []attr.Value{}},
+	}
+
+	if len(plan.Roles.Elems) > 0 {
+		// Every declared role MUST resolve to a real Keyfactor role before
+		// setIdentityRole is ever called -- mirrors Update()'s round-1 fix (see
+		// its comment above for the full rationale: silently dropping an
+		// unresolvable role here previously let it disappear from
+		// validRolesInterface while state still recorded the full declared
+		// list as granted, a silent gap between state and reality). Unlike
+		// Update(), the identity here has already been created, so a lookup
+		// failure can't "abort before mutating anything" -- it aborts before
+		// granting ANY of the declared roles, and persists the tainted
+		// `result` above (identity tracked in state, zero roles) so the
+		// failure is unambiguous and nothing is silently claimed granted.
+		var validRolesInterface []interface{}
+		for _, role := range plan.Roles.Elems {
+			tflog.Info(ctx, fmt.Sprintf("Adding role: %s", role))
+
+			// Use the role's underlying string value directly -- see the
+			// matching fix in Update() for why the old `[^\w]` regex
+			// sanitizer over role.String() mangled legitimate role names
+			// (e.g. names containing spaces or hyphens).
+			roleVal, ok := role.(types.String)
+			if !ok {
+				response.Diagnostics.AddError(
+					"Unexpected role value type.",
+					fmt.Sprintf("Expected role element to be a string, got %T.", role),
+				)
+				stateDiags := response.State.Set(ctx, result)
+				response.Diagnostics.Append(stateDiags...)
+				return
+			}
+			roleStr := roleVal.Value
+			tflog.Debug(ctx, roleLookupLogMessage(roleStr))
+			kfRole, roleLookupErr := resolveDeclaredSecurityRole(r.p.client, roleStr, &response.Diagnostics)
+			if roleLookupErr != nil {
+				response.Diagnostics.AddError(
+					"Error looking up role on Keyfactor.",
+					fmt.Sprintf(
+						"Identity '%s' (id %d) was created on Keyfactor, but looking up declared role '%s' failed: %s. "+
+							"No roles have been granted. Re-apply once the role can be resolved, or remove the resource "+
+							"from state (`terraform state rm`) if the identity is no longer needed.",
+						accountName, createResponse.Id, roleStr, roleLookupErr.Error(),
+					),
+				)
+				stateDiags := response.State.Set(ctx, result)
+				response.Diagnostics.Append(stateDiags...)
+				return
+			}
+			if kfRole == nil {
+				response.Diagnostics.AddError(
+					"Role not found on Keyfactor.",
+					fmt.Sprintf(
+						"Identity '%s' (id %d) was created on Keyfactor, but declared role '%s' was not found. "+
+							"No roles have been granted. Re-apply once the role exists, or remove the resource from "+
+							"state (`terraform state rm`) if the identity is no longer needed.",
+						accountName, createResponse.Id, roleStr,
+					),
+				)
+				stateDiags := response.State.Set(ctx, result)
+				response.Diagnostics.Append(stateDiags...)
+				return
+			}
+			validRolesInterface = append(validRolesInterface, kfRole.Id)
+		}
+
+		err = setIdentityRole(ctx, kfClient, identityArg.AccountName, validRolesInterface)
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Error updating identity roles.",
+				fmt.Sprintf(
+					"Identity '%s' (id %d) was created on Keyfactor, but syncing its role assignments failed: %s. "+
+						"Role membership may be partially applied. Re-apply to retry, or verify role membership manually.",
+					accountName, createResponse.Id, err.Error(),
+				),
+			)
+			stateDiags := response.State.Set(ctx, result)
+			response.Diagnostics.Append(stateDiags...)
+			return
+		}
+		result.Roles = plan.Roles
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -390,17 +739,22 @@ func (r resourceSecurityIdentity) ImportState(
 	identityExists := false
 	for _, identity := range identities {
 		if accountName == identity.AccountName {
-			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %s", accountName))
+			// accountName is logged %q-quoted (escaping embedded control
+			// characters like \r\n) rather than with %s, so an account name
+			// crafted to contain a CRLF sequence can't forge fake log lines
+			// under TF_LOG=INFO (CWE-117 log injection); see the identical
+			// rationale on roleLookupLogMessage in this file.
+			tflog.Info(ctx, fmt.Sprintf("Found identity with account name: %q", accountName))
 			identityExists = true
-			var roles []attr.Value
-			for _, role := range identity.Roles {
-				roles = append(roles, types.String{Value: role.Name})
-			}
+			// identityRolesCanonical builds the same (server canonical role
+			// name, ElemType String) types.List this loop used to build
+			// inline -- reuse it instead of maintaining a second copy of the
+			// same logic.
 			state = SecurityIdentity{
 				ID:           types.Int64{Value: int64(identity.Id)},
 				AccountName:  types.String{Value: identity.AccountName},
 				IdentityType: types.String{Value: identity.IdentityType},
-				Roles:        types.List{Elems: roles, ElemType: types.StringType},
+				Roles:        identityRolesCanonical(identity.Roles),
 				Valid:        types.Bool{Value: identity.Valid},
 			}
 
@@ -424,6 +778,33 @@ func (r resourceSecurityIdentity) ImportState(
 	}
 }
 
+// roleIdToInt converts a role identifier value -- as stored in the
+// []interface{} that Create/Update build from kfRole.Id (see
+// api.GetSecurityRoleResponse.Id, github.com/Keyfactor/keyfactor-go-client/
+// v3/api/security_models.go) -- into an int.
+//
+// This is a regression fix: GetSecurityRoleResponse.Id is declared as
+// float64 (both the by-name and by-ID GetSecurityRole lookup branches
+// populate it that way), so every role ID flowing through setIdentityRole
+// was actually a float64, never an int. The prior code's type switch
+// (`case int: ...; case string, interface{}: roleId = role.(int)`) matched
+// float64 via the `interface{}` catch-all and then blindly asserted it to
+// int, which panics for any non-int dynamic type -- meaning ANY
+// Create/Update that resolved at least one role successfully would crash
+// `terraform apply`. This handles both int (defensive, in case a caller ever
+// passes one directly) and float64, and returns an error instead of
+// panicking for any other unexpected type.
+func roleIdToInt(role interface{}) (int, error) {
+	switch v := role.(type) {
+	case int:
+		return v, nil
+	case float64:
+		return int(v), nil
+	default:
+		return 0, fmt.Errorf("unexpected role identifier type %T (value %v); expected int or float64", role, role)
+	}
+}
+
 func setIdentityRole(
 	ctx context.Context,
 	kfClient *api.Client,
@@ -436,14 +817,10 @@ func setIdentityRole(
 
 	// Start by blindly adding the identity to each role.
 	if len(roleIds) > 0 {
-		var roleId int
 		for _, role := range roleIds {
-			switch role.(type) {
-			case int:
-				roleId = role.(int)
-
-			case string, interface{}:
-				roleId = role.(int)
+			roleId, convErr := roleIdToInt(role)
+			if convErr != nil {
+				return convErr
 			}
 			err := addIdentityToRole(ctx, kfClient, identityAccountName, roleId)
 			if err != nil {
@@ -472,7 +849,11 @@ func setIdentityRole(
 
 	list := make(map[string]struct{}, len(roleIds))
 	for _, x := range roleIds {
-		list[strconv.Itoa(x.(int))] = struct{}{}
+		xId, convErr := roleIdToInt(x)
+		if convErr != nil {
+			return convErr
+		}
+		list[strconv.Itoa(xId)] = struct{}{}
 	}
 	var diff []int
 	for _, x := range identity.Roles {
@@ -482,7 +863,7 @@ func setIdentityRole(
 	}
 
 	for _, role := range diff {
-		err = removeIdentityFromRole(kfClient, identity.AccountName, role)
+		err = removeIdentityFromRole(ctx, kfClient, identity.AccountName, role)
 		if err != nil {
 			return err
 		}
@@ -490,8 +871,10 @@ func setIdentityRole(
 	return nil
 }
 
-func removeIdentityFromRole(kfClient *api.Client, identityAccountName string, roleId int) error {
-	log.Printf("[DEBUG] Removing account %s from Keyfactor role %d", identityAccountName, roleId)
+func removeIdentityFromRole(ctx context.Context, kfClient *api.Client, identityAccountName string, roleId int) error {
+	ctx = tflog.SetField(ctx, "role_id", roleId)
+	ctx = tflog.SetField(ctx, "identity_account_name", identityAccountName)
+	tflog.Debug(ctx, "Removing account from Keyfactor role.")
 	// Construct a list of security identities currently attached to role
 	role, err := kfClient.GetSecurityRole(roleId)
 	if err != nil {

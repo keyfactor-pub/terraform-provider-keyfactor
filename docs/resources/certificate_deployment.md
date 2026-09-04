@@ -5,21 +5,15 @@ subcategory: ""
 description: |-
   Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
   API to deploy certificates to "keyfactorcertificatestore" resources.
-  [!IMPORTANT]
-  Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules.
-  A "keyfactorcertificatedeployment" will not finish successfully until the destination certificate store's certificate
-  inventory has been updated to include the deployed certificate.
+  !> Warning: Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules. A "keyfactorcertificatedeployment" will not finish successfully until the destination certificate store's certificate inventory has been updated to include the deployed certificate.
 ---
 
 # keyfactor_certificate_deployment (Resource)
 
-Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom" 
+Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
 API to deploy certificates to "keyfactor_certificate_store" resources.
 
-> [!IMPORTANT]
-> Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules.
-> A "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's certificate 
-> inventory has been updated to include the deployed certificate.
+!> **Warning:** Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules. A "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's certificate inventory has been updated to include the deployed certificate.
 
 ## Example Usage
 

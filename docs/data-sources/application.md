@@ -4,18 +4,14 @@ page_title: "keyfactor_application Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
   Reads an existing Keyfactor Command Application (certificate store container).
-  [!NOTE]
-  On Keyfactor Command v25.0+ this data source uses the /Applications endpoint.
-  On pre-v25 Command it automatically falls back to /CertificateStoreContainers.
+  ~> Note: On Keyfactor Command v25.0+ this data source uses the /Applications endpoint. On pre-v25 Command it automatically falls back to /CertificateStoreContainers.
 ---
 
 # keyfactor_application (Data Source)
 
 Reads an existing Keyfactor Command Application (certificate store container).
 
-> [!NOTE]
-> On Keyfactor Command v25.0+ this data source uses the `/Applications` endpoint.
-> On pre-v25 Command it automatically falls back to `/CertificateStoreContainers`.
+~> **Note:** On Keyfactor Command v25.0+ this data source uses the `/Applications` endpoint. On pre-v25 Command it automatically falls back to `/CertificateStoreContainers`.
 
 ## Example Usage
 

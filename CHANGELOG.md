@@ -1,3 +1,110 @@
+# v2.9.2
+
+## Upgrade notes
+
+- **`request_timeout` is now actually enforced.** It was previously accepted in config but ignored — the real timeout was always the `KEYFACTOR_CLIENT_TIMEOUT` env var, or 60s. If a small `request_timeout` seemed to "work" before, it may now time out for real on long operations like PFX enrollment — raise it if applies that used to succeed start failing. A timed-out request also no longer retries silently; it now surfaces immediately as a Terraform error.
+- **Omitting an attribute from config now means "leave unmanaged," not "clear it."** Affects `keyfactor_certificate.owner_role_name`, `keyfactor_identity.roles`, `keyfactor_security_role.permissions`, `keyfactor_certificate_store.container_name`/`application_name`, and `keyfactor_certificate_template.allowed_requesters`/`template_regexes`/`template_defaults`/`enrollment_fields`/`metadata_fields`. If your config relied on simply omitting one of these to keep it cleared, set it explicitly to `""` or `[]` instead. Related: `keyfactor_certificate`'s `dns_sans`/`ip_sans`/`uri_sans` are now Optional+Computed, so omitting one is also a no-op rather than forcing a replace.
+- **Refresh behavior changed for three resources.** `keyfactor_security_role` and `keyfactor_security_identity` now detect changes made outside Terraform on `Read` instead of always re-asserting state. `keyfactor_certificate_store_type` now correctly detects out-of-band deletion without misreading gateway/5xx errors as deletion. `keyfactor_certificate_deployment`'s `Delete` now succeeds with a warning if the certificate was already removed outside Terraform.
+
+## Template Role Bindings
+
+### Fixes
+
+- fix: `keyfactor_template_role_binding` no longer fails with `'Policies' cannot be empty` on Command 25.x, and no longer clears a template's retention, enrollment/metadata, regex, approval, or `KeyUsage` settings as a side effect of an unrelated binding change. Fixes [#190](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/190)
+
+## Certificate Templates
+
+### Fixes
+
+- fix: `keyfactor_certificate_template` `Update` no longer clears `allowed_requesters` (or other undeclared attributes on Command 25.x) when config doesn't set them. Fixes [#195](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/195)
+- fix: explicit empty lists (`allowed_requesters`, `template_regexes`, `template_defaults`, `enrollment_fields`, `metadata_fields`) now clear correctly instead of silently refilling or getting stuck in a permanent diff
+- fix: `Update` no longer re-grants a role that `keyfactor_template_role_binding` already revoked earlier in the same apply
+
+## Certificates
+
+### Fixes
+
+- fix: `dns_sans`/`ip_sans`/`uri_sans` no longer force a destroy+recreate on the first plan after `terraform import`. Fixes [#197](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/197)
+- fix: `owner_role_name` no longer clears ownership as a side effect of an unrelated `Update` when omitted from config; an explicit `owner_role_name = ""` is now the deliberate way to clear it
+- fix: PFX enrollment now recovers automatically when the client times out but Command actually issued the certificate, instead of leaving Terraform state empty while a real certificate exists — a recovery surfaces as a warning diagnostic
+- fix: `Update` no longer disagrees with `ImportState` on `friendly_name`/`use_cn_as_friendly_name`, fixing "provider produced inconsistent result after apply" on the first apply right after `terraform import`
+
+## Certificate Deployments
+
+### Fixes
+
+- fix: `Create`'s deployment-validation failure diagnostic now reports the actual validation error instead of the initial pre-check result
+
+## Security Identities
+
+### Fixes
+
+- fix: `Update` no longer clears `roles` when config omits the attribute
+- fix: `Read` now detects roles added/removed outside Terraform instead of always re-asserting state
+- fix: `Read` no longer manufactures an unresolvable diff from role-name casing or ID-vs-name differences when the actual role set is unchanged; genuinely different role sets still surface as drift
+- fix: a `roles` entry that looks like a number (e.g. `"7"`) now resolves as a role ID first, with a plan/apply warning whenever that happens — this is opt-in-by-default so an existing config with a numeric `roles` entry that previously silently no-op'd doesn't start granting a real role on a routine upgrade without notice
+- security: role-lookup debug logging no longer lets an embedded newline in a declared role forge additional log lines
+
+## Security Roles
+
+### Fixes
+
+- fix: `Update` no longer sends `permissions: null` (clearing every permission) when config omits the `permissions` attribute
+- fix: `Update` now surfaces real server-side permission drift instead of always trusting the plan's declared order, and resends current permissions explicitly when config omits them (Command's `PUT /Security/Roles` is a full-replace endpoint)
+- fix: `Read` now detects name/description/permission changes made outside Terraform instead of always re-asserting state
+
+## Certificate Stores
+
+### Fixes
+
+- fix: `Update` no longer clears an existing container/application assignment when config doesn't declare it. Fixes [#175](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/175)
+- fix: container/application name lookup now retries instead of nulling the name on a single transient failure
+- fix: `store_type` no longer reads back as Command's display name after import, which was forcing every imported store into a spurious destroy+recreate. Fixes [#196](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/196)
+
+## Certificate Store Types
+
+### Fixes
+
+- fix: `entry_parameters = []` (and `properties = []`) no longer reads back as `null`. Fixes [#192](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/192)
+- fix: boolean fields explicitly set to `false` (`local_store`, `server_required`, `power_shell`, `blueprint_allowed`) are now actually sent to Command instead of silently dropped
+
+## Provider Configuration
+
+### Fixes
+
+- fix: `request_timeout` is now honored on long-running Command API calls (e.g. PFX enrollment) instead of silently falling back to the SDK's ~60s default
+- fix: corrected the `request_timeout` config/env/default precedence logic and its logging
+
+## OAuth Security
+
+### Fixes
+
+- fix: `keyfactor_oauth_security_role_claim_association` `Read`/`Create`/`Delete` no longer crash the provider on a transport-level API failure (DNS, connection, or TLS errors) — this now surfaces as a normal Terraform diagnostic
+- fix: `Create`/`Delete` no longer panic when the associated role's name, description, or permission set is null on the server
+
+## Certificate Authorities
+
+### Fixes
+
+- fix: `key_retention = "2"` no longer produces an inconsistent-result error on apply. Fixes [#191](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/191)
+- fix: destroying a client-certificate-auth CA no longer fails with an OAuth/client-certificate field conflict. Fixes [#194](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/194)
+- fix: switching a CA between OAuth and client-certificate authentication in one apply no longer fails
+- fix: `properties` no longer shows a perpetual diff when Command's stored JSON differs from state only in key order or whitespace
+- fix: auth-certificate metadata (`auth_certificate_issued_dn`/`_issuer_dn`/`_thumbprint`) now reads as `null` instead of an empty string when no auth certificate is configured
+- fix: `enforce_unique_dn`/`new_end_entity_on_renew_and_reissue` conflicts and HTTPS CA requirements are now caught at plan time instead of failing on apply
+- fix: `allowed_enrollment_types`/`use_allowed_requesters`/`allowed_requesters` are no longer rejected just because `standalone = false`
+- docs: `explicit_password`, `auth_certificate`, `auth_certificate_password`, and `client_secret` now note that removing them from config clears the credential on the next apply
+
+## Chores
+
+- chore(deps): `keyfactor-go-client/v3` `v3.5.6-rc.1 → v3.6.0`
+- chore(deps): `keyfactor-auth-client-go` `v1.5.0 → v1.6.0`
+- chore(deps): `keyfactor-go-client-sdk/v24` `v24.1.1 → v24.1.2-rc.4`
+- chore(deps): `golang.org/x/crypto` `v0.47.0 → v0.52.0`
+- chore(deps): `google.golang.org/grpc` `v1.79.3 → v1.82.1`
+- chore(deps): `golang.org/x/net` `v0.49.0 → v0.55.0`, plus transitive dependency updates
+- chore(deps): minimum Go toolchain moves `1.24 → 1.25`
+
 # v2.9.1
 
 ## Template Role Bindings 

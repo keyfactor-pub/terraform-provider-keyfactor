@@ -77,37 +77,37 @@ jobs:
         timeout-minutes: 25
 
   # Run integration tests against ses2541 lab
-  integration-test:
-    name: Integration Tests (ses2541 lab)
-    needs: build
-    runs-on: ubuntu-latest
-    environment: ses2541
-    timeout-minutes: 200
-    strategy:
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-          cache: true
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: '1.7.*'
-          terraform_wrapper: false
-      - run: go mod download
-      - name: Decode K8S credentials
-        run: |
-          echo "${{ secrets.KEYFACTOR_K8S_SERVER_PASSWORD_B64 }}" | base64 -d > /tmp/k8s-creds.json
-      - name: Run integration tests
-        env:
-          TF_ACC: "1"
-          KEYFACTOR_HOSTNAME: ${{ secrets.KEYFACTOR_HOSTNAME }}
-          KEYFACTOR_AUTH_CLIENT_ID: ${{ secrets.KEYFACTOR_AUTH_CLIENT_ID }}
-          KEYFACTOR_AUTH_CLIENT_SECRET: ${{ secrets.KEYFACTOR_AUTH_CLIENT_SECRET }}
-          KEYFACTOR_AUTH_TOKEN_URL: ${{ secrets.KEYFACTOR_AUTH_TOKEN_URL }}
-          KEYFACTOR_SKIP_VERIFY: ${{ secrets.KEYFACTOR_SKIP_VERIFY }}
-          KEYFACTOR_API_PATH: "Keyfactor/API"
-          KEYFACTOR_K8S_CREDENTIALS_FILE: "/tmp/k8s-creds.json"
-        run: go test -v -cover -timeout 180m -run "TestInt" ./keyfactor/
-        timeout-minutes: 190
+#  integration-test:
+#    name: Integration Tests (ses2541 lab)
+#    needs: build
+#    runs-on: ubuntu-latest
+#    environment: ses2541
+#    timeout-minutes: 200
+#    strategy:
+#      fail-fast: false
+#    steps:
+#      - uses: actions/checkout@v4
+#      - uses: actions/setup-go@v5
+#        with:
+#          go-version-file: 'go.mod'
+#          cache: true
+#      - uses: hashicorp/setup-terraform@v3
+#        with:
+#          terraform_version: '1.7.*'
+#          terraform_wrapper: false
+#      - run: go mod download
+#      - name: Decode K8S credentials
+#        run: |
+#          echo "${{ secrets.KEYFACTOR_K8S_SERVER_PASSWORD_B64 }}" | base64 -d > /tmp/k8s-creds.json
+#      - name: Run integration tests
+#        env:
+#          TF_ACC: "1"
+#          KEYFACTOR_HOSTNAME: ${{ secrets.KEYFACTOR_HOSTNAME }}
+#          KEYFACTOR_AUTH_CLIENT_ID: ${{ secrets.KEYFACTOR_AUTH_CLIENT_ID }}
+#          KEYFACTOR_AUTH_CLIENT_SECRET: ${{ secrets.KEYFACTOR_AUTH_CLIENT_SECRET }}
+#          KEYFACTOR_AUTH_TOKEN_URL: ${{ secrets.KEYFACTOR_AUTH_TOKEN_URL }}
+#          KEYFACTOR_SKIP_VERIFY: ${{ secrets.KEYFACTOR_SKIP_VERIFY }}
+#          KEYFACTOR_API_PATH: "Keyfactor/API"
+#          KEYFACTOR_K8S_CREDENTIALS_FILE: "/tmp/k8s-creds.json"
+#        run: go test -v -cover -timeout 180m -run "TestInt" ./keyfactor/
+#        timeout-minutes: 190

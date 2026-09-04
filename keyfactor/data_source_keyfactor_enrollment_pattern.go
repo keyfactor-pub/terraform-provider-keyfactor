@@ -211,20 +211,18 @@ An object containing custom enrollment fields. These are configured for each enr
 
 Once created for the enrollment pattern, these values are shown in Keyfactor Command on the PFX and CSR enrollment pages in the Additional Enrollment Fields section. The fields are mandatory during enrollment. The data will appear on the CA / Issued Certificates attribute tab for certificates enrolled with an enrollment pattern configured with Keyfactor Command enrollment fields.
 
-> [!NOTE]: 
-> These are not metadata fields, so they are not stored in the Keyfactor Command database, but simply passed through to the CA. The CA in turn could, via a gateway or policy module, use this data to perform required actions.
+**Note:** These are not metadata fields, so they are not stored in the Keyfactor Command database, but simply passed through to the CA. The CA in turn could, via a gateway or policy module, use this data to perform required actions.
 `,
 			},
 		},
 		MarkdownDescription: `
-Reads an existing certificate from Keyfactor Command using the "/EnrollmentPatterns" API. 
-> [!NOTE]
-> The enrollment pattern can be identified by its name or internal ID.
+Reads an existing certificate from Keyfactor Command using the "/EnrollmentPatterns" API.
+
+~> **Note:** The enrollment pattern can be identified by its name or internal ID.
 
 Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
 
-> [!IMPORTANT]
-> Enrollment Patterns are only available in Keyfactor Command v25.0+
+~> **Important:** Enrollment Patterns are only available in Keyfactor Command v25.0+
 
 For full information on enrollment patterns view the [product documentation](https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern)
 `,

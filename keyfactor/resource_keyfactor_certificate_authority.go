@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -153,7 +155,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Optional:      true,
 				Computed:      true,
 				Description:   "A string indicating additional properties, storing configuration for the Sync External Certificates option.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				PlanModifiers: []tfsdk.AttributePlanModifier{normalizedJSONPropertiesModifier{}},
 			},
 			"allowed_enrollment_types": {
 				Type:          types.Int64Type,
@@ -282,7 +284,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "An object indicating the password information to use for authentication with explicit_user. Write-only; cannot be read back from the server.",
+				Description: "An object indicating the password information to use for authentication with explicit_user. Write-only; cannot be read back from the server. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
 			},
 
 			// --- Auth Certificate (write-only) ---
@@ -290,72 +292,118 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only.",
+				Description: "An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
 			},
 			"auth_certificate_password": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only.",
+				Description: "An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
 			},
 
 			// --- Auth Certificate metadata (read-only from server) ---
+			// PlanModifiers use authVariantSiblingModifier (not a bare
+			// UseStateForUnknown) so switching an existing CA from
+			// client-certificate auth to OAuth in one apply nulls this stale
+			// metadata on the plan instead of resurrecting it from state --
+			// see authVariantSiblingModifier's doc comment. Full-review round 3.
+			//
+			// unknownTriggerPaths also watches auth_certificate itself: when
+			// the client-certificate variant is incoming (OAuth->cert switch)
+			// or rotating (a new auth_certificate value on an already
+			// cert-auth CA), the server computes fresh metadata that cannot
+			// be predicted at plan time, so the plan must stay Unknown rather
+			// than copy stale/null state. Full-review round 4 finding #1.
 			"auth_certificate_issued_dn": {
-				Type:          types.StringType,
-				Computed:      true,
-				Description:   "Issued DN of the authentication certificate (read-only).",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Issued DN of the authentication certificate (read-only).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					authVariantSiblingModifier{
+						triggerPaths:        caOAuthTriggerPaths,
+						unknownTriggerPaths: caCertAuthTriggerPaths,
+						nullValue:           types.String{Null: true},
+					},
+				},
 			},
 			"auth_certificate_issuer_dn": {
-				Type:          types.StringType,
-				Computed:      true,
-				Description:   "Issuer DN of the authentication certificate (read-only).",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Issuer DN of the authentication certificate (read-only).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					authVariantSiblingModifier{
+						triggerPaths:        caOAuthTriggerPaths,
+						unknownTriggerPaths: caCertAuthTriggerPaths,
+						nullValue:           types.String{Null: true},
+					},
+				},
 			},
 			"auth_certificate_thumbprint": {
-				Type:          types.StringType,
-				Computed:      true,
-				Description:   "Thumbprint of the authentication certificate (read-only).",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Computed:    true,
+				Description: "Thumbprint of the authentication certificate (read-only).",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					authVariantSiblingModifier{
+						triggerPaths:        caOAuthTriggerPaths,
+						unknownTriggerPaths: caCertAuthTriggerPaths,
+						nullValue:           types.String{Null: true},
+					},
+				},
 			},
 
 			// --- OAuth Config (HTTPS CAs only) ---
+			// PlanModifiers use authVariantSiblingModifier (not a bare
+			// UseStateForUnknown) so switching an existing CA from OAuth to
+			// client-certificate auth in one apply nulls these stale OAuth
+			// attributes on the plan instead of resurrecting them from state --
+			// see authVariantSiblingModifier's doc comment. Full-review round 3.
 			"token_url": {
-				Type:          types.StringType,
-				Optional:      true,
-				Computed:      true,
-				Description:   "For HTTPS CAs, a string indicating the bearer token URL of the identity provider.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "For HTTPS CAs, a string indicating the bearer token URL of the identity provider.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					authVariantSiblingModifier{triggerPaths: caCertAuthTriggerPaths, nullValue: types.String{Null: true}},
+				},
 			},
 			"client_id": {
-				Type:          types.StringType,
-				Optional:      true,
-				Computed:      true,
-				Description:   "For HTTPS CAs, a string specifying the client ID used to authenticate when OAuth authentication is selected.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "For HTTPS CAs, a string specifying the client ID used to authenticate when OAuth authentication is selected.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					authVariantSiblingModifier{triggerPaths: caCertAuthTriggerPaths, nullValue: types.String{Null: true}},
+				},
 			},
 			"client_secret": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "For HTTPS CAs, an object indicating the secret for the client used to authenticate. Write-only; cannot be read back from the server.",
+				Description: "For HTTPS CAs, an object indicating the secret for the client used to authenticate. Write-only; cannot be read back from the server. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
 			},
 			"scope": {
-				Type:          types.StringType,
-				Optional:      true,
-				Computed:      true,
-				Description:   "For HTTPS CAs, a string indicating scopes included in token requests, separated by spaces.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "For HTTPS CAs, a string indicating scopes included in token requests, separated by spaces.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					authVariantSiblingModifier{triggerPaths: caCertAuthTriggerPaths, nullValue: types.String{Null: true}},
+				},
 			},
 			"audience": {
-				Type:          types.StringType,
-				Optional:      true,
-				Computed:      true,
-				Description:   "For HTTPS CAs, a string specifying the audience to include in token requests to the identity provider.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
+				Type:        types.StringType,
+				Optional:    true,
+				Computed:    true,
+				Description: "For HTTPS CAs, a string specifying the audience to include in token requests to the identity provider.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					authVariantSiblingModifier{triggerPaths: caCertAuthTriggerPaths, nullValue: types.String{Null: true}},
+				},
 			},
 
-			// --- Schedules (flat interval minutes) ---
+			// --- Schedules (interval minutes) ---
+			// Command represents each of these three schedules as one of several mutually
+			// exclusive variants (Interval, Daily, Weekly, Monthly, ExactlyOnce, Immediate);
+			// this provider currently models the Interval variant only.
 			"full_scan_interval_minutes": {
 				Type:          types.Int64Type,
 				Optional:      true,
@@ -494,7 +542,10 @@ type KeyfactorCertificateAuthority struct {
 	Scope        types.String `tfsdk:"scope"`
 	Audience     types.String `tfsdk:"audience"`
 
-	// Schedules
+	// Schedules. Command can represent each of these three schedules
+	// server-side as one of several variants (Interval, Daily, Weekly,
+	// Monthly, ExactlyOnce, Immediate); this provider currently models the
+	// Interval variant only.
 	FullScanIntervalMinutes        types.Int64 `tfsdk:"full_scan_interval_minutes"`
 	IncrementalScanIntervalMinutes types.Int64 `tfsdk:"incremental_scan_interval_minutes"`
 	ThresholdCheckIntervalMinutes  types.Int64 `tfsdk:"threshold_check_interval_minutes"`
@@ -585,29 +636,61 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 		state.AuthCertificateIssuedDN = types.String{Value: resp.AuthCertificate.GetIssuedDN()}
 		state.AuthCertificateIssuerDN = types.String{Value: resp.AuthCertificate.GetIssuerDN()}
 		state.AuthCertificateThumbprint = types.String{Value: resp.AuthCertificate.GetThumbprint()}
+	} else {
+		state.AuthCertificateIssuedDN = types.String{Null: true}
+		state.AuthCertificateIssuerDN = types.String{Null: true}
+		state.AuthCertificateThumbprint = types.String{Null: true}
 	}
 
-	// Schedules
-	if resp.FullScan != nil && resp.FullScan.Interval != nil {
-		state.FullScanIntervalMinutes = types.Int64{Value: int64(resp.FullScan.Interval.GetMinutes())}
-	} else {
-		state.FullScanIntervalMinutes = types.Int64{Null: true}
-	}
-	if resp.IncrementalScan != nil && resp.IncrementalScan.Interval != nil {
-		state.IncrementalScanIntervalMinutes = types.Int64{Value: int64(resp.IncrementalScan.Interval.GetMinutes())}
-	} else {
-		state.IncrementalScanIntervalMinutes = types.Int64{Null: true}
-	}
-	if resp.ThresholdCheck != nil && resp.ThresholdCheck.Interval != nil {
-		state.ThresholdCheckIntervalMinutes = types.Int64{Value: int64(resp.ThresholdCheck.Interval.GetMinutes())}
-	} else {
-		state.ThresholdCheckIntervalMinutes = types.Int64{Null: true}
-	}
+	// Schedules. Command represents FullScan/IncrementalScan/ThresholdCheck as a
+	// KeyfactorSchedule that can be Interval-shaped (among other variants not
+	// yet modeled here: Daily/Weekly/Monthly/ExactlyOnce/Immediate -- see GH
+	// issue #185 for the Weekly case specifically). An unmodeled variant
+	// collapses to Null here, which is indistinguishable from "no schedule
+	// configured at all" -- buildCARequest would then omit the field entirely
+	// on the next PUT, which Command's full-replace semantics interpret as
+	// "clear this schedule."
+	state.FullScanIntervalMinutes = scheduleToState(resp.FullScan)
+	state.IncrementalScanIntervalMinutes = scheduleToState(resp.IncrementalScan)
+	state.ThresholdCheckIntervalMinutes = scheduleToState(resp.ThresholdCheck)
 
 	// force_save is write-only; always null from server reads.
 	state.ForceSave = types.Bool{Null: true}
 
 	return state
+}
+
+// scheduleToState converts a Command KeyfactorSchedule (as returned for FullScan,
+// IncrementalScan, or ThresholdCheck) into the Terraform attribute value used to
+// represent its Interval-shaped variant, *_interval_minutes.
+//
+// The returned value comes back Null when the schedule is nil (no schedule
+// configured) or when it holds a variant this provider does not yet model
+// (Daily, Weekly, Monthly, ExactlyOnce, Immediate). An unmodeled variant still
+// reads as "no schedule," so an Update() that doesn't touch this attribute
+// would omit it from the PUT and clear it -- see GH issue #185 for Weekly
+// specifically, which the vendored SDK cannot even deserialize (SystemDayOfWeek
+// expects an int; Command returns day-name strings), so a targeted fix would
+// need to land in the SDK, not here.
+func scheduleToState(sched *v1.KeyfactorCommonSchedulingKeyfactorSchedule) types.Int64 {
+	if sched == nil || sched.Interval == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(sched.Interval.GetMinutes())}
+}
+
+// buildSchedule constructs a Command KeyfactorSchedule from a plan/state
+// Interval attribute value. Returns nil when the value is not known, matching
+// the "omit the field from the request" semantics buildCARequest relies on
+// elsewhere.
+func buildSchedule(intervalMinutes types.Int64) *v1.KeyfactorCommonSchedulingKeyfactorSchedule {
+	if !intervalMinutes.Null && !intervalMinutes.Unknown {
+		minutes := int32(intervalMinutes.Value)
+		return &v1.KeyfactorCommonSchedulingKeyfactorSchedule{
+			Interval: &v1.KeyfactorCommonSchedulingModelsIntervalModel{Minutes: &minutes},
+		}
+	}
+	return nil
 }
 
 func nullableInt32ToTfInt64(v v1.NullableInt32) types.Int64 {
@@ -677,7 +760,8 @@ func stringSliceToTfList(vals []string) types.List {
 	}
 }
 
-func buildCARequest(ctx context.Context, plan KeyfactorCertificateAuthority) v1.CertificateAuthoritiesCertificateAuthorityRequest {
+func buildCARequest(ctx context.Context, plan KeyfactorCertificateAuthority) (v1.CertificateAuthoritiesCertificateAuthorityRequest, diag.Diagnostics) {
+	var diags diag.Diagnostics
 	caType := v1.CSSCMSCoreEnumsCertificateAuthorityType(int32(plan.CAType.Value))
 	req := v1.CertificateAuthoritiesCertificateAuthorityRequest{
 		CAType: &caType,
@@ -773,24 +857,95 @@ func buildCARequest(ctx context.Context, plan KeyfactorCertificateAuthority) v1.
 	setStringIfKnown(&req, plan.Scope, func(v string) { req.SetScope(v) })
 	setStringIfKnown(&req, plan.Audience, func(v string) { req.SetAudience(v) })
 
-	// Schedules
-	if !plan.FullScanIntervalMinutes.Null && !plan.FullScanIntervalMinutes.Unknown {
-		minutes := int32(plan.FullScanIntervalMinutes.Value)
-		interval := v1.KeyfactorCommonSchedulingModelsIntervalModel{Minutes: &minutes}
-		req.FullScan = &v1.KeyfactorCommonSchedulingKeyfactorSchedule{Interval: &interval}
+	// Schedules. Each of FullScan/IncrementalScan/ThresholdCheck is represented
+	// as an Interval schedule. buildSchedule returns nil when the attribute is
+	// null/unknown, which -- per Command's full-replace PUT semantics -- omits
+	// the field from the request and clears it server-side; an update that
+	// simply didn't declare the attribute relies on Optional+Computed with
+	// UseStateForUnknown to carry the prior state value forward so this does
+	// not happen.
+	req.FullScan = buildSchedule(plan.FullScanIntervalMinutes)
+	req.IncrementalScan = buildSchedule(plan.IncrementalScanIntervalMinutes)
+	req.ThresholdCheck = buildSchedule(plan.ThresholdCheckIntervalMinutes)
+
+	// Command rejects a request that carries populated fields for both CA auth
+	// variants (OAuth vs. client-certificate) at once. Since buildCARequest is
+	// the single payload constructor shared by Create, Update, and Delete's
+	// clear-schedules-before-delete fallback, deriving and stripping the unused
+	// variant here -- rather than in each caller -- guarantees all three agree
+	// on which variant is active. See clearAuthVariant.
+	clearAuthVariant(&req, plan)
+
+	return req, diags
+}
+
+// isKnownNonEmptyString reports whether a types.String plan/state value is
+// both known (not Null/Unknown) and non-empty. Used by clearAuthVariant to
+// distinguish a genuinely configured credential from a zero-value string.
+func isKnownNonEmptyString(v types.String) bool {
+	return !v.Null && !v.Unknown && v.Value != ""
+}
+
+// clearAuthVariant strips whichever CA authentication variant -- OAuth or
+// client-certificate -- is NOT actually in use from an already-built request,
+// so the payload never carries populated fields for both at once. Command
+// rejects such a request outright: "Fields for OAuth and Client Certificate
+// Authentication cannot both be provided for the same CA."
+//
+// token_url, client_id, scope, and audience are Optional+Computed with a
+// UseStateForUnknown plan modifier (see the schema above). Once a
+// client-certificate-auth CA's first Read populates them with the server's
+// non-OAuth zero value -- an empty string, not a null pointer; see
+// caResponseToState's use of nullableStringToTfString -- that empty string is
+// carried forward into every later plan/state and, without this function,
+// would be echoed back into every subsequent write via
+// req.SetTokenURL("")/req.SetClientId(""). Those setters mark the underlying
+// NullableString as explicitly "set," which is indistinguishable on the wire
+// from a genuinely configured empty value -- Command's server-side check does
+// not require the value to be non-empty, only present. auth_certificate and
+// auth_certificate_password, by contrast, are Optional but NOT Computed, so
+// they directly reflect config and are only genuinely populated when the user
+// has configured client-certificate auth.
+//
+// Called from buildCARequest itself -- the single payload constructor shared
+// by Create, Update, and Delete's clear-schedules-before-delete fallback --
+// so all three derive the active auth variant identically; there is no
+// separate per-caller copy of this logic that could drift out of sync.
+// Fixes #194.
+func clearAuthVariant(req *v1.CertificateAuthoritiesCertificateAuthorityRequest, plan KeyfactorCertificateAuthority) {
+	hasCertAuth := isKnownNonEmptyString(plan.AuthCertificate)
+	hasOAuth := isKnownNonEmptyString(plan.ClientID) || isKnownNonEmptyString(plan.TokenURL)
+
+	clearOAuthFields := func() {
+		req.UnsetTokenURL()
+		req.UnsetClientId()
+		req.ClientSecret = nil
+		req.UnsetScope()
+		req.UnsetAudience()
 	}
-	if !plan.IncrementalScanIntervalMinutes.Null && !plan.IncrementalScanIntervalMinutes.Unknown {
-		minutes := int32(plan.IncrementalScanIntervalMinutes.Value)
-		interval := v1.KeyfactorCommonSchedulingModelsIntervalModel{Minutes: &minutes}
-		req.IncrementalScan = &v1.KeyfactorCommonSchedulingKeyfactorSchedule{Interval: &interval}
-	}
-	if !plan.ThresholdCheckIntervalMinutes.Null && !plan.ThresholdCheckIntervalMinutes.Unknown {
-		minutes := int32(plan.ThresholdCheckIntervalMinutes.Value)
-		interval := v1.KeyfactorCommonSchedulingModelsIntervalModel{Minutes: &minutes}
-		req.ThresholdCheck = &v1.KeyfactorCommonSchedulingKeyfactorSchedule{Interval: &interval}
+	clearCertAuthFields := func() {
+		req.AuthCertificate = nil
+		req.AuthCertificatePassword = nil
 	}
 
-	return req
+	switch {
+	case hasCertAuth:
+		// Client-certificate auth is in use: never echo OAuth fields, even a
+		// stale empty-string value carried forward from a prior Computed read.
+		clearOAuthFields()
+	case hasOAuth:
+		// OAuth is in use: never send client-certificate auth fields. These are
+		// normally already nil here since auth_certificate is not Computed, but
+		// clearing them keeps this function symmetric and defensive against
+		// future schema changes.
+		clearCertAuthFields()
+	default:
+		// Neither variant is genuinely configured (e.g. a DCOM CA, or an HTTPS
+		// CA authenticating via explicit/agent credentials): don't echo stale
+		// empty-string OAuth fields either.
+		clearOAuthFields()
+		clearCertAuthFields()
+	}
 }
 
 // setBoolIfKnown calls the setter only if the value is not null/unknown.
@@ -837,6 +992,325 @@ func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCert
 	}
 }
 
+// caOAuthTriggerPaths and caCertAuthTriggerPaths are the shared trigger-path
+// sets for authVariantSiblingModifier, hoisted out of the schema's seven
+// call sites (three cert-metadata attributes x caOAuthTriggerPaths, four
+// OAuth attributes x caCertAuthTriggerPaths) so the OAuth trigger set used by
+// all three cert-metadata attributes -- which must stay identical for the
+// variant-switch reconciliation below to be symmetric -- cannot drift apart
+// if a fifth OAuth attribute is ever added to some call sites but not
+// others. caCertAuthTriggerPaths additionally serves as auth_certificate_*'s
+// unknownTriggerPaths (see authVariantSiblingModifier's doc comment).
+// Full-review round 4 advisory.
+var (
+	caOAuthTriggerPaths    = []path.Path{path.Root("client_id"), path.Root("token_url"), path.Root("scope"), path.Root("audience")}
+	caCertAuthTriggerPaths = []path.Path{path.Root("auth_certificate")}
+)
+
+// authVariantSiblingModifier is the plan-time half of certificate-authority
+// auth-variant switch reconciliation -- the OAuth<->client-certificate
+// counterpart of the terraform-plugin-framework v0.10 mechanism this works
+// around: a Computed attribute whose own config is null is marked Unknown at
+// plan time, and a bare tfsdk.UseStateForUnknown then pins that Unknown
+// straight back to the stale prior-state value with no notion that a sibling
+// attribute is taking over.
+//
+// token_url/client_id/scope/audience (OAuth) are Optional+Computed, and
+// auth_certificate_issued_dn/issuer_dn/thumbprint (client-certificate auth
+// metadata) are Computed, all previously wired to only a bare
+// UseStateForUnknown. Switching an existing CA between auth variants in one
+// apply -- e.g. removing token_url/client_id from config and declaring
+// auth_certificate instead -- pinned the OUTGOING variant's stale attributes
+// onto the recorded plan, while clearAuthVariant (called from buildCARequest
+// at apply time) strips those same fields from the PUT and the server's
+// post-switch representation zeroes them out (empty string for OAuth fields,
+// per clearAuthVariant's own doc comment; null for cert metadata, per
+// caResponseToState's else-branch) -- "Provider produced inconsistent result
+// after apply" on every single auth-variant switch, in both directions.
+// Full-review round 3 finding.
+//
+// This is a group relationship, not a single 1:1 sibling: an OAuth
+// attribute's switch-away signal is auth_certificate alone becoming
+// genuinely configured, while a cert-metadata attribute's switch-away signal
+// is ANY of the four OAuth attributes becoming genuinely configured -- hence
+// a slice of trigger paths rather than one. "Genuinely configured" reuses
+// isKnownNonEmptyString's discipline (known and non-empty), the same test
+// clearAuthVariant and validateCAConfigConstraints already apply to these
+// exact attributes, so schema, apply-time stripping, and config validation
+// all agree on what counts as "this variant is in use."
+//
+// validateCAConfigConstraints's auth-variant mutual-exclusion check rejects
+// any config that declares both variants at once with a genuinely non-empty
+// value, so a variant-switch config only ever declares the incoming variant
+// -- the "multiple triggers fire for the same attribute" case is therefore
+// unreachable in practice.
+//
+// unknownTriggerPaths (full-review round 4 finding #1) fixes a second gap:
+// the three cert-metadata attributes' triggerPaths only cover the OUTGOING
+// direction (an OAuth attribute becoming declared means client-certificate
+// auth is going away, so nulling is correct). They have no trigger at all
+// for the INCOMING/rotating direction -- auth_certificate itself becoming
+// declared -- so on an OAuth->cert-auth switch, or on rotating
+// auth_certificate on an already cert-auth CA, none of triggerPaths fire and
+// the tail resurrects the stale (null, for a switch; old, for a rotation)
+// prior-state metadata onto the plan, while the PUT response carries the
+// server's freshly computed DN/thumbprint for the new certificate --
+// "Provider produced inconsistent result after apply" on the very switch
+// round 3 fixed for the OAuth attributes, and on every cert rotation.
+//
+// A trigger path in unknownTriggerPaths behaves differently from one in
+// triggerPaths: instead of nulling the plan, it leaves the plan Unknown
+// (the server will compute a value neither state nor config can predict) --
+// but only when the trigger's config value actually differs from its own
+// prior state value. auth_certificate is Optional but not Computed
+// (write-only, never preserved from state by the framework), so a
+// steady-state cert-auth CA must re-declare the identical certificate value
+// in config on every single apply just to avoid clearAuthVariant treating it
+// as cleared; comparing config against state (not merely checking
+// "declared") is what distinguishes that steady-state redeclaration --
+// which must fall through to ordinary UseStateForUnknown carry-forward, or
+// every apply would show a perpetual "(known after apply)" diff on metadata
+// that never actually changed -- from a genuine incoming switch or rotation.
+type authVariantSiblingModifier struct {
+	// triggerPaths: when any is genuinely declared (known, non-empty) in
+	// config, the OTHER variant is taking over -- null this attribute's plan
+	// instead of resurrecting its stale prior-state value.
+	triggerPaths []path.Path
+
+	// unknownTriggerPaths: when any is genuinely declared in config AND its
+	// value differs from its own prior state value, the variant THIS
+	// attribute is metadata for is incoming or rotating this apply -- leave
+	// the plan Unknown so the server-computed value isn't pinned stale (nor
+	// incorrectly nulled). An unchanged, steadily-redeclared trigger value
+	// falls through to ordinary UseStateForUnknown carry-forward instead.
+	unknownTriggerPaths []path.Path
+
+	nullValue attr.Value
+}
+
+func (m authVariantSiblingModifier) Description(_ context.Context) string {
+	return "Uses the prior state value unless the other certificate authority auth variant is declared in config, in which case the plan is nulled so the new variant can take over cleanly."
+}
+
+func (m authVariantSiblingModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m authVariantSiblingModifier) Modify(ctx context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+	if !resp.AttributePlan.IsUnknown() {
+		return
+	}
+	if req.AttributeConfig.IsUnknown() {
+		return
+	}
+
+	anyUnknown := false
+	for _, triggerPath := range m.triggerPaths {
+		var triggerConfig types.String
+		if diags := req.Config.GetAttribute(ctx, triggerPath, &triggerConfig); diags.HasError() {
+			// Conservative fallback: treat this trigger as undeclared rather
+			// than erroring the plan over a diagnostic lookup failure.
+			continue
+		}
+		if triggerConfig.Unknown {
+			anyUnknown = true
+			continue
+		}
+		if isKnownNonEmptyString(triggerConfig) {
+			// The other auth variant is genuinely declared in config and
+			// taking over this apply -- do not resurrect this attribute's
+			// stale prior-state value onto the plan.
+			resp.AttributePlan = m.nullValue
+			return
+		}
+	}
+
+	for _, triggerPath := range m.unknownTriggerPaths {
+		var triggerConfig types.String
+		if diags := req.Config.GetAttribute(ctx, triggerPath, &triggerConfig); diags.HasError() {
+			continue
+		}
+		if triggerConfig.Unknown {
+			anyUnknown = true
+			continue
+		}
+		if !isKnownNonEmptyString(triggerConfig) {
+			continue
+		}
+		// The variant this attribute is metadata for is genuinely declared
+		// in config. Only treat it as incoming/rotating -- and therefore
+		// leave the plan Unknown for the server to compute a fresh value --
+		// if the trigger's config value actually differs from its own prior
+		// state value; an unchanged, steadily-redeclared value (the normal
+		// shape of every apply for a write-only, non-Computed field like
+		// auth_certificate) falls through to ordinary UseStateForUnknown
+		// carry-forward below instead, so a steady-state CA doesn't show a
+		// perpetual diff on its metadata attributes.
+		var triggerState types.String
+		if diags := req.State.GetAttribute(ctx, triggerPath, &triggerState); diags.HasError() {
+			// Conservative: can't tell whether it changed, so assume it did
+			// rather than risk resurrecting stale metadata onto the plan.
+			return
+		}
+		if triggerState.Null || triggerState.Unknown || triggerState.Value != triggerConfig.Value {
+			return
+		}
+	}
+
+	if anyUnknown {
+		// At least one trigger attribute depends on some other not-yet-known
+		// value this apply -- cannot yet tell whether the other variant is
+		// taking over. Be conservative and leave this attribute Unknown too,
+		// deferring the decision to apply time rather than guessing.
+		return
+	}
+
+	// No trigger declared (or an unknownTriggerPaths trigger declared but
+	// unchanged from state): ordinary UseStateForUnknown semantics. Mirrors
+	// tfsdk.UseStateForUnknownModifier's own IsNull guard -- full-review
+	// round 4 finding #1.
+	if req.AttributeState.IsNull() || req.AttributeState.IsUnknown() {
+		return
+	}
+	resp.AttributePlan = req.AttributeState
+}
+
+// ValidateConfig rejects config-time constraint violations before plan/apply
+// ever runs -- see validateCAConfigConstraints for the checks performed.
+func (r resourceCertificateAuthority) ValidateConfig(ctx context.Context, request tfsdk.ValidateResourceConfigRequest, response *tfsdk.ValidateResourceConfigResponse) {
+	LogFunctionEntry(ctx, "resourceCertificateAuthority.ValidateConfig")
+
+	var config KeyfactorCertificateAuthority
+	diags := request.Config.Get(ctx, &config)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	response.Diagnostics.Append(validateCAConfigConstraints(config)...)
+
+	LogFunctionExit(ctx, "resourceCertificateAuthority.ValidateConfig")
+}
+
+// caHTTPSType is the ca_type value (per this resource's "ca_type" attribute
+// description: "0 = DCOM (Microsoft ADCS) or 1 = HTTPS (e.g. EJBCA)")
+// identifying an HTTPS CA, the variant for which
+// new_end_entity_on_renew_and_reissue=true is required.
+const caHTTPSType = 1
+
+// validateCAConfigConstraints enforces config-time constraints documented on
+// this resource's attributes (F3/F4 from the Optional+Computed audit) that
+// were previously only descriptive text, never actually checked:
+//
+//  1. enforce_unique_dn and new_end_entity_on_renew_and_reissue are mutually
+//     exclusive -- rejecting both explicitly set true.
+//  2. new_end_entity_on_renew_and_reissue is required to be true for HTTPS
+//     CAs (ca_type=1) -- rejecting an explicit false paired with ca_type=1.
+//  3. auth_certificate and client_id/token_url (client-certificate vs OAuth
+//     authentication) are mutually exclusive -- rejecting both declared
+//     with a genuinely non-empty value at once (full-review round 1
+//     finding #4).
+//
+// A fourth check -- rejecting allowed_enrollment_types/use_allowed_requesters/
+// allowed_requesters declared alongside standalone=false, on the theory that
+// those three attributes are standalone-only -- existed between full-review
+// round 1 and round 2 and has been REMOVED (round 2 finding #4). See that
+// check's own removed doc comment, preserved in git history, for the full
+// backward-compatibility failure it caused; the short version: Command's own
+// resting/echoed value for allowed_enrollment_types on a real non-standalone
+// HTTPS CA is 3, not 0 (confirmed against a live lab CA and this repo's own
+// committed certificate_authority_demo tfstate), so rejecting any non-zero
+// value there was rejecting the server's own default -- a hard break for
+// every config produced by this project's own documented import-then-codify
+// workflow. use_allowed_requesters/allowed_requesters are removed alongside
+// it for consistency: Command's API docs describe all three attributes with
+// identical wording ("supported only for standalone CAs"), which round 2's
+// investigation showed does NOT mean "rejected/forced to zero for
+// non-standalone" for allowed_enrollment_types -- and this provider has no
+// live evidence (no standalone CA exists in the available lab to compare
+// against) that Command enforces anything stricter for the other two. Absent
+// proof the server actually rejects a non-standalone CA holding
+// use_allowed_requesters=true or a non-empty allowed_requesters, this
+// provider now relies on Command's own server-side validation for all three
+// rather than guessing at a client-side constraint that already proved wrong
+// once for the sibling attribute sharing the identical doc language.
+//
+// Every check here follows the same discipline: a null or unknown value is
+// never an error, since config-time validation cannot resolve a value that
+// isn't known yet (e.g. standalone referencing another resource's not-yet-known
+// output), and
+// ValidateConfig only ever sees Config, never Plan/State. Only an explicitly
+// configured, known violation is rejected. Factored out of ValidateConfig so
+// it can be unit tested directly against a KeyfactorCertificateAuthority
+// value.
+func validateCAConfigConstraints(cfg KeyfactorCertificateAuthority) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	enforceUniqueDNKnown := !cfg.EnforceUniqueDN.Null && !cfg.EnforceUniqueDN.Unknown
+	newEndEntityKnown := !cfg.NewEndEntityOnRenewAndReissue.Null && !cfg.NewEndEntityOnRenewAndReissue.Unknown
+
+	// F3: enforce_unique_dn and new_end_entity_on_renew_and_reissue are
+	// mutually exclusive -- only an issue when BOTH are explicitly true.
+	if enforceUniqueDNKnown && newEndEntityKnown &&
+		cfg.EnforceUniqueDN.Value && cfg.NewEndEntityOnRenewAndReissue.Value {
+		diags.AddAttributeError(
+			path.Root("new_end_entity_on_renew_and_reissue"),
+			"Conflicting certificate authority attributes",
+			"enforce_unique_dn and new_end_entity_on_renew_and_reissue are mutually exclusive and cannot both be set to true.",
+		)
+	}
+
+	// F4: new_end_entity_on_renew_and_reissue is required to be true for
+	// HTTPS CAs (ca_type=1) -- only an issue when ca_type is known to be 1
+	// AND new_end_entity_on_renew_and_reissue is explicitly declared false;
+	// leaving it undeclared/unknown is not an error here (Create/Update may
+	// still default or reject it server-side).
+	caTypeKnown := !cfg.CAType.Null && !cfg.CAType.Unknown
+	if caTypeKnown && cfg.CAType.Value == caHTTPSType &&
+		newEndEntityKnown && !cfg.NewEndEntityOnRenewAndReissue.Value {
+		diags.AddAttributeError(
+			path.Root("new_end_entity_on_renew_and_reissue"),
+			"Invalid certificate authority attribute for HTTPS CA",
+			"new_end_entity_on_renew_and_reissue must be true (or left unset) for HTTPS CAs (ca_type=1); got false.",
+		)
+	}
+
+	// Auth variant mutual exclusion (full-review round 1 finding #4): Command
+	// rejects a CA request that configures both OAuth (client_id/token_url)
+	// and client-certificate (auth_certificate) authentication at once
+	// ("Fields for OAuth and Client Certificate Authentication cannot both
+	// be provided for the same CA"). Before this check, clearAuthVariant
+	// (see its doc comment; case order there prefers client-certificate auth)
+	// silently stripped the user's declared OAuth fields from the request
+	// without telling anyone, so Command never saw -- and never reported --
+	// the conflict: the CA was created/updated with only client-certificate
+	// auth, and the framework then rejected the resulting apply with a
+	// confusing "Provider produced inconsistent result after apply:
+	// .client_id" instead of an actionable plan-time error naming the real
+	// problem. Mirrors clearAuthVariant's own isKnownNonEmptyString
+	// declaredness check so this rejects exactly the configs that function
+	// would otherwise silently resolve. A null/unknown value on either side
+	// is never an error, same discipline as every other check here.
+	if isKnownNonEmptyString(cfg.AuthCertificate) &&
+		(isKnownNonEmptyString(cfg.ClientID) || isKnownNonEmptyString(cfg.TokenURL)) {
+		diags.AddAttributeError(
+			path.Root("client_id"),
+			"Conflicting certificate authority authentication configuration",
+			"auth_certificate and client_id/token_url are mutually exclusive representations of certificate authority authentication; declare at most one variant. Command rejects a request that configures both OAuth and client-certificate authentication for the same CA.",
+		)
+	}
+
+	// No standalone-only constraint on allowed_enrollment_types/
+	// use_allowed_requesters/allowed_requesters is enforced here -- see this
+	// function's doc comment (round 2 finding #4) for why the check that
+	// used to live here was removed rather than merely relaxed further.
+
+	return diags
+}
+
 func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.CreateResourceRequest, response *tfsdk.CreateResourceResponse) {
 	LogFunctionEntry(ctx, "resourceCertificateAuthority.Create")
 
@@ -849,7 +1323,11 @@ func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.
 
 	tflog.Info(ctx, fmt.Sprintf("Creating certificate authority %q", plan.LogicalName.Value))
 
-	createReq := buildCARequest(ctx, plan)
+	createReq, buildDiags := buildCARequest(ctx, plan)
+	response.Diagnostics.Append(buildDiags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 
 	caAPI := r.p.sdkClient.V1.CertificateAuthorityApi
 	createAPIReq := caAPI.NewCreateCertificateAuthorityRequest(ctx).CertificateAuthoritiesCertificateAuthorityRequest(createReq)
@@ -868,6 +1346,7 @@ func (r resourceCertificateAuthority) Create(ctx context.Context, request tfsdk.
 
 	state := caResponseToState(resp)
 	preserveSecrets(&state, plan)
+	preserveKeyRetentionRepresentation(&state, plan)
 
 	diags = response.State.Set(ctx, &state)
 	response.Diagnostics.Append(diags...)
@@ -914,6 +1393,7 @@ func (r resourceCertificateAuthority) Read(ctx context.Context, request tfsdk.Re
 
 	newState := caResponseToState(resp)
 	preserveSecrets(&newState, state)
+	preserveKeyRetentionRepresentation(&newState, state)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -948,7 +1428,11 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 
 	tflog.Info(ctx, fmt.Sprintf("Updating certificate authority ID %d", id))
 
-	updateReq := buildCARequest(ctx, plan)
+	updateReq, buildDiags := buildCARequest(ctx, plan)
+	response.Diagnostics.Append(buildDiags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	idInt32 := int32(id)
 	updateReq.Id = &idInt32
 
@@ -969,6 +1453,7 @@ func (r resourceCertificateAuthority) Update(ctx context.Context, request tfsdk.
 
 	newState := caResponseToState(resp)
 	preserveSecrets(&newState, plan)
+	preserveKeyRetentionRepresentation(&newState, plan)
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -1016,7 +1501,11 @@ func (r resourceCertificateAuthority) Delete(ctx context.Context, request tfsdk.
 			clearState.FullScanIntervalMinutes = types.Int64{Null: true}
 			clearState.IncrementalScanIntervalMinutes = types.Int64{Null: true}
 			clearState.ThresholdCheckIntervalMinutes = types.Int64{Null: true}
-			clearReq := buildCARequest(ctx, clearState)
+			clearReq, clearBuildDiags := buildCARequest(ctx, clearState)
+			response.Diagnostics.Append(clearBuildDiags...)
+			if response.Diagnostics.HasError() {
+				return
+			}
 			idInt32 := int32(id)
 			clearReq.Id = &idInt32
 			updateAPIReq := caAPI.NewUpdateCertificateAuthorityRequest(ctx).
@@ -1038,13 +1527,17 @@ func (r resourceCertificateAuthority) Delete(ctx context.Context, request tfsdk.
 				// Delete still failed. Restore the original scan schedules so the CA
 				// is not left in a corrupted state (no schedules) after a failed delete.
 				tflog.Warn(ctx, fmt.Sprintf("CA %d delete retry failed; restoring original scan schedules", id))
-				restoreReq := buildCARequest(ctx, state)
-				restoreReq.Id = &idInt32
-				restoreAPIReq := caAPI.NewUpdateCertificateAuthorityRequest(ctx).
-					CertificateAuthoritiesCertificateAuthorityRequest(restoreReq).
-					ForceSave(true)
-				if _, _, restoreErr := restoreAPIReq.Execute(); restoreErr != nil {
-					tflog.Error(ctx, fmt.Sprintf("CA %d schedule restore also failed: %s", id, restoreErr.Error()))
+				restoreReq, restoreBuildDiags := buildCARequest(ctx, state)
+				if restoreBuildDiags.HasError() {
+					tflog.Error(ctx, fmt.Sprintf("CA %d schedule restore request could not be built: %v", id, restoreBuildDiags))
+				} else {
+					restoreReq.Id = &idInt32
+					restoreAPIReq := caAPI.NewUpdateCertificateAuthorityRequest(ctx).
+						CertificateAuthoritiesCertificateAuthorityRequest(restoreReq).
+						ForceSave(true)
+					if _, _, restoreErr := restoreAPIReq.Execute(); restoreErr != nil {
+						tflog.Error(ctx, fmt.Sprintf("CA %d schedule restore also failed: %s", id, restoreErr.Error()))
+					}
 				}
 				response.Diagnostics.AddError(
 					"Error deleting certificate authority.",
@@ -1130,6 +1623,37 @@ func keyRetentionIntToTfString(v *v1.CSSCMSCoreEnumsKeyRetentionPolicy) types.St
 	}
 	// Fallback: stringify the raw integer
 	return types.String{Value: strconv.Itoa(int(*v))}
+}
+
+// preserveKeyRetentionRepresentation normalizes target.KeyRetention back to
+// the representation the user configured (e.g. "2") when the server's
+// response denotes the same underlying enum value but always returns the
+// symbolic name (e.g. "AfterExpiration"). Command accepts either numeric
+// strings or symbolic names on write but only ever returns the symbolic
+// name on read, so without this the Read/Create/Update response would
+// permanently disagree with a numeric-string config, producing "Provider
+// produced inconsistent result after apply". This mirrors the
+// certificate_authority-name normalization pattern used for the
+// certificate resource's certificate_authority attribute: prefer the
+// user-supplied representation whenever it denotes the same value as what
+// the server returned.
+func preserveKeyRetentionRepresentation(target *KeyfactorCertificateAuthority, source KeyfactorCertificateAuthority) {
+	if target.KeyRetention.Null || target.KeyRetention.Unknown {
+		return
+	}
+	if source.KeyRetention.Null || source.KeyRetention.Unknown {
+		return
+	}
+	if target.KeyRetention.Value == source.KeyRetention.Value {
+		return
+	}
+	targetInt, targetOk := keyRetentionNameToInt[target.KeyRetention.Value]
+	sourceInt, sourceOk := keyRetentionNameToInt[source.KeyRetention.Value]
+	if targetOk && sourceOk && targetInt == sourceInt {
+		// Same enum value, different representation (e.g. "2" vs
+		// "AfterExpiration") -- keep the user's originally configured form.
+		target.KeyRetention = source.KeyRetention
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1268,4 +1792,81 @@ func normalizePropertiesJSON(s string) string {
 	}
 	b, _ := json.Marshal(m)
 	return string(b)
+}
+
+// normalizedJSONPropertiesModifier is the plan modifier for "properties" (F1).
+// properties is Optional+Computed, storing a JSON blob (Sync External
+// Certificates configuration). Command's GET re-serializes the stored JSON
+// through its own encoder, which is free to reorder keys or change
+// whitespace relative to whatever text the practitioner wrote in config or
+// whatever text is currently in state. A bare tfsdk.UseStateForUnknown()
+// only suppresses the diff when config leaves properties undeclared
+// (Plan Unknown); it does nothing when config DOES declare a literal JSON
+// string, since the framework's raw proposed-new-state already plans that
+// literal config text verbatim. If Command's stored formatting differs from
+// the config text even by whitespace, every subsequent plan shows a
+// permanent properties diff (and Update resends the reformatted value)
+// even though the value is semantically unchanged -- this is what
+// normalizePropertiesJSON (previously dead code) exists to detect.
+//
+// Modify runs in this order:
+//  1. No prior state (Create) -- nothing to compare against; leave the plan
+//     alone.
+//  2. Config is Unknown (properties computed from a not-yet-known
+//     expression, e.g. referencing another resource's attribute applied in
+//     the same run) -- leave the plan Unknown too, mirroring
+//     tfsdk.UseStateForUnknownModifier's own guard ("otherwise interpolation
+//     gets messed up"). Pinning the plan to the stale prior-state value here
+//     would make apply's re-plan against the now-resolved config produce a
+//     different final value than what was recorded, which Terraform core
+//     rejects as "Provider produced inconsistent final plan".
+//  3. Plan is Unknown (properties undeclared in config, Computed-only) --
+//     fall back to plain UseStateForUnknown semantics: copy state forward.
+//  4. Plan and state are both known strings and, once parsed and
+//     re-marshaled, are semantically equal -- keep the prior state value
+//     (byte-for-byte) so the diff (and the Update PUT) disappears.
+//  5. Otherwise (a genuine value change, or either side isn't a comparable
+//     JSON string) -- leave the plan as computed, surfacing a real diff.
+type normalizedJSONPropertiesModifier struct{}
+
+func (m normalizedJSONPropertiesModifier) Description(_ context.Context) string {
+	return "Suppresses a properties diff when the server's stored JSON differs from state only in key order/whitespace."
+}
+
+func (m normalizedJSONPropertiesModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m normalizedJSONPropertiesModifier) Modify(_ context.Context, req tfsdk.ModifyAttributePlanRequest, resp *tfsdk.ModifyAttributePlanResponse) {
+	if req.AttributeState == nil || resp.AttributePlan == nil || req.AttributeConfig == nil {
+		return
+	}
+	stateVal, ok := req.AttributeState.(types.String)
+	if !ok || stateVal.Unknown {
+		// No usable prior state (e.g. Create) -- nothing to compare against.
+		return
+	}
+
+	if req.AttributeConfig.IsUnknown() {
+		// Config itself is unknown (e.g. an interpolated reference to a
+		// not-yet-applied resource) -- leave the plan Unknown rather than
+		// pinning it to a stale state value that apply's re-plan may not agree
+		// with once the config resolves.
+		return
+	}
+
+	if resp.AttributePlan.IsUnknown() {
+		// Undeclared in config: plain UseStateForUnknown semantics.
+		resp.AttributePlan = req.AttributeState
+		return
+	}
+
+	planVal, ok := resp.AttributePlan.(types.String)
+	if !ok || planVal.Null || stateVal.Null {
+		return
+	}
+
+	if normalizePropertiesJSON(planVal.Value) == normalizePropertiesJSON(stateVal.Value) {
+		resp.AttributePlan = req.AttributeState
+	}
 }

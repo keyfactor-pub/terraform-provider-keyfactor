@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
@@ -14,6 +13,20 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
+
+// storeHasInventorySchedule reports whether the certificate store storeId has any
+// inventory schedule configured (Immediate, Interval, Daily, or ExactlyOnce). When
+// the store read itself fails, readErr is returned and hasSchedule is always false —
+// callers must distinguish "store read failed" from "store genuinely has no
+// schedule" in their own logging/diagnostics rather than conflating the two.
+func storeHasInventorySchedule(conn *api.Client, storeId string) (hasSchedule bool, readErr error) {
+	storeResp, err := conn.GetCertificateStoreByID(storeId)
+	if err != nil {
+		return false, err
+	}
+	sched := storeResp.InventorySchedule
+	return sched.Immediate != nil || sched.Interval != nil || sched.Daily != nil || sched.ExactlyOnce != nil, nil
+}
 
 // deploymentOverwriteOnCertIDChange is a plan modifier used by the certificate
 // deployment resource. It requires that the resource be replaced when the
@@ -150,13 +163,10 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 			" `keyfactor_certificate_store` resources. " +
 			"*NOTE:* The jobs are run asynchronously, and depend on orchestrator agent check in schedules. The provider will wait for the job to complete successfully and may run for a long time.",
 		MarkdownDescription: `
-Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom" 
+Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
 API to deploy certificates to "keyfactor_certificate_store" resources.
 
-> [!IMPORTANT]
-> Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules.
-> A "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's certificate 
-> inventory has been updated to include the deployed certificate.
+!> **Warning:** Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules. A "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's certificate inventory has been updated to include the deployed certificate.
 `,
 	}, nil
 }
@@ -211,6 +221,21 @@ func (r resourceCommandCertificateDeployment) Create(
 	_ = plan.JobParameters.ElementsAs(ctx, &jobParams, false)
 	hid := fmt.Sprintf("%v-%s-%s", certificateId, storeId, certificateAlias)
 
+	// Built once here since every input (hid, plan.*) is available before the
+	// duplicate-deployment branching below, and reused for the end-of-Create
+	// state set (U2).
+	result := CommandCertificateDeployment{
+		ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
+		CertificateId:    plan.CertificateId,
+		StoreId:          plan.StoreId,
+		CertificateAlias: plan.CertificateAlias,
+		KeyPassword:      plan.KeyPassword,
+		JobParameters:    plan.JobParameters,
+		Redeploy:         plan.Redeploy,
+		Overwrite:        plan.Overwrite,
+		SkipRemoval:      plan.SkipRemoval,
+	}
+
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
 	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
 	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
@@ -229,11 +254,11 @@ func (r resourceCommandCertificateDeployment) Create(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unknown error during read status of deployment of certificate '%s' to store '%s (%s)': "+err.Error(),
+				"Unknown error during read status of deployment of certificate '%v' to store '%s (%s)': ",
 				certificateId,
 				storeId,
 				certificateAlias,
-			),
+			)+err.Error(),
 		)
 	}
 
@@ -264,11 +289,11 @@ func (r resourceCommandCertificateDeployment) Create(
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
 				fmt.Sprintf(
-					"Unknown error during deploy of certificate '%v'(%s) to store '%s': "+addErr.Error(),
+					"Unknown error during deploy of certificate '%v'(%s) to store '%s': ",
 					certificateId,
 					certificateAlias,
 					storeId,
-				),
+				)+addErr.Error(),
 			)
 		}
 		if response.Diagnostics.HasError() {
@@ -281,12 +306,8 @@ func (r resourceCommandCertificateDeployment) Create(
 		// (the Immediate flag may be consumed before the management job completes). The
 		// deployment job has been submitted; configure an inventory schedule on the store in
 		// Command to enable future validation.
-		storeResp, storeReadErr := kfClient.GetCertificateStoreByID(storeId)
-		hasInventorySchedule := false
-		if storeReadErr == nil {
-			sched := storeResp.InventorySchedule
-			hasInventorySchedule = sched.Immediate != nil || sched.Interval != nil || sched.Daily != nil || sched.ExactlyOnce != nil
-		} else {
+		hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
+		if storeReadErr != nil {
 			tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
 		}
 
@@ -315,11 +336,11 @@ func (r resourceCommandCertificateDeployment) Create(
 				response.Diagnostics.AddError(
 					"Deployment validation error.",
 					fmt.Sprintf(
-						"Unknown error during validation of deploy of certificate '%s' to store '%s (%s)': "+vErr.Error(),
+						"Unknown error during validation of deploy of certificate '%v' to store '%s (%s)': ",
 						certificateId,
 						storeId,
 						certificateAlias,
-					),
+					)+vErr2.Error(),
 				)
 			}
 			if response.Diagnostics.HasError() {
@@ -329,18 +350,6 @@ func (r resourceCommandCertificateDeployment) Create(
 	}
 
 	// Set state
-	var result = CommandCertificateDeployment{
-		ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
-		CertificateId:    plan.CertificateId,
-		StoreId:          plan.StoreId,
-		CertificateAlias: plan.CertificateAlias,
-		KeyPassword:      plan.KeyPassword,
-		JobParameters:    plan.JobParameters,
-		Redeploy:         plan.Redeploy,
-		Overwrite:        plan.Overwrite,
-		SkipRemoval:      plan.SkipRemoval,
-	}
-
 	diags = response.State.Set(ctx, result)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -386,11 +395,11 @@ func (r resourceCommandCertificateDeployment) Read(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unknown error during read status of deployment of certificate '%s' to store '%s (%s)': "+err.Error(),
+				"Unknown error during read status of deployment of certificate '%d' to store '%s (%s)': ",
 				certificateId,
 				storeId,
 				certificateAlias,
-			),
+			)+err.Error(),
 		)
 	}
 	locations := certificateData.Locations
@@ -398,20 +407,12 @@ func (r resourceCommandCertificateDeployment) Read(
 		tflog.Debug(ctx, fmt.Sprintf("Certificate %v stored in location: %v", certificateIdInt, location))
 	}
 
-	// Set state
-	var result = CommandCertificateDeployment{
-		ID:               state.ID,
-		CertificateId:    state.CertificateId,
-		StoreId:          state.StoreId,
-		CertificateAlias: state.CertificateAlias,
-		KeyPassword:      state.KeyPassword,
-		JobParameters:    state.JobParameters,
-		Redeploy:         state.Redeploy,
-		Overwrite:        state.Overwrite,
-		SkipRemoval:      state.SkipRemoval,
-	}
-
-	diags = response.State.Set(ctx, result)
+	// Set state. This deployment resource has no server-refreshable fields of
+	// its own (the certificate/store/alias identity and write-only knobs are
+	// all sourced from state) -- the GetCertificateContext call above exists
+	// to confirm the certificate itself is still reachable, not to refresh
+	// any field, so state is written back as-is.
+	diags = response.State.Set(ctx, state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -474,11 +475,11 @@ func (r resourceCommandCertificateDeployment) Update(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unknown error during read status of deployment of certificate '%d' to store '%s (%s)': "+err.Error(),
+				"Unknown error during read status of deployment of certificate '%d' to store '%s (%s)': ",
 				certificateId,
 				storeId,
 				certificateAlias,
-			),
+			)+err.Error(),
 		)
 	}
 
@@ -502,11 +503,11 @@ func (r resourceCommandCertificateDeployment) Update(
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
 				fmt.Sprintf(
-					"Unknown error during deploy of certificate '%v'(%s) to store '%s': "+addErr.Error(),
+					"Unknown error during deploy of certificate '%v'(%s) to store '%s': ",
 					certificateId,
 					certificateAlias,
 					storeId,
-				),
+				)+addErr.Error(),
 			)
 		}
 
@@ -526,11 +527,11 @@ func (r resourceCommandCertificateDeployment) Update(
 			response.Diagnostics.AddError(
 				"Deployment validation error.",
 				fmt.Sprintf(
-					"Unknown error during validation of deploy of certificate '%d' to store '%s (%s)': "+vErr2.Error(),
+					"Unknown error during validation of deploy of certificate '%d' to store '%s (%s)': ",
 					certificateId,
 					storeId,
 					certificateAlias,
-				),
+				)+vErr2.Error(),
 			)
 		}
 	}
@@ -607,7 +608,7 @@ func (r resourceCommandCertificateDeployment) Delete(
 			if lkErr != nil {
 				response.Diagnostics.AddWarning(
 					"Certificate removal error.",
-					fmt.Sprintf("Error looking up certificate '%d' in Keyfactor: "+lkErr.Error(), certificateId),
+					fmt.Sprintf("Error looking up certificate '%d' in Keyfactor: ", certificateId)+lkErr.Error(),
 				)
 				response.State.RemoveResource(ctx)
 				return
@@ -615,6 +616,7 @@ func (r resourceCommandCertificateDeployment) Delete(
 			certificateAlias = lookupCertResp.Thumbprint
 		}
 	}
+
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
 	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
 	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
@@ -639,9 +641,31 @@ func (r resourceCommandCertificateDeployment) Delete(
 	}
 
 	tflog.Info(ctx, "Removing certificate from store.")
-	err := removeCertificateAliasFromStore(ctx, kfClient, &diff, certId, certificateAlias)
+	certificateData, err := removeCertificateAliasFromStore(kfClient, &diff, certId)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		// This call site needs stricter not-found handling than the other
+		// two isNotFoundError call sites in this codebase
+		// (resource_keyfactor_security_role.go, resource_keyfactor_certificate_store_type.go):
+		// those are simple single-resource GETs where "does not exist" is
+		// unambiguous -- there is exactly one thing being read, so a
+		// not-found error about it is safe to treat as "already gone."
+		// Here, removeCertificateAliasFromStore's failure can instead be
+		// about the STORE'S BACKING ORCHESTRATOR AGENT being gone (confirmed
+		// live-Command message: "Agent with id of '<guid>' does not exist"),
+		// which matches isNotFoundError's "does not exist" pattern just as
+		// readily as a genuinely-gone deployment/store/alias/certificate
+		// would -- but describes a completely different, higher-stakes
+		// situation: the certificate is likely still physically deployed on
+		// the target, with no agent left to run the removal job. Silently
+		// dropping this resource from state in that case would make
+		// Terraform believe the cert was cleanly removed when it was not --
+		// an orphaned, untracked, still-deployed certificate/key. So an
+		// agent-shaped not-found is deliberately NOT treated as safe here,
+		// even though it is a "confirmed not found" by isNotFoundError's own
+		// (correct, for its other callers) definition.
+		if isNotFoundError(err) && !isAgentMissingNotFoundError(err) {
+			ctx = tflog.SetField(ctx, "error", err.Error())
+			tflog.Info(ctx, "Certificate deployment not found on Keyfactor Command, removing from state")
 			response.Diagnostics.AddWarning(
 				"Certificate deployment not found.",
 				fmt.Sprintf(
@@ -651,18 +675,43 @@ func (r resourceCommandCertificateDeployment) Delete(
 					certificateAlias,
 				),
 			)
-		} else {
+			response.State.RemoveResource(ctx)
+			return
+		}
+		response.Diagnostics.AddError(
+			"Certificate deployment error",
+			fmt.Sprintf(
+				"Unknown error during removal of certificate '%d' from store '%s (%s)': ",
+				certificateId,
+				storeId,
+				certificateAlias,
+			)+err.Error(),
+		)
+		return
+	}
+
+	for _, store := range diff {
+		validateErr := validateUndeployment(
+			ctx,
+			kfClient,
+			store.CertificateStoreId,
+			certId,
+			certificateAlias,
+			certificateData,
+			100000,
+		)
+		if validateErr != nil {
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
 				fmt.Sprintf(
-					"Unknown error during removal of certificate '%d' from store '%s (%s)': "+err.Error(),
+					"Unknown error during removal of certificate '%d' from store '%s (%s)': ",
 					certificateId,
 					storeId,
 					certificateAlias,
-				),
+				)+validateErr.Error(),
 			)
+			break
 		}
-
 	}
 
 	if response.Diagnostics.HasError() {
@@ -748,7 +797,7 @@ func addCertificateToStore(
 	return nil
 }
 
-// Extracted helper function to avoid duplication
+// Extracted helper function to avoid duplication.
 func tryAddCertificateToStore(
 	ctx context.Context,
 	conn *api.Client,
@@ -780,6 +829,58 @@ func tryAddCertificateToStore(
 	return err
 }
 
+// certificateInInventory performs a single inventory read and reports whether certObj is
+// present in the store under certAlias. It backs both undeploymentStillPresent and
+// deploymentPresentInInventory, which differ only in matchEmptyAliasByLeafId: deployment
+// checks also match by the leaf certificate's ID when no alias is set (certAlias == ""),
+// while undeployment checks never fall back to ID-only matching for an empty alias.
+func certificateInInventory(
+	ctx context.Context,
+	conn *api.Client,
+	storeId string,
+	certAlias string,
+	certObj *api.GetCertificateResponse,
+	matchEmptyAliasByLeafId bool,
+) (bool, error) {
+	inv, invErr := conn.GetCertStoreInventory(storeId)
+	if invErr != nil {
+		return false, invErr
+	}
+	// check if inv is empty or nil
+	if inv == nil || len(*inv) == 0 {
+		return false, nil
+	}
+	for _, cert := range *inv {
+		if cert.Name == certAlias {
+			// Iterate through Certificates in the store and check if the certificate we're looking for is there
+			for _, iCert := range cert.Certificates {
+				if iCert.Id == certObj.Id {
+					return true, nil
+				}
+			}
+		} else if matchEmptyAliasByLeafId && certAlias == "" {
+			// if not alias is provided then just compare cert ID of the leaf node
+			if len(cert.Ids) > 0 && cert.Ids[0] == certObj.Id { //TODO: This may not be the best way to do this as a cert ID can show up multiple times in a store
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// undeploymentStillPresent performs a single inventory read and reports whether the
+// certificate is still present in the store under the given alias. Matching semantics
+// are shared with validateUndeployment.
+func undeploymentStillPresent(
+	ctx context.Context,
+	conn *api.Client,
+	storeId string,
+	certAlias string,
+	certObj *api.GetCertificateResponse,
+) (bool, error) {
+	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, false)
+}
+
 func validateUndeployment(
 	ctx context.Context,
 	conn *api.Client,
@@ -793,29 +894,11 @@ func validateUndeployment(
 	tflog.Debug(ctx, fmt.Sprintf("Validating Keyfactor Command store %v inventory has removed %s", storeId, certAlias))
 	retryDelay := 2
 	for i := 0; i < maxIterations; i++ {
-		inv, invErr := conn.GetCertStoreInventory(storeId)
+		stillPresent, invErr := undeploymentStillPresent(ctx, conn, storeId, certAlias, certObj)
 		if invErr != nil {
 			return invErr
 		}
-		// check if inv is empty or nil
-		if inv == nil || len(*inv) == 0 {
-			deployed = false
-			break
-		}
-		for _, cert := range *inv {
-			if cert.Name == certAlias {
-				// Iterate through Certificates in the store and check if the certificate we're looking for is there
-				for _, iCert := range cert.Certificates {
-					if iCert.Id == certObj.Id {
-						deployed = true
-						break
-					}
-				}
-			}
-			if deployed {
-				break
-			}
-		}
+		deployed = stillPresent
 		if deployed {
 			tflog.Debug(
 				ctx,
@@ -833,7 +916,6 @@ func validateUndeployment(
 			if retryDelay > MAX_WAIT_SECONDS {
 				retryDelay = MAX_WAIT_SECONDS
 			}
-			deployed = false
 		} else {
 			break
 		}
@@ -847,6 +929,19 @@ func validateUndeployment(
 		)
 	}
 	return nil
+}
+
+// deploymentPresentInInventory performs a single inventory read and reports whether the
+// certificate is present in the store — matched by alias, or by leaf certificate ID when
+// no alias is set. Matching semantics are shared with validateDeployment.
+func deploymentPresentInInventory(
+	ctx context.Context,
+	conn *api.Client,
+	storeId string,
+	certAlias string,
+	certObj *api.GetCertificateResponse,
+) (bool, error) {
+	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, true)
 }
 
 func validateDeployment(
@@ -864,30 +959,11 @@ func validateDeployment(
 	)
 	retryDelay := 2
 	for i := 0; i < maxIterations; i++ {
-		inv, invErr := conn.GetCertStoreInventory(storeId)
+		present, invErr := deploymentPresentInInventory(ctx, conn, storeId, certAlias, certObj)
 		if invErr != nil {
 			return invErr
 		}
-		for _, cert := range *inv {
-			if cert.Name == certAlias {
-				// Iterate through Certificates in the store and check if the certificate we're looking for is there
-				for _, iCert := range cert.Certificates {
-					if iCert.Id == certObj.Id {
-						valid = true
-						break
-					}
-				}
-			} else if certAlias == "" {
-				// if not alias is provided then just compare cert ID of the leaf node
-				if len(cert.Ids) > 0 && cert.Ids[0] == certObj.Id { //TODO: This may not be the best way to do this as a cert ID can show up multiple times in a store
-					valid = true
-					break
-				}
-			}
-			if valid {
-				break
-			}
-		}
+		valid = present
 		if !valid {
 			tflog.Debug(
 				ctx,
@@ -969,13 +1045,13 @@ func validateCertificatesInStore(
 	return nil
 }
 
+// removeCertificateAliasFromStore schedules a job to remove certId from each of the given
+// stores. It returns the certificate context, which callers use for undeployment validation.
 func removeCertificateAliasFromStore(
-	ctx context.Context,
 	conn *api.Client,
 	certificateStores *[]api.CertificateStore,
 	certId int,
-	certAlias string,
-) error {
+) (*api.GetCertificateResponse, error) {
 	// We want Keyfactor to immediately apply these changes.
 	schedule := &api.InventorySchedule{
 		Immediate: boolToPointer(true),
@@ -991,30 +1067,13 @@ func removeCertificateAliasFromStore(
 	}
 	certificateData, cerErr := conn.GetCertificateContext(args)
 	if cerErr != nil {
-		return cerErr
+		return nil, cerErr
 	}
 
 	_, err := conn.RemoveCertificateFromStores(config)
-
 	if err != nil {
-		return err
+		return certificateData, err
 	}
 
-	//iterate through stores and validate that the certificate is no longer in the store
-	for _, store := range *certificateStores {
-		validateErr := validateUndeployment(
-			ctx,
-			conn,
-			store.CertificateStoreId,
-			certId,
-			certAlias,
-			certificateData,
-			100000,
-		)
-		if validateErr != nil {
-			return validateErr
-		}
-	}
-
-	return nil
+	return certificateData, nil
 }

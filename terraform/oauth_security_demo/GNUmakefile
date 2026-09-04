@@ -10,47 +10,11 @@
 ##   make all                # run the full workflow
 ##   make SUFFIX=_MYORG all  # run with a custom name suffix
 
-PROVIDER_ROOT  := $(abspath ../..)
-PROVIDER_BIN   := $(HOME)/go/bin
-SUFFIX         ?= _TF
-
-TF            := TF_CLI_CONFIG_FILE=.terraformrc terraform
-UNSET_BASIC   := unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN;
-
-# ---------------------------------------------------------------------------
-# Lab environment helpers
-# Source LAB_ENV_FILE for OAuth credentials.
-# Override via: make LAB_ENV_FILE=~/.env_other lifecycle
-# ---------------------------------------------------------------------------
-SHELL         := /bin/bash
-LAB_ENV_FILE  ?= $(HOME)/.env_ses2541
-LAB_TIMEOUT   ?= 600
-
-LAB_ENV := set -a && source $(LAB_ENV_FILE) && set +a && \
-           unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN && \
-           export KEYFACTOR_CLIENT_TIMEOUT=$(LAB_TIMEOUT) &&
-
-# ---------------------------------------------------------------------------
-# Provider build
-# ---------------------------------------------------------------------------
-
-## build: Compile and install the provider binary to ~/go/bin
-build:
-	@echo "==> Building provider..."
-	cd $(PROVIDER_ROOT) && go install .
-	@echo "==> Provider installed to $(PROVIDER_BIN)/terraform-provider-keyfactor"
+include ../demo-common.mk
 
 # ---------------------------------------------------------------------------
 # Terraform lifecycle
 # ---------------------------------------------------------------------------
-
-## init: Initialize the Terraform working directory
-init:
-	$(UNSET_BASIC) $(TF) init
-
-## validate: Validate the Terraform configuration
-validate:
-	$(UNSET_BASIC) $(TF) validate
 
 ## plan: Show the execution plan
 plan:
@@ -106,7 +70,7 @@ all: build init validate plan apply import-all reconcile drift-check destroy
 demo-no-destroy: build init validate plan apply import-all reconcile drift-check
 
 # ---------------------------------------------------------------------------
-# Lab convenience targets (source LAB_ENV_FILE automatically)
+# Lab convenience targets (source KEYFACTOR_ENV_FILE automatically)
 # ---------------------------------------------------------------------------
 
 ## lab-plan: Plan using lab credentials

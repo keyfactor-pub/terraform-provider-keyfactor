@@ -300,22 +300,32 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			"dns_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 				Description: "List of DNS names to use as subjects of the certificate. " +
 					"NOTE: This field **does not work with CSR enrollments**, " +
 					"all SANs should be included in the CSR. " +
 					"Additional SANs added by the CA during enrollment **will" +
-					" not** be reflected in this field",
+					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
+					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
+					"certificate's real SAN list shows no drift; declaring a different list still forces " +
+					"replacement (see GH issue #197). Removing this attribute from config (as opposed to " +
+					"changing its values) leaves it unmanaged and is a no-op -- it does not force replacement.",
 			},
 			"uri_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 				Description: "List of URIs to use as subjects of the certificate. " +
 					"NOTE: This field **does not work with CSR enrollments**, " +
 					"all SANs should be included in the CSR. " +
 					"Additional SANs added by the CA during enrollment **will" +
-					" not** be reflected in this field",
+					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
+					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
+					"certificate's real SAN list shows no drift; declaring a different list still forces " +
+					"replacement (see GH issue #197). Removing this attribute from config (as opposed to " +
+					"changing its values) leaves it unmanaged and is a no-op -- it does not force replacement.",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -325,12 +335,17 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 			"ip_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Computed:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
 				Description: "List of DNS names to use as subjects of the certificate. " +
 					"NOTE: This field **does not work with CSR enrollments**, " +
 					"all SANs should be included in the CSR. " +
 					"Additional SANs added by the CA during enrollment **will" +
-					" not** be reflected in this field",
+					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
+					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
+					"certificate's real SAN list shows no drift; declaring a different list still forces " +
+					"replacement (see GH issue #197). Removing this attribute from config (as opposed to " +
+					"changing its values) leaves it unmanaged and is a no-op -- it does not force replacement.",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -409,9 +424,13 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Optional: true,
 				Description: "Optional owner role name. " +
 					"This is required if the certificate template being used requires an owner role to be set during" +
-					" enrollment. Only compatible with Keyfactor Command versions v12.3.0 and later.",
+					" enrollment. Only compatible with Keyfactor Command versions v12.3.0 and later. " +
+					"Omitting this attribute leaves ownership unmanaged/preserved (server-side changes are not corrected); " +
+					"an explicit empty string (\"\") declaratively clears the certificate's owner.",
 				MarkdownDescription: `
 A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
+
+**Note:** **Attribute contract**: omitting ` + "`owner_role_name`" + ` from config leaves ownership unmanaged -- Terraform never sends a clearing value, and drift from an out-of-band owner change is still surfaced on plan/refresh. Declaring an explicit empty string (` + "`owner_role_name = \"\"`" + `) is a declarative "clear the owner" sentinel: Terraform sends a PUT with no role identifier, which Keyfactor Command interprets as removing the certificate's owner.
 
 Expanded Change Owner Permission: A user who holds the Certificates > Expanded Change Owner permission can set the certificate owner to any role within the permission sets they are a member of. This permission setting overrides the Certificates > Collections > Change Owner permission (both Global and Collection-level) if both are set.
 
@@ -421,8 +440,7 @@ Global or Collection Level—No Default Value: A user who holds only the Certifi
 Global or Collection Level—Default Value: A user who holds only the Certificates > Collections > Change Owner permission at either the Global or Collection level can change the default certificate owner to any role they belong to. If the default value populated from the enrollment pattern or existing certificate on a renewal is not a role held by the acting user, the this value will not be populated in the Certificate Owner Role field. The user will still be allowed to add a new owner value.
 Note:  To assign a certificate owner, one of OwnerRoleId or OwnerRoleName is required, not both. A certificate owner is required if the enrollment pattern or system-wide settings Certificate Owner Role policy has been configured as Required.
 
-> [!IMPORTANT]
-> Only compatible with Keyfactor Command versions v12.3.0 and later.
+**Important:** Only compatible with Keyfactor Command versions v12.3.0 and later.
 `,
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
@@ -745,10 +763,10 @@ Triggers replacement of resource when true.
 					"To deploy the updated certificate you must define a `keyfactor_certificate_deployment` resource" +
 					" or deploy via the Command UI.",
 				MarkdownDescription: `Configuration for certificate renewal.
-> [!IMPORTANT]
-> This does not deploy the updated certificate to associated certificate store locations. To deploy the updated
-> certificate you must define a "keyfactor_certificate_deployment" Terraform resource that references this
-> certificate or deploy via the Command UI.
+
+**Important:** This does not deploy the updated certificate to associated certificate store locations. To deploy the updated
+certificate you must define a "keyfactor_certificate_deployment" Terraform resource that references this
+certificate or deploy via the Command UI.
 `,
 			},
 			"key_type": {
@@ -873,8 +891,16 @@ func (r resourceCommandCertificate) Create(
 	} else { //Enroll PFX
 		tflog.Debug(ctx, "Calling enrollPFXV2()")
 		result, pfxErr := r.enrollPFXV2(ctx, &plan)
-		if pfxErr.HasError() {
+		// Append unconditionally (mirroring the CSR branch above) so a
+		// successful-but-warning-carrying result -- e.g. the orphan-recovery
+		// "adopted a possibly-orphaned certificate" warning -- is not silently
+		// dropped: Diagnostics.HasError() is only true for SeverityError, so
+		// checking it before appending would discard any warning-only diags on
+		// the non-error path.
+		if len(pfxErr) > 0 {
 			response.Diagnostics.Append(pfxErr...)
+		}
+		if pfxErr.HasError() {
 			return
 		}
 
@@ -923,6 +949,36 @@ func preserveWriteOnlyEnrollmentFieldsFromState(state CommandCertificate, result
 	result.CollectionId = state.CollectionId
 	result.FriendlyName = state.FriendlyName
 	result.UseCNAsFriendlyName = state.UseCNAsFriendlyName
+}
+
+// ownerRoleNameForRead implements sentinel stability for owner_role_name's
+// attribute contract: an explicit "" plan/config value declaratively clears
+// the certificate's owner, while omitting the attribute entirely (Null)
+// leaves ownership unmanaged. Command's GET /Certificates response cannot
+// distinguish those two cases -- both report an empty OwnerRoleName -- so
+// this reconstructs the right state value from serverOwnerRoleName (the
+// server's current truth) and priorOwnerRoleName (the attribute's value
+// before this Read):
+//
+//   - A non-empty serverOwnerRoleName always wins and is surfaced as-is, even
+//     over a stale "" sentinel in prior state -- a real owner set out-of-band
+//     (or by this resource's own prior Update) must always be drift-visible.
+//   - An empty serverOwnerRoleName keeps the "" sentinel ONLY if prior state
+//     itself already held it (Known, non-null, ""), so a declared
+//     owner_role_name = "" stays settled against config instead of
+//     collapsing to Null and manufacturing a permanent "" -> null -> ""
+//     diff.
+//   - Otherwise (empty serverOwnerRoleName, prior state Null/Unknown/never
+//     the sentinel), the attribute was never declared/managed -- return
+//     Null.
+func ownerRoleNameForRead(serverOwnerRoleName string, priorOwnerRoleName types.String) types.String {
+	if serverOwnerRoleName != "" {
+		return types.String{Value: serverOwnerRoleName}
+	}
+	if !priorOwnerRoleName.Null && !priorOwnerRoleName.Unknown && priorOwnerRoleName.Value == "" {
+		return types.String{Value: ""}
+	}
+	return types.String{Null: true}
 }
 
 func (r resourceCommandCertificate) Read(
@@ -1209,9 +1265,9 @@ func (r resourceCommandCertificate) Read(
 		enrollmentPatternName = state.EnrollmentPattern.Value
 	}
 
-	var ownerRoleName string
-	if certGetResp != nil && certGetResp.OwnerRoleName != "" {
-		ownerRoleName = certGetResp.OwnerRoleName
+	var serverOwnerRoleName string
+	if certGetResp != nil {
+		serverOwnerRoleName = certGetResp.OwnerRoleName
 	}
 	tflog.Debug(ctx, "Creating state object for certificate.")
 	result := CommandCertificate{
@@ -1261,10 +1317,18 @@ func (r resourceCommandCertificate) Read(
 			Value: certGetResp != nil && strings.Contains(strings.ToLower(certGetResp.CertStateString), "pending"),
 		},
 		RenewalConfig: renewalConfig,
-		OwnerRoleName: types.String{
-			Value: ownerRoleName,
-			Null:  isNullString(ownerRoleName),
-		},
+		// owner_role_name attribute contract: omitting it from config leaves
+		// ownership unmanaged; an explicit "" declaratively clears it. The
+		// wire (Command's GET /Certificates response) cannot distinguish "no
+		// owner" from "the declared clear sentinel" -- both report "" -- so
+		// sentinel stability must be reconstructed here: if the server
+		// reports a real owner, that always wins (drift-visible, even over a
+		// stale sentinel); otherwise, keep state at the "" sentinel only if
+		// prior state itself already held it, and fall back to Null
+		// (unmanaged) otherwise. Without this, an explicit owner_role_name =
+		// "" would collapse straight to Null on every Read, manufacturing a
+		// permanent "" -> null -> "" diff since config still declares "".
+		OwnerRoleName:       ownerRoleNameForRead(serverOwnerRoleName, state.OwnerRoleName),
 		EnrollmentPattern:   state.EnrollmentPattern,   // This may be mutated below
 		CertificateTemplate: state.CertificateTemplate, // This may be mutated below
 		NotBefore: types.String{
@@ -1415,6 +1479,48 @@ func (r resourceCommandCertificate) Read(
 	}
 }
 
+// certificateOwnerRoleChanged reports whether Update should send a
+// PUT /Certificates/{id}/Owner request. owner_role_name's attribute
+// contract: omitting it from config (plan Null/Unknown) means ownership is
+// unmanaged -- Terraform must never send a clearing value just because the
+// attribute wasn't declared. Only a genuinely Known plan value (including an
+// explicit "" clear sentinel) that differs from the prior state's value
+// triggers a change.
+func certificateOwnerRoleChanged(plan, state CommandCertificate) bool {
+	if plan.OwnerRoleName.Null || plan.OwnerRoleName.Unknown {
+		return false
+	}
+	return plan.OwnerRoleName.Value != state.OwnerRoleName.Value
+}
+
+// ownerChangeRequestForPlan builds the PUT /Certificates/{id}/Owner payload
+// for a declared owner_role_name plan value. Only called when
+// certificateOwnerRoleChanged reports a change, so ownerRoleName is always a
+// Known plan value here (never Null/Unknown).
+//
+// An explicit empty string ("") is the declarative "clear ownership"
+// sentinel: per the Keyfactor Command API (PUT /Certificates/{id}/Owner
+// Swagger doc: "If removing the owner, leave both empty"), a request with
+// both NewRoleId and NewRoleName unset clears the certificate's owner --
+// confirmed against a v25.x lab: HTTP 204, subsequent GET shows
+// OwnerRoleId/OwnerRoleName null. api.OwnerRequest's fields are `omitempty`
+// pointers, so &api.OwnerRequest{} serializes to exactly `{}` (a non-nil
+// pointer to an empty string, by contrast, is NOT omitted by encoding/json --
+// omitempty only checks for a nil pointer -- so this must be a genuinely nil
+// field, not `NewRoleName: &""`).
+//
+// A non-empty value may be either a numeric role ID or a role name; try
+// parsing as an int first and fall back to treating it as a name.
+func ownerChangeRequestForPlan(ownerRoleName string) *api.OwnerRequest {
+	if ownerRoleName == "" {
+		return &api.OwnerRequest{}
+	}
+	if ownerInt, convErr := strconv.Atoi(ownerRoleName); convErr == nil {
+		return &api.OwnerRequest{NewRoleId: &ownerInt}
+	}
+	return &api.OwnerRequest{NewRoleName: &ownerRoleName}
+}
+
 func (r resourceCommandCertificate) Update(
 	ctx context.Context,
 	request tfsdk.UpdateResourceRequest,
@@ -1549,26 +1655,22 @@ func (r resourceCommandCertificate) Update(
 		}
 	}
 
-	// Check if ownerrolename has changed
-	if plan.OwnerRoleName.Value != state.OwnerRoleName.Value {
+	// Check if ownerrolename has changed. certificateOwnerRoleChanged refuses
+	// to fire when config omits owner_role_name (plan Null/Unknown) --
+	// ownership stays unmanaged in that case, never cleared as a side effect
+	// of an unrelated Update.
+	if certificateOwnerRoleChanged(plan, state) {
 		tflog.Debug(ctx, "OwnerRoleName has changed, updating certificate owner role.")
-		// Check if rolename is an integer ID or string name
-		ownerInt, convErr := strconv.Atoi(plan.OwnerRoleName.Value)
-		ownerRequest := &api.OwnerRequest{}
-		if convErr != nil {
-			ownerRequest.NewRoleName = &plan.OwnerRoleName.Value
-		} else {
-			ownerRequest.NewRoleId = &ownerInt
-		}
+		ownerRequest := ownerChangeRequestForPlan(plan.OwnerRoleName.Value)
 
 		oErr := r.p.client.ChangeCertificateOwnerRole(certificateID, ownerRequest)
 		if oErr != nil {
 			response.Diagnostics.AddError(
 				"Certificate owner update error.",
 				fmt.Sprintf(
-					"Could not update cert '%s''s owner role to %s on Keyfactor: "+oErr.Error(),
+					"Could not update cert '%s''s owner role to %s on Keyfactor: ",
 					state.ID.Value, plan.OwnerRoleName.Value,
-				),
+				)+oErr.Error(),
 			)
 			return
 		}
@@ -1620,7 +1722,7 @@ func (r resourceCommandCertificate) Update(
 			if err != nil {
 				response.Diagnostics.AddError(
 					"Certificate metadata update error.",
-					fmt.Sprintf("Could not update cert '%s''s metadata on Keyfactor: "+err.Error(), state.ID.Value),
+					fmt.Sprintf("Could not update cert '%s''s metadata on Keyfactor: ", state.ID.Value)+err.Error(),
 				)
 				return
 			}
@@ -1636,9 +1738,9 @@ func (r resourceCommandCertificate) Update(
 			Country:              plan.Country,
 			Organization:         plan.Organization,
 			OrganizationalUnit:   plan.OrganizationalUnit,
-			DNSSANs:              plan.DNSSANs,
-			IPSANs:               plan.IPSANs,
-			URISANs:              plan.URISANs,
+			DNSSANs:              knownListFromPlan(plan.DNSSANs),
+			IPSANs:               knownListFromPlan(plan.IPSANs),
+			URISANs:              knownListFromPlan(plan.URISANs),
 			SerialNumber:         state.SerialNumber,
 			IssuerDN:             state.IssuerDN,
 			Thumbprint:           state.Thumbprint,
@@ -1652,10 +1754,16 @@ func (r resourceCommandCertificate) Update(
 			CertificateAuthority: knownStringFromPlan(plan.CertificateAuthority),
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
-			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
-			FriendlyName:         state.FriendlyName,
-			CollectionId:         plan.CollectionId,
-			ExpiryWarningDays:    plan.ExpiryWarningDays,
+			// friendly_name/use_cn_as_friendly_name are plain Optional (not Computed)
+			// attributes: Terraform's plan has already resolved their final value from
+			// config before Update ever runs, so the provider has no discretion here.
+			// Using state.X served the OLD value whenever config changed or removed
+			// these fields, disagreeing with Terraform's own plan and producing
+			// "provider produced inconsistent result after apply".
+			UseCNAsFriendlyName: plan.UseCNAsFriendlyName,
+			FriendlyName:        plan.FriendlyName,
+			CollectionId:        plan.CollectionId,
+			ExpiryWarningDays:   plan.ExpiryWarningDays,
 			IsExpired: types.Bool{
 				Value: expired,
 			},
@@ -1738,7 +1846,7 @@ func (r resourceCommandCertificate) Update(
 			if err != nil {
 				response.Diagnostics.AddError(
 					"Certificate metadata update error.",
-					fmt.Sprintf("Could not update cert '%s''s metadata on Keyfactor: "+err.Error(), state.ID.Value),
+					fmt.Sprintf("Could not update cert '%s''s metadata on Keyfactor: ", state.ID.Value)+err.Error(),
 				)
 				return
 			}
@@ -1771,10 +1879,16 @@ func (r resourceCommandCertificate) Update(
 			CertificateAuthority: state.CertificateAuthority,
 			CertificateTemplate:  plan.CertificateTemplate,
 			Metadata:             knownMetadataFromPlan(plan.Metadata),
-			UseCNAsFriendlyName:  state.UseCNAsFriendlyName,
-			FriendlyName:         state.FriendlyName,
-			CollectionId:         plan.CollectionId,
-			ExpiryWarningDays:    plan.ExpiryWarningDays,
+			// friendly_name/use_cn_as_friendly_name are plain Optional (not Computed)
+			// attributes: Terraform's plan has already resolved their final value from
+			// config before Update ever runs, so the provider has no discretion here.
+			// Using state.X served the OLD value whenever config changed or removed
+			// these fields, disagreeing with Terraform's own plan and producing
+			// "provider produced inconsistent result after apply".
+			UseCNAsFriendlyName: plan.UseCNAsFriendlyName,
+			FriendlyName:        plan.FriendlyName,
+			CollectionId:        plan.CollectionId,
+			ExpiryWarningDays:   plan.ExpiryWarningDays,
 			IsExpired: types.Bool{
 				Value: expired,
 			},
@@ -2021,7 +2135,7 @@ func (r resourceCommandCertificate) Delete(
 			tflog.Error(ctx, fmt.Sprintf("Error revoking certificate '%d' on Keyfactor Command", certificateIdInt))
 			response.Diagnostics.AddError(
 				"Certificate revocation error.",
-				fmt.Sprintf("Keyfactor Command could not revoke cert '%s' : "+err.Error(), state.ID.Value),
+				fmt.Sprintf("Keyfactor Command could not revoke cert '%s' : ", state.ID.Value)+err.Error(),
 			)
 			return
 		}
@@ -2248,9 +2362,16 @@ func (r resourceCommandCertificate) ImportState(
 		CertificateTemplate: types.String{Value: templateName, Null: isNullString(templateName)},
 		Metadata:            metadata,
 		CertificateId:       types.Int64{Value: int64(certificateIdInt), Null: isNullId(certificateIdInt)},
-		CollectionId:        state.CollectionId,
-		FriendlyName:        state.FriendlyName,
-		UseCNAsFriendlyName: state.UseCNAsFriendlyName,
+		// collection_id, friendly_name, and use_cn_as_friendly_name have no
+		// server-side recoverable value during import (state is always a fresh
+		// zero-valued struct here, not a prior import). Setting them from state.X
+		// would produce a KNOWN zero value (0/""/false) rather than an explicit
+		// null, which disagrees with the null Update() writes for these attributes
+		// once config doesn't set them -- causing "provider produced inconsistent
+		// result after apply" on the very first reconcile apply after import.
+		CollectionId:        types.Int64{Null: true},
+		FriendlyName:        types.String{Null: true},
+		UseCNAsFriendlyName: types.Bool{Null: true},
 		RequestId:           types.Int64{Value: int64(requestId), Null: isNullId(requestId)},
 		ExpiryWarningDays:   types.Int64{Null: true},  // write-only; isNullId(0)==true means not set
 		IsExpired:           types.Bool{Value: false}, // Set to false as we just enrolled the certificate
@@ -2383,9 +2504,9 @@ func (r resourceCommandCertificate) WaitForPendingCert(
 			tflog.Error(
 				ctx,
 				fmt.Sprintf(
-					"Error looking up certificate with request ID %d on Keyfactor Command: "+err.Error(),
+					"Error looking up certificate with request ID %d on Keyfactor Command: ",
 					enrollResponse.CertificateInformation.KeyfactorRequestID,
-				),
+				)+err.Error(),
 			)
 			// increment sleep duration
 			tflog.Debug(ctx, fmt.Sprintf("Sleeping for %v", sleepDuration))
@@ -2838,9 +2959,25 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 	}
 	tflog.Debug(ctx, "API PFXArgs created.")
 
-	//convert PFX args to JSON string
+	//convert PFX args to JSON string for logging purposes only -- PFXArgs
+	// itself (with the real password) is what actually gets sent to
+	// EnrollPFXV2 below; this jsonData is never transmitted.
+	//
+	// Log a REDACTED COPY with the plaintext enrollment password already
+	// replaced, rather than marshaling PFXArgs directly and relying on
+	// tflog.MaskMessageStrings/MaskAllFieldValuesStrings to strip the raw
+	// password as a literal substring out of the rendered text afterward.
+	// Confirmed by direct reproduction: encoding/json escapes '"' and '\\'
+	// when serializing the Password field, so a password containing either
+	// character no longer appears as a contiguous substring of the raw
+	// password in the JSON output, and the substring mask misses it --
+	// the same JSON-escaping-bypass class as
+	// redactUpdateStoreFctArgsForLogging in helpers.go. Redacting the value
+	// itself before marshaling closes this class entirely.
 	tflog.Debug(ctx, "Converting PFXArgs to JSON.")
-	jsonData, err := json.Marshal(PFXArgs)
+	redactedPFXArgs := *PFXArgs
+	redactedPFXArgs.Password = redactedSecretLogPlaceholder
+	jsonData, err := json.Marshal(&redactedPFXArgs)
 	if err != nil {
 		tflog.Error(ctx, "Error converting PFXArgs to JSON.")
 		diags.AddError(
@@ -2854,15 +2991,111 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 	tflog.Debug(ctx, fmt.Sprintf("PFXArgs: %s", string(jsonData)))
 	tflog.Debug(ctx, fmt.Sprintf("Creating PFX certificate %s on Keyfactor.", PFXArgs.Subject.SubjectCommonName))
 	tflog.Debug(ctx, "Calling EnrollPFXV2.")
+	enrollStartTime := time.Now().UTC()
 	enrollResponse, err := r.p.client.EnrollPFXV2(PFXArgs)
+	if err != nil && isTimeoutShapedError(err) {
+		// The client-side request timed out, but Command may have completed the
+		// enrollment server-side before the response reached us. Blindly
+		// returning this error would cause the next apply to enroll AGAIN,
+		// piling up duplicate certificates on every retry. Attempt to recover
+		// the orphaned certificate (if any) and adopt it instead.
+		tflog.Warn(
+			ctx, fmt.Sprintf(
+				"PFX enrollment for '%s' returned a timeout-shaped error (%s); attempting to recover a "+
+					"possibly-orphaned certificate from Keyfactor Command before failing.",
+				PFXArgs.Subject.SubjectCommonName, err.Error(),
+			),
+		)
+		// Resolve the template's numeric ID so the orphan-recovery discriminator
+		// can compare IDs instead of names: Command's certificate record
+		// (TemplateName) always carries the template's DISPLAY name, while
+		// PFXArgs.Template -- the schema's documented, common configuration --
+		// carries the SHORT name. Comparing those two strings directly almost
+		// never matches, which silently defeated recovery for the mainstream
+		// case. A lookup failure here is not fatal: findOrphanedCertificateMatch
+		// falls back to a case-insensitive name comparison when no ID could be
+		// resolved.
+		var expectedTemplateId int
+		if PFXArgs.Template != "" {
+			resolvedId, resolveErr := resolveTemplateIDByName(ctx, r.p.client, PFXArgs.Template)
+			if resolveErr != nil {
+				tflog.Warn(
+					ctx, fmt.Sprintf(
+						"Could not resolve template '%s' to an ID for orphan-recovery matching; falling back to "+
+							"a name comparison: %s",
+						PFXArgs.Template, resolveErr.Error(),
+					),
+				)
+			} else {
+				expectedTemplateId = resolvedId
+			}
+		}
+		orphanCriteria := orphanRecoveryCriteria{
+			CommonName:           PFXArgs.Subject.SubjectCommonName,
+			Subject:              PFXArgs.Subject,
+			SANs:                 PFXArgs.SANs,
+			Template:             PFXArgs.Template,
+			TemplateId:           expectedTemplateId,
+			CertificateAuthority: PFXArgs.CertificateAuthority,
+			Identity:             orphanRecoveryIdentityForClient(r.p.client),
+			EnrollStartTime:      enrollStartTime,
+			EnrollmentPatternId:  PFXArgs.EnrollmentPatternId,
+		}
+		recovered, recoverDiags := recoverOrphanedPFXEnrollment(
+			ctx, r.p.client, r.p.sdkClient, orphanCriteria, collectionIdInt, lookupPassword, certificateFormat,
+		)
+		if recovered != nil {
+			// Surfaced through diagnostics (not just tflog.Warn, which TF_LOG
+			// discards by default) so a normal `terraform apply` shows the
+			// operator that state was bound to a heuristically-matched
+			// certificate rather than one observed being created directly.
+			diags.AddWarning(
+				"Adopted a possibly-orphaned certificate after an enrollment timeout",
+				fmt.Sprintf(
+					"PFX enrollment for CN '%s' returned a client-side timeout, but Keyfactor Command had "+
+						"already issued certificate ID %d (subject %q) matching every available discriminator "+
+						"from this request (subject, SANs, template, certificate authority, and requester "+
+						"identity where verifiable). Terraform is adopting it into state instead of retrying "+
+						"enrollment, which would have created a duplicate. This match is heuristic, not a "+
+						"direct observation of enrollment succeeding -- if this certificate is unexpected, "+
+						"verify it in Keyfactor Command.",
+					PFXArgs.Subject.SubjectCommonName, recovered.CertificateInformation.KeyfactorID,
+					formatCertificateSubjectDN(PFXArgs.Subject),
+				),
+			)
+			tflog.Warn(
+				ctx, fmt.Sprintf(
+					"Recovered orphaned certificate %d (CN '%s') after an enrollment timeout; adopting it "+
+						"instead of retrying enrollment, which would have created a duplicate.",
+					recovered.CertificateInformation.KeyfactorID, PFXArgs.Subject.SubjectCommonName,
+				),
+			)
+			enrollResponse = recovered
+			err = nil
+		} else {
+			diags.Append(recoverDiags...)
+			diags.AddError(
+				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
+				fmt.Sprintf(
+					"Could not create certificate %s on Keyfactor: %s. This looks like a client-side timeout; "+
+						"the enrollment may have succeeded on the server despite it. Check Keyfactor Command for "+
+						"a certificate matching CN '%s' issued on or after %s, and use `terraform import` to "+
+						"adopt it if found, rather than re-applying (which may create a duplicate).",
+					PFXArgs.Subject.SubjectCommonName, err.Error(), PFXArgs.Subject.SubjectCommonName,
+					enrollStartTime.Format(time.RFC3339),
+				),
+			)
+			return nil, diags
+		}
+	}
 	if err != nil {
 		tflog.Error(ctx, "No response from Keyfactor Command after PFX enrollment.")
 		diags.AddError(
 			ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 			fmt.Sprintf(
-				"Could not create certificate %s on Keyfactor: "+err.Error(),
+				"Could not create certificate %s on Keyfactor: ",
 				PFXArgs.Subject.SubjectCommonName,
-			),
+			)+err.Error(),
 		)
 		return nil, diags
 	}
@@ -2910,9 +3143,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 					diags.AddError(
 						ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 						fmt.Sprintf(
-							"Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(),
+							"Could not create certificate '%s' on Keyfactor Command: ",
 							PFXArgs.Subject.SubjectCommonName,
-						),
+						)+pErr.Error(),
 					)
 					return nil, diags
 				}
@@ -2925,9 +3158,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 				diags.AddError(
 					ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 					fmt.Sprintf(
-						"Could not create certificate '%s' on Keyfactor Command: "+pErr.Error(),
+						"Could not create certificate '%s' on Keyfactor Command: ",
 						PFXArgs.Subject.SubjectCommonName,
-					),
+					)+pErr.Error(),
 				)
 				return nil, diags
 			}
@@ -2940,9 +3173,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			diags.AddError(
 				ERR_SUMMARY_CERTIFICATE_RESOURCE_CREATE,
 				fmt.Sprintf(
-					"No response recieved on create certificate '%s' on Keyfactor Command: "+pErr.Error(),
+					"No response recieved on create certificate '%s' on Keyfactor Command: ",
 					PFXArgs.Subject.SubjectCommonName,
-				),
+				)+pErr.Error(),
 			)
 			return nil, diags
 		}
@@ -2989,9 +3222,9 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 		Locality:           plan.Locality,
 		State:              plan.State,
 		Country:            plan.Country,
-		DNSSANs:            plan.DNSSANs,
-		IPSANs:             plan.IPSANs,
-		URISANs:            plan.URISANs,
+		DNSSANs:            knownListFromPlan(plan.DNSSANs),
+		IPSANs:             knownListFromPlan(plan.IPSANs),
+		URISANs:            knownListFromPlan(plan.URISANs),
 		SerialNumber:       types.String{Value: normalizeSerialNumber(enrolledSerialNumber)},
 		IssuerDN:           types.String{Value: enrolledIssuerDN},
 		Thumbprint:         types.String{Value: normalizeThumbprint(enrolledThumbprint)},
@@ -3231,6 +3464,36 @@ func (r resourceCommandCertificate) LookupEnrollmentPatternIDByName(
 	return 0, fmt.Errorf("enrollment pattern with name '%s' not found", patternName)
 }
 
+// resolveTemplateIDByName looks up a certificate template's numeric ID by
+// name, accepting either the short name (GetTemplateResponse.CommonName) or
+// the display name (GetTemplateResponse.TemplateName) -- Command's naming is
+// inverted from what the field names suggest (confirmed against a real
+// enrollment/certificate round-trip): CommonName is the short identifier
+// used in enrollment requests (e.g. "Server_tlsServerAuth-1y") and
+// TemplateName is the display name shown in the UI and on certificate
+// records (e.g. "Server (tlsServerAuth-1y)"). Callers may reasonably supply
+// either form, so both are checked.
+//
+// Returns (0, nil) if no template matches by either name -- callers should
+// treat that as "could not resolve," not a hard error, and fall back to a
+// name-based comparison rather than failing the caller's operation outright.
+func resolveTemplateIDByName(ctx context.Context, client *api.Client, templateName string) (int, error) {
+	if templateName == "" || client == nil {
+		return 0, nil
+	}
+	templates, err := client.GetTemplates()
+	if err != nil {
+		return 0, err
+	}
+	for _, t := range templates {
+		if strings.EqualFold(t.CommonName, templateName) || strings.EqualFold(t.TemplateName, templateName) {
+			tflog.Debug(ctx, fmt.Sprintf("Resolved template '%s' to ID %d", templateName, t.Id))
+			return t.Id, nil
+		}
+	}
+	return 0, nil
+}
+
 // LookupEnrollmentPatternIDByTemplateName finds the enrollment pattern for the
 // given template short name. The resolution policy is:
 //
@@ -3396,6 +3659,21 @@ func knownInt64FromPlan(i types.Int64) types.Int64 {
 		return types.Int64{Null: true}
 	}
 	return i
+}
+
+// knownListFromPlan returns the plan value if known, otherwise a null list
+// with the same element type. Prevents storing Unknown in state for Computed
+// list fields such as dns_sans/ip_sans/uri_sans -- those attributes became
+// Optional+Computed (with UseStateForUnknown) as part of the fix for GH
+// issue #197 (dns_sans not populated on import forced replacement); a fresh
+// Create() whose config doesn't declare them plans them Unknown (no prior
+// state exists yet for UseStateForUnknown to carry forward), and the final
+// state Create() returns must never contain an Unknown value.
+func knownListFromPlan(l types.List) types.List {
+	if l.Unknown {
+		return types.List{Null: true, ElemType: l.ElemType}
+	}
+	return l
 }
 
 func (r resourceCommandCertificate) parseMetadata(
@@ -3625,9 +3903,9 @@ func (r resourceCommandCertificate) enrollCSR(
 		Locality:           plan.Locality,
 		State:              plan.State,
 		Country:            plan.Country,
-		DNSSANs:            plan.DNSSANs,
-		IPSANs:             plan.IPSANs,
-		URISANs:            plan.URISANs,
+		DNSSANs:            knownListFromPlan(plan.DNSSANs),
+		IPSANs:             knownListFromPlan(plan.IPSANs),
+		URISANs:            knownListFromPlan(plan.URISANs),
 		SerialNumber:       types.String{Value: normalizeSerialNumber(enrollResponse.CertificateInformation.SerialNumber)},
 		IssuerDN:           types.String{Value: enrollResponse.CertificateInformation.IssuerDN},
 		Thumbprint:         types.String{Value: normalizeThumbprint(enrollResponse.CertificateInformation.Thumbprint)},

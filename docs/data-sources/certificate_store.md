@@ -3,12 +3,12 @@
 page_title: "keyfactor_certificate_store Data Source - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  Reads an existing Keyfactor Command certificate store using the the /CertificateStores API, which can be used for keyfactor_certificate_deployment resources.
+  Reads an existing Keyfactor Command certificate store using the /CertificateStores API, which can be used for keyfactor_certificate_deployment resources.
 ---
 
 # keyfactor_certificate_store (Data Source)
 
-Reads an existing Keyfactor Command certificate store using the the `/CertificateStores` API, which can be used for `keyfactor_certificate_deployment` resources.
+Reads an existing Keyfactor Command certificate store using the `/CertificateStores` API, which can be used for `keyfactor_certificate_deployment` resources.
 
 ## Example Usage
 

@@ -8,7 +8,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- PR #210 full-review round 2 finding F2:
+// Regression tests: declared-empty list clearing in request builders.
 //
 // buildEnrollmentPatternUpdateRequest/buildEnrollmentPatternCreateRequest
 // gated Regexes/MetadataFields/Defaults/EnrollmentFields (and

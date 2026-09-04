@@ -100,8 +100,7 @@ func asConfig(t *testing.T, ctx context.Context, schema tfsdk.Schema, v Keyfacto
 }
 
 // asState is asConfig's State-typed counterpart, needed by tests exercising
-// authVariantSiblingModifier's unknownTriggerPaths (full-review round 4
-// finding #1), which compares a trigger path's CONFIG value against its own
+// authVariantSiblingModifier's unknownTriggerPaths, which compares a trigger path's CONFIG value against its own
 // prior STATE value to distinguish an incoming/rotating auth_certificate
 // from a steadily-redeclared one.
 func asState(t *testing.T, ctx context.Context, schema tfsdk.Schema, v KeyfactorCertificateAuthority) tfsdk.State {

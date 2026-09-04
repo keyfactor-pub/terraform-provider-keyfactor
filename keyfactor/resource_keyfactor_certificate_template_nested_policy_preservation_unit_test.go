@@ -14,8 +14,8 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression test — full-review round 5 endorsed advisory: the
-// templateUpdateNeedsPreservationFetch gate (removed by this change; see
+// Regression test: the
+// templateUpdateNeedsPreservationFetch gate (removed; see
 // preserveUndeclaredTemplateFields and Update() in
 // resource_keyfactor_certificate_template.go) only checked
 // plan.TemplatePolicy == nil to decide whether a preservation GET was
@@ -28,7 +28,7 @@ import (
 // declared, skip the fetch" condition -- so the fetch never ran, `current`
 // stayed nil, preserveUndeclaredTemplateFields no-op'd (current == nil),
 // and the one undeclared nested field was silently omitted from the PUT and
-// cleared server-side. Exactly the #195 bug class, reintroduced by the
+// cleared server-side. Exactly the same undeclared-field-clearing bug class the preservation fetch exists to prevent, reintroduced by the
 // gate's own "no extra GET when everything's declared" optimization.
 //
 // The fix makes the preservation GET unconditional, so this corner case is

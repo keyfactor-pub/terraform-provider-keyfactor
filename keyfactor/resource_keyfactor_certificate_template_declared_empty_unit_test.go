@@ -16,7 +16,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests — full-review round 2 finding #1 (correctness, medium):
+// Regression tests: declared-empty vs. undeclared writable collections.
 //
 // A config that declares one of the writable collection attributes as an
 // explicit empty list (e.g. `template_regexes = []` or
@@ -43,8 +43,8 @@ import (
 // see their doc comments) instead of len(), and Read/Update reconcile the
 // final applied state's null-vs-empty shape against prior state/plan via
 // preserveListEmptyVsNull (native slices) and preserveTfListEmptyVsNull
-// (types.List), mirroring the certificate_store_type resource's issue #192
-// fix.
+// (types.List), mirroring the certificate_store_type resource's
+// nil-vs-non-nil-empty fix.
 // ---------------------------------------------------------------------------
 
 // newDeclaredEmptyTestServer returns an httptest server whose GET
@@ -102,7 +102,7 @@ func newDeclaredEmptyTestServer(t *testing.T, capturedPUTBody *[]byte) *httptest
 }
 
 // TestUnitCertificateTemplateUpdateDeclaredEmptyCollectionClears is the direct
-// regression test for finding #1a: a plan that declares `template_regexes =
+// regression test for the refill-from-GET half of the bug: a plan that declares `template_regexes =
 // []` (a non-nil, zero-length Go slice -- exactly what the reflection layer
 // produces for a config-declared empty list) must NOT be refilled from the
 // server by preserveUndeclaredTemplateFields, must omit TemplateRegexes from
@@ -165,7 +165,7 @@ func TestUnitCertificateTemplateUpdateDeclaredEmptyCollectionClears(t *testing.T
 	// PlanResourceChange, so plan's declared/undeclared shape already IS the
 	// config's declared/undeclared shape here -- reuse planObj's Raw value
 	// verbatim so preserveUndeclaredTemplateFields's config-declaredness check
-	// (full-review round 5 [HIGH]) sees the same thing this test's plan does.
+	// sees the same thing this test's plan does.
 	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
 	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
@@ -190,7 +190,7 @@ func TestUnitCertificateTemplateUpdateDeclaredEmptyCollectionClears(t *testing.T
 	// "undeclared"), so the CN regex would silently survive the "clear".
 	if regexes, ok := onWire["TemplateRegexes"].([]interface{}); ok && len(regexes) > 0 {
 		t.Fatalf(
-			"TemplateRegexes on the wire = %v, want empty/omitted -- this reproduces finding #1a: a declared "+
+			"TemplateRegexes on the wire = %v, want empty/omitted -- this reproduces the bug: a declared "+
 				"`template_regexes = []` was silently refilled from the server instead of clearing. Full payload: %s",
 			onWire["TemplateRegexes"], putBody,
 		)
@@ -199,7 +199,7 @@ func TestUnitCertificateTemplateUpdateDeclaredEmptyCollectionClears(t *testing.T
 	// The final applied state must read back as a known EMPTY list (matching
 	// the plan), not null. This is the actual Terraform-core consistency
 	// check: a null final value here would still be "inconsistent" against
-	// the plan's known empty list, exactly like finding #1b for
+	// the plan's known empty list, exactly like the null-vs-empty-response half of the bug for
 	// allowed_requesters below.
 	var finalRegexes attr.Value
 	if d := resp.State.GetAttribute(ctx, path.Root("template_regexes"), &finalRegexes); d.HasError() {
@@ -222,7 +222,7 @@ func TestUnitCertificateTemplateUpdateDeclaredEmptyCollectionClears(t *testing.T
 }
 
 // TestUnitCertificateTemplateUpdateDeclaredEmptyAllowedRequestersClears is the
-// direct regression test for finding #1b: a plan that declares
+// direct regression test for the null-vs-empty-response half of the bug: a plan that declares
 // `allowed_requesters = []` must apply cleanly and read back as a known EMPTY
 // list, not null, even though templateResponseToState always maps a
 // zero-length server response to types.List{Null: true} regardless of why
@@ -280,7 +280,7 @@ func TestUnitCertificateTemplateUpdateDeclaredEmptyAllowedRequestersClears(t *te
 	// PlanResourceChange, so plan's declared/undeclared shape already IS the
 	// config's declared/undeclared shape here -- reuse planObj's Raw value
 	// verbatim so preserveUndeclaredTemplateFields's config-declaredness check
-	// (full-review round 5 [HIGH]) sees the same thing this test's plan does.
+	// sees the same thing this test's plan does.
 	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
 	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
@@ -302,7 +302,7 @@ func TestUnitCertificateTemplateUpdateDeclaredEmptyAllowedRequestersClears(t *te
 	}
 
 	// The final applied state must read back as a known EMPTY list, matching
-	// the plan -- not null (finding #1b: templateResponseToState always maps
+	// the plan -- not null (templateResponseToState always maps
 	// an empty server array to types.List{Null: true}).
 	var finalRequesters attr.Value
 	if d := resp.State.GetAttribute(ctx, path.Root("allowed_requesters"), &finalRequesters); d.HasError() {
@@ -311,7 +311,7 @@ func TestUnitCertificateTemplateUpdateDeclaredEmptyAllowedRequestersClears(t *te
 	if finalRequesters == nil || finalRequesters.IsNull() {
 		t.Fatalf(
 			"final state allowed_requesters is null, want a known empty list matching the plan -- this " +
-				"reproduces finding #1b: \"Provider produced inconsistent result after apply\" against a " +
+				"reproduces the bug: \"Provider produced inconsistent result after apply\" against a " +
 				"planned known-empty list, and every subsequent plan re-diffs null vs [] forever",
 		)
 	}

@@ -11,9 +11,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests — full-review round 3 finding (correctness, medium):
-//
-// Switching an existing CA between auth variants (OAuth <-> client-
+// Regression tests: switching an existing CA between auth variants (OAuth <-> client-
 // certificate) in a single apply always failed with "Provider produced
 // inconsistent result after apply." token_url/client_id/scope/audience
 // (OAuth) and auth_certificate_issued_dn/issuer_dn/thumbprint (client-
@@ -23,7 +21,7 @@ import (
 // plan, and the bare modifier blindly pins that Unknown back to the OLD
 // known state value (it has no notion that the OTHER variant is taking
 // over). clearAuthVariant then strips those same fields from the PUT at
-// apply time (issue #194), and the server's post-switch representation
+// apply time, and the server's post-switch representation
 // zeroes them out, so Terraform core hard-errors comparing the pinned
 // stale plan value against the cleared final state.
 //
@@ -63,7 +61,7 @@ func TestUnitCABareUseStateForUnknownResurrectsStaleAuthOnVariantSwitch(t *testi
 			"reproduces the bug: the pre-fix bare UseStateForUnknown modifier resurrected the stale "+
 				"token_url=%q from state even though auth_certificate is taking over this apply -- got "+
 				"Null=%v Value=%v, want the stale value resurrected to prove this really is the root cause "+
-				"the finding fixes",
+				"the fix addresses",
 			"https://idp.example.com/oauth/token", got.Null, got.Value,
 		)
 	}
@@ -355,7 +353,7 @@ func TestUnitCAAuthAttributesUseSiblingModifier(t *testing.T) {
 			if !ok {
 				t.Fatalf(
 					"%s: plan modifier is %T, want authVariantSiblingModifier -- a bare tfsdk.UseStateForUnknown() "+
-						"here reproduces the round 3 finding: switching CA auth variants would resurrect the "+
+						"here reproduces the bug: switching CA auth variants would resurrect the "+
 						"stale outgoing-variant value onto the plan, failing apply with \"Provider produced "+
 						"inconsistent result after apply\"", c.attrName, schemaAttr.PlanModifiers[0],
 				)
@@ -370,7 +368,7 @@ func TestUnitCAAuthAttributesUseSiblingModifier(t *testing.T) {
 			}
 			if len(m.unknownTriggerPaths) != len(c.unknownTriggerNames) {
 				t.Fatalf(
-					"%s: modifier has %d unknownTriggerPaths, want %d -- full-review round 4 finding #1: without "+
+					"%s: modifier has %d unknownTriggerPaths, want %d -- without "+
 						"an unknownTriggerPaths entry for auth_certificate, this attribute has no way to know its "+
 						"own variant is incoming/rotating, and resurrects stale/null metadata onto the plan",
 					c.attrName, len(m.unknownTriggerPaths), len(c.unknownTriggerNames),
@@ -386,7 +384,7 @@ func TestUnitCAAuthAttributesUseSiblingModifier(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression tests — full-review round 4 finding #1 (correctness, medium):
+// Regression tests:
 //
 // authVariantSiblingModifier's cert-metadata triggerPaths only ever cover the
 // OUTGOING direction (an OAuth attribute becoming declared). There was no
@@ -395,8 +393,8 @@ func TestUnitCAAuthAttributesUseSiblingModifier(t *testing.T) {
 // rotating auth_certificate on an already cert-auth CA, resurrected stale
 // (null, for a switch; old, for a rotation) metadata onto the plan while the
 // PUT response carries the server's freshly computed values: "Provider
-// produced inconsistent result after apply" on the very switch round 3
-// fixed for the OAuth attributes, and on every cert rotation.
+// produced inconsistent result after apply" on the very switch case fixed
+// for the OAuth attributes above, and on every cert rotation.
 //
 // unknownTriggerPaths fixes this by leaving the plan Unknown (not null, not
 // resurrected) whenever auth_certificate is genuinely declared AND its
@@ -586,7 +584,7 @@ func TestUnitCAAuthVariantSiblingModifierCarriesForwardMetadataOnStableCertAuth(
 // is the concrete "red" reproduction for the cert-rotation half of finding
 // #1: run the SAME rotation scenario as
 // TestUnitCAAuthVariantSiblingModifierLeavesMetadataUnknownOnCertRotation
-// above through a modifier configured exactly like the pre-round-4 schema
+// above through a modifier configured exactly like the legacy schema
 // wiring (triggerPaths only, no unknownTriggerPaths) to prove
 // unknownTriggerPaths -- not the tail's IsNull guard -- is what fixes
 // rotation: the metadata attribute's own prior state here is non-null (a
@@ -614,7 +612,7 @@ func TestUnitCAAuthVariantSiblingModifierWithoutUnknownTriggerResurrectsStaleMet
 	}
 	resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: types.String{Unknown: true}}
 
-	// Deliberately the pre-round-4 shape: no unknownTriggerPaths.
+	// Deliberately the legacy shape: no unknownTriggerPaths.
 	m := authVariantSiblingModifier{triggerPaths: caOAuthTriggerPaths, nullValue: types.String{Null: true}}
 	m.Modify(ctx, req, resp)
 
@@ -632,16 +630,16 @@ func TestUnitCAAuthVariantSiblingModifierWithoutUnknownTriggerResurrectsStaleMet
 	}
 }
 
-// TestUnitCAAuthVariantSiblingModifierPreRound4TailPinsNullMetadataOnSwitch
+// TestUnitCAAuthVariantSiblingModifierLegacyTailPinsNullMetadataOnSwitch
 // is the concrete "red" reproduction for the OAuth->cert-auth switch half of
-// finding #1, run against the tail logic AS IT EXISTED BEFORE this fix
+// the bug, run against the tail logic AS IT EXISTED BEFORE this fix
 // (mirrored verbatim below -- an IsUnknown()-only guard, no IsNull() guard --
 // since that exact code no longer exists in the modifier to call directly):
 // a genuinely-null prior metadata state (an OAuth CA that never had
 // client-certificate auth) got pinned onto the plan as an explicit Null
 // instead of staying Unknown, which still mismatches the server's non-null
 // applied value once the switch to auth_certificate completes.
-func TestUnitCAAuthVariantSiblingModifierPreRound4TailPinsNullMetadataOnSwitch(t *testing.T) {
+func TestUnitCAAuthVariantSiblingModifierLegacyTailPinsNullMetadataOnSwitch(t *testing.T) {
 	t.Parallel()
 
 	// req.AttributeState mirrors an OAuth CA's cert-metadata attribute: it
@@ -649,7 +647,7 @@ func TestUnitCAAuthVariantSiblingModifierPreRound4TailPinsNullMetadataOnSwitch(t
 	// interface the framework itself already guards at the top of Modify).
 	state := types.String{Null: true}
 
-	// Pre-round-4 tail (resource_keyfactor_certificate_authority.go, before
+	// Legacy tail (resource_keyfactor_certificate_authority.go, before
 	// this fix): only checked IsUnknown(), so a Null state value fell
 	// through to being copied onto the plan verbatim.
 	var plan attr.Value = types.String{Unknown: true}
@@ -663,7 +661,7 @@ func TestUnitCAAuthVariantSiblingModifierPreRound4TailPinsNullMetadataOnSwitch(t
 	}
 	if !got.Null {
 		t.Fatalf(
-			"reproduces the bug: the pre-round-4 tail (IsUnknown()-only guard) pinned the metadata plan to an "+
+			"reproduces the bug: the legacy tail (IsUnknown()-only guard) pinned the metadata plan to an "+
 				"explicit Null (got %+v) instead of leaving it Unknown, even though the OAuth->cert-auth switch "+
 				"this apply means the server will return real non-null metadata -- \"Provider produced "+
 				"inconsistent result after apply\" on the null-vs-known-string mismatch. The fix adds an "+

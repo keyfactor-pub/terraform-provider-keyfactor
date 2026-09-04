@@ -40,7 +40,7 @@ func (r resourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Schema
 					"to a name-based lookup only if no role has that ID (this preserves resolving a role " +
 					"whose Name is itself a numeric string, e.g. a role literally named \"123\"). Resolving " +
 					"via the numeric-ID path always surfaces a warning in the plan/apply output, so a match " +
-					"found only by ID -- rather than by name -- is never silent. Omit to leave role " +
+					"found only by ID, rather than by name, is never silent. Omit to leave role " +
 					"membership unmanaged (preserved on update); set [] explicitly to remove all roles.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{
 					tfsdk.UseStateForUnknown(),
@@ -325,12 +325,11 @@ func resolveDeclaredSecurityRole(client *api.Client, roleStr string, diags *diag
 			return idRole, nil
 		}
 		// ID lookup failed/not-found -- fall back to name lookup. This
-		// preserves the one pre-existing edge case that already worked
-		// before any of this round's changes: a role whose Name is itself a
+		// preserves a pre-existing edge case: a role whose Name is itself a
 		// numeric string (e.g. a role literally named "123") always resolved
 		// via name lookup, and still should -- no warning needed here since
-		// name-based resolution of a numeric string was already possible
-		// before this PR, unlike the ID path.
+		// name-based resolution of a numeric string was already possible,
+		// unlike the ID path.
 		return resolveDeclaredSecurityRoleByName(client, roleStr)
 	}
 	return resolveDeclaredSecurityRoleByName(client, roleStr)
@@ -630,7 +629,7 @@ func (r resourceSecurityIdentity) Create(
 
 	if len(plan.Roles.Elems) > 0 {
 		// Every declared role MUST resolve to a real Keyfactor role before
-		// setIdentityRole is ever called -- mirrors Update()'s round-1 fix (see
+		// setIdentityRole is ever called -- mirrors Update()'s fix (see
 		// its comment above for the full rationale: silently dropping an
 		// unresolvable role here previously let it disappear from
 		// validRolesInterface while state still recorded the full declared

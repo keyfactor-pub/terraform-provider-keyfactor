@@ -11,11 +11,11 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// F9: auth certificate metadata else-null branch
+// Auth certificate metadata else-null branch
 // ---------------------------------------------------------------------------
 
 // TestUnitCAReadAuthCertificateMetadataNullWhenAbsent is the red/green
-// regression test for F9: caResponseToState only set
+// regression test: caResponseToState only set
 // auth_certificate_issued_dn/auth_certificate_issuer_dn/
 // auth_certificate_thumbprint inside "if resp.AuthCertificate != nil", so a
 // CA with no auth certificate configured left those three fields at the Go
@@ -44,7 +44,7 @@ func TestUnitCAReadAuthCertificateMetadataNullWhenAbsent(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// F1: properties JSON-normalization plan modifier
+// Properties JSON-normalization plan modifier
 // ---------------------------------------------------------------------------
 
 // TestUnitCANormalizePropertiesJSON verifies the helper (previously dead
@@ -62,7 +62,7 @@ func TestUnitCANormalizePropertiesJSON(t *testing.T) {
 }
 
 // TestUnitCAPropertiesModifierSuppressesReorderedJSONDiff is the red/green
-// regression test for F1: normalizePropertiesJSON was defined but never
+// regression test: normalizePropertiesJSON was defined but never
 // wired into a plan modifier, so with the prior schema (a bare
 // tfsdk.UseStateForUnknown()) a config-declared properties value already
 // plans as Known -- UseStateForUnknown only ever intervenes on an Unknown
@@ -120,7 +120,7 @@ func TestUnitCAPropertiesModifierSurfacesRealChange(t *testing.T) {
 }
 
 // TestUnitCABarePropertiesUseStateForUnknownDoesNotSuppressReorderedJSONDiff
-// is the concrete "red" reproduction for F1, run against the schema's actual
+// is the concrete "red" reproduction, run against the schema's actual
 // PRE-FIX plan modifier (tfsdk.UseStateForUnknownModifier{}, what "properties"
 // used before this change) rather than against a hand-edited schema: given
 // the exact same config-declared-but-reordered-JSON scenario as
@@ -194,8 +194,7 @@ func TestUnitCAPropertiesModifierCreateStaysUnknown(t *testing.T) {
 }
 
 // TestUnitCAPropertiesModifierLeavesPlanUnknownWhenConfigUnknown is the
-// red/green regression test for full-review round 1 finding #3:
-// normalizedJSONPropertiesModifier lacked the req.AttributeConfig.IsUnknown()
+// red/green regression test: normalizedJSONPropertiesModifier lacked the req.AttributeConfig.IsUnknown()
 // guard that vendored tfsdk.UseStateForUnknownModifier has (attribute_plan_
 // modification.go, comment "otherwise, interpolation gets messed up"). When
 // properties is computed from a not-yet-known expression (e.g.
@@ -229,7 +228,7 @@ func TestUnitCAPropertiesModifierLeavesPlanUnknownWhenConfigUnknown(t *testing.T
 }
 
 // ---------------------------------------------------------------------------
-// F3/F4: ValidateConfig constraint enforcement
+// ValidateConfig constraint enforcement
 // ---------------------------------------------------------------------------
 
 // caConstraintsAllUnset has every attribute validateCAConfigConstraints
@@ -251,8 +250,8 @@ var caConstraintsAllUnset = KeyfactorCertificateAuthority{
 	AllowedRequesters:             types.List{Null: true, ElemType: types.StringType},
 }
 
-// TestUnitCAValidateConfigRejectsEnforceUniqueDNWithNewEndEntity is the F3
-// regression: enforce_unique_dn and new_end_entity_on_renew_and_reissue are
+// TestUnitCAValidateConfigRejectsEnforceUniqueDNWithNewEndEntity is the
+// regression test: enforce_unique_dn and new_end_entity_on_renew_and_reissue are
 // documented as mutually exclusive but, before this fix, nothing enforced
 // it -- both could be set to true with no plan-time error.
 func TestUnitCAValidateConfigRejectsEnforceUniqueDNWithNewEndEntity(t *testing.T) {
@@ -266,7 +265,7 @@ func TestUnitCAValidateConfigRejectsEnforceUniqueDNWithNewEndEntity(t *testing.T
 }
 
 // TestUnitCAValidateConfigAllowsEnforceUniqueDNOrNewEndEntityAlone confirms
-// the non-error cases for the F3 pair: either attribute alone, or neither
+// the non-error cases for the enforce_unique_dn/new_end_entity pair: either attribute alone, or neither
 // declared, must all pass cleanly.
 func TestUnitCAValidateConfigAllowsEnforceUniqueDNOrNewEndEntityAlone(t *testing.T) {
 	dnOnly := caConstraintsAllUnset
@@ -280,8 +279,8 @@ func TestUnitCAValidateConfigAllowsEnforceUniqueDNOrNewEndEntityAlone(t *testing
 	assert.False(t, validateCAConfigConstraints(caConstraintsAllUnset).HasError())
 }
 
-// TestUnitCAValidateConfigRejectsNewEndEntityFalseForHTTPSCa is the F4
-// regression: new_end_entity_on_renew_and_reissue is documented as required
+// TestUnitCAValidateConfigRejectsNewEndEntityFalseForHTTPSCa is the
+// regression test: new_end_entity_on_renew_and_reissue is documented as required
 // true for HTTPS CAs (ca_type=1) but, before this fix, an explicit false was
 // silently accepted at plan time for an HTTPS CA.
 func TestUnitCAValidateConfigRejectsNewEndEntityFalseForHTTPSCa(t *testing.T) {
@@ -317,10 +316,9 @@ func TestUnitCAValidateConfigAllowsNewEndEntityUnsetOrUnknownForHTTPSCa(t *testi
 }
 
 // ---------------------------------------------------------------------------
-// Regression tests — full-review round 2 finding #4 (backward-compat break,
-// high):
+// Regression tests: backward-compat break.
 //
-// A prior round (full-review round 1 finding #6) relaxed the standalone-only
+// An earlier version of this check relaxed the standalone-only
 // check on allowed_enrollment_types/use_allowed_requesters/allowed_requesters
 // from "reject on mere declaredness" to "reject only a value that actually
 // conflicts" (treating 0/false/[] as no-ops). That relaxation was still
@@ -345,12 +343,12 @@ func TestUnitCAValidateConfigAllowsNewEndEntityUnsetOrUnknownForHTTPSCa(t *testi
 // ---------------------------------------------------------------------------
 
 // TestUnitCAValidateConfigNeverRejectsAllowedEnrollmentTypesRegardlessOfStandalone
-// is the direct regression test for finding #4: standalone=false paired with
+// is the direct regression test: standalone=false paired with
 // allowed_enrollment_types=3 -- the exact shape Command itself returns for a
 // real non-standalone HTTPS CA, and the exact shape this project's own
 // certificate_authority_demo needed to drop from its config to keep working
 // -- must plan cleanly. A smaller non-zero value (the old "genuine conflict"
-// boundary case from round 1) and a standalone=true pairing are also checked
+// boundary case from an earlier, stricter version of this check) and a standalone=true pairing are also checked
 // to confirm the constraint is gone, not just further relaxed.
 func TestUnitCAValidateConfigNeverRejectsAllowedEnrollmentTypesRegardlessOfStandalone(t *testing.T) {
 	base := func() KeyfactorCertificateAuthority {

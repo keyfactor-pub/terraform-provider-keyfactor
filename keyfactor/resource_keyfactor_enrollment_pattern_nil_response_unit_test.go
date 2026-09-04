@@ -11,7 +11,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- PR #210 full-review finding FIX-5:
+// Regression tests: nil API response guard.
 //
 // The vendored SDK's decode() (vendor/github.com/Keyfactor/keyfactor-go-
 // client-sdk/v25/api/keyfactor/v1/client.go) returns (nil, httpResp, nil) --

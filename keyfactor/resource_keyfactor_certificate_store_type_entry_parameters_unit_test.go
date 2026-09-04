@@ -7,7 +7,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests for GitHub issue #192:
+// Regression tests: nil-vs-non-nil-empty entry_parameters/properties.
 //
 // keyfactor_certificate_store_type with entry_parameters = [] (or
 // properties = []) read back as null after Create, producing "Provider

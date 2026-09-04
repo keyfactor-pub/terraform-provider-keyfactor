@@ -8,7 +8,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Unit tests — CA auth-variant mutual exclusion (issue #194)
+// Unit tests — CA auth-variant mutual exclusion.
 //
 // Live repro (provider v2.9.1 -> Command 25.5): destroying a
 // keyfactor_certificate_authority configured with client-certificate auth
@@ -31,7 +31,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // TestUnitCABuildRequestClientCertAuthOmitsOAuthFields is the direct
-// regression test for issue #194: a plan/state shaped like a real
+// regression test for the auth-variant mutual exclusion bug: a plan/state shaped like a real
 // client-certificate-auth CA (AuthCertificate/AuthCertificatePassword
 // populated, OAuth fields carried forward as known empty strings) must
 // produce a request with every OAuth field genuinely unset -- not merely set
@@ -63,7 +63,7 @@ func TestUnitCABuildRequestClientCertAuthOmitsOAuthFields(t *testing.T) {
 	if req.TokenURL.IsSet() {
 		t.Errorf(
 			"TokenURL: want unset (client-certificate auth is in use), got IsSet=true Value=%v -- "+
-				"this reproduces issue #194: Command rejects a request carrying fields for both auth variants",
+				"this reproduces the bug: Command rejects a request carrying fields for both auth variants",
 			req.TokenURL.Get(),
 		)
 	}
@@ -174,7 +174,7 @@ func TestUnitCABuildRequestNeitherAuthVariantOmitsBoth(t *testing.T) {
 }
 
 // TestUnitCADeleteClearScheduleFallbackDoesNotConflictAuthVariants
-// reproduces the exact live-repro shape from issue #194: Delete()'s
+// reproduces the exact live-repro shape from the auth-variant mutual exclusion bug: Delete()'s
 // clear-schedules-before-delete fallback copies raw on-disk state (not a
 // freshly-resolved plan) into clearState, nulls only the schedule fields, and
 // passes the result straight to buildCARequest. Before the fix, this path
@@ -213,7 +213,7 @@ func TestUnitCADeleteClearScheduleFallbackDoesNotConflictAuthVariants(t *testing
 	if req.TokenURL.IsSet() || req.ClientId.IsSet() || req.Scope.IsSet() || req.Audience.IsSet() || req.ClientSecret != nil {
 		t.Fatalf(
 			"clear-schedules-before-delete request carries OAuth fields alongside AuthCertificate -- "+
-				"this reproduces issue #194's \"Fields for OAuth and Client Certificate Authentication cannot "+
+				"this reproduces the bug's \"Fields for OAuth and Client Certificate Authentication cannot "+
 				"both be provided for the same CA\" error: TokenURL.IsSet=%v ClientId.IsSet=%v Scope.IsSet=%v "+
 				"Audience.IsSet=%v ClientSecret!=nil=%v",
 			req.TokenURL.IsSet(), req.ClientId.IsSet(), req.Scope.IsSet(), req.Audience.IsSet(), req.ClientSecret != nil,
@@ -228,8 +228,7 @@ func TestUnitCADeleteClearScheduleFallbackDoesNotConflictAuthVariants(t *testing
 }
 
 // ---------------------------------------------------------------------------
-// Regression tests — full-review round 1 finding #4 (missing cross-field
-// validation, low):
+// Regression tests: missing cross-field validation.
 //
 // Before this fix, nothing at plan time rejected a config that declares BOTH
 // auth_certificate AND client_id/token_url on the same CA. clearAuthVariant's

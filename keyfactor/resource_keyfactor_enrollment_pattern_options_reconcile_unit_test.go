@@ -8,8 +8,8 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- full-review finding F7 (verified live against
-// kfclab):
+// Regression tests: enrollment_fields options null-vs-empty reconciliation
+// (verified live against kfclab):
 //
 // Command's EnrollmentPatterns Create/Update/GetById responses echo an
 // explicit `"Options": []` for EVERY enrollment field entry, including ones

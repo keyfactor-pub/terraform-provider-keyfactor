@@ -9,8 +9,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- full-review finding F1 (superseding PR #210 findings
-// FIX-1/round 2 FIX-A, which this test file previously covered):
+// Regression tests: force_template_default plan validity.
 //
 // force_template_default was Optional+Computed with alwaysUnknownModifier
 // attached, which planned the attribute as Unknown whenever config declared

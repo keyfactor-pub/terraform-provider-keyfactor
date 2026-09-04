@@ -10,7 +10,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression test -- PR #210 full-review round 2 finding F5:
+// Regression test:
 //
 // resourceEnrollmentPattern.Update logged only "Updating enrollment pattern
 // ID %d" -- no old/new values for the policy-relevant fields actually
@@ -83,7 +83,7 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	})
 
 	// ---------------------------------------------------------------------
-	// Regression tests -- PR #210 full-review round 3 finding FIX-G:
+	// Regression tests:
 	// use_ad_permissions, restrict_cas, and allowed_enrollment_types were
 	// missing from Update()'s audit trail even though they are the master
 	// switches governing whether associated_role_names/certificate_
@@ -177,7 +177,7 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	})
 
 	// ---------------------------------------------------------------------
-	// Regression tests -- PR #210 full-review round 2 finding FIX-C:
+	// Regression tests:
 	// policies.default_certificate_owner_override, policies.primary_key_
 	// algorithms, and policies.alternative_key_algorithms were not audited
 	// on Update() despite being exactly as security-relevant as the
@@ -267,7 +267,7 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	})
 
 	// ---------------------------------------------------------------------
-	// Regression test -- PR #210 full-review round 5 finding FIX-N: a nil
+	// Regression test: a nil
 	// Policies side was rendered via a bare Go zero-value
 	// EnrollmentPatternResourcePolicy{}, whose types.Bool{}/types.Int64{}
 	// fields are NOT flagged Null, so tfBoolLogString/tfInt64LogString
@@ -302,7 +302,7 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	})
 
 	// ---------------------------------------------------------------------
-	// Regression tests -- PR #210 full-review round 5 finding FIX-M:
+	// Regression tests:
 	// metadata_fields, defaults, and enrollment_fields were completely
 	// absent from the Update() audit diff despite being sent to Command on
 	// every create/update (buildEnrollmentPatternUpdateRequest/
@@ -368,7 +368,7 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	})
 
 	// ---------------------------------------------------------------------
-	// Regression test -- PR #210 full-review round 5 finding FIX-O:
+	// Regression test:
 	// policies.default_certificate_owner_role_name must never be reported by
 	// this function -- both prior/updated sides here are derived from
 	// pre-update data (prior Terraform state / the pre-update GET), so a
@@ -392,7 +392,7 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 				// Structurally, at this point in Update(), the name has not
 				// yet been re-resolved for the new id -- it is still
 				// whatever the pre-update GET returned. Mirroring that here
-				// (same name, different id) is exactly the scenario FIX-O
+				// (same name, different id) is exactly the scenario this test
 				// guards against: the name line must not silently render an
 				// unchanged/misleading "Role A" -> "Role A".
 				DefaultCertificateOwnerRoleName: types.String{Value: "Role A"},
@@ -412,7 +412,7 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	})
 
 	// ---------------------------------------------------------------------
-	// Regression tests -- PR #210 full-review round 4 finding FIX-I:
+	// Regression tests:
 	// template_default (the persisted field, distinct from the one-shot
 	// force_template_default directive) was completely absent from the
 	// Update() audit diff.
@@ -434,7 +434,7 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	})
 
 	// ---------------------------------------------------------------------
-	// Regression tests -- PR #210 full-review round 4 finding FIX-J: name
+	// Regression tests: name
 	// (mutable) changes never appeared in the Update() audit diff.
 	// ---------------------------------------------------------------------
 
@@ -454,7 +454,7 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	})
 
 	// ---------------------------------------------------------------------
-	// Regression tests -- PR #210 full-review round 4 finding FIX-K: regexes
+	// Regression tests: regexes
 	// (subject-validation regex policy) was untracked in the Update() audit
 	// diff despite matching the established rationale for sibling fields
 	// like policies.rfc_enforcement/policies.allow_wildcards.
@@ -481,7 +481,7 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	})
 
 	// ---------------------------------------------------------------------
-	// Regression test -- PR #210 full-review round 4 finding FIX-L:
+	// Regression test:
 	// force_template_default produced a false-positive "changed" audit
 	// entry on every Update() where a user explicitly declares
 	// force_template_default = false, because the prior side is ALWAYS
@@ -554,8 +554,7 @@ func anyContains(entries []string, substr string) bool {
 // TestUnitTfLogStringHelpers covers the small null/unknown-aware rendering
 // helpers (tfBoolLogString/tfInt64LogString/tfStringLogString/
 // tfListLogString) that back both resourceEnrollmentPattern.Update's and
-// resourceCertificateCollection.Update's audit-log lines (PR #210 full-review
-// finding F5) -- these are what actually decide whether two values are
+// resourceCertificateCollection.Update's audit-log lines -- these are what actually decide whether two values are
 // logged as "changed": e.g. certificate_collection's Update() compares
 // tfStringLogString(state.Query) against tfStringLogString(plan.Query)
 // before deciding to emit a log line.
@@ -591,7 +590,7 @@ func TestUnitTfLogStringHelpers(t *testing.T) {
 		if got := tfStringLogString(types.String{Null: true}); got != "(null)" {
 			t.Errorf("got %q, want (null)", got)
 		}
-		// %q-escaped (PR #210 full-review finding FIX-6), not the raw value.
+		// %q-escaped, not the raw value.
 		if got := tfStringLogString(types.String{Value: "CN=Test"}); got != `"CN=Test"` {
 			t.Errorf("got %q, want %q", got, `"CN=Test"`)
 		}
@@ -622,7 +621,7 @@ func TestUnitTfLogStringHelpers(t *testing.T) {
 		if got := tfListLogString(ctx, types.List{Null: true, ElemType: types.StringType}); got != "(null)" {
 			t.Errorf("got %q, want (null)", got)
 		}
-		// %q-escaped elements (PR #210 full-review finding FIX-6), not raw
+		// %q-escaped elements, not raw
 		// values.
 		got := tfListLogString(
 			ctx, types.List{ElemType: types.StringType, Elems: []attr.Value{types.String{Value: "a"}}},
@@ -642,7 +641,7 @@ func TestUnitTfLogStringHelpers(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression test -- PR #210 full-review finding FIX-8:
+// Regression test:
 //
 // Create() logged only "Created enrollment pattern ID %d" -- no field-level
 // detail for the access-control-relevant fields set on the initial create
@@ -678,7 +677,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	})
 
 	// -----------------------------------------------------------------------
-	// Regression tests -- PR #210 full-review round 3 finding FIX-G:
+	// Regression tests:
 	// use_ad_permissions, restrict_cas, and allowed_enrollment_types were
 	// missing from Create()'s audit trail too (see the equivalent Update()-
 	// path tests above).
@@ -754,7 +753,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	})
 
 	// -----------------------------------------------------------------------
-	// Regression test -- PR #210 full-review round 2 finding FIX-B:
+	// Regression test:
 	//
 	// force_template_default was missing from enrollmentPatternCreationAudit-
 	// Fields entirely, and even if referenced directly off `created` would
@@ -797,7 +796,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	})
 
 	// -----------------------------------------------------------------------
-	// Regression tests -- PR #210 full-review round 2 finding FIX-C:
+	// Regression tests:
 	// policies.default_certificate_owner_override, policies.primary_key_
 	// algorithms, and policies.alternative_key_algorithms were missing from
 	// Create()'s audit trail too (see the equivalent Update()-path tests
@@ -832,7 +831,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	})
 
 	// -----------------------------------------------------------------------
-	// Regression test -- PR #210 full-review round 4 finding FIX-I:
+	// Regression test:
 	// template_default was completely absent from Create()'s audit trail.
 	// -----------------------------------------------------------------------
 
@@ -850,7 +849,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	})
 
 	// -----------------------------------------------------------------------
-	// Regression tests -- PR #210 full-review round 4 finding FIX-J: name
+	// Regression tests: name
 	// and template_id never appeared in Create()'s audit trail.
 	// -----------------------------------------------------------------------
 
@@ -872,7 +871,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	})
 
 	// -----------------------------------------------------------------------
-	// Regression test -- PR #210 full-review round 4 finding FIX-K: regexes
+	// Regression test: regexes
 	// was untracked in Create()'s audit trail.
 	// -----------------------------------------------------------------------
 
@@ -898,7 +897,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	})
 
 	// -----------------------------------------------------------------------
-	// Regression test -- PR #210 full-review round 5 finding FIX-M:
+	// Regression test:
 	// metadata_fields, defaults, and enrollment_fields were completely
 	// absent from Create()'s audit trail too, despite being sent to Command
 	// on every create (buildEnrollmentPatternCreateRequest).
@@ -940,8 +939,7 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 
 // TestUnitAlgorithmListLogString covers algorithmListLogString directly --
 // the null-vs-non-nil-empty-aware renderer backing the new policies.
-// primary_key_algorithms/alternative_key_algorithms audit-log entries (PR
-// #210 full-review round 2 finding FIX-C).
+// primary_key_algorithms/alternative_key_algorithms audit-log entries.
 func TestUnitAlgorithmListLogString(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -981,7 +979,7 @@ func TestUnitAlgorithmListLogString(t *testing.T) {
 
 // TestUnitRegexListLogString covers regexListLogString directly -- the
 // null-vs-non-nil-empty-aware renderer backing the new regexes audit-log
-// entries (PR #210 full-review round 4 finding FIX-K).
+// entries.
 func TestUnitRegexListLogString(t *testing.T) {
 	t.Parallel()
 
@@ -1024,8 +1022,7 @@ func TestUnitRegexListLogString(t *testing.T) {
 
 // TestUnitMetadataFieldListLogString covers metadataFieldListLogString
 // directly -- the null-vs-non-nil-empty-aware renderer backing the new
-// metadata_fields audit-log entries (PR #210 full-review round 5 finding
-// FIX-M).
+// metadata_fields audit-log entries.
 func TestUnitMetadataFieldListLogString(t *testing.T) {
 	t.Parallel()
 
@@ -1070,7 +1067,7 @@ func TestUnitMetadataFieldListLogString(t *testing.T) {
 
 // TestUnitDefaultListLogString covers defaultListLogString directly -- the
 // null-vs-non-nil-empty-aware renderer backing the new defaults audit-log
-// entries (PR #210 full-review round 5 finding FIX-M).
+// entries .
 func TestUnitDefaultListLogString(t *testing.T) {
 	t.Parallel()
 
@@ -1108,8 +1105,7 @@ func TestUnitDefaultListLogString(t *testing.T) {
 
 // TestUnitEnrollmentFieldListLogString covers enrollmentFieldListLogString
 // directly -- the null-vs-non-nil-empty-aware renderer backing the new
-// enrollment_fields audit-log entries (PR #210 full-review round 5 finding
-// FIX-M).
+// enrollment_fields audit-log entries.
 func TestUnitEnrollmentFieldListLogString(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -1151,7 +1147,7 @@ func TestUnitEnrollmentFieldListLogString(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression tests -- PR #210 full-review round 5 finding FIX-O:
+// Regression tests:
 //
 // enrollmentPatternOwnerRoleNameChange is the pure function Update() calls
 // AFTER the PUT response is available (see the call site in Update(), right

@@ -14,9 +14,9 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- PR #210 full-review findings FIX-3 and FIX-4:
+// Regression tests: two Update() bugs.
 //
-// FIX-3: Update() decoded `plan` from request.Plan, unlike the
+// Config-decode bug: Update() decoded `plan` from request.Plan, unlike the
 // already-patched Create() (see resource_keyfactor_enrollment_pattern_
 // create_unit_test.go's TestUnitEnrollmentPatternCreateResolvesUndeclared
 // ComputedFieldsFromConfig). useStateOrNullModifier can leave a Computed
@@ -32,11 +32,11 @@ import (
 // the old (request.Plan.Get) code would have crashed immediately decoding
 // it; the fixed code never touches it at all.
 //
-// FIX-4: Update()'s fallback for the two write-only-turned-derived Set
+// Unknown-fallback bug: Update()'s fallback for the two write-only-turned-derived Set
 // attributes (associated_role_names, certificate_authority_ids -- see
 // KeyfactorEnrollmentPatternState's doc comment) only checked
 // config.X.Null, not config.X.Unknown. types.Set CAN represent Unknown
-// without crashing decode (unlike the raw-Go-slice fields FIX-3 covers) --
+// without crashing decode (unlike the raw-Go-slice fields the config-decode fix covers) --
 // e.g. `associated_role_names = [keyfactor_security_role.new_role.name]`
 // where that role is created in the same apply leaves
 // config.AssociatedRoleNames genuinely Unknown at Update() time. Without the
@@ -80,7 +80,7 @@ func newEnrollmentPatternUpdateTestServer(t *testing.T, capturedPUTBody *[]byte)
 }
 
 // TestUnitEnrollmentPatternUpdateDoesNotDependOnPlan is the direct
-// regression test for FIX-3: Update() must succeed using only Config/State,
+// regression test: Update() must succeed using only Config/State,
 // even when handed a Plan whose entire top-level value is Unknown (standing
 // in for "Plan still resolving" or any other corruption of that object).
 // Before the fix, Update() called request.Plan.Get(ctx, &plan) -- decoding
@@ -147,7 +147,7 @@ func TestUnitEnrollmentPatternUpdateDoesNotDependOnPlan(t *testing.T) {
 }
 
 // TestUnitEnrollmentPatternUpdateResolvesUnknownAssociatedRoleNamesFromState
-// is the direct regression test for FIX-4: when config.AssociatedRoleNames
+// is the direct regression test: when config.AssociatedRoleNames
 // is genuinely Unknown (e.g. chained from a security role resource created
 // in the same apply), Update() must fall back to the fresh pre-update GET's
 // own AssociatedRoles expansion (via preserveUndeclaredEnrollmentPatternFields)
@@ -188,7 +188,7 @@ func TestUnitEnrollmentPatternUpdateResolvesUnknownAssociatedRoleNamesFromState(
 	// Config: associated_role_names is genuinely Unknown -- e.g. chained
 	// from `keyfactor_security_role.new_role.name`, a resource created in
 	// the same apply. types.Set CAN represent Unknown (unlike the raw Go
-	// slice fields FIX-3 covers), so this decodes without crashing -- the
+	// slice fields the config-decode fix covers), so this decodes without crashing -- the
 	// bug is purely in what Update() does with it afterward.
 	config := state
 	config.AssociatedRoleNames = types.Set{Unknown: true, ElemType: types.StringType}
@@ -198,7 +198,7 @@ func TestUnitEnrollmentPatternUpdateResolvesUnknownAssociatedRoleNamesFromState(
 		t.Fatalf("test setup: config.Set returned diagnostics: %+v", d)
 	}
 	configObj := tfsdk.Config{Schema: schema, Raw: configScratch.Raw}
-	// Plan mirrors Config here -- FIX-3's test covers the "Plan disagrees
+	// Plan mirrors Config here -- the config-decode fix's test covers the "Plan disagrees
 	// with / crashes independent of Config" case separately.
 	planObj := tfsdk.Plan{Schema: schema, Raw: configScratch.Raw}
 

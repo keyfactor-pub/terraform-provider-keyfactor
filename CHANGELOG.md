@@ -1,10 +1,23 @@
-# v2.9.2
+# v2.10.0
 
 ## Upgrade notes
 
-- **`request_timeout` is now actually enforced.** It was previously accepted in config but ignored — the real timeout was always the `KEYFACTOR_CLIENT_TIMEOUT` env var, or 60s. If a small `request_timeout` seemed to "work" before, it may now time out for real on long operations like PFX enrollment — raise it if applies that used to succeed start failing. A timed-out request also no longer retries silently; it now surfaces immediately as a Terraform error.
+- **`request_timeout` is now actually enforced.** It was previously accepted in config but ignored; the real timeout was always the `KEYFACTOR_CLIENT_TIMEOUT` env var, or 60s. If a small `request_timeout` seemed to "work" before, it may now time out for real on long operations like PFX enrollment. Raise it if applies that used to succeed start failing. A timed-out request also no longer retries silently; it now surfaces immediately as a Terraform error.
 - **Omitting an attribute from config now means "leave unmanaged," not "clear it."** Affects `keyfactor_certificate.owner_role_name`, `keyfactor_identity.roles`, `keyfactor_security_role.permissions`, `keyfactor_certificate_store.container_name`/`application_name`, and `keyfactor_certificate_template.allowed_requesters`/`template_regexes`/`template_defaults`/`enrollment_fields`/`metadata_fields`. If your config relied on simply omitting one of these to keep it cleared, set it explicitly to `""` or `[]` instead. Related: `keyfactor_certificate`'s `dns_sans`/`ip_sans`/`uri_sans` are now Optional+Computed, so omitting one is also a no-op rather than forcing a replace.
 - **Refresh behavior changed for three resources.** `keyfactor_security_role` and `keyfactor_security_identity` now detect changes made outside Terraform on `Read` instead of always re-asserting state. `keyfactor_certificate_store_type` now correctly detects out-of-band deletion without misreading gateway/5xx errors as deletion. `keyfactor_certificate_deployment`'s `Delete` now succeeds with a warning if the certificate was already removed outside Terraform.
+
+## Enrollment Patterns
+
+### Features
+
+- feat(enrollment_patterns): Add `keyfactor_enrollment_pattern` resource for full lifecycle management (create, read, update, delete, import) of Command enrollment patterns, including policies, default subject values, regexes, enrollment/metadata fields, and CA/role restrictions. Requires Keyfactor Command v25.0+.
+
+## Certificate Collections
+
+### Features
+
+- feat(certificate_collections): Add `keyfactor_certificate_collection` resource to manage certificate collections (name, query, description, dashboard/favorite flags).
+- feat(certificate_collections): Add `keyfactor_certificate_collection` data source to look up an existing certificate collection by name or ID.
 
 ## Template Role Bindings
 
@@ -26,7 +39,7 @@
 
 - fix: `dns_sans`/`ip_sans`/`uri_sans` no longer force a destroy+recreate on the first plan after `terraform import`. Fixes [#197](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/197)
 - fix: `owner_role_name` no longer clears ownership as a side effect of an unrelated `Update` when omitted from config; an explicit `owner_role_name = ""` is now the deliberate way to clear it
-- fix: PFX enrollment now recovers automatically when the client times out but Command actually issued the certificate, instead of leaving Terraform state empty while a real certificate exists — a recovery surfaces as a warning diagnostic
+- fix: PFX enrollment now recovers automatically when the client times out but Command actually issued the certificate, instead of leaving Terraform state empty while a real certificate exists. A recovery surfaces as a warning diagnostic
 - fix: `Update` no longer disagrees with `ImportState` on `friendly_name`/`use_cn_as_friendly_name`, fixing "provider produced inconsistent result after apply" on the first apply right after `terraform import`
 
 ## Certificate Deployments
@@ -42,7 +55,7 @@
 - fix: `Update` no longer clears `roles` when config omits the attribute
 - fix: `Read` now detects roles added/removed outside Terraform instead of always re-asserting state
 - fix: `Read` no longer manufactures an unresolvable diff from role-name casing or ID-vs-name differences when the actual role set is unchanged; genuinely different role sets still surface as drift
-- fix: a `roles` entry that looks like a number (e.g. `"7"`) now resolves as a role ID first, with a plan/apply warning whenever that happens — this is opt-in-by-default so an existing config with a numeric `roles` entry that previously silently no-op'd doesn't start granting a real role on a routine upgrade without notice
+- fix: a `roles` entry that looks like a number (e.g. `"7"`) now resolves as a role ID first, with a plan/apply warning whenever that happens. This is opt-in-by-default so an existing config with a numeric `roles` entry that previously silently no-op'd doesn't start granting a real role on a routine upgrade without notice
 - security: role-lookup debug logging no longer lets an embedded newline in a declared role forge additional log lines
 
 ## Security Roles
@@ -79,7 +92,7 @@
 
 ### Fixes
 
-- fix: `keyfactor_oauth_security_role_claim_association` `Read`/`Create`/`Delete` no longer crash the provider on a transport-level API failure (DNS, connection, or TLS errors) — this now surfaces as a normal Terraform diagnostic
+- fix: `keyfactor_oauth_security_role_claim_association` `Read`/`Create`/`Delete` no longer crash the provider on a transport-level API failure (DNS, connection, or TLS errors). This now surfaces as a normal Terraform diagnostic
 - fix: `Create`/`Delete` no longer panic when the associated role's name, description, or permission set is null on the server
 
 ## Certificate Authorities
@@ -99,7 +112,7 @@
 
 - chore(deps): `keyfactor-go-client/v3` `v3.5.6-rc.1 → v3.6.0`
 - chore(deps): `keyfactor-auth-client-go` `v1.5.0 → v1.6.0`
-- chore(deps): `keyfactor-go-client-sdk/v24` `v24.1.1 → v24.1.2-rc.4`
+- chore(deps): `keyfactor-go-client-sdk` `v24.1.1 → v25.2.0-rc.4` (module path bumped `v24 → v25`)
 - chore(deps): `golang.org/x/crypto` `v0.47.0 → v0.52.0`
 - chore(deps): `google.golang.org/grpc` `v1.79.3 → v1.82.1`
 - chore(deps): `golang.org/x/net` `v0.49.0 → v0.55.0`, plus transitive dependency updates
@@ -120,7 +133,7 @@
 
 ## Chores
 
-- chore(deps): bump `keyfactor-go-client/v3` to `v3.5.6` — `GetTemplates` now paginates automatically, with a max-page safety bound, per-iteration response-body close, and audit logging.
+- chore(deps): bump `keyfactor-go-client/v3` to `v3.5.6`. `GetTemplates` now paginates automatically, with a max-page safety bound, per-iteration response-body close, and audit logging.
 
 # v2.9.0
 
@@ -128,18 +141,18 @@
 
 ### Fixes
 
-- fix: `keyfactor_certificate` no longer returns the root CA as the leaf (`certificate_pem` / `common_name` / subject fields) when Keyfactor Command returns a non-leaf-first chain (e.g. externally-rooted chains returned root-first) — the provider now re-selects the true end-entity leaf from the combined certificate + chain set, independent of chain ordering. Covers the P7B download, PFX recovery, and PEM recovery (`UnpackPEM`) paths. Previously this poisoned state and forced certificate replacement on every plan
-- fix: `keyfactor_certificate` `certificate_pem`, `certificate_chain`, and `ca_certificate` no longer drift on every plan due to CRLF line endings — Command's enrollment responses are normalized to LF on enroll so Create and Read produce byte-identical state
+- fix: `keyfactor_certificate` no longer returns the root CA as the leaf (`certificate_pem` / `common_name` / subject fields) when Keyfactor Command returns a non-leaf-first chain (e.g. externally-rooted chains returned root-first). The provider now re-selects the true end-entity leaf from the combined certificate + chain set, independent of chain ordering. Covers the P7B download, PFX recovery, and PEM recovery (`UnpackPEM`) paths. Previously this poisoned state and forced certificate replacement on every plan
+- fix: `keyfactor_certificate` `certificate_pem`, `certificate_chain`, and `ca_certificate` no longer drift on every plan due to CRLF line endings. Command's enrollment responses are normalized to LF on enroll so Create and Read produce byte-identical state
 
 ## Certificate Stores
 
 ### Features
 
-- feat: `keyfactor_certificate_store` import now accepts container-scoped IDs — `containers/<idOrName>/stores/<guid>` and the explicit `stores/<guid>` form, in addition to the legacy bare `<guid>`; the container-scoped form only requires read permission on the named container, resolving an import-permissions gap for users without read-on-all-stores
+- feat: `keyfactor_certificate_store` import now accepts container-scoped IDs: `containers/<idOrName>/stores/<guid>` and the explicit `stores/<guid>` form, in addition to the legacy bare `<guid>`. The container-scoped form only requires read permission on the named container, resolving an import-permissions gap for users without read-on-all-stores
 
 ### Fixes
 
-- fix: `keyfactor_certificate_store` `application_name` no longer causes "inconsistent result after apply" when set via interpolation (Unknown at plan time, resolved during apply) — the container name is now resolved via a by-ID lookup with a plan/state hint fallback instead of a paginated scan that could miss a freshly-created container
+- fix: `keyfactor_certificate_store` `application_name` no longer causes "inconsistent result after apply" when set via interpolation (Unknown at plan time, resolved during apply). The container name is now resolved via a by-ID lookup with a plan/state hint fallback instead of a paginated scan that could miss a freshly-created container
 
 # v2.8.1
 
@@ -147,17 +160,17 @@
 
 ### Fixes
 
-- fix: `keyfactor_certificate` `certificate_authority` is now `Optional+Computed` — no longer required when using `certificate_template` or `certificate_enrollment_pattern`; Command auto-selects a CA when omitted
+- fix: `keyfactor_certificate` `certificate_authority` is now `Optional+Computed`: no longer required when using `certificate_template` or `certificate_enrollment_pattern`. Command auto-selects a CA when omitted
 - fix: `keyfactor_certificate` automatically resolves the associated enrollment pattern when only `certificate_template` is specified on Command v25+, enabling backwards-compatible configs to work without CA enrollment permissions; returns a clear error if the template has multiple patterns with no unique default
-- fix: `keyfactor_certificate` `collection_id`, `use_cn_as_friendly_name`, and `friendly_name` no longer cause "inconsistent result after apply" — Read now preserves these write-only enrollment parameters from state instead of returning null
+- fix: `keyfactor_certificate` `collection_id`, `use_cn_as_friendly_name`, and `friendly_name` no longer cause "inconsistent result after apply". Read now preserves these write-only enrollment parameters from state instead of returning null
 - fix: `keyfactor_certificate` `certificate_authority` is now populated from the server response when omitted from config (enrollment pattern auto-selection); previously it remained null even when the server recorded which CA issued the certificate
 
 ## OAuth Security
 
 ### Fixes
 
-- fix: `keyfactor_oauth_security_role` Update no longer silently wipes all claim associations — the provider now reads existing claims before PUT and preserves them
-- fix: `keyfactor_oauth_security_claim` Update no longer causes perpetual plan drift — the Command Security Claims API exhibits eventual consistency (POST/PUT responses and immediate re-reads return the pre-update `description`); provider now stores plan values to avoid spurious drift
+- fix: `keyfactor_oauth_security_role` Update no longer silently wipes all claim associations. The provider now reads existing claims before PUT and preserves them
+- fix: `keyfactor_oauth_security_claim` Update no longer causes perpetual plan drift. The Command Security Claims API exhibits eventual consistency (POST/PUT responses and immediate re-reads return the pre-update `description`). Provider now stores plan values to avoid spurious drift
 - fix: `keyfactor_oauth_security_role` Create and ImportState no longer panic when the API response has a nil `Id` field; a diagnostic error is returned instead
 - fix: `keyfactor_oauth_security_claim` Create no longer panics when the API response has a nil `Id` field; a diagnostic error is returned instead
 - fix: nil HTTP response body dereferences in `keyfactor_oauth_security_role` and `keyfactor_oauth_security_claim` error handling paths
@@ -167,7 +180,7 @@
 
 ### Fixes
 
-- fix: `keyfactor_certificate_authority` resource and data source now expose `use_for_enrollment`, `certificate_cleanup_enabled`, `delete_with_archived_key`, `time_after_expiration`, and `time_after_expiration_units` — these fields were present in the Keyfactor Command API but were accidentally omitted from the provider
+- fix: `keyfactor_certificate_authority` resource and data source now expose `use_for_enrollment`, `certificate_cleanup_enabled`, `delete_with_archived_key`, `time_after_expiration`, and `time_after_expiration_units`. These fields were present in the Keyfactor Command API but were accidentally omitted from the provider
 - fix: `keyfactor_certificate_authority` `key_retention` field now accepts either the named form (`Disabled`, `Indefinite`, `AfterExpiration`, `FromIssuance`) or its numeric string equivalent (`"0"`–`"3"`); state is always stored as the named form. **Breaking change**: bare integer values (`key_retention = 1`) must be updated to string form (`key_retention = "Indefinite"`); existing state is migrated automatically via schema version upgrade. Fixes [#161](https://github.com/keyfactor-pub/terraform-provider-keyfactor/issues/161)
 - fix: `keyfactor_certificate_authority` Read no longer corrupts server settings (e.g. `use_for_enrollment`, scan schedules) due to nil pointer zero-value coercion on update
 - fix: `keyfactor_certificate_authority` Delete no longer incorrectly clears scan schedules on EJBCA/HTTPS CAs when the CA has associated certificates
@@ -177,7 +190,7 @@
 ### Fixes
 
 - fix: `keyfactor_certificate_store` now supports `application_name` as an alias for `container_name` (preferred on Command v25.x+); both fields are fully supported and interchangeable without forcing resource replacement
-- fix: `keyfactor_certificate_store` `inventory_schedule` is now `Computed` — no longer drops to null when omitted from config
+- fix: `keyfactor_certificate_store` `inventory_schedule` is now `Computed`: no longer drops to null when omitted from config
 - fix: `keyfactor_certificate_store` Read now populates `application_name`, `container_name`, and `inventory_schedule` correctly from the server response
 
 ## Certificates
@@ -190,28 +203,28 @@
 
 ### Fixes
 
-- fix: `keyfactor_pam_provider` `remote` and `area` fields no longer cause "inconsistent result after apply" — Read now uses null-safe pointer helpers instead of `GetRemote()`/`GetArea()` which returned Go zero values when the server omitted these optional fields
+- fix: `keyfactor_pam_provider` `remote` and `area` fields no longer cause "inconsistent result after apply". Read now uses null-safe pointer helpers instead of `GetRemote()`/`GetArea()` which returned Go zero values when the server omitted these optional fields
 - fix: `keyfactor_pam_provider_type` `parameters[].display_name` and `instance_level` fields no longer cause "inconsistent result after apply" for the same reason
 
 ## Applications
 
 ### Fixes
 
-- fix: `keyfactor_application` data source lookup by name now works correctly when the Command server has more than 50 applications — `ListApplications` previously fetched only the first page of 50 results; it now paginates to return all applications
-- fix: `keyfactor_application` `schedule_immediate` no longer causes "inconsistent result after apply" — Create and Update paths now preserve the write-only trigger field from plan, matching the existing Read-path logic
-- fix: `keyfactor_application` `schedule_daily_time`, `schedule_weekly_time`, `schedule_monthly_time`, `schedule_exactly_once_time` no longer drift after Update — server advances the date to the next occurrence; provider now preserves the user-supplied datetime when only the date portion changed
+- fix: `keyfactor_application` data source lookup by name now works correctly when the Command server has more than 50 applications. `ListApplications` previously fetched only the first page of 50 results; it now paginates to return all applications
+- fix: `keyfactor_application` `schedule_immediate` no longer causes "inconsistent result after apply". Create and Update paths now preserve the write-only trigger field from plan, matching the existing Read-path logic
+- fix: `keyfactor_application` `schedule_daily_time`, `schedule_weekly_time`, `schedule_monthly_time`, `schedule_exactly_once_time` no longer drift after Update. Server advances the date to the next occurrence; provider now preserves the user-supplied datetime when only the date portion changed
 
 ## Certificate Templates
 
 ### Fixes
 
-- fix: `keyfactor_certificate_template` `template_policy.allow_key_reuse`, `allow_wildcards`, `rfc_enforcement`, `certificate_owner_role` no longer cause "inconsistent result after apply" — missing `else { Null: true }` branches caused Go zero values (`false`/`0`) to be stored when the server returned null for these optional policy fields
+- fix: `keyfactor_certificate_template` `template_policy.allow_key_reuse`, `allow_wildcards`, `rfc_enforcement`, `certificate_owner_role` no longer cause "inconsistent result after apply". Missing `else { Null: true }` branches caused Go zero values (`false`/`0`) to be stored when the server returned null for these optional policy fields
 
 ## Certificate Stores
 
 ### Fixes
 
-- fix: `keyfactor_certificate_store` `display_name` (Computed) is now populated in Create, Read, Update, and ImportState paths — previously it was never set, causing "inconsistent result after apply" on first apply
+- fix: `keyfactor_certificate_store` `display_name` (Computed) is now populated in Create, Read, Update, and ImportState paths. Previously it was never set, causing "inconsistent result after apply" on first apply
 
 # v2.8.0
 

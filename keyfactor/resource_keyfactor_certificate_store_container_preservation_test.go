@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// GH issue #175 wire-level regression: container assignment preservation
+// Wire-level regression: container assignment preservation
 // ---------------------------------------------------------------------------
 //
 // This file adds a cassette-based TestUnit* test that proves, at the wire
@@ -14,7 +14,7 @@
 // resource.UnitTest and asserts the literal JSON body of the PUT request
 // that resourceCertificateStore.Update() sends to /KeyfactorAPI/CertificateStores.
 //
-// Scenario (mirrors the GH issue #175 customer repro):
+// Scenario (mirrors the original customer-reported repro):
 //  1. Create a keyfactor_certificate_store with neither application_name nor
 //     container_name in config.
 //  2. Out-of-band (bypassing Terraform entirely): assign the store to an
@@ -173,7 +173,7 @@ func newVCRProviderFactoriesCapturingPUTBodies(t *testing.T, cassetteName string
 }
 
 // TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainerAssignment
-// is the wire-level regression test for GH issue #175. See the file-level
+// is the wire-level regression test. See the file-level
 // doc comment above for the full scenario.
 //
 // To record the cassette against the kfclab lab:
@@ -195,7 +195,7 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 
 		containerName = discoverApplication(t, client)
 		if containerName == "" {
-			t.Skip("No application/container available in the lab — cannot record GH issue #175 regression cassette")
+			t.Skip("No application/container available in the lab — cannot record the container preservation regression cassette")
 		}
 		ct, err := client.GetStoreContainer(containerName)
 		if err != nil || ct == nil || ct.Id == nil {
@@ -235,7 +235,7 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 	// bypassing Terraform and the VCR recorder entirely. This simulates a
 	// container/application assignment made out-of-band (e.g. via the
 	// Command portal) that Terraform's own config never declared — the
-	// exact precondition for GH issue #175. It only runs while recording;
+	// exact precondition for the bug this test guards against. It only runs while recording;
 	// in replay mode it is a no-op so the test stays network-free.
 	assignContainerOutOfBand := func() {
 		if os.Getenv("RECORD_CASSETTES") != "1" {
@@ -323,7 +323,7 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 	}
 
 	// ---------------------------------------------------------------------
-	// Wire-level regression assertion for GH issue #175.
+	// Wire-level regression assertion.
 	// ---------------------------------------------------------------------
 	//
 	// The above resource.UnitTest run already proves state consistency (no
@@ -339,7 +339,7 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 	putBodies := capture.capturedPUTBodiesTo("CertificateStores")
 	if len(putBodies) == 0 {
 		t.Fatalf(
-			"GH issue #175 regression check: expected at least one PUT request to /KeyfactorAPI/CertificateStores " +
+			"regression check: expected at least one PUT request to /KeyfactorAPI/CertificateStores " +
 				"(resourceCertificateStore.Update()) to have been captured during step 2's apply, but none were",
 		)
 	}
@@ -354,9 +354,9 @@ func TestUnitKeyfactorCertificateStoreResource_UpdatePreservesOutOfBandContainer
 	}
 	if !found {
 		t.Fatalf(
-			"GH issue #175 regression: expected the Update() PUT body to /KeyfactorAPI/CertificateStores to contain %q "+
+			"regression: expected the Update() PUT body to /KeyfactorAPI/CertificateStores to contain %q "+
 				"(the container assignment preserved from state when config declares no application_name/container_name), "+
-				"but none of the captured PUT bodies did: %v — this is exactly the failure mode of GH issue #175: "+
+				"but none of the captured PUT bodies did: %v — this is exactly the failure mode of the bug: "+
 				"resolveContainerAssignmentForUpdate/containerNameArgPointer resolved containerId to 0, "+
 				"intToPointer(0) dropped ContainerId from the wire (json:\"ContainerId,omitempty\"), "+
 				"and Command would silently clear a real, live out-of-band container assignment",

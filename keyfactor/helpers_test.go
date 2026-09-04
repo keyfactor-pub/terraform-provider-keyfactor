@@ -337,9 +337,9 @@ func TestNormalizePEMLineEndings(t *testing.T) {
 	}
 }
 
-// TestUnitIsNotFoundError guards against a regression found during the
-// full-review adjudication of PR #203: isNotFoundError previously matched
-// the raw substring "404" anywhere in an error message. The legacy
+// TestUnitIsNotFoundError guards against a regression: isNotFoundError
+// previously matched the raw substring "404" anywhere in an error message.
+// The legacy
 // api.Client's sendRequest embeds the full request path -- including any
 // numeric resource ID -- into its "Unknown error connecting to Keyfactor
 // ..." fallback message for EVERY non-2xx status code when the response
@@ -432,10 +432,10 @@ func TestUnitIsNotFoundError(t *testing.T) {
 		// The following cases use the ACTUAL error message text captured
 		// against a live Command 25.5.x instance (kfclab) on 2026-08-26 by
 		// requesting nonexistent resource IDs against real endpoints. None
-		// of these contain "404" or "not found" -- round 1 of this helper
-		// (commit 7f4639f) would false-negative on every one of them,
-		// meaning a genuinely deleted resource would surface as a hard
-		// error instead of being dropped from Terraform state.
+		// of these contain "404" or "not found" -- an earlier version of
+		// this helper would false-negative on every one of them, meaning a
+		// genuinely deleted resource would surface as a hard error instead
+		// of being dropped from Terraform state.
 		{
 			name:     "real Command 404: Security/Roles/999999 (Unable to find ... with Id)",
 			err:      errors.New("Unable to find 'Security Role' with Id '999999'"),
@@ -470,8 +470,8 @@ func TestUnitIsNotFoundError(t *testing.T) {
 	}
 }
 
-// TestUnitIsAgentMissingNotFoundError is a regression test for a MEDIUM
-// full-review finding: resource_keyfactor_certificate_deploy.go's Delete()
+// TestUnitIsAgentMissingNotFoundError is a regression test:
+// resource_keyfactor_certificate_deploy.go's Delete()
 // called isNotFoundError(err) on errors from removeCertificateAliasFromStore
 // and treated ANY match as safe to drop the resource from Terraform state.
 // That call can fail because the STORE'S BACKING ORCHESTRATOR AGENT has been

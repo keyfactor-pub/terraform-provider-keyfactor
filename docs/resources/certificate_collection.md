@@ -18,7 +18,7 @@ Manages a Keyfactor Command certificate collection.
 ### Required
 
 - `name` (String) The name of the certificate collection.
-- `query` (String) The query expression that defines which certificates belong to this collection. This is the resource's defining attribute and must always be declared -- it must never be removed from configuration once set. Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form. Note: a certificate collection can only be imported and managed by Terraform if it has a non-empty query; genuinely query-less collections are out of scope for this resource.
+- `query` (String) The query expression that defines which certificates belong to this collection. This attribute must always be declared and must never be removed from configuration once set. Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form. Note: a certificate collection can only be imported and managed by Terraform if it has a non-empty query.
 
 ### Optional
 

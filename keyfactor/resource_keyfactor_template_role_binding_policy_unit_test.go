@@ -13,7 +13,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests for GitHub issue #190:
+// Regression tests: TemplatePolicy preservation on role-binding updates.
 //
 // keyfactor_template_role_binding failed with "'Policies' cannot be empty"
 // on Command 25.x. Command's PUT /Templates is a full-replace endpoint, and
@@ -83,7 +83,7 @@ func existingTemplatePolicy() *api.TemplatePolicy {
 // including KeyRetentionDays, which is the field whose omission from
 // UpdateTemplateArg reproduced the live "In order to enable a retention
 // policy on a template, the number of days to retain after expiration must
-// be defined" error (dev-harness Gap C, extends issue #190).
+// be defined" error.
 func existingTemplateFieldSweep() api.GetTemplateResponse {
 	return api.GetTemplateResponse{
 		Id:                     4,
@@ -185,8 +185,7 @@ func assertPUTBodyCarriesExistingPolicy(t *testing.T, body []byte) {
 // assertPUTBodyCarriesFullFieldSweep decodes the captured PUT body and fails
 // the test if any field that existingTemplateFieldSweep's GET response
 // populated is missing (or doesn't match) on the wire. This is the
-// regression test for dev-harness Gap C (extends issue #190):
-// addAllowedRequesterToTemplate/removeRoleFromTemplate previously built their
+// regression test: addAllowedRequesterToTemplate/removeRoleFromTemplate previously built their
 // UpdateTemplateArg from a fixed subset of fields, silently clearing
 // everything else (CertificateCleanupEnabled/TimeAfterExpiration/
 // KeyRetentionDays/etc, to the extent the SDK models them at all) on every
@@ -306,8 +305,7 @@ func TestUnitRemoveRoleFromTemplatePreservesTemplatePolicy(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression tests for the dev-harness live-verification follow-up to Gap C
-// / issue #190 (template_role_binding_demo finding):
+// Regression tests: zero-value carry-forward fields collapsed to nil.
 //
 // buildTemplateRoleBindingUpdateArg carried KeyType/FriendlyName/
 // AllowedEnrollmentTypes/KeyRetention/KeyRetentionDays forward via

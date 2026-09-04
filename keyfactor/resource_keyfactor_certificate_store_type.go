@@ -458,7 +458,7 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 	// preserveListEmptyVsNull so that "declared empty in config" reads back
 	// as [] while "left unset" still reads back as null -- see
 	// preserveListEmptyVsNull's doc comment for why that distinction cannot
-	// be made from the server response alone. See issue #192.
+	// be made from the server response alone.
 	if resp.Properties != nil {
 		state.Properties = make([]CertStoreTypeProperty, 0, len(*resp.Properties))
 		for _, p := range *resp.Properties {
@@ -512,8 +512,8 @@ func certStoreTypeDefToState(resp *api.CertificateStoreType) KeyfactorCertStoreT
 // certStoreTypeDefToState therefore cannot, by itself, tell "user wrote
 // entry_parameters = []" apart from "user never mentioned entry_parameters"
 // -- both produce an empty API response. Left alone this collapses either
-// into a permanent mismatch against a numeric-empty config (issue #192,
-// "Provider produced inconsistent result after apply") or spurious drift on
+// into a permanent mismatch against a numeric-empty config
+// ("Provider produced inconsistent result after apply") or spurious drift on
 // every refresh of an undeclared attribute.
 //
 // The fix: after computing state from the server response, if the resulting
@@ -656,7 +656,7 @@ func (r resourceCertStoreTypeDef) Create(ctx context.Context, request tfsdk.Crea
 	// by itself tell us whether the user declared an empty list or left the
 	// attribute unset. Reconcile against the plan so a config-declared empty
 	// list reads back as [] while an undeclared attribute stays null. See
-	// preserveListEmptyVsNull and issue #192.
+	// preserveListEmptyVsNull's doc comment.
 	preserveListEmptyVsNull(&state.Properties, plan.Properties)
 	preserveListEmptyVsNull(&state.EntryParameters, plan.EntryParameters)
 
@@ -711,8 +711,8 @@ func (r resourceCertStoreTypeDef) Read(ctx context.Context, request tfsdk.ReadRe
 		newState.StorePathValue = state.StorePathValue
 	}
 
-	// See the identical reconciliation in Create for why this is necessary
-	// (issue #192): reconcile against prior state rather than the server
+	// See the identical reconciliation in Create for why this is necessary:
+	// reconcile against prior state rather than the server
 	// response's shape alone.
 	preserveListEmptyVsNull(&newState.Properties, state.Properties)
 	preserveListEmptyVsNull(&newState.EntryParameters, state.EntryParameters)
@@ -770,8 +770,8 @@ func (r resourceCertStoreTypeDef) Update(ctx context.Context, request tfsdk.Upda
 		newState.StorePathValue = plan.StorePathValue
 	}
 
-	// See the identical reconciliation in Create for why this is necessary
-	// (issue #192): reconcile against plan rather than the server response's
+	// See the identical reconciliation in Create for why this is necessary:
+	// reconcile against plan rather than the server response's
 	// shape alone.
 	preserveListEmptyVsNull(&newState.Properties, plan.Properties)
 	preserveListEmptyVsNull(&newState.EntryParameters, plan.EntryParameters)

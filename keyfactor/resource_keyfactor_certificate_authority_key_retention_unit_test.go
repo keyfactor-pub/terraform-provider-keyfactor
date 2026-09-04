@@ -8,9 +8,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests for GitHub issue #191:
-//
-// keyfactor_certificate_authority with key_retention = "2" produced
+// Regression tests: keyfactor_certificate_authority with key_retention = "2" produced
 // "Provider produced inconsistent result after apply" because Command
 // accepts either a numeric string ("2") or a symbolic name
 // ("AfterExpiration") on write, but always returns the symbolic name on

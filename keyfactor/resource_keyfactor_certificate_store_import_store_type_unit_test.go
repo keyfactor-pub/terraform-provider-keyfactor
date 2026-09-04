@@ -12,7 +12,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests for GH issue #196 (dev-harness Gap D):
+// Regression tests: store_type display-name-vs-short-name on import.
 //
 // keyfactor_certificate_store.store_type read back as the server's DISPLAY
 // name (e.g. "Kubernetes Cluster") instead of the config's SHORT name (e.g.
@@ -99,7 +99,7 @@ func TestUnitCertificateStoreImportStateResolvesShortName(t *testing.T) {
 
 	if result.StoreType.Value != "K8SCluster" {
 		t.Fatalf(
-			"store_type after import = %q, want %q (the short name) -- this reproduces issue #196: "+
+			"store_type after import = %q, want %q (the short name) -- this reproduces the bug: "+
 				"ImportState resolved store_type to the server's DISPLAY name instead of its SHORT name, "+
 				"forcing a spurious destroy+recreate on every subsequent plan against a config that (correctly) "+
 				"declares the short name",

@@ -17,29 +17,29 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Core-level regression test for full-review findings F1, F2, F4, and F8.
+// Core-level regression test covering four related bugs.
 //
-// Every existing unit test for these findings calls Create()/Read()/
+// Every existing unit test for these bugs calls Create()/Read()/
 // Update() directly, bypassing Terraform Core's own plan-validity
 // (assertPlannedValueValid) and apply-consistency checks entirely -- which
-// is exactly how these findings shipped undetected. This test drives a
+// is exactly how these bugs shipped undetected. This test drives a
 // real two-step Terraform lifecycle through resource.UnitTest against a
 // cassette recorded from kfclab, so Core's own checks are actually
 // exercised:
 //
-//   - F1: declaring force_template_default = true on an Update() must
+//   - force_template_default plan validity: declaring force_template_default = true on an Update() must
 //     PLAN successfully at all (before the fix, Core rejected the plan
 //     outright with "planned value cty.UnknownVal(cty.Bool) does not
 //     match config value cty.True").
-//   - F2: changing associated_role_names from one role to another must
+//   - associated_roles mirror consistency: changing associated_role_names from one role to another must
 //     APPLY successfully (before the fix, the stale associated_roles
 //     mirror pinned by useStateOrNullModifier disagreed with Update()'s
 //     genuinely-new membership, hard-erroring with "Provider produced
 //     inconsistent result after apply").
-//   - F4: changing policies.default_certificate_owner_role_id from one
+//   - owner-role-name mirror consistency: changing policies.default_certificate_owner_role_id from one
 //     role to another must APPLY successfully (identical shape, for the
 //     policies.default_certificate_owner_role_name mirror).
-//   - F8: force_template_default = true must actually take effect (become
+//   - force_template_default actually taking effect: force_template_default = true must actually take effect (become
 //     the template's default, stealing that status from whichever pattern
 //     held it before) AND must settle to a stable plan (no perpetual
 //     "template_default = ... -> (known after apply)" diff) on the very
@@ -48,8 +48,8 @@ import (
 // Two keyfactor_role resources are created INLINE by this test's own
 // config (not pre-existing lab state) so the "driver changes to a
 // genuinely different, known value" scenario is self-contained and doesn't
-// depend on kfclab having two suitable pre-existing security roles. F8's
-// force_template_default = true DOES interact with pre-existing lab state
+// depend on kfclab having two suitable pre-existing security roles. The last
+// case's force_template_default = true DOES interact with pre-existing lab state
 // (it steals default status from whichever pattern currently holds it for
 // this template), so step 2 undoes that side effect via
 // restoreOriginalTemplateDefault before the framework's automatic
@@ -133,8 +133,9 @@ resource "keyfactor_enrollment_pattern" "test" {
 `, suffix, templateID)
 	}
 
-	// Step 2: change BOTH driver attributes (F2, F4) and declare
-	// force_template_default = true (F1) in the same apply.
+	// Step 2: change BOTH driver attributes (associated_role_names and
+	// policies.default_certificate_owner_role_id) and declare
+	// force_template_default = true in the same apply.
 	return roles + fmt.Sprintf(`
 resource "keyfactor_enrollment_pattern" "test" {
   name                    = "TFEPFix%s"
@@ -298,14 +299,14 @@ func TestUnitKeyfactorEnrollmentPatternResource_MirrorFieldsFollowDriverOnUpdate
 				),
 			},
 			{
-				// Step 2: F2 -- associated_role_names changes to [role_b].
-				// F4 -- policies.default_certificate_owner_role_id changes
-				// to role_b.id. F1 -- force_template_default = true is
+				// Step 2: associated_role_names changes to [role_b].
+				// policies.default_certificate_owner_role_id changes
+				// to role_b.id. force_template_default = true is
 				// declared for the first time. Before any of the three
-				// fixes, this step either fails to PLAN (F1) or fails to
+				// fixes, this step either fails to PLAN or fails to
 				// APPLY with "Provider produced inconsistent result after
-				// apply" (F2/F4) -- this step succeeding at all is the
-				// regression proof for all three findings.
+				// apply" -- this step succeeding at all is the
+				// regression proof for all three bugs.
 				Config: testAccEnrollmentPatternMirrorFixConfig(templateID, suffix, true),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(resourceName, "id"),
@@ -318,7 +319,7 @@ func TestUnitKeyfactorEnrollmentPatternResource_MirrorFieldsFollowDriverOnUpdate
 				),
 				// Deliberately NOT ExpectNonEmptyPlan here: this step's own
 				// automatic post-apply refresh+plan re-check settling to
-				// EMPTY is itself part of the F1/F8 regression proof (no
+				// EMPTY is itself part of the regression proof (no
 				// perpetual "template_default = ... -> (known after
 				// apply)" diff). The out-of-band cleanup that WOULD create
 				// a real, expected diff is deferred to step 3 below so it

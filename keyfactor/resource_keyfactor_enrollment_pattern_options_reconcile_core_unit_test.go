@@ -12,7 +12,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Core-level regression test for full-review finding F7.
+// Core-level regression test: enrollment_fields options null-vs-empty reconciliation.
 //
 // Drives a real two-step Terraform lifecycle through resource.UnitTest
 // against a cassette recorded from kfclab: declaring an enrollment_fields

@@ -488,7 +488,7 @@ func (r resourceCertificateStore) resolveContainerIDByName(name string) (int, er
 // request (via stringToPointer, which maps "" to nil, omitted by the
 // `omitempty` tag) rather than sent as a literal empty string — pairing a
 // real, nonzero containerId with an explicit empty ContainerName is a
-// combination that never occurred before GH issue #175's fix and whose
+// combination that never occurred before this fix and whose
 // handling on Command's UpdateStore endpoint is unverified; there's no reason
 // to introduce it when omitting the field entirely is both safe and
 // sufficient (containerId is what actually carries the assignment).
@@ -507,7 +507,7 @@ func containerNameArgPointer(containerId int, name string) *string {
 // (and, best-effort, name) to send in the UpdateStoreFctArgs body during
 // Update().
 //
-// Background (GH issue #175): Command's UpdateStore endpoint treats an
+// Background: Command's UpdateStore endpoint treats an
 // omitted ContainerId as an explicit instruction to CLEAR the store's
 // container/application assignment — UpdateStoreFctArgs.ContainerId is
 // `json:"ContainerId,omitempty"`, and intToPointer(0) returns nil, so a
@@ -564,7 +564,7 @@ func (r resourceCertificateStore) resolveContainerAssignmentForUpdate(
 				tflog.Warn(
 					ctx,
 					fmt.Sprintf(
-						"Update: preserving existing container_id (%d) because config declares no application_name/container_name, but could not resolve its name from state or the API; the request will omit ContainerName (see GH issue #175)",
+						"Update: preserving existing container_id (%d) because config declares no application_name/container_name, but could not resolve its name from state or the API; the request will omit ContainerName",
 						preservedId,
 					),
 				)
@@ -572,7 +572,7 @@ func (r resourceCertificateStore) resolveContainerAssignmentForUpdate(
 				tflog.Debug(
 					ctx,
 					fmt.Sprintf(
-						"Update: config declares no application_name/container_name; preserving existing container_id (%d), resolved name %q via the API (see GH issue #175)",
+						"Update: config declares no application_name/container_name; preserving existing container_id (%d), resolved name %q via the API",
 						preservedId,
 						preservedName,
 					),
@@ -582,7 +582,7 @@ func (r resourceCertificateStore) resolveContainerAssignmentForUpdate(
 			tflog.Debug(
 				ctx,
 				fmt.Sprintf(
-					"Update: config declares no application_name/container_name; preserving existing container_id (%d) and name %q from state (see GH issue #175)",
+					"Update: config declares no application_name/container_name; preserving existing container_id (%d) and name %q from state",
 					preservedId,
 					preservedName,
 				),
@@ -1087,7 +1087,7 @@ func (r resourceCertificateStore) ImportState(
 	// with the display name in state made every subsequent plan show a
 	// spurious destroy+recreate the moment it was compared against a config
 	// declaring the short name -- the value Command actually accepts on
-	// create/update. See GH issue #196. Mirrors the identical resolution
+	// create/update. Mirrors the identical resolution
 	// already done correctly in the certificate_store data source
 	// (data_source_keyfactor_certificate_store.go).
 	storeTypeShortName := fmt.Sprintf("%d", readResponse.CertStoreType) // fallback: numeric string

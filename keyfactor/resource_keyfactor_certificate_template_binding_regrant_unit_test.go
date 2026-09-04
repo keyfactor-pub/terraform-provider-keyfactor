@@ -14,11 +14,11 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression test — full-review round 5 [HIGH]: Update() silently re-granting
+// Regression test: Update() silently re-granting
 // a role that keyfactor_template_role_binding's Delete already revoked
 // earlier in the same apply.
 //
-// Setup, mirroring the exact interleaving the finding describes:
+// Setup, mirroring the exact interleaving described above:
 //
 //  1. allowed_requesters is managed ONLY via keyfactor_template_role_binding
 //     -- the template config never declares allowed_requesters or
@@ -191,8 +191,8 @@ func TestUnitCertificateTemplateUpdateDoesNotResurrectBindingRevokedRole(t *test
 		for _, v := range ar {
 			if v == "RevokedRole" {
 				t.Fatalf(
-					"AllowedRequesters on the wire = %v, contains RevokedRole -- this reproduces full-review "+
-						"round 5's [HIGH] finding: Update() re-PUT a stale, binding-revoked role because it "+
+					"AllowedRequesters on the wire = %v, contains RevokedRole -- this reproduces "+
+						"the bug: Update() re-PUT a stale, binding-revoked role because it "+
 						"keyed the preservation decision on plan null-ness instead of config declaredness. "+
 						"Full payload: %s", ar, putBody,
 				)

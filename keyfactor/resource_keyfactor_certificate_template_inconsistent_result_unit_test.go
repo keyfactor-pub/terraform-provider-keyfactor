@@ -9,10 +9,10 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests for dev-harness Gap B (refines GH issue #195):
+// Regression tests: allowed_requesters must be Computed.
 //
 // keyfactor_certificate_template.allowed_requesters was Optional but NOT
-// Computed. When Update()'s preserveAllowedRequesters (fix #195) legitimately
+// Computed. When Update()'s preserveAllowedRequesters legitimately
 // returns the server's real, non-null AllowedRequesters for an undeclared
 // (planned-Null) allowed_requesters attribute, the terraform-plugin-framework
 // requires the post-apply value to exactly equal the planned value for any

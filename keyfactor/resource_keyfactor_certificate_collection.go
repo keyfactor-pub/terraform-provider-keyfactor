@@ -44,7 +44,7 @@ func (r resourceCertificateCollectionType) GetSchema(_ context.Context) (tfsdk.S
 			},
 			"query": {
 				Type: types.StringType,
-				// Required (full-review finding F10; was previously
+				// Required (was previously
 				// Optional with a hand-rolled ValidateConfig check for
 				// "must always be declared"): the schema itself can
 				// already express "always declared," which is strictly
@@ -60,13 +60,13 @@ func (r resourceCertificateCollectionType) GetSchema(_ context.Context) (tfsdk.S
 				// required value -- expected, and no different from any
 				// other Required attribute's import behavior.
 				Required:    true,
-				Description: "The query expression that defines which certificates belong to this collection. This is the resource's defining attribute and must always be declared -- it must never be removed from configuration once set. Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form. Note: a certificate collection can only be imported and managed by Terraform if it has a non-empty query; genuinely query-less collections are out of scope for this resource.",
+				Description: "The query expression that defines which certificates belong to this collection. This attribute must always be declared and must never be removed from configuration once set. Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form. Note: a certificate collection can only be imported and managed by Terraform if it has a non-empty query.",
 			},
 			"content": {
 				Type:        types.StringType,
 				Computed:    true,
 				Description: "The server-normalized form of the collection query.",
-				// followsDriverModifier (full-review finding F3; type
+				// followsDriverModifier (type
 				// defined in resource_keyfactor_enrollment_pattern.go,
 				// shared across resources), not tfsdk.UseStateForUnknown():
 				// content must NOT be pinned to its stale, prior
@@ -265,8 +265,7 @@ func collectionGetResponseToState(resp *v1.CSSCMSDataModelModelsCertificateQuery
 // definite Null, but Update() -- unable to tell "leave unchanged" apart from
 // "clear" without a config-declared value -- fell back to resending the
 // prior state's non-null value, leaving a non-null Query in the final state
-// that disagreed with the null the plan promised (PR #210 full-review
-// finding FIX-2). Rejecting the omission outright at config-validation time,
+// that disagreed with the null the plan promised. Rejecting the omission outright at config-validation time,
 // before plan/apply ever runs, is simpler and safer than trying to support
 // "removing query clears the collection's filter" -- which Command's API
 // shape doesn't actually support anyway.
@@ -291,9 +290,9 @@ func (r resourceCertificateCollection) ValidateConfig(
 
 // validateCertificateCollectionConfigConstraints enforces that query, once
 // declared, is non-empty -- the one part of "query must always be declared
-// with a non-empty value" (see ValidateConfig's doc comment, PR #210
-// full-review finding FIX-2) the schema itself cannot express.
-// query.Required = true (full-review finding F10) already guarantees query
+// with a non-empty value" (see ValidateConfig's doc comment) the schema
+// itself cannot express.
+// query.Required = true already guarantees query
 // is always declared -- HCL/Core rejects an omitted Required attribute
 // before ValidateConfig ever runs -- but Required says nothing about the
 // declared value's CONTENT, so `query = ""` still reaches here and must
@@ -349,7 +348,7 @@ func (r resourceCertificateCollection) Create(
 	if !plan.Description.Null && !plan.Description.Unknown {
 		body.SetDescription(plan.Description.Value)
 	}
-	// query is Required (full-review finding F10): Core guarantees it is
+	// query is Required: Core guarantees it is
 	// always declared and, by the time Create() actually executes (as
 	// opposed to plan time), always resolved to a concrete value -- the
 	// previous `!plan.Query.Null && !plan.Query.Unknown` guard was
@@ -395,10 +394,9 @@ func (r resourceCertificateCollection) Create(
 	tflog.Debug(ctx, fmt.Sprintf("Created certificate collection ID %d", newState.ID.Value))
 	// Field-level audit logging for the collection's defining (and only
 	// access-control-relevant) field on this initial create -- mirrors the
-	// Update() field-change logging below (PR #210 full-review finding
-	// FIX-8). Debug level, not Info: query can embed sensitive subject
-	// DN/serial/owner filter content, matching the level Update()'s
-	// query-change logging uses (see FIX-7).
+	// Update() field-change logging below. Debug level, not Info: query can
+	// embed sensitive subject DN/serial/owner filter content, matching the
+	// level Update()'s query-change logging uses below.
 	tflog.Debug(
 		ctx, fmt.Sprintf(
 			"Certificate collection %d field set on create: query: %s", newState.ID.Value, tfStringLogString(newState.Query),
@@ -559,7 +557,7 @@ func (r resourceCertificateCollection) Update(
 	// collectionGetResponseToState) -- there is no fresh-GET fallback
 	// available for "the current server-side value" the way there is for
 	// every other field here, because GetById never returns it. query is
-	// now Required (full-review finding F10), so config.Query/plan.Query
+	// now Required, so config.Query/plan.Query
 	// are always declared and non-null by the time an apply actually
 	// executes -- the previous "config undeclared, fall back to prior
 	// Terraform state" branch (and the SetQueryNil() call, which could
@@ -568,12 +566,11 @@ func (r resourceCertificateCollection) Update(
 	// landed.
 	updateBody.SetQuery(plan.Query.Value)
 	// Audit-log old (prior state) vs new (declared plan) value for this
-	// policy-relevant field -- PR #210 full-review finding F5. Debug
+	// policy-relevant field. Debug
 	// level, not Info: unlike enrollment_pattern.go's role-name/CA-id/
 	// policy-enum diff logging, query is a free-text search expression
 	// that can embed sensitive subject DN/serial/owner content -- Info is
-	// a broader-capture level than warranted for that content (PR #210
-	// full-review finding FIX-7).
+	// a broader-capture level than warranted for that content.
 	if tfStringLogString(state.Query) != tfStringLogString(plan.Query) {
 		tflog.Debug(
 			ctx, fmt.Sprintf(

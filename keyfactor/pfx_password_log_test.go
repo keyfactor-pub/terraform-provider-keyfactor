@@ -25,10 +25,10 @@ import (
 // orphan-PFX-recovery logging added alongside this fix). This is reachable
 // via the standard TF_LOG=DEBUG troubleshooting flag.
 //
-// Round 1 fixed this by masking the RAW password value as a literal
+// An initial fix attempt masked the RAW password value as a literal
 // substring out of the already-rendered/serialized log text
 // (tflog.MaskFieldValuesWithFieldKeys / MaskAllFieldValuesStrings /
-// MaskMessageStrings). Round 3 found that approach has a JSON-escaping
+// MaskMessageStrings). That approach has a JSON-escaping
 // bypass, confirmed by direct reproduction below: encoding/json escapes '"'
 // and '\\' when serializing the Password field, so a password containing
 // either character no longer survives as a contiguous substring of the raw
@@ -80,7 +80,7 @@ func TestUnitPFXEnrollmentPasswordNotLoggedInPlaintext(t *testing.T) {
 		}
 	})
 
-	t.Run("substring masking of the raw password against rendered text is bypassed by JSON escaping (round 3 finding)", func(t *testing.T) {
+	t.Run("substring masking of the raw password against rendered text is bypassed by JSON escaping", func(t *testing.T) {
 		var buf bytes.Buffer
 		ctx := tflogtest.RootLogger(context.Background(), &buf)
 
@@ -89,7 +89,7 @@ func TestUnitPFXEnrollmentPasswordNotLoggedInPlaintext(t *testing.T) {
 			t.Fatalf("json.Marshal() returned unexpected error: %v", err)
 		}
 		ctx = tflog.SetField(ctx, "pfx_args", string(jsonData))
-		// Reproduce round 1's masking approach directly (the function it
+		// Reproduce the initial masking approach directly (the function it
 		// used, maskPFXEnrollmentPasswordInLogs, has since been removed from
 		// production code in favor of redact-before-format -- see helpers.go).
 		ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "pfx_args", secretPassword)

@@ -383,7 +383,7 @@ func TestUnitEnrollPFX_TimeoutRecovery_MultipleMatches(t *testing.T) {
 }
 
 // TestUnitFindOrphanedCertificateMatch_DeduplicatesSameIdAcrossPages is the
-// F1 (round 3) regression test for the dedup half of the fix:
+// regression test for the dedup half of the fix:
 // searchCertificatesForOrphanRecovery's pagination can -- despite the
 // companion Id-ascending sort fix -- still surface the SAME certificate row
 // twice in the concatenated result set if a certificate for this exact CN is
@@ -598,7 +598,7 @@ func TestUnitEnrollPFX_TimeoutRecovery_WarningSurfacedInDiagnostics(t *testing.T
 // returns recoverPayloadB64 verbatim in the "PFX" JSON field regardless of
 // what format was requested -- Command would return format-appropriate
 // bytes in that field, but for these tests the important assertion is which
-// format was actually requested (F6/F7), and that non-PKCS#12-shaped bytes
+// format was actually requested, and that non-PKCS#12-shaped bytes
 // still pass through into the right result field.
 func certSearchAndRecoverHandlerCapturingFormat(
 	t *testing.T,
@@ -924,7 +924,7 @@ func TestUnitFindOrphanedCertificateMatch_RequesterIdentityMismatch(t *testing.T
 }
 
 // TestUnitOrphanRecoveryIdentityForClient_KerberosCCacheWithoutUsername_MarkedPermanentlyUnavailable
-// is the F3 (round 3) regression test for the auth-config-detection half of
+// is the regression test for the auth-config-detection half of
 // the fix: keyfactor-auth-client-go's CommandAuthConfigKerberos never
 // requires or populates Username when authenticating via kerberos_ccache
 // without an explicit kerberos_username, so GetServerConfig().Username is
@@ -992,7 +992,7 @@ func TestUnitOrphanRecoveryIdentityForClient_KerberosCCacheWithoutUsername_Marke
 }
 
 // TestUnitFindOrphanedCertificateMatch_KerberosCCacheIdentityUnavailable_TightensFreshnessEvenWithTemplateAndCA
-// is the F3 (round 3) regression test proving the mitigation is a real,
+// is the regression test proving the mitigation is a real,
 // active behavior change and not a documentation-only no-op: when the
 // requester-identity discriminator is known permanently unavailable
 // (Kerberos-ccache without a username), findOrphanedCertificateMatch must
@@ -1284,14 +1284,14 @@ func TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_UnknownEnrollmentPattern
 }
 
 // TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_EnrollmentPatternIdCrossCheckErrorRefusesAdoption
-// is the F2 (round 3) regression test: a FAILED GetCertificateContext
+// is the regression test: a FAILED GetCertificateContext
 // cross-check call (as opposed to a successful call whose response simply
 // omits EnrollmentPatternId -- the "cannot verify" case covered by
 // TestUnitEnrollPFX_TimeoutRecovery_PatternBasedPath_UnknownEnrollmentPatternIdNotRejected
 // above) must NOT be silently treated the same way. Before the fix, an
 // errored confirmation call only logged a tflog.Warn (invisible without
 // TF_LOG) and proceeded to adopt on the freshness-only signal alone --
-// silently degrading to a weaker safety level than round 2 established for
+// silently degrading to a weaker safety level than the earlier fix established for
 // exactly this weak-signal path, with no operator-visible record
 // distinguishing "the check ran and passed" from "the check errored and was
 // skipped". The fix fails closed: refuse the adoption with a diagnostic that
@@ -1557,7 +1557,7 @@ func TestUnitEnrollPFX_TimeoutRecovery_HardCapStillRefusesPathologicalResultSet(
 }
 
 // certPaginatedSearchOverlapHandler is like certPaginatedSearchAndRecoverHandler,
-// but simulates the exact under-concurrent-writes hazard F1 (round 3) fixes:
+// but simulates the exact under-concurrent-writes hazard the dedup fix above addresses:
 // unsorted, offset-based pagination can return the SAME row shifted across a
 // page boundary when a new row is inserted for the same CN while a
 // multi-page search is in flight. Page 1 returns allCerts[:pageSize]; page 2
@@ -1620,7 +1620,7 @@ func certPaginatedSearchOverlapHandler(
 }
 
 // TestUnitEnrollPFX_TimeoutRecovery_DuplicateCandidateAcrossPagesDoesNotTriggerAmbiguousMatch
-// is the full end-to-end F1 (round 3) regression test, covering both halves
+// is the full end-to-end regression test, covering both halves
 // of the fix together: (a) searchCertificatesForOrphanRecovery must request a
 // stable, deterministic sort (SortField=CertId, with an explicit direction) so
 // offset-based pagination is consistent under concurrent writes, and (b)

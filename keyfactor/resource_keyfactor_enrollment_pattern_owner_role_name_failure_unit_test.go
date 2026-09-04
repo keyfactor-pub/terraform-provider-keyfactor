@@ -14,7 +14,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- PR #210 full-review round 6 finding FIX-Q:
+// Regression tests: owner-role-name audit signal on a failed update.
 //
 // enrollmentPatternPolicyRelevantFieldChanges logs an "attempted"
 // policies.default_certificate_owner_role_id change line BEFORE the
@@ -84,7 +84,7 @@ func TestUnitEnrollmentPatternOwnerRoleNameChangeAttemptedOnFailure(t *testing.T
 // /EnrollmentPatterns/{id} with a canned response whose default certificate
 // owner role differs from what the update is about to request, then fails
 // the subsequent PUT /EnrollmentPatterns/{id} outright -- reproducing the
-// exact scenario FIX-Q addresses: an in-flight owner-role-id change whose
+// exact scenario this bug addresses: an in-flight owner-role-id change whose
 // PUT never succeeds.
 func newEnrollmentPatternFailingUpdateTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -106,7 +106,7 @@ func newEnrollmentPatternFailingUpdateTestServer(t *testing.T) *httptest.Server 
 }
 
 // TestUnitEnrollmentPatternUpdateLogsOwnerRoleNameAttemptOnFailedPUT is the
-// end-to-end regression test for FIX-Q: with a real (simulated) PUT
+// end-to-end regression test: with a real (simulated) PUT
 // failure, and an owner-role-id change in flight, Update() must still emit
 // a role-name-related audit log line -- previously nothing would have been
 // logged for this field on this path at all.

@@ -22,8 +22,7 @@ import (
 // corresponding resource attribute (allowed_enrollment_types) is
 // Optional+Computed, i.e. explicitly designed to be left unset. Without this
 // guard, dereferencing the nil pointer panics on every `terraform plan`/
-// `refresh` against such a pattern. See PR #210 full-review round 2 finding
-// FIX-D.
+// `refresh` against such a pattern.
 func allowedEnrollmentTypesPtrToTfInt64(v *int) types.Int64 {
 	if v == nil {
 		return types.Int64{Null: true}
@@ -43,7 +42,7 @@ type enrollmentPatternCandidate struct {
 // enrollmentPatternResolveIdentifier resolves the user-supplied `identifier`
 // attribute (documented as accepting either the pattern's name or its
 // internal ID) against every candidate pattern at once, using name-or-ID
-// semantics (full-review finding F6, decision approved by user):
+// semantics:
 //
 //   - An exact NAME match wins deterministically.
 //   - A canonical ID-string match (fmt.Sprint(id) == identifier) is the
@@ -55,12 +54,11 @@ type enrollmentPatternCandidate struct {
 //     silently picking one.
 //
 // This replaces two earlier, narrower designs, in order:
-//  1. (pre-PR #210) a plain "name == identifier OR id == identifier" OR,
+//  1. A plain "name == identifier OR id == identifier" OR,
 //     with no priority between them, letting "first match wins" list
 //     order silently resolve to the wrong pattern when both a name match
-//     and a different ID match existed (PR #210 full-review finding
-//     FIX-F's bug).
-//  2. (PR #210 FIX-F) strconv.Atoi-gated ID-only-or-name-only priority:
+//     and a different ID match existed.
+//  2. A strconv.Atoi-gated ID-only-or-name-only priority:
 //     if identifier parses as an integer, match ONLY on ID, otherwise
 //     match ONLY on name. That over-corrected: a pattern literally named
 //     "2025" became unreachable (or worse, silently resolved to a
@@ -108,7 +106,7 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 			"identifier": {
 				Type:        types.StringType,
 				Required:    true,
-				Description: "The name or internal ID (integer) of the enrollment pattern to look up. An exact match on the pattern's name takes precedence; if no pattern's name matches, this value is matched against the pattern's internal ID as a canonical decimal string (so, e.g., \"007\" never matches ID 7). If it matches a different pattern by name than by ID, this is treated as an ambiguous identifier and returns an error rather than silently picking one.",
+				Description: "The name or internal ID (integer) of the enrollment pattern to look up. An exact name match takes precedence; otherwise this value is matched against the pattern's internal ID as a decimal string (so \"007\" never matches ID 7). A value that matches a different pattern by name than by ID returns an error rather than silently picking one.",
 			},
 			"id": {
 				Type:        types.Int64Type,
@@ -307,7 +305,7 @@ Once created for the enrollment pattern, these values are shown in Keyfactor Com
 		MarkdownDescription: `
 Reads an existing enrollment pattern from Keyfactor Command using the "/EnrollmentPatterns" API.
 
-~> **Note:** The enrollment pattern can be identified by its name or internal ID. An exact match on name takes precedence; if none matches, ` + "`identifier`" + ` is matched against the pattern's internal ID as a canonical decimal string (so ` + "`\"007\"`" + ` never matches ID 7). A value matching a different pattern by name than by ID is treated as ambiguous and returns an error.
+~> **Note:** The enrollment pattern can be identified by its name or internal ID. An exact name match takes precedence; otherwise ` + "`identifier`" + ` is matched against the pattern's internal ID as a decimal string (so ` + "`\"007\"`" + ` never matches ID 7). A value that matches a different pattern by name than by ID returns an error.
 
 Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
 
@@ -363,14 +361,14 @@ func (r dataSourceEnrollmentPattern) Read(
 	ctx = tflog.SetField(ctx, "pattern_identifier", patternName)
 	tflog.Debug(ctx, "Searching for enrollment pattern by name or ID")
 
-	// full-review finding F6: resolve identifier against ALL candidates up
+	// Resolve identifier against ALL candidates up
 	// front, using name-or-ID semantics (see
 	// enrollmentPatternResolveIdentifier's doc comment) -- an exact name
 	// match wins deterministically; a canonical ID-string match
 	// (fmt.Sprint(id) == identifier, so "007" never matches ID 7) is the
 	// fallback; a genuine match on BOTH for two DIFFERENT patterns is an
 	// error, not a silent pick. This replaces the previous strict
-	// ID-only-or-name-only priority (PR #210 FIX-F), which made a pattern
+	// ID-only-or-name-only priority, which made a pattern
 	// named e.g. "2025" unreachable (or worse, silently resolved to a
 	// different pattern with ID 2025) purely because its name happened to
 	// look numeric.

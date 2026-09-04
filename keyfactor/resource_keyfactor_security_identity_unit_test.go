@@ -691,8 +691,8 @@ func TestUnitSecurityIdentityResource_UpdateRoleLookupPreservesSpaces(t *testing
 // declared config value, and %v does no escaping of embedded control
 // characters -- hclog's plain-text writer emits the resulting message
 // verbatim -- so a role string containing an embedded "\r\n" could forge
-// what looks like a second, fake log line under TF_LOG=DEBUG/TRACE. Before
-// this PR, the logged value was always the framework's %q-quoted
+// what looks like a second, fake log line under TF_LOG=DEBUG/TRACE.
+// Previously, the logged value was always the framework's %q-quoted
 // role.String() form, which escapes exactly this.
 //
 // roleLookupLogMessage is the extracted helper both Update()'s and Create()'s
@@ -878,8 +878,8 @@ func TestUnitSecurityIdentityReadSurfacesRealDrift(t *testing.T) {
 // state (and a green `terraform apply`) claimed every declared role was
 // granted even when one silently wasn't.
 //
-// Fix A makes Create() fail-fast on any role lookup error or not-found for a
-// declared role, exactly mirroring Update()'s round-1 fix -- AddError instead
+// The fix makes Create() fail-fast on any role lookup error or not-found for a
+// declared role, exactly mirroring Update()'s fix -- AddError instead
 // of AddWarning, and return before ever calling setIdentityRole. Unlike
 // Update(), the identity has ALREADY been created on Keyfactor by the time
 // the role loop runs, so this test also asserts the resulting state: the
@@ -1164,7 +1164,7 @@ func TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericNameFall
 	assert.Equal(t, float64(7), kfRole.Id,
 		"resolveDeclaredSecurityRole must resolve to the role's real ID (7) via the name fallback, not fail just because ID 123 doesn't exist")
 	assert.Empty(t, diags.Warnings(),
-		"no warning should be emitted for the name-based fallback -- resolving a numeric string by name was already possible before this PR and is not new, surprising behavior")
+		"no warning should be emitted for the name-based fallback -- resolving a numeric string by name was already possible and is not new, surprising behavior")
 }
 
 // TestUnitSecurityIdentityResource_UpdateRejectsUnverifiedRoleNameMatch is a
@@ -1396,6 +1396,6 @@ func TestUnitSecurityIdentityResource_UpdateSetIdentityRoleFailurePersistsState(
 }
 
 // Note: the numeric-string-resolves-by-name-fallback scenario (a role
-// literally named "123", e.g. round 3's original case) is covered by
+// literally named "123") is covered by
 // TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericNameFallbackNoWarning
 // above, which also asserts no warning is emitted for that fallback path.

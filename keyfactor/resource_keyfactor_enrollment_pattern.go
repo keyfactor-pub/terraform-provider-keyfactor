@@ -100,7 +100,7 @@ func enrollmentPatternPolicySchema() map[string]tfsdk.Attribute {
 			Type:        types.StringType,
 			Computed:    true,
 			Description: "Name of the security role that should be set as the owner of the cert during import of new certificates. Read-only, derived from default_certificate_owner_role_id.",
-			// followsDriverModifier (full-review finding F4), not
+			// followsDriverModifier, not
 			// tfsdk.UseStateForUnknown(): this mirror must NOT be pinned
 			// to its stale, pre-update-resolved name when
 			// default_certificate_owner_role_id itself is changing this
@@ -158,7 +158,7 @@ Enrollment patterns provide a flexible way to streamline certificate enrollment 
 
 ~> **Important:** Enrollment Patterns are only available in Keyfactor Command v25.0+
 
-~> **Note:** ` + "`associated_role_names`/`certificate_authority_ids`" + ` are modeled as Terraform sets, not lists: Keyfactor Command expands them server-side into ` + "`associated_roles`/`certificate_authorities`" + ` rather than echoing back the flat name/ID list that was submitted, and does not guarantee that expansion preserves submission order. A set's equality is membership-based, not order-based, so the provider safely re-derives both attributes from that expansion on every refresh -- meaning changes made directly in Command (e.g. via the UI, outside Terraform) are detected as drift on the next ` + "`terraform plan`" + ` -- without risking a spurious reordering diff.
+~> **Note:** ` + "`associated_role_names`/`certificate_authority_ids`" + ` are modeled as Terraform sets, not lists, because Command doesn't guarantee the order it returns them in. Values are re-derived from the server on every refresh, so changes made outside Terraform (e.g. via the UI) will show up as drift on the next ` + "`terraform plan`" + `; this is expected.
 
 For full information on enrollment patterns view the [product documentation](https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern)
 `,
@@ -185,7 +185,7 @@ For full information on enrollment patterns view the [product documentation](htt
 			"template_id": {
 				Type:          types.Int64Type,
 				Required:      true,
-				Description:   "The ID of the certificate template this enrollment pattern is associated with. Immutable -- changing this value forces recreation of the enrollment pattern.",
+				Description:   "The ID of the certificate template this enrollment pattern is associated with. Immutable: changing this value forces recreation of the enrollment pattern.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			// template/associated_roles/certificate_authorities are read-only
@@ -227,8 +227,8 @@ For full information on enrollment patterns view the [product documentation](htt
 				Computed: true,
 				Description: "Whether this enrollment pattern is the default pattern for the associated template. A certificate template can have only one default enrollment pattern, which is required for the template to be used for enrollment. If no other enrollment pattern for the template exists or is marked as default, this option is automatically enabled when a new pattern is created. " +
 					"~> If this is the very first enrollment pattern created for its template, Command may automatically mark it as the default regardless of an explicit `template_default = false` here; this provider cannot detect that case ahead of time, so declaring `template_default = false` for what may turn out to be a template's first pattern carries a risk of \"Provider produced inconsistent result after apply\". Leaving this attribute undeclared avoids the risk entirely.",
-				// templateDefaultFollowsForceModifier (full-review finding
-				// F8), not plain tfsdk.UseStateForUnknown(): verified live
+				// templateDefaultFollowsForceModifier, not plain
+				// tfsdk.UseStateForUnknown(): verified live
 				// against kfclab that Command's PUT/POST body value for
 				// TemplateDefault takes precedence over the
 				// forceTemplateDefault query param (Case A) -- declaring
@@ -255,7 +255,7 @@ For full information on enrollment patterns view the [product documentation](htt
 				Type:          types.SetType{ElemType: types.StringType},
 				Optional:      true,
 				Computed:      true,
-				Description:   "Names of the security roles associated with the enrollment pattern. Only users holding one of these roles will be able to use the enrollment pattern if use_ad_permissions is false. Modeled as a set (not a list): Command's create/update/GetById responses only ever echo this back as the expanded associated_roles objects, never as a flat name list, and don't guarantee that expansion preserves submission order -- a set's membership-based equality means this attribute is safely re-derived from associated_roles on every refresh (detecting drift from changes made outside Terraform) without risking a spurious reordering diff.",
+				Description:   "Names of the security roles associated with the enrollment pattern. Only users holding one of these roles will be able to use the enrollment pattern if use_ad_permissions is false. Modeled as a set (not a list) because Command doesn't guarantee the order it returns them in; the value is re-derived from associated_roles on every refresh, so out-of-band changes may show up as drift.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			// Optional required alongside Computed -- see the comment on
@@ -264,7 +264,7 @@ For full information on enrollment patterns view the [product documentation](htt
 				Optional:    true,
 				Computed:    true,
 				Description: "The security roles associated with the enrollment pattern (read-only, expanded from associated_role_names).",
-				// followsDriverModifier (full-review finding F2), not
+				// followsDriverModifier, not
 				// useStateOrNullModifier: this mirror must NOT be pinned
 				// to its stale prior membership when associated_role_names
 				// itself is changing this apply, or Update()'s genuinely
@@ -293,7 +293,7 @@ For full information on enrollment patterns view the [product documentation](htt
 				Type:          types.SetType{ElemType: types.Int64Type},
 				Optional:      true,
 				Computed:      true,
-				Description:   "IDs of the certificate authorities to which the enrollment pattern is restricted, if applicable (see restrict_cas). Modeled as a set (not a list): Command's create/update/GetById responses only ever echo this back as the expanded certificate_authorities objects, never as a flat ID list, and don't guarantee that expansion preserves submission order -- a set's membership-based equality means this attribute is safely re-derived from certificate_authorities on every refresh (detecting drift from changes made outside Terraform) without risking a spurious reordering diff.",
+				Description:   "IDs of the certificate authorities to which the enrollment pattern is restricted, if applicable (see restrict_cas). Modeled as a set (not a list) because Command doesn't guarantee the order it returns them in; the value is re-derived from certificate_authorities on every refresh, so out-of-band changes may show up as drift.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			// Optional required alongside Computed -- see the comment on
@@ -302,7 +302,7 @@ For full information on enrollment patterns view the [product documentation](htt
 				Optional:    true,
 				Computed:    true,
 				Description: "The certificate authorities to which the enrollment pattern is restricted (read-only, expanded from certificate_authority_ids).",
-				// followsDriverModifier (full-review finding F2) -- see
+				// followsDriverModifier -- see
 				// the identical rationale on associated_roles above,
 				// mirrored here for certificate_authority_ids. T is
 				// types.Set for the same reason as associated_roles above.
@@ -433,7 +433,7 @@ For full information on enrollment patterns view the [product documentation](htt
 			"enrollment_fields": {
 				Optional:      true,
 				Computed:      true,
-				Description:   "Custom enrollment fields for CSR/PFX enrollment specific to this enrollment pattern. These are not metadata fields -- they are passed through to the CA.",
+				Description:   "Custom enrollment fields for CSR/PFX enrollment specific to this enrollment pattern. These are not metadata fields; they are passed through to the CA.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
@@ -447,8 +447,7 @@ For full information on enrollment patterns view the [product documentation](htt
 			"force_template_default": {
 				Type: types.BoolType,
 				// Optional-only (NOT Computed, no plan modifier) --
-				// see the full doc comment on alwaysUnknownModifier's
-				// removal (full-review finding F1) above Create()'s
+				// see the full doc comment above Create()'s
 				// force_template_default handling for why: this is a
 				// write-only, one-shot directive, and a plain
 				// Optional attribute's planned value is always exactly
@@ -460,7 +459,7 @@ For full information on enrollment patterns view the [product documentation](htt
 				// planned and applied values can never disagree,
 				// without needing to plan Unknown at all.
 				Optional:    true,
-				Description: "Write-only directive: when true, forces this pattern to become the template's default even if another pattern currently holds that status. Not persisted server-side -- Command never returns this value, so the provider simply echoes back whatever was last declared (leaving it undeclared on a later apply clears the directive back to null, which is the correct way to \"un-set\" a one-shot directive that no longer needs to fire).",
+				Description: "Write-only directive: when true, forces this pattern to become the template's default even if another pattern currently holds that status. Not persisted server-side. To un-set the directive, leave this attribute undeclared on a later apply.",
 			},
 		},
 	}, nil
@@ -648,7 +647,7 @@ func tfSetToInt32Slice(ctx context.Context, s types.Set) []int32 {
 }
 
 // ---------------------------------------------------------------------------
-// Audit logging (PR #210 full-review finding F5)
+// Audit logging
 // ---------------------------------------------------------------------------
 
 // tfBoolLogString/tfInt64LogString/tfStringLogString/tfListLogString render a
@@ -665,8 +664,7 @@ func tfSetToInt32Slice(ctx context.Context, s types.Set) []int32 {
 // log-injection shape this file's audit-log diffs previously left open: an
 // embedded "\n" in, say, an associated_role_names entry or a certificate
 // collection query would otherwise forge a second, visually-separate log
-// line under this repo's TF_LOG=DEBUG plaintext logging path (PR #210
-// full-review finding FIX-6).
+// line under this repo's TF_LOG=DEBUG plaintext logging path.
 func tfBoolLogString(v types.Bool) string {
 	if v.Unknown {
 		return "(unknown)"
@@ -770,9 +768,8 @@ func tfSetLogString(ctx context.Context, s types.Set) string {
 // each entry via formatEntry, comma-joined inside "[...]". Factored out of
 // five near-identical copy-paste helpers (algorithmListLogString,
 // regexListLogString, metadataFieldListLogString, defaultListLogString,
-// enrollmentFieldListLogString -- PR #210 full-review findings FIX-K/FIX-M)
-// that differed only in their per-entry formatting; full-review Phase 4
-// cleanup item 3. Callers are still responsible for %q-escaping any
+// enrollmentFieldListLogString) that differed only in their per-entry
+// formatting. Callers are still responsible for %q-escaping any
 // user/server-controlled string content in formatEntry (via
 // tfStringLogString etc.) for the same CWE-117 log-injection reason those
 // helpers exist.
@@ -803,8 +800,7 @@ func algorithmListLogString(ctx context.Context, algos []EnrollmentPatternResour
 
 // regexListLogString renders a []EnrollmentPatternResourceRegex (the raw Go
 // slice type backing the top-level regexes attribute) for audit-log lines --
-// see algorithmListLogString's doc comment for the shared rationale. PR #210
-// full-review round 4 finding FIX-K.
+// see algorithmListLogString's doc comment for the shared rationale.
 func regexListLogString(regexes []EnrollmentPatternResourceRegex) string {
 	return genericListLogString(regexes, func(rx EnrollmentPatternResourceRegex) string {
 		return fmt.Sprintf(
@@ -822,8 +818,7 @@ func regexListLogString(regexes []EnrollmentPatternResourceRegex) string {
 // hidden status for enrollment metadata (e.g. a mandatory "Change Ticket
 // Number" field), so its default_value/enrollment/validation settings are
 // exactly the kind of "how strictly enrollment is validated" control
-// already tracked here for regexes/policies.rfc_enforcement. See PR #210
-// full-review round 5 finding FIX-M.
+// already tracked here for regexes/policies.rfc_enforcement.
 func metadataFieldListLogString(fields []EnrollmentPatternResourceMetadataField) string {
 	return genericListLogString(fields, func(f EnrollmentPatternResourceMetadataField) string {
 		return fmt.Sprintf(
@@ -840,8 +835,7 @@ func metadataFieldListLogString(fields []EnrollmentPatternResourceMetadataField)
 // rationale. defaults pre-fills subject content for certificates issued
 // through this pattern, affecting the accuracy of what gets issued
 // (processing-integrity relevant), so it belongs in the same audit trail as
-// the other subject/validation-affecting fields. See PR #210 full-review
-// round 5 finding FIX-M.
+// the other subject/validation-affecting fields.
 func defaultListLogString(defaults []EnrollmentPatternResourceDefault) string {
 	return genericListLogString(defaults, func(d EnrollmentPatternResourceDefault) string {
 		return fmt.Sprintf("{subject_part:%s,value:%s}", tfStringLogString(d.SubjectPart), tfStringLogString(d.Value))
@@ -853,7 +847,7 @@ func defaultListLogString(defaults []EnrollmentPatternResourceDefault) string {
 // for audit-log lines -- see algorithmListLogString's doc comment for the
 // shared rationale. enrollment_fields is CA-passthrough data that ends up in
 // issued certificates, so like defaults it affects the accuracy of what
-// gets issued. See PR #210 full-review round 5 finding FIX-M.
+// gets issued.
 func enrollmentFieldListLogString(ctx context.Context, fields []EnrollmentPatternResourceField) string {
 	return genericListLogString(fields, func(f EnrollmentPatternResourceField) string {
 		return fmt.Sprintf(
@@ -898,8 +892,7 @@ func enrollmentFieldListLogString(ctx context.Context, fields []EnrollmentPatter
 // prior and updated on a genuine Update() call; a "change" to template_id
 // is actually a destroy+create, already visible in Terraform's own plan
 // output, and is instead reported on the Create side by
-// enrollmentPatternCreationAuditFields below. See PR #210 full-review round
-// 4 finding FIX-J.
+// enrollmentPatternCreationAuditFields below.
 //
 // policies.default_certificate_owner_role_name is deliberately NOT compared
 // here: both `prior`/`updated` at the point this function runs (see
@@ -908,8 +901,7 @@ func enrollmentFieldListLogString(ctx context.Context, fields []EnrollmentPatter
 // reflect a same-apply change to policies.default_certificate_owner_role_id
 // (the id line above already reports that). Update() separately calls
 // enrollmentPatternOwnerRoleNameChange, sourced from the actual PUT
-// response, after the update has been applied. See PR #210 full-review
-// round 5 finding FIX-O.
+// response, after the update has been applied.
 func enrollmentPatternPolicyRelevantFieldChanges(
 	ctx context.Context,
 	prior, updated KeyfactorEnrollmentPatternState,
@@ -950,13 +942,12 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 	// leaving it unset). Report a change only when the directive is
 	// genuinely being invoked this apply (a known, true value on the
 	// updated/plan side) -- that is the only case that has any real,
-	// auditable effect. See PR #210 full-review round 4 finding FIX-L. (As
-	// of full-review finding F1, force_template_default is now a plain
-	// Optional attribute whose final state is exactly the last-declared
-	// config value -- see the schema attribute's doc comment -- so `prior`
-	// here reflects the genuine last-declared value rather than always
-	// being Null, but the same "only a true invocation is auditable" gate
-	// still applies.)
+	// auditable effect. force_template_default is a plain Optional
+	// attribute whose final state is exactly the last-declared config
+	// value -- see the schema attribute's doc comment -- so `prior` here
+	// reflects the genuine last-declared value rather than always being
+	// Null, but the same "only a true invocation is auditable" gate still
+	// applies.
 	if !updated.ForceTemplateDefault.Null && !updated.ForceTemplateDefault.Unknown && updated.ForceTemplateDefault.Value {
 		changes = append(
 			changes, fmt.Sprintf(
@@ -976,8 +967,7 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 		// subfield -- none of which are actually flagged Null -- so
 		// tfBoolLogString/tfInt64LogString/tfStringLogString would render
 		// "false"/"0"/"" instead of the accurate "(null)", misrepresenting a
-		// genuinely-absent prior/updated value as a concrete one. See PR
-		// #210 full-review round 5 finding FIX-N.
+		// genuinely-absent prior/updated value as a concrete one.
 		o, n := enrollmentPatternNullPolicy(), enrollmentPatternNullPolicy()
 		if prior.Policies != nil {
 			o = *prior.Policies
@@ -994,7 +984,7 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 			tfInt64LogString(o.DefaultCertificateOwnerRoleId), tfInt64LogString(n.DefaultCertificateOwnerRoleId),
 		)
 		// policies.default_certificate_owner_role_name is intentionally not
-		// compared here -- see this function's doc comment (FIX-O).
+		// compared here -- see this function's doc comment.
 		appendIfChanged(
 			"policies.default_certificate_owner_override",
 			tfBoolLogString(o.DefaultCertificateOwnerOverride), tfBoolLogString(n.DefaultCertificateOwnerOverride),
@@ -1016,8 +1006,7 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 // with every scalar subfield explicitly flagged Null, for use as a diff-side
 // fallback when the source *EnrollmentPatternResourcePolicy is itself nil --
 // see enrollmentPatternPolicyRelevantFieldChanges's doc comment on the
-// resulting bare Go zero-value pitfall (PR #210 full-review round 5 finding
-// FIX-N).
+// resulting bare Go zero-value pitfall.
 func enrollmentPatternNullPolicy() EnrollmentPatternResourcePolicy {
 	return EnrollmentPatternResourcePolicy{
 		AllowKeyReuse:                   types.Bool{Null: true},
@@ -1044,8 +1033,7 @@ func enrollmentPatternNullPolicy() EnrollmentPatternResourcePolicy {
 // field as unchanged even though the name resolves differently once the PUT
 // takes effect. Call this instead with `actual` sourced from the Update PUT
 // response itself (already fetched by Update() -- no extra API call needed),
-// which reflects the genuinely-applied result. See PR #210 full-review round
-// 5 finding FIX-O.
+// which reflects the genuinely-applied result.
 func enrollmentPatternOwnerRoleNameChange(prior, actual *EnrollmentPatternResourcePolicy) string {
 	oldName := types.String{Null: true}
 	if prior != nil {
@@ -1075,7 +1063,7 @@ func enrollmentPatternOwnerRoleNameChange(prior, actual *EnrollmentPatternResour
 // comparison is safe to make pre-PUT. But
 // policies.default_certificate_owner_role_name is deliberately excluded
 // from that pre-PUT comparison (see enrollmentPatternPolicyRelevantFieldChanges's
-// doc comment on FIX-O) because the resolved name is only known from the PUT
+// doc comment) because the resolved name is only known from the PUT
 // response itself. That leaves an asymmetry: on a PUT failure, the sibling
 // id field always has an audit line, but the name field has none at all --
 // an auditor reconstructing a failed ownership-role change sees the raw id
@@ -1087,7 +1075,7 @@ func enrollmentPatternOwnerRoleNameChange(prior, actual *EnrollmentPatternResour
 // context, by comparing `prior`'s and `planned`'s
 // DefaultCertificateOwnerRoleId (the same signal
 // enrollmentPatternPolicyRelevantFieldChanges already trusts pre-PUT for the
-// id field). See PR #210 full-review round 6 finding FIX-Q.
+// id field).
 //
 // `prior` should be the unmodified prior state's Policies (state.Policies);
 // `planned` should be the final, post-preservation plan Policies actually
@@ -1142,13 +1130,12 @@ func enrollmentPatternOwnerRoleNameChangeAttemptedOnFailure(prior, planned *Enro
 // Unlike enrollmentPatternPolicyRelevantFieldChanges, Create() has no
 // pre-update GET to worry about: `created` here is derived directly from the
 // Create response itself, so policies.default_certificate_owner_role_name is
-// already the genuinely-resolved value and is reported normally (no FIX-O
-// suppression needed on this path).
+// already the genuinely-resolved value and needs no pre-PUT suppression on
+// this path.
 //
 // force_template_default is passed in separately (submittedForceTemplate-
-// Default) rather than read off `created` for symmetry with the original
-// design (PR #210 full-review round 2 finding FIX-B) even though, as of
-// full-review finding F1, `created.ForceTemplateDefault` is now simply
+// Default) rather than read off `created`, even though
+// `created.ForceTemplateDefault` is now simply
 // `plan.ForceTemplateDefault` copied verbatim (see Create()'s
 // `newState.ForceTemplateDefault = plan.ForceTemplateDefault` assignment) --
 // reading either would render the same value today, but passing the
@@ -1165,8 +1152,8 @@ func enrollmentPatternOwnerRoleNameChangeAttemptedOnFailure(prior, planned *Enro
 // ID (see the tflog call below in Create()), leaving an asymmetric audit
 // trail: full field detail for every Update(), none for the initial grant
 // of enrollment/CA access -- a gap a SOC2 auditor reconstructing "who was
-// granted access to what, and when" would flag (PR #210 full-review finding
-// FIX-8). Pure function so it can be unit tested directly, matching
+// granted access to what, and when" would flag. Pure function so it can be
+// unit tested directly, matching
 // enrollmentPatternPolicyRelevantFieldChanges.
 func enrollmentPatternCreationAuditFields(
 	ctx context.Context,
@@ -1239,7 +1226,7 @@ func enrollmentPatternTemplateResponseToState(t *v1.EnrollmentPatternsEnrollment
 // inconsistent result after apply." Mirrors the fix already applied to
 // enrollmentPatternFieldsToState's Options/algorithmDataResponseToResourceEntry's
 // BitLengths/Curves above, and the identical bug class fixed for
-// certStoreTypeDefToState under GitHub issue #192.
+// certStoreTypeDefToState (see that function's doc comment).
 func enrollmentPatternAssociatedRolesToState(roles []v1.EnrollmentPatternsEnrollmentPatternAssociatedRoleResponse) []EnrollmentPatternResourceRole {
 	if roles == nil {
 		return nil
@@ -1347,7 +1334,7 @@ func enrollmentPatternDefaultsToState(defaults []v1.EnrollmentPatternsEnrollment
 // apply" whenever `options` genuinely was declared as `options = []` -- see
 // TestUnitEnrollmentPatternFieldsToStatePreservesEmptyOptions.
 //
-// full-review finding F7 (verified live against kfclab): Command's
+// Verified live against kfclab: Command's
 // EnrollmentPatterns endpoints echo an explicit `"Options": []` for EVERY
 // enrollment field, including ones whose `options` was never declared at
 // all -- the "config actually declared options = [...] and the server
@@ -1386,7 +1373,7 @@ func enrollmentPatternFieldsToState(fields []v1.EnrollmentPatternsEnrollmentPatt
 
 // reconcileEnrollmentFieldsOptionsFromPlan collapses a server-echoed
 // `Options: []` back to Null wherever the corresponding PLAN/CONFIG entry
-// left `options` undeclared (Null) -- full-review finding F7, verified
+// left `options` undeclared (Null) -- verified
 // live against kfclab (see enrollmentPatternFieldsToState's doc comment):
 // Command echoes an explicit `"Options": []` for every enrollment field,
 // including ones whose `options` was never declared at all, so
@@ -1491,7 +1478,7 @@ func enrollmentPatternPolicyResponseToState(p *v1.EnrollmentPatternsEnrollmentPa
 	return pol
 }
 
-// alwaysUnknownModifier (removed -- full-review finding F1) used to plan
+// alwaysUnknownModifier (removed) used to plan
 // force_template_default as Unknown so Core would tolerate the always-Null
 // final state every CRUD path forced it to. That papered over the real
 // problem instead of fixing it: a declared `force_template_default = true`
@@ -1521,17 +1508,17 @@ func enrollmentPatternPolicyResponseToState(p *v1.EnrollmentPatternsEnrollmentPa
 // "computed mirror pinned to prior state while Update() writes a
 // response-derived value" case in this resource instead of hand-
 // duplicating the same logic per mirror attribute:
-//   - associated_roles follows associated_role_names (full-review finding
-//     F2): changing associated_role_names must NOT leave the stale
+//   - associated_roles follows associated_role_names: changing
+//     associated_role_names must NOT leave the stale
 //     associated_roles membership pinned as a known planned value, or
 //     Update()'s genuinely-new membership in the final state triggers
 //     "Provider produced inconsistent result after apply" on this
 //     resource's primary update path.
-//   - certificate_authorities follows certificate_authority_ids (same
-//     finding F2, identical shape for the CA-restriction mirror).
+//   - certificate_authorities follows certificate_authority_ids (identical
+//     shape for the CA-restriction mirror).
 //   - policies.default_certificate_owner_role_name follows
-//     policies.default_certificate_owner_role_id (full-review finding F4):
-//     changing the id must NOT leave the stale, pre-update-resolved name
+//     policies.default_certificate_owner_role_id: changing the id must NOT
+//     leave the stale, pre-update-resolved name
 //     pinned, since the PUT response resolves the name for the NEW id
 //     differently.
 //
@@ -1600,7 +1587,7 @@ func (m followsDriverModifier[T]) Modify(ctx context.Context, req tfsdk.ModifyAt
 // way tfsdk.UseStateForUnknown() would (prior state value carried forward)
 // EXCEPT when force_template_default is genuinely being invoked this apply
 // (a known, true config value), in which case template_default plans to a
-// KNOWN `true` directly -- full-review finding F8.
+// KNOWN `true` directly.
 //
 // Verified live against kfclab: Command's PUT/POST body value for
 // TemplateDefault takes precedence over the forceTemplateDefault query
@@ -1617,8 +1604,8 @@ func (m followsDriverModifier[T]) Modify(ctx context.Context, req tfsdk.ModifyAt
 // body value -- so this modifier plans the SAME known `true` rather than
 // Unknown. Planning Unknown here was an earlier version's approach and
 // reintroduced the identical perpetual-diff bug class the alwaysUnknownModifier
-// removal already documents for force_template_default itself (round 2
-// finding FIX-A): as long as force_template_default stayed declared true,
+// removal already documents for force_template_default itself: as long as
+// force_template_default stayed declared true,
 // every subsequent plan showed "template_default = ... -> (known after
 // apply)" forever, even with nothing left to actually change. Planning a
 // known value both avoids that AND surfaces the real change (e.g. "false ->
@@ -1663,7 +1650,7 @@ func (m templateDefaultFollowsForceModifier) Modify(ctx context.Context, req tfs
 		// stayed declared true, even once nothing was actually changing
 		// anymore (the same perpetual-diff bug class documented on
 		// alwaysUnknownModifier's removal for force_template_default
-		// itself, round 2 finding FIX-A).
+		// itself).
 		resp.AttributePlan = types.Bool{Value: true}
 		return
 	}
@@ -1841,7 +1828,7 @@ func buildEnrollmentPatternPolicyRequest(ctx context.Context, p *EnrollmentPatte
 	// `len(p.X) > 0` (the bug -- fixed here) treated a plan-declared empty
 	// list (`primary_key_algorithms = []`) identically to an undeclared
 	// one, silently omitting the field from the request instead of
-	// clearing it server-side -- see PR #210 full-review finding F2 and
+	// clearing it server-side -- see
 	// TestUnitBuildEnrollmentPatternPolicyRequestPreservesEmptyAlgorithmLists.
 	if p.PrimaryKeyAlgorithms != nil {
 		req.SetPrimaryKeyAlgorithms(buildAlgorithmDataRequestV2List(ctx, p.PrimaryKeyAlgorithms))
@@ -2086,7 +2073,7 @@ func buildEnrollmentPatternUpdateRequest(ctx context.Context, plan KeyfactorEnro
 
 // preserveUndeclaredEnrollmentPatternFields extends the same read-modify-
 // write pattern used by preserveUndeclaredTemplateFields (resource_keyfactor_
-// certificate_template.go, #195) to this resource: PUT /EnrollmentPatterns/
+// certificate_template.go) to this resource: PUT /EnrollmentPatterns/
 // {id} is a full-replace endpoint, so any Optional+Computed field left
 // Null/Unknown on plan would otherwise be omitted from the request and
 // cleared server-side instead of left unchanged. current must come from a
@@ -2204,9 +2191,7 @@ func (r resourceEnrollmentPattern) ValidateConfig(
 }
 
 // validateEnrollmentPatternConfigConstraints enforces two cross-field
-// constraints that this resource's own schema descriptions document but,
-// until now, nothing actually checked (PR #210 full-review round 2 findings
-// F3/F4):
+// constraints that this resource's own schema descriptions document:
 //
 //  1. restrict_cas's description states "If true, at least one CA must be
 //     configured" -- reject restrict_cas=true paired with an empty/undeclared
@@ -2241,17 +2226,16 @@ func validateEnrollmentPatternConfigConstraints(cfg KeyfactorEnrollmentPatternSt
 	restrictCAsKnown := !cfg.RestrictCAs.Null && !cfg.RestrictCAs.Unknown
 	caIdsKnown := !cfg.CertificateAuthorityIds.Null && !cfg.CertificateAuthorityIds.Unknown
 	caIdsDeclaredNonEmpty := caIdsKnown && len(cfg.CertificateAuthorityIds.Elems) > 0
-	// caIdsKnownEmpty is deliberately narrower than "null or empty" (the
-	// pre-fix bug -- full-review finding F5): a Null/Unknown
-	// certificate_authority_ids is NOT a config error on its own -- per
-	// this function's own doc comment above ("A null/unknown value for
-	// any attribute involved is never an error"), it means "undeclared,"
-	// which preserveUndeclaredEnrollmentPatternFields's fallback (via
-	// Update()'s pre-update GET) explicitly supports falling back to
-	// existing server-side CAs for. Only a KNOWN, explicitly-empty list
-	// (`certificate_authority_ids = []`) is a genuine config error here.
-	// The pre-fix version incorrectly treated Null the same as
-	// known-empty, hard-erroring "requires at least one entry in
+	// caIdsKnownEmpty is deliberately narrower than "null or empty": a
+	// Null/Unknown certificate_authority_ids is NOT a config error on its
+	// own -- per this function's own doc comment above ("A null/unknown
+	// value for any attribute involved is never an error"), it means
+	// "undeclared," which preserveUndeclaredEnrollmentPatternFields's
+	// fallback (via Update()'s pre-update GET) explicitly supports
+	// falling back to existing server-side CAs for. Only a KNOWN,
+	// explicitly-empty list (`certificate_authority_ids = []`) is a
+	// genuine config error here. Treating Null the same as known-empty
+	// would incorrectly hard-error "requires at least one entry in
 	// certificate_authority_ids" on the ordinary import-then-manage flow
 	// (certificate_authority_ids is always null immediately after
 	// import) even though CAs exist server-side and restrict_cas=true is
@@ -2280,8 +2264,8 @@ func validateEnrollmentPatternConfigConstraints(cfg KeyfactorEnrollmentPatternSt
 	if useADKnown && !cfg.UseADPermissions.Value {
 		rolesKnown := !cfg.AssociatedRoleNames.Null && !cfg.AssociatedRoleNames.Unknown
 		// rolesKnownEmpty -- see caIdsKnownEmpty's doc comment above for
-		// the identical null-vs-known-empty rationale (full-review
-		// finding F5): a Null/Unknown associated_role_names is
+		// the identical null-vs-known-empty rationale: a Null/Unknown
+		// associated_role_names is
 		// "undeclared," not an error, since preserveUndeclaredEnrollment
 		// PatternFields's fallback explicitly supports preserving
 		// existing membership for it.
@@ -2295,7 +2279,7 @@ func validateEnrollmentPatternConfigConstraints(cfg KeyfactorEnrollmentPatternSt
 		}
 	}
 
-	// full-review finding F8: force_template_default's own description
+	// force_template_default's own description
 	// says it "forces this pattern to become the template's default" --
 	// Create()/Update() now honor that literally by forcing the request
 	// body's TemplateDefault to true whenever force_template_default is
@@ -2375,7 +2359,7 @@ func (r resourceEnrollmentPattern) Create(
 		return
 	}
 
-	// full-review finding F8 (Case A, verified live against kfclab):
+	// Verified live against kfclab:
 	// Command's PUT/POST body value for TemplateDefault takes precedence
 	// over the forceTemplateDefault query param -- sending force alongside
 	// a body that doesn't ALSO say true is a confirmed silent no-op. Force
@@ -2420,7 +2404,7 @@ func (r resourceEnrollmentPattern) Create(
 	}
 
 	newState := enrollmentPatternResponseToState(resp)
-	// full-review finding F7: Command echoes an explicit "Options": [] for
+	// Command echoes an explicit "Options": [] for
 	// every enrollment field regardless of whether options was actually
 	// declared, so reconcile against what plan.EnrollmentFields (decoded
 	// from Config, i.e. exactly what was submitted) actually declared per
@@ -2434,7 +2418,7 @@ func (r resourceEnrollmentPattern) Create(
 	// CertificateAuthorities expansion (see its doc comment), which is
 	// always a known, properly-typed value (Null or a concrete Set) --
 	// never Unknown -- regardless of whether they were declared in config.
-	// force_template_default is Optional-only (full-review finding F1): its
+	// force_template_default is Optional-only: its
 	// planned value is always exactly the declared config value (Null if
 	// undeclared), so the final state must echo that same value back --
 	// not hardcode Null -- or Core would reject a declared `true` (or any
@@ -2448,11 +2432,11 @@ func (r resourceEnrollmentPattern) Create(
 	tflog.Debug(ctx, fmt.Sprintf("Created enrollment pattern ID %d", newState.ID.Value))
 	// Field-level audit logging for the access-control-relevant fields set
 	// on this initial create -- see enrollmentPatternCreationAuditFields's
-	// doc comment (PR #210 full-review finding FIX-8). Info level matches
+	// doc comment. Info level matches
 	// the level already used for the equivalent Update() diff logging
 	// below (these fields -- role names, CA ids, policy enum settings --
 	// are not free-text search content, unlike certificate_collection's
-	// query field; see FIX-7).
+	// query field).
 	for _, field := range enrollmentPatternCreationAuditFields(ctx, newState, plan.ForceTemplateDefault) {
 		tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %d field set on create: %s", newState.ID.Value, field))
 	}
@@ -2509,14 +2493,15 @@ func (r resourceEnrollmentPattern) Read(
 
 	newState := enrollmentPatternResponseToState(resp)
 
-	// full-review finding F7: reconcile the same Options null-vs-empty
+	// Reconcile the same Options null-vs-empty
 	// ambiguity as Create()/Update() (see reconcileEnrollmentFieldsOptionsFromPlan's
 	// doc comment), using PRIOR STATE (not plan/config -- Read() has no
 	// plan) as the reference for "was this entry's options genuinely
 	// null." Without this, a plain refresh would silently replace a
 	// correctly-null options with the server's echoed "[]", causing a
 	// spurious "options: null -> []" diff (and, if that state then feeds a
-	// subsequent Update(), the same Core rejection F7 fixes elsewhere).
+	// subsequent Update(), the same Core rejection this reconciliation
+	// avoids elsewhere).
 	if state.EnrollmentFields != nil {
 		newState.EnrollmentFields = reconcileEnrollmentFieldsOptionsFromPlan(state.EnrollmentFields, newState.EnrollmentFields)
 	}
@@ -2533,8 +2518,8 @@ func (r resourceEnrollmentPattern) Read(
 	//
 	// force_template_default is never returned by Command (it's a one-shot
 	// directive, not a persisted setting) -- preserve the last-declared
-	// value from prior state rather than hardcoding Null (full-review
-	// finding F1): force_template_default is Optional-only, so its plan is
+	// value from prior state rather than hardcoding Null:
+	// force_template_default is Optional-only, so its plan is
 	// always exactly the declared config value, and a plain refresh
 	// (nothing declared differently) must not silently clear it.
 	newState.ForceTemplateDefault = state.ForceTemplateDefault
@@ -2562,7 +2547,7 @@ func (r resourceEnrollmentPattern) Update(
 	// -- e.g. primary_key_algorithms chaining a value from another
 	// resource not yet applied in the same run. Decoding request.Plan in
 	// that case crashes with "Value Conversion Error: unhandled unknown
-	// value" (PR #210 full-review finding FIX-3). Config never has this
+	// value". Config never has this
 	// problem for these attributes: they are Computed-only or left
 	// undeclared, both of which Config always resolves to Null. Since plan
 	// is now sourced from Config, it also doubles as the reliable "did the
@@ -2590,7 +2575,7 @@ func (r resourceEnrollmentPattern) Update(
 
 	// Captured BEFORE preserveUndeclaredEnrollmentPatternFields mutates
 	// plan.EnrollmentFields (when undeclared, it falls back to a fresh
-	// pre-update GET's response) -- full-review finding F7's reconciliation
+	// pre-update GET's response) -- the reconciliation
 	// below needs the ORIGINAL, genuinely-declared-this-apply value (or nil
 	// if enrollment_fields itself was undeclared) to know which entries'
 	// options were truly left undeclared vs. genuinely configured empty.
@@ -2631,13 +2616,13 @@ func (r resourceEnrollmentPattern) Update(
 	// derived value, not stale prior Terraform state, when config leaves
 	// either Null or Unknown -- e.g. `associated_role_names =
 	// [keyfactor_security_role.my_role.name]` where that role is created in
-	// the same apply, PR #210 full-review finding FIX-4) -- see its doc
+	// the same apply) -- see its doc
 	// comment. Without that Unknown handling, plan.AssociatedRoleNames/
 	// CertificateAuthorityIds would stay Unknown all the way into newState
 	// below, and a final state must never contain an Unknown value.
 	preserveUndeclaredEnrollmentPatternFields(&plan, current)
 
-	// full-review finding F8 (Case A) -- see the identical comment above
+	// See the identical comment above
 	// Create()'s equivalent override for the full rationale: force the
 	// request body's TemplateDefault to true whenever force_template_default
 	// is genuinely true, since Command ignores the forceTemplateDefault
@@ -2648,7 +2633,7 @@ func (r resourceEnrollmentPattern) Update(
 
 	// Audit-log old (prior state) vs new (final plan, post preservation)
 	// values for policy-relevant fields before the API call actually
-	// applies them -- PR #210 full-review finding F5. state is the
+	// applies them. state is the
 	// unmodified prior Terraform state; plan at this point already
 	// reflects preserveUndeclaredEnrollmentPatternFields and the
 	// associated_role_names/certificate_authority_ids fallback above, i.e.
@@ -2677,7 +2662,7 @@ func (r resourceEnrollmentPattern) Update(
 		// field's real audit call (enrollmentPatternOwnerRoleNameChange)
 		// only runs after a successful PUT response, which we don't have
 		// here. Log a best-effort substitute instead of leaving this field
-		// silent. See PR #210 full-review round 6 finding FIX-Q.
+		// silent.
 		if change := enrollmentPatternOwnerRoleNameChangeAttemptedOnFailure(state.Policies, plan.Policies); change != "" {
 			tflog.Info(
 				ctx,
@@ -2709,11 +2694,11 @@ func (r resourceEnrollmentPattern) Update(
 	// PatternFields's doc comment for the undeclared-field fallback that
 	// determined `plan`'s value in that case).
 	// force_template_default: see the identical comment on Create()'s
-	// equivalent assignment above (full-review finding F1) -- plan is
+	// equivalent assignment above -- plan is
 	// decoded from Config, so this is exactly the value the user declared
 	// (or Null if undeclared) this apply.
 	newState.ForceTemplateDefault = plan.ForceTemplateDefault
-	// full-review finding F7: reconcile the Options null-vs-empty ambiguity
+	// Reconcile the Options null-vs-empty ambiguity
 	// (see reconcileEnrollmentFieldsOptionsFromPlan's doc comment) using
 	// whichever reference reflects "was this entry's options genuinely
 	// declared null this apply": if enrollment_fields was declared this
@@ -2731,8 +2716,7 @@ func (r resourceEnrollmentPattern) Update(
 
 	// policies.default_certificate_owner_role_name can only be audited
 	// accurately AFTER the update has actually been applied -- see
-	// enrollmentPatternOwnerRoleNameChange's doc comment (PR #210 full-review
-	// round 5 finding FIX-O). newState.Policies here is derived from `resp`,
+	// enrollmentPatternOwnerRoleNameChange's doc comment. newState.Policies here is derived from `resp`,
 	// the PUT response itself, so this reuses data already fetched rather
 	// than issuing an extra GET.
 	if change := enrollmentPatternOwnerRoleNameChange(state.Policies, newState.Policies); change != "" {

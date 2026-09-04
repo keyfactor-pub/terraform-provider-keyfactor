@@ -15,8 +15,7 @@ import (
 
 // ---------------------------------------------------------------------------
 // Unit tests — keyfactor_certificate_template Update() resetting fields
-// besides allowed_requesters (dev-harness certificate_template_demo finding,
-// completes #195).
+// besides allowed_requesters.
 //
 // Live repro (provider fix/harness-bugs @ 51f4dc1 -> kfclab, Command 25.5):
 // updating ONLY friendly_name on template 7 (AnyCA_lab-root-role) silently
@@ -24,7 +23,7 @@ import (
 // key_retention "FromIssuance" -> "None" and allow_one_click_renewals
 // true -> false. Root cause: PUT /Templates is a full-replace endpoint, and
 // buildTemplateUpdateRequest skips any plan field left Null/Unknown; the
-// #195 fix (preserveAllowedRequesters) only fetched-and-preserved
+// earlier fix (preserveAllowedRequesters) only fetched-and-preserved
 // AllowedRequesters/UseAllowedRequesters before that PUT, leaving every
 // other Optional field exposed to the same bug class.
 //
@@ -140,7 +139,7 @@ func TestUnitCertificateTemplateUpdatePreservesUndeclaredFields(t *testing.T) {
 	r := resourceCertificateTemplate{p: provider{configured: true, sdkClient: sdkClient}}
 	// Config: mirrors planObj's Raw verbatim -- this test builds plan directly
 	// rather than via PlanResourceChange, so plan's shape already IS what
-	// config declared (see full-review round 5 [HIGH]).
+	// config declared.
 	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
 	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
@@ -213,7 +212,7 @@ func TestUnitCertificateTemplateUpdatePreservesUndeclaredFields(t *testing.T) {
 	}
 
 	// allowed_requesters: undeclared, must also still be preserved (the
-	// original #195 field), proving the two preservation paths coexist.
+	// original field the earlier fix covered), proving the two preservation paths coexist.
 	requesters, ok := onWire["AllowedRequesters"].([]interface{})
 	if !ok || len(requesters) != 1 || requesters[0] != "ExistingRole" {
 		t.Errorf("AllowedRequesters on the wire = %v, want exactly [\"ExistingRole\"]", onWire["AllowedRequesters"])

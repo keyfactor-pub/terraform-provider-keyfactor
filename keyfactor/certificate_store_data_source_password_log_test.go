@@ -14,8 +14,8 @@ import (
 )
 
 // TestUnitCertificateStoreDataSourcePasswordNotLogged is a regression test
-// for a CRITICAL-severity security finding from round 4 of a full-review
-// cycle: data_source_keyfactor_certificate_store.go's Read() used to log the
+// for a CRITICAL-severity security bug:
+// data_source_keyfactor_certificate_store.go's Read() used to log the
 // plaintext store_password -- a declared Sensitive: true schema attribute --
 // directly by name, unconditionally, on every data-source read:
 //

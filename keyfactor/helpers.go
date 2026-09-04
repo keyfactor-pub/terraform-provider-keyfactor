@@ -1576,7 +1576,7 @@ type orphanRecoveryIdentity struct {
 	// -- not just an incidental "nothing relevant happened to be configured"
 	// case. Kerberos authentication via a credential cache
 	// (kerberos_ccache) without an explicit kerberos_username is the one
-	// confirmed case today (F3, round 3): keyfactor-auth-client-go's
+	// confirmed case today: keyfactor-auth-client-go's
 	// CommandAuthConfigKerberos.ValidateAuthConfig never requires or derives
 	// Username for that combination, so GetServerConfig().Username is ALWAYS
 	// empty for every request made under this auth mode -- even though the
@@ -1894,8 +1894,8 @@ func orphanRecoveryCAMatches(candidateCA, expectedCA string) bool {
 // for this request is cross-checked against the sole surviving candidate as
 // an extra, out-of-band confirmation.
 //
-// Requester-identity discriminator gap for Kerberos-via-credential-cache
-// (F3, round 3): when this provider authenticates via kerberos_ccache
+// Requester-identity discriminator gap for Kerberos-via-credential-cache:
+// when this provider authenticates via kerberos_ccache
 // without an explicit kerberos_username, the client's own username can NEVER
 // be determined from GetServerConfig() (see
 // orphanRecoveryIdentity.permanentlyUnavailable) -- this is a permanent,
@@ -1978,8 +1978,8 @@ func findOrphanedCertificateMatch(
 	}
 	threshold := criteria.EnrollStartTime.Add(-skew)
 	var candidates []api.GetCertificateResponse
-	// seenCandidateIds dedups by certificate Id (F1 hardening, round 3):
-	// defense in depth against a duplicate row appearing in certs (e.g. if a
+	// seenCandidateIds dedups by certificate Id: defense in depth against a
+	// duplicate row appearing in certs (e.g. if a
 	// certificate for this exact CN was inserted while
 	// searchCertificatesForOrphanRecovery's multi-page walk was in flight,
 	// shifting an already-returned row across a page boundary despite the
@@ -2143,7 +2143,7 @@ func sdkCertToLegacyCertificateResponse(c kfv1.CertificatesCertificateRetrievalB
 // PageReturned pagination pattern already used by
 // getSecurityPermissionSetByName.
 //
-// F1 hardening (round 3): the request explicitly sorts by the certificate's
+// The request explicitly sorts by the certificate's
 // auto-incrementing primary key ascending -- unique and monotonically
 // increasing -- so it gives offset-based PageReturned/ReturnLimit pagination
 // a deterministic, stable total order across pages. Without an explicit sort,
@@ -2169,9 +2169,9 @@ func sdkCertToLegacyCertificateResponse(c kfv1.CertificatesCertificateRetrievalB
 // against permissive mock servers (this file's TestUnitEnrollPFX_* suite)
 // that don't validate SortField the way real Command does, so the 400 was
 // never caught until a live-lab run. "CertId" returns the identical
-// certificate set/ordering as "Id" would have (same underlying column; see
-// the live-lab request/response captured in the PR this comment shipped
-// with) -- this is a field-name fix only, not a behavior change.
+// certificate set/ordering as "Id" would have (same underlying column,
+// confirmed against a live-lab request/response) -- this is a field-name
+// fix only, not a behavior change.
 func searchCertificatesForOrphanRecovery(
 	ctx context.Context,
 	sdkClient *keyfactor.APIClient,
@@ -2423,7 +2423,7 @@ func prepareCertificateContextArgs(id, collectionID int, thumbprint, commonName 
 // a real, remotely-triggerable panic. Callers should check `resp == nil`
 // immediately after the err-check block on every Execute() call whose
 // response is subsequently dereferenced, and append this diagnostic instead
-// of proceeding. See PR #210 full-review finding FIX-5.
+// of proceeding.
 func nilAPIResponseDiagnostics(summary, operation string) diag.Diagnostics {
 	var diags diag.Diagnostics
 	diags.AddError(
@@ -3332,7 +3332,7 @@ func normalizeThumbprint(tp string) string {
 // container_name/application_name state via syncApplicationAndContainerName.
 // A single transient failure with an empty hint (the case on the very first
 // Read() after an out-of-band container assignment, when state never held a
-// name to fall back to — see GH issue #175) would otherwise permanently null
+// name to fall back to) would otherwise permanently null
 // out the name fields even though container_id correctly reflects a real
 // assignment. Note that nulling the *name* fields here is a cosmetic
 // annoyance, not data loss on its own — Update()'s containerId resolution

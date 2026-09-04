@@ -12,11 +12,11 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Core-level regression test for full-review finding F3.
+// Core-level regression test for the content-follows-query bug.
 //
 // Every existing unit test for content/query calls Create()/Read()/
 // Update() directly, bypassing Terraform Core's own apply-consistency
-// check -- exactly how this finding shipped undetected. This test drives a
+// check -- exactly how this bug shipped undetected. This test drives a
 // real two-step Terraform lifecycle through resource.UnitTest against a
 // cassette recorded from kfclab: editing query on Update() must APPLY
 // successfully (before the fix, the stale content mirror pinned by

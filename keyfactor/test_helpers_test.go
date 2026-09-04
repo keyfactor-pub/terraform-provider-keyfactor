@@ -1741,7 +1741,7 @@ resource "keyfactor_certificate" "test" {
 
 // testAccCertPFXConfigBothTemplateAndPattern generates HCL for a PFX certificate
 // resource test that sets BOTH certificate_template and certificate_enrollment_pattern.
-// This tests that the provider allows both to be specified simultaneously (fixes #146).
+// This tests that the provider allows both to be specified simultaneously.
 func testAccCertPFXConfigBothTemplateAndPattern(templateName, enrollmentPattern, ca, cn string) string {
 	return fmt.Sprintf(`
 resource "keyfactor_certificate" "test" {

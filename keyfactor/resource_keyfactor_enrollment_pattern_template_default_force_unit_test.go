@@ -9,7 +9,8 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- full-review finding F8 (Case A, verified live against
+// Regression tests: force_template_default must force the request body's
+// TemplateDefault, not just the query param (verified live against
 // kfclab):
 //
 // Command's PUT/POST body value for TemplateDefault takes precedence over

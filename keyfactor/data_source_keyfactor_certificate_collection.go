@@ -227,10 +227,9 @@ func (d dataSourceCertificateCollection) Read(
 	// actually resolved by `id` would be silently overwritten by the
 	// server's real name with no diagnostic at all -- a silently-wrong-data
 	// risk, not just a cosmetic mismatch, since callers may reasonably
-	// assume the configured name was validated (PR #210 full-review finding
-	// FIX-9).
+	// assume the configured name was validated.
 	//
-	// full-review finding F9: Keyfactor Command's name resolution is
+	// Keyfactor Command's name resolution is
 	// case-insensitive (SQL Server default collation), so a byte-for-byte
 	// comparison here hard-errors "id/name mismatch" on a config the
 	// server itself considers consistent -- e.g. id=5, name="dashboard

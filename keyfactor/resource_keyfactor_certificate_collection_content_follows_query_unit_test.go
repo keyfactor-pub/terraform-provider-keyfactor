@@ -10,7 +10,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- full-review finding F3:
+// Regression tests: content-follows-query.
 //
 // content is a Computed attribute mirroring the server-normalized form of
 // query. It used a plain tfsdk.UseStateForUnknown(), which unconditionally

@@ -3,12 +3,12 @@
 page_title: "keyfactor_certificate_authority Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicitpassword, authcertificate, authcertificatepassword, clientsecret) are write-only — the server never returns plaintext values, so provider reads preserve configured values from state. The forcesave flag bypasses the server-side connectivity test on create/update and is also write-only.
+  Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicitpassword, authcertificate, authcertificatepassword, clientsecret) are write-only: the server never returns plaintext values, so provider reads preserve configured values from state. The forcesave flag bypasses the server-side connectivity test on create/update and is also write-only.
 ---
 
 # keyfactor_certificate_authority (Resource)
 
-Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicit_password, auth_certificate, auth_certificate_password, client_secret) are write-only — the server never returns plaintext values, so provider reads preserve configured values from state. The force_save flag bypasses the server-side connectivity test on create/update and is also write-only.
+Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicit_password, auth_certificate, auth_certificate_password, client_secret) are write-only: the server never returns plaintext values, so provider reads preserve configured values from state. The force_save flag bypasses the server-side connectivity test on create/update and is also write-only.
 
 ## Example Usage
 
@@ -58,11 +58,11 @@ resource "keyfactor_certificate_authority" "ejbca" {
 - `allowed_enrollment_types` (Number) An integer that sets the type(s) of enrollment that are allowed through Keyfactor Command for the certificate authority: 0=none, 1=PFX, 2=CSR, 3=both. Requires standalone=true.
 - `allowed_requesters` (List of String) An array of strings indicating Keyfactor Command security roles that are allowed to enroll for certificates via Keyfactor Command for this CA. Applies to standalone CAs only. Write-only: not returned by the server GET; preserved from plan/state.
 - `audience` (String) For HTTPS CAs, a string specifying the audience to include in token requests to the identity provider.
-- `auth_certificate` (String, Sensitive) An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.
-- `auth_certificate_password` (String, Sensitive) An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.
+- `auth_certificate` (String, Sensitive) An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only. Unlike this resource's other write-only fields, this one is not preserved when omitted: removing it from config clears the stored credential on the next apply.
+- `auth_certificate_password` (String, Sensitive) An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only. Unlike this resource's other write-only fields, this one is not preserved when omitted: removing it from config clears the stored credential on the next apply.
 - `certificate_cleanup_enabled` (Boolean) Whether certificate cleanup is enabled for this CA.
 - `client_id` (String) For HTTPS CAs, a string specifying the client ID used to authenticate when OAuth authentication is selected.
-- `client_secret` (String, Sensitive) For HTTPS CAs, an object indicating the secret for the client used to authenticate. Write-only; cannot be read back from the server. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.
+- `client_secret` (String, Sensitive) For HTTPS CAs, an object indicating the secret for the client used to authenticate. Write-only; cannot be read back from the server. Unlike this resource's other write-only fields, this one is not preserved when omitted: removing it from config clears the stored credential on the next apply.
 - `configuration_tenant` (String) A string indicating the forest root name or DNS domain name for the certificate authority.
 - `connector_pool` (String) A string indicating the name of the connector pool to use with the CA Connector Client.
 - `delegate` (Boolean) A Boolean that sets whether management interactions should be done in the context of the requesting user.
@@ -70,10 +70,10 @@ resource "keyfactor_certificate_authority" "ejbca" {
 - `delete_with_archived_key` (Boolean) Whether to delete the certificate when its archived key is deleted.
 - `enforce_unique_dn` (Boolean) A Boolean that sets whether the unique DN requirement is enforced on the CA. Mutually exclusive with new_end_entity_on_renew_and_reissue=true.
 - `explicit_credentials` (Boolean) A Boolean that sets whether explicit credentials are enabled for this certificate authority.
-- `explicit_password` (String, Sensitive) An object indicating the password information to use for authentication with explicit_user. Write-only; cannot be read back from the server. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.
+- `explicit_password` (String, Sensitive) An object indicating the password information to use for authentication with explicit_user. Write-only; cannot be read back from the server. Unlike this resource's other write-only fields, this one is not preserved when omitted: removing it from config clears the stored credential on the next apply.
 - `explicit_user` (String) A string indicating the username in DOMAIN\username format for service account credentials.
 - `failure_max` (Number) An integer that sets the maximum number of certificate requests that can fail before an alert is triggered.
-- `force_save` (Boolean) A Boolean indicating whether to save the CA record even if the CA connectivity test fails. Useful when provisioning a CA record before the CA server is reachable. Write-only — not returned by the server; preserved from config/state after reads.
+- `force_save` (Boolean) A Boolean indicating whether to save the CA record even if the CA connectivity test fails. Useful when provisioning a CA record before the CA server is reachable. Write-only: not returned by the server; preserved from config/state after reads.
 - `forest_root` (String) A string indicating the forest root name or DNS domain name (retained for legacy purposes).
 - `full_scan_interval_minutes` (Number) Interval in minutes for the full synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.
 - `incremental_scan_interval_minutes` (Number) Interval in minutes for the incremental synchronization schedule of this certificate authority. Must be one of: 1,2,3,4,5,6,10,12,15,20,30,60,120,180,240,360,480,720. Warning: creates a Windows Task Scheduler entry for DCOM CAs that blocks CA deletion.

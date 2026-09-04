@@ -146,13 +146,13 @@ resource "keyfactor_template_role_binding" "import_test" {
 // ---------------------------------------------------------------------------
 
 // TestUnitKeyfactorTemplateRoleBindingResource exercises the template role
-// binding resource against a cassette recorded before issue #190 was fixed:
+// binding resource against a cassette recorded before the TemplatePolicy bug was fixed:
 // the vendored keyfactor-go-client's UpdateTemplateArg had no TemplatePolicy
 // field, so Command v25+ rejected the update with "'Policies' cannot be
 // empty", and this cassette captures that exact recorded server response.
 // VCR here matches on method/path/query only (never request body), so this
 // cassette keeps replaying the same recorded error regardless of what the
-// provider actually sends on the wire -- it cannot demonstrate that #190 is
+// provider actually sends on the wire -- it cannot demonstrate that the bug is
 // fixed, only preserve historical evidence of the original bug.
 //
 // The actual fix (UpdateTemplateArg.TemplatePolicy now exists upstream, see

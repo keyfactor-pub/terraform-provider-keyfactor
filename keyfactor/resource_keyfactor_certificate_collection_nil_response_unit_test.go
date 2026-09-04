@@ -9,7 +9,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- PR #210 full-review finding FIX-5 (certificate_
+// Regression tests: nil API response guard (certificate_
 // collection side):
 //
 // Same nil-response-nil-error shape as resource_keyfactor_enrollment_

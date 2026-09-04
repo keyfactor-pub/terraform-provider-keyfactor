@@ -273,7 +273,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Optional:      true,
 				Computed:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
-				Description:   "Name of the certificate authority to use for enrollment. Optional when using a certificate template or enrollment pattern — Command will automatically select a CA associated with the template or pattern. Required when enrolling against a standalone CA. Example: \"MYCA\\\\My Issuing CA\"",
+				Description:   "Name of the certificate authority to use for enrollment. Optional when using a certificate template or enrollment pattern: Command will automatically select a CA associated with the template or pattern. Required when enrolling against a standalone CA. Example: \"MYCA\\\\My Issuing CA\"",
 			},
 			"certificate_template": {
 				Type:          types.StringType,
@@ -309,8 +309,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
 					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
 					"certificate's real SAN list shows no drift; declaring a different list still forces " +
-					"replacement (see GH issue #197). Removing this attribute from config (as opposed to " +
-					"changing its values) leaves it unmanaged and is a no-op -- it does not force replacement.",
+					"replacement. Removing this attribute from config (as opposed to " +
+					"changing its values) leaves it unmanaged and is a no-op; it does not force replacement.",
 			},
 			"uri_sans": {
 				Type:          types.ListType{ElemType: types.StringType},
@@ -324,8 +324,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
 					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
 					"certificate's real SAN list shows no drift; declaring a different list still forces " +
-					"replacement (see GH issue #197). Removing this attribute from config (as opposed to " +
-					"changing its values) leaves it unmanaged and is a no-op -- it does not force replacement.",
+					"replacement. Removing this attribute from config (as opposed to " +
+					"changing its values) leaves it unmanaged and is a no-op; it does not force replacement.",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -344,8 +344,8 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 					" not** be reflected in this field. Computed: on `terraform import`, this is populated " +
 					"from the actual certificate's SANs so that a subsequent plan matching the imported " +
 					"certificate's real SAN list shows no drift; declaring a different list still forces " +
-					"replacement (see GH issue #197). Removing this attribute from config (as opposed to " +
-					"changing its values) leaves it unmanaged and is a no-op -- it does not force replacement.",
+					"replacement. Removing this attribute from config (as opposed to " +
+					"changing its values) leaves it unmanaged and is a no-op; it does not force replacement.",
 				//DiffSuppressFunc: func(k, old, new string, d *schema.ResourceData) bool {
 				//	// For some reason Terraform detects this particular function as having drift; this function
 				//	// gives us a definitive answer.
@@ -430,7 +430,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				MarkdownDescription: `
 A string containing the name of the security role assigned as the certificate owner. This name must match the existing name of the security role.
 
-**Note:** **Attribute contract**: omitting ` + "`owner_role_name`" + ` from config leaves ownership unmanaged -- Terraform never sends a clearing value, and drift from an out-of-band owner change is still surfaced on plan/refresh. Declaring an explicit empty string (` + "`owner_role_name = \"\"`" + `) is a declarative "clear the owner" sentinel: Terraform sends a PUT with no role identifier, which Keyfactor Command interprets as removing the certificate's owner.
+**Note:** Omitting ` + "`owner_role_name`" + ` from config leaves ownership unmanaged; Terraform never sends a clearing value, though drift from an out-of-band owner change is still surfaced on plan/refresh. Setting it to an explicit empty string (` + "`owner_role_name = \"\"`" + `) clears the certificate's owner.
 
 Expanded Change Owner Permission: A user who holds the Certificates > Expanded Change Owner permission can set the certificate owner to any role within the permission sets they are a member of. This permission setting overrides the Certificates > Collections > Change Owner permission (both Global and Collection-level) if both are set.
 
@@ -1924,7 +1924,7 @@ func (r resourceCommandCertificate) Update(
 
 		// If the effective certificate_format changed, re-download in the new
 		// format so that format-specific state fields (PEM, PFX, JKS, Zip) are
-		// refreshed without forcing resource recreation. (Fixes #150)
+		// refreshed without forcing resource recreation.
 		//
 		// Normalize: "" and "STORE" both produce PEM output in Read, so they
 		// are effectively equivalent and don't require a re-download.
@@ -3664,8 +3664,8 @@ func knownInt64FromPlan(i types.Int64) types.Int64 {
 // knownListFromPlan returns the plan value if known, otherwise a null list
 // with the same element type. Prevents storing Unknown in state for Computed
 // list fields such as dns_sans/ip_sans/uri_sans -- those attributes became
-// Optional+Computed (with UseStateForUnknown) as part of the fix for GH
-// issue #197 (dns_sans not populated on import forced replacement); a fresh
+// Optional+Computed (with UseStateForUnknown) so dns_sans/ip_sans/uri_sans
+// are populated on import instead of forcing a spurious replacement; a fresh
 // Create() whose config doesn't declare them plans them Unknown (no prior
 // state exists yet for UseStateForUnknown to carry forward), and the final
 // state Create() returns must never contain an Unknown value.

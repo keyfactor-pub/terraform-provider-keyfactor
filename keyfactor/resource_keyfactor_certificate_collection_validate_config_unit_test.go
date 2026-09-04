@@ -8,7 +8,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- PR #210 full-review finding FIX-2:
+// Regression tests: query must always be declared and non-empty.
 //
 // query is certificate_collection's defining attribute -- a certificate
 // collection IS its query -- but Command's GetById never returns it (see
@@ -23,7 +23,7 @@ import (
 // declared and non-empty at config-validation time closes that gap before
 // plan/apply ever runs.
 //
-// full-review finding F10: query is now schema'd as Required (not
+// query is now schema'd as Required (not
 // Optional). ValidateConfig/validateCertificateCollectionConfigConstraints
 // is retained only for the non-empty check the schema itself cannot
 // express ("must be declared" is now Required's job, not a runtime
@@ -82,7 +82,7 @@ func TestUnitValidateCertificateCollectionConfigConstraints(t *testing.T) {
 }
 
 // TestUnitCertificateCollectionQueryIsRequired is the schema-level
-// regression test for full-review finding F10: query is now Required
+// regression test: query is now Required
 // (not Optional), so the schema itself -- not just a runtime
 // ValidateConfig check -- rejects an omitted query, and `terraform
 // validate` catches it before ValidateConfig ever runs.

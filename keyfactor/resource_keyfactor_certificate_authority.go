@@ -21,7 +21,7 @@ type resourceCertificateAuthorityType struct{}
 func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Version:     1,
-		Description: "Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicit_password, auth_certificate, auth_certificate_password, client_secret) are write-only — the server never returns plaintext values, so provider reads preserve configured values from state. The force_save flag bypasses the server-side connectivity test on create/update and is also write-only.",
+		Description: "Manages a Keyfactor Command Certificate Authority (CA). Secret fields (explicit_password, auth_certificate, auth_certificate_password, client_secret) are write-only: the server never returns plaintext values, so provider reads preserve configured values from state. The force_save flag bypasses the server-side connectivity test on create/update and is also write-only.",
 		Attributes: map[string]tfsdk.Attribute{
 			// --- Identity ---
 			"id": {
@@ -284,7 +284,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "An object indicating the password information to use for authentication with explicit_user. Write-only; cannot be read back from the server. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
+				Description: "An object indicating the password information to use for authentication with explicit_user. Write-only; cannot be read back from the server. Unlike this resource's other write-only fields, this one is not preserved when omitted: removing it from config clears the stored credential on the next apply.",
 			},
 
 			// --- Auth Certificate (write-only) ---
@@ -292,13 +292,13 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
+				Description: "An object containing information about the client certificate used to provide authentication to the HTTPS CA. Write-only. Unlike this resource's other write-only fields, this one is not preserved when omitted: removing it from config clears the stored credential on the next apply.",
 			},
 			"auth_certificate_password": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
+				Description: "An object indicating the password for the certificate to use to authenticate to the HTTPS CA. Write-only. Unlike this resource's other write-only fields, this one is not preserved when omitted: removing it from config clears the stored credential on the next apply.",
 			},
 
 			// --- Auth Certificate metadata (read-only from server) ---
@@ -306,14 +306,14 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 			// UseStateForUnknown) so switching an existing CA from
 			// client-certificate auth to OAuth in one apply nulls this stale
 			// metadata on the plan instead of resurrecting it from state --
-			// see authVariantSiblingModifier's doc comment. Full-review round 3.
+			// see authVariantSiblingModifier's doc comment.
 			//
 			// unknownTriggerPaths also watches auth_certificate itself: when
 			// the client-certificate variant is incoming (OAuth->cert switch)
 			// or rotating (a new auth_certificate value on an already
 			// cert-auth CA), the server computes fresh metadata that cannot
 			// be predicted at plan time, so the plan must stay Unknown rather
-			// than copy stale/null state. Full-review round 4 finding #1.
+			// than copy stale/null state.
 			"auth_certificate_issued_dn": {
 				Type:        types.StringType,
 				Computed:    true,
@@ -356,7 +356,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 			// UseStateForUnknown) so switching an existing CA from OAuth to
 			// client-certificate auth in one apply nulls these stale OAuth
 			// attributes on the plan instead of resurrecting them from state --
-			// see authVariantSiblingModifier's doc comment. Full-review round 3.
+			// see authVariantSiblingModifier's doc comment.
 			"token_url": {
 				Type:        types.StringType,
 				Optional:    true,
@@ -379,7 +379,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "For HTTPS CAs, an object indicating the secret for the client used to authenticate. Write-only; cannot be read back from the server. Unlike this resource's other Optional+Computed attributes, this field is Optional only (not Computed) and is NOT preserved on omission: removing it from config clears the stored credential server-side on the next apply, since the full-replace update omits it from the request entirely.",
+				Description: "For HTTPS CAs, an object indicating the secret for the client used to authenticate. Write-only; cannot be read back from the server. Unlike this resource's other write-only fields, this one is not preserved when omitted: removing it from config clears the stored credential on the next apply.",
 			},
 			"scope": {
 				Type:        types.StringType,
@@ -430,7 +430,7 @@ func (r resourceCertificateAuthorityType) GetSchema(_ context.Context) (tfsdk.Sc
 			"force_save": {
 				Type:        types.BoolType,
 				Optional:    true,
-				Description: "A Boolean indicating whether to save the CA record even if the CA connectivity test fails. Useful when provisioning a CA record before the CA server is reachable. Write-only — not returned by the server; preserved from config/state after reads.",
+				Description: "A Boolean indicating whether to save the CA record even if the CA connectivity test fails. Useful when provisioning a CA record before the CA server is reachable. Write-only: not returned by the server; preserved from config/state after reads.",
 			},
 
 			// --- Read-only ---
@@ -644,8 +644,9 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 
 	// Schedules. Command represents FullScan/IncrementalScan/ThresholdCheck as a
 	// KeyfactorSchedule that can be Interval-shaped (among other variants not
-	// yet modeled here: Daily/Weekly/Monthly/ExactlyOnce/Immediate -- see GH
-	// issue #185 for the Weekly case specifically). An unmodeled variant
+	// yet modeled here: Daily/Weekly/Monthly/ExactlyOnce/Immediate -- the
+	// Weekly variant in particular can't be modeled until the vendored SDK
+	// can deserialize it; see scheduleToState below). An unmodeled variant
 	// collapses to Null here, which is indistinguishable from "no schedule
 	// configured at all" -- buildCARequest would then omit the field entirely
 	// on the next PUT, which Command's full-replace semantics interpret as
@@ -668,10 +669,10 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 // configured) or when it holds a variant this provider does not yet model
 // (Daily, Weekly, Monthly, ExactlyOnce, Immediate). An unmodeled variant still
 // reads as "no schedule," so an Update() that doesn't touch this attribute
-// would omit it from the PUT and clear it -- see GH issue #185 for Weekly
-// specifically, which the vendored SDK cannot even deserialize (SystemDayOfWeek
-// expects an int; Command returns day-name strings), so a targeted fix would
-// need to land in the SDK, not here.
+// would omit it from the PUT and clear it. This is a known open gap for the
+// Weekly variant specifically: the vendored SDK cannot even deserialize it
+// (SystemDayOfWeek expects an int; Command returns day-name strings), so a
+// fix needs to land in the SDK, not here.
 func scheduleToState(sched *v1.KeyfactorCommonSchedulingKeyfactorSchedule) types.Int64 {
 	if sched == nil || sched.Interval == nil {
 		return types.Int64{Null: true}
@@ -914,7 +915,6 @@ func isKnownNonEmptyString(v types.String) bool {
 // by Create, Update, and Delete's clear-schedules-before-delete fallback --
 // so all three derive the active auth variant identically; there is no
 // separate per-caller copy of this logic that could drift out of sync.
-// Fixes #194.
 func clearAuthVariant(req *v1.CertificateAuthoritiesCertificateAuthorityRequest, plan KeyfactorCertificateAuthority) {
 	hasCertAuth := isKnownNonEmptyString(plan.AuthCertificate)
 	hasOAuth := isKnownNonEmptyString(plan.ClientID) || isKnownNonEmptyString(plan.TokenURL)
@@ -1004,7 +1004,6 @@ func preserveSecrets(target *KeyfactorCertificateAuthority, source KeyfactorCert
 // if a fifth OAuth attribute is ever added to some call sites but not
 // others. caCertAuthTriggerPaths additionally serves as auth_certificate_*'s
 // unknownTriggerPaths (see authVariantSiblingModifier's doc comment).
-// Full-review round 4 advisory.
 var (
 	caOAuthTriggerPaths    = []path.Path{path.Root("client_id"), path.Root("token_url"), path.Root("scope"), path.Root("audience")}
 	caCertAuthTriggerPaths = []path.Path{path.Root("auth_certificate")}
@@ -1030,7 +1029,6 @@ var (
 // per clearAuthVariant's own doc comment; null for cert metadata, per
 // caResponseToState's else-branch) -- "Provider produced inconsistent result
 // after apply" on every single auth-variant switch, in both directions.
-// Full-review round 3 finding.
 //
 // This is a group relationship, not a single 1:1 sibling: an OAuth
 // attribute's switch-away signal is auth_certificate alone becoming
@@ -1048,7 +1046,7 @@ var (
 // -- the "multiple triggers fire for the same attribute" case is therefore
 // unreachable in practice.
 //
-// unknownTriggerPaths (full-review round 4 finding #1) fixes a second gap:
+// unknownTriggerPaths fixes a second gap:
 // the three cert-metadata attributes' triggerPaths only cover the OUTGOING
 // direction (an OAuth attribute becoming declared means client-certificate
 // auth is going away, so nulling is correct). They have no trigger at all
@@ -1059,7 +1057,7 @@ var (
 // prior-state metadata onto the plan, while the PUT response carries the
 // server's freshly computed DN/thumbprint for the new certificate --
 // "Provider produced inconsistent result after apply" on the very switch
-// round 3 fixed for the OAuth attributes, and on every cert rotation.
+// case fixed for the OAuth attributes above, and on every cert rotation.
 //
 // A trigger path in unknownTriggerPaths behaves differently from one in
 // triggerPaths: instead of nulling the plan, it leaves the plan Unknown
@@ -1173,8 +1171,7 @@ func (m authVariantSiblingModifier) Modify(ctx context.Context, req tfsdk.Modify
 
 	// No trigger declared (or an unknownTriggerPaths trigger declared but
 	// unchanged from state): ordinary UseStateForUnknown semantics. Mirrors
-	// tfsdk.UseStateForUnknownModifier's own IsNull guard -- full-review
-	// round 4 finding #1.
+	// tfsdk.UseStateForUnknownModifier's own IsNull guard.
 	if req.AttributeState.IsNull() || req.AttributeState.IsUnknown() {
 		return
 	}
@@ -1205,8 +1202,8 @@ func (r resourceCertificateAuthority) ValidateConfig(ctx context.Context, reques
 const caHTTPSType = 1
 
 // validateCAConfigConstraints enforces config-time constraints documented on
-// this resource's attributes (F3/F4 from the Optional+Computed audit) that
-// were previously only descriptive text, never actually checked:
+// this resource's attributes that were previously only descriptive text,
+// never actually checked:
 //
 //  1. enforce_unique_dn and new_end_entity_on_renew_and_reissue are mutually
 //     exclusive -- rejecting both explicitly set true.
@@ -1214,14 +1211,12 @@ const caHTTPSType = 1
 //     CAs (ca_type=1) -- rejecting an explicit false paired with ca_type=1.
 //  3. auth_certificate and client_id/token_url (client-certificate vs OAuth
 //     authentication) are mutually exclusive -- rejecting both declared
-//     with a genuinely non-empty value at once (full-review round 1
-//     finding #4).
+//     with a genuinely non-empty value at once.
 //
 // A fourth check -- rejecting allowed_enrollment_types/use_allowed_requesters/
 // allowed_requesters declared alongside standalone=false, on the theory that
-// those three attributes are standalone-only -- existed between full-review
-// round 1 and round 2 and has been REMOVED (round 2 finding #4). See that
-// check's own removed doc comment, preserved in git history, for the full
+// those three attributes are standalone-only -- was tried and then REMOVED.
+// See that check's own removed doc comment, preserved in git history, for the full
 // backward-compatibility failure it caused; the short version: Command's own
 // resting/echoed value for allowed_enrollment_types on a real non-standalone
 // HTTPS CA is 3, not 0 (confirmed against a live lab CA and this repo's own
@@ -1230,7 +1225,7 @@ const caHTTPSType = 1
 // every config produced by this project's own documented import-then-codify
 // workflow. use_allowed_requesters/allowed_requesters are removed alongside
 // it for consistency: Command's API docs describe all three attributes with
-// identical wording ("supported only for standalone CAs"), which round 2's
+// identical wording ("supported only for standalone CAs"), which further
 // investigation showed does NOT mean "rejected/forced to zero for
 // non-standalone" for allowed_enrollment_types -- and this provider has no
 // live evidence (no standalone CA exists in the available lab to compare
@@ -1281,7 +1276,7 @@ func validateCAConfigConstraints(cfg KeyfactorCertificateAuthority) diag.Diagnos
 		)
 	}
 
-	// Auth variant mutual exclusion (full-review round 1 finding #4): Command
+	// Auth variant mutual exclusion: Command
 	// rejects a CA request that configures both OAuth (client_id/token_url)
 	// and client-certificate (auth_certificate) authentication at once
 	// ("Fields for OAuth and Client Certificate Authentication cannot both
@@ -1308,7 +1303,7 @@ func validateCAConfigConstraints(cfg KeyfactorCertificateAuthority) diag.Diagnos
 
 	// No standalone-only constraint on allowed_enrollment_types/
 	// use_allowed_requesters/allowed_requesters is enforced here -- see this
-	// function's doc comment (round 2 finding #4) for why the check that
+	// function's doc comment for why the check that
 	// used to live here was removed rather than merely relaxed further.
 
 	return diags

@@ -8,7 +8,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression test -- PR #210 full-review round 2 finding FIX-D:
+// Regression test:
 //
 // dataSourceEnrollmentPattern.Read unconditionally dereferenced
 // pattern.AllowedEnrollmentTypes (a *int on the legacy keyfactor-go-client v3
@@ -69,10 +69,9 @@ func TestUnitAllowedEnrollmentTypesPtrToTfInt64(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression tests -- full-review finding F6 (supersedes PR #210 findings
-// FIX-F/FIX-H, which this test file previously covered):
+// Regression tests:
 //
-// PR #210's FIX-F replaced an ambiguous "name == identifier OR id ==
+// An earlier design replaced an ambiguous "name == identifier OR id ==
 // identifier" match with a strict, strconv.Atoi-gated priority: if
 // identifier parses as an integer, match ONLY on ID; otherwise match ONLY
 // on name. That over-corrected two ways:
@@ -84,8 +83,8 @@ func TestUnitAllowedEnrollmentTypesPtrToTfInt64(t *testing.T) {
 //     surprising if the user actually meant to look up a pattern NAMED
 //     "007".
 //
-// enrollmentPatternResolveIdentifier restores name-or-ID semantics
-// (decision approved by user): an exact NAME match wins deterministically;
+// enrollmentPatternResolveIdentifier restores name-or-ID semantics:
+// an exact NAME match wins deterministically;
 // a canonical ID-string match (fmt.Sprint(id) == identifier, so "007"
 // never matches ID 7) is the fallback; a genuine match on both for two
 // DIFFERENT patterns is ambiguous and returns an error rather than

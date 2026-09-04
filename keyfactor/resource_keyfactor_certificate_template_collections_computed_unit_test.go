@@ -16,7 +16,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests — full-review round 1 finding #1 (correctness, high):
+// Regression tests: template_regexes/template_defaults/enrollment_fields/metadata_fields must be Computed.
 //
 // template_regexes/template_defaults/enrollment_fields/metadata_fields were
 // Optional but NOT Computed and carried no plan modifiers (unlike
@@ -309,7 +309,7 @@ func TestUnitCertificateTemplateUpdatePreservesNonEmptyCollections(t *testing.T)
 	r := resourceCertificateTemplate{p: provider{configured: true, sdkClient: sdkClient}}
 	// Config: mirrors planObj's Raw verbatim -- this test builds plan directly
 	// rather than via PlanResourceChange, so plan's shape already IS what
-	// config declared (see full-review round 5 [HIGH]).
+	// config declared.
 	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
 	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}

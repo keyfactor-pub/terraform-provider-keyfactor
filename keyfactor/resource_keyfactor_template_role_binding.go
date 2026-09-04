@@ -403,7 +403,6 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 // live, user-facing error the moment a template has a KeyRetention policy
 // that requires a day count: "In order to enable a retention policy on a
 // template, the number of days to retain after expiration must be defined."
-// See dev-harness Gap C (extends GH issue #190).
 //
 // A second, related defect existed even after that fix: KeyType, FriendlyName,
 // AllowedEnrollmentTypes, KeyRetention, and KeyRetentionDays were carried
@@ -417,7 +416,7 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 // KeyRetention=="FromIssuance") from the PUT while KeyRetention itself was
 // still sent, and Command rejected the whole request. Fixed by taking the
 // address of the fetched value directly via the generic ptr() helper
-// instead. See dev-harness Gap C live-verification follow-up.
+// instead.
 //
 // Not every field GetTemplateResponse returns can be represented here:
 //   - CertificateCleanupEnabled, TimeAfterExpiration, TimeAfterExpirationUnits,
@@ -471,7 +470,7 @@ func buildTemplateRoleBindingUpdateArg(template *api.GetTemplateResponse, allowe
 		// KeyRetention was still sent, and Command 25.x rejected the
 		// request outright with "In order to enable a retention policy on a
 		// template, the number of days to retain after expiration must be
-		// defined." (0xA011000F). See dev-harness Gap C, completes #190.
+		// defined." (0xA011000F).
 		KeyType:                ptr(template.KeyType),
 		ForestRoot:             template.ForestRoot,
 		UseAllowedRequesters:   boolToPointer(useAllowedRequesters),
@@ -493,7 +492,7 @@ func buildTemplateRoleBindingUpdateArg(template *api.GetTemplateResponse, allowe
 		// request with "'Policies' cannot be empty" because its internal
 		// policy set derives from TemplatePolicy's key-algorithm lists. This
 		// binding resource only manages allowed_requesters, so it must never
-		// alter unrelated policy content. See issue #190.
+		// alter unrelated policy content.
 		TemplatePolicy: template.TemplatePolicy,
 	}
 }

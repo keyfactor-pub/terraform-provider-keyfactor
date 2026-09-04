@@ -44,8 +44,8 @@ func newContainerLookupClient(server *httptest.Server) *api.Client {
 }
 
 // TestUnitLookupContainerNameByID_ByIDEndpointWins is a regression test for
-// ADO #86114 ("Provider produced inconsistent result after apply" when
-// application_name is interpolated from another resource in the same apply).
+// "Provider produced inconsistent result after apply" when
+// application_name is interpolated from another resource in the same apply.
 //
 // Root cause: the previous resolver fetched the full container list via
 // GetStoreContainers(), which is paginated server-side (default 50/page). A
@@ -121,8 +121,8 @@ func TestUnitLookupContainerNameByID_ZeroIDReturnsEmpty(t *testing.T) {
 	}
 }
 
-// TestUnitLookupContainerNameByID_ListEndpointFallback is a regression test
-// for GH issue #175's fix #1: an erroring by-ID lookup must not be treated as
+// TestUnitLookupContainerNameByID_ListEndpointFallback is a regression test:
+// an erroring by-ID lookup must not be treated as
 // definitive proof the container is gone. Before this fix, a single failed
 // by-ID lookup fell straight back to hint. This test simulates a by-ID
 // endpoint failure (e.g. a transient/permission-scope error) alongside a
@@ -162,7 +162,7 @@ func TestUnitLookupContainerNameByID_ListEndpointFallback(t *testing.T) {
 }
 
 // TestUnitCertificateStoreUpdate_PreservesContainerAssignmentWhenNameNotDeclared
-// is the red/green regression test for GH issue #175's fix #2 — the
+// is the red/green regression test for the
 // load-bearing fix. Root cause: Update() resolved containerId to 0 whenever
 // the plan gave no explicit application_name/container_name, regardless of
 // whether the store already had a real container_id in state. Because
@@ -197,7 +197,7 @@ func TestUnitCertificateStoreUpdate_PreservesContainerAssignmentWhenNameNotDecla
 	if containerId != 500 {
 		t.Fatalf(
 			"expected containerId to be preserved from state (500) when plan declares no application_name/container_name, got %d — "+
-				"this reproduces GH issue #175: Update() would omit ContainerId from the PUT body, and Command would clear the assignment",
+				"this reproduces the bug: Update() would omit ContainerId from the PUT body, and Command would clear the assignment",
 			containerId,
 		)
 	}
@@ -241,7 +241,7 @@ func TestUnitCertificateStoreUpdate_NoPreservationNeededWhenNeverAssigned(t *tes
 // signal. The preservation logic must NOT treat an explicit
 // application_name = "" (or container_name = "") as "never declared" — that
 // is a deliberate user instruction to clear the assignment, and must still
-// resolve containerId to 0 exactly as it did before GH issue #175's fix.
+// resolve containerId to 0 exactly as it did before the preservation fix above.
 func TestUnitCertificateStoreUpdate_ExplicitEmptyNameClearsAssignment(t *testing.T) {
 	r := resourceCertificateStore{p: provider{}}
 
@@ -280,7 +280,7 @@ func TestUnitCertificateStoreUpdate_ExplicitEmptyNameClearsAssignment(t *testing
 // regression test for a second bug caught in code review: when
 // resolveContainerAssignmentForUpdate preserves a real container_id from
 // state but cannot resolve its name (neither state nor a fresh API lookup
-// has it — the exact GH issue #175 scenario on the very first Read() after
+// has it — the exact scenario that arises on the very first Read() after
 // an out-of-band assignment), the outgoing UpdateStoreFctArgs must never pair
 // a nonzero ContainerId with a literal empty-string ContainerName — an
 // untested combination whose handling by Command's UpdateStore endpoint is

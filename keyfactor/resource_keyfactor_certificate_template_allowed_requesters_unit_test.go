@@ -18,9 +18,9 @@ import (
 
 // ---------------------------------------------------------------------------
 // Unit tests — keyfactor_certificate_template Update() dropping
-// allowed_requesters (issue #195)
+// allowed_requesters.
 //
-// Live repro (provider v2.9.1 -> Command 25.5): a keyfactor_certificate_template
+// Live repro: a keyfactor_certificate_template
 // update that doesn't declare allowed_requesters cleared the template's
 // AllowedRequesters server-side. allowed_requesters is Optional but NOT
 // Computed (no UseStateForUnknown), so an undeclared attribute plans to Null
@@ -38,7 +38,7 @@ import (
 // GET /Templates/{id} and carries that CURRENT value forward -- not this
 // resource's own prior Terraform state, which can itself be stale because
 // keyfactor_template_role_binding mutates the same field out-of-band via its
-// own PUT calls (see #190 / addAllowedRequesterToTemplate).
+// own PUT calls (see addAllowedRequesterToTemplate).
 //
 // These tests drive resourceCertificateTemplate.Update() directly against a
 // local httptest server standing in for Command (there is no VCR cassette
@@ -189,7 +189,7 @@ func newTemplateUpdateTestServer(t *testing.T, currentAllowedRequesters []string
 }
 
 // TestUnitCertificateTemplateUpdatePreservesAllowedRequesters is the direct
-// regression test for issue #195: an Update() whose plan does NOT declare
+// regression test: an Update() whose plan does NOT declare
 // allowed_requesters (Null, simulating an omitted HCL attribute) must not
 // send an empty/absent AllowedRequesters on the PUT /Templates payload. It
 // must instead carry forward the template's CURRENT server-side value,
@@ -217,7 +217,7 @@ func TestUnitCertificateTemplateUpdatePreservesAllowedRequesters(t *testing.T) {
 	state.AllowedRequesters = stringSliceToTfList([]string{"ExistingRole"})
 
 	// Plan: config doesn't declare allowed_requesters at all (Null) -- the
-	// exact shape that triggered issue #195. use_allowed_requesters is
+	// exact shape that triggered the bug. use_allowed_requesters is
 	// Optional+Computed, so a real plan would carry the prior state value
 	// forward via UseStateForUnknown; simulate that here too.
 	plan := blankTemplateState()
@@ -238,7 +238,7 @@ func TestUnitCertificateTemplateUpdatePreservesAllowedRequesters(t *testing.T) {
 	r := resourceCertificateTemplate{p: provider{configured: true, sdkClient: sdkClient}}
 	// Config: mirrors planObj's Raw verbatim -- this test builds plan directly
 	// rather than via PlanResourceChange, so plan's shape already IS what
-	// config declared (see full-review round 5 [HIGH]).
+	// config declared.
 	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
 	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
@@ -259,7 +259,7 @@ func TestUnitCertificateTemplateUpdatePreservesAllowedRequesters(t *testing.T) {
 	requestersRaw, ok := onWire["AllowedRequesters"]
 	if !ok || requestersRaw == nil {
 		t.Fatalf(
-			"PUT /Templates payload has no AllowedRequesters -- this reproduces issue #195: "+
+			"PUT /Templates payload has no AllowedRequesters -- this reproduces the bug: "+
 				"an update that doesn't declare allowed_requesters clears the template's requester list "+
 				"server-side. Full payload: %s", putBody,
 		)
@@ -294,13 +294,12 @@ func TestUnitCertificateTemplateUpdatePreservesAllowedRequesters(t *testing.T) {
 // preservation GET itself now always happens.
 //
 // The preservation GET used to be skippable in this exact fully-declared
-// case (templateUpdateNeedsPreservationFetch); full-review round 5's
-// endorsed advisory removed that gate -- its field roster had already
+// case (templateUpdateNeedsPreservationFetch); that gate was removed -- its field roster had already
 // drifted from preserveUndeclaredTemplateFields (the gate only checked
 // plan.TemplatePolicy == nil, missing the nested-null template_policy field
 // preservation preserveUndeclaredTemplateFields also does), which could
 // silently clear an undeclared nested policy field in exactly this
-// fully-declared-except-one-nested-field corner -- the same #195 bug class
+// fully-declared-except-one-nested-field corner -- the same bug class
 // again. The fetch is unconditional now, so this test asserts exactly ONE
 // GET (not zero), and that the fully-declared plan's values -- not the
 // canned GET response's "ShouldNotAppear" -- are what reach the wire.
@@ -392,7 +391,7 @@ func TestUnitCertificateTemplateUpdateDeclaredAllowedRequestersNotOverridden(t *
 	r := resourceCertificateTemplate{p: provider{configured: true, sdkClient: sdkClient}}
 	// Config: mirrors planObj's Raw verbatim -- this test builds plan directly
 	// rather than via PlanResourceChange, so plan's shape already IS what
-	// config declared (see full-review round 5 [HIGH]).
+	// config declared.
 	configObj := tfsdk.Config{Schema: schema, Raw: planObj.Raw}
 	req := tfsdk.UpdateResourceRequest{Plan: planObj, State: stateObj, Config: configObj}
 	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}

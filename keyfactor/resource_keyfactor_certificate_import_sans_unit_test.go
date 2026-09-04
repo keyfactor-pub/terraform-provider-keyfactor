@@ -24,12 +24,12 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests for GitHub issue #197: keyfactor_certificate's dns_sans is
+// Regression tests: keyfactor_certificate's dns_sans is
 // never populated on import, forcing a full replace (cascading into
 // dependent keyfactor_certificate_deployment resources) on the very next
 // plan.
 //
-// Live repro (dev-harness release_validation_demo finding): a PFX-enrolled
+// Live repro: a PFX-enrolled
 // certificate whose original config never declared dns_sans, but whose
 // actual issued certificate has a DNS SAN (many CAs/templates auto-copy the
 // CommonName into the SAN list at issuance), came back from
@@ -210,8 +210,8 @@ func newImportSANsMockClient(t *testing.T, srv *httptest.Server) *api.Client {
 	return api.NewKeyfactorClientWithAuth(auth, &ctx)
 }
 
-// TestUnitCertificateImportPopulatesDNSSANs is the direct regression test for
-// issue #197: ImportState for a PFX-enrolled certificate whose actual issued
+// TestUnitCertificateImportPopulatesDNSSANs is the direct regression test:
+// ImportState for a PFX-enrolled certificate whose actual issued
 // certificate has a DNS SAN (e.g. auto-copied from the CommonName by the CA)
 // must populate dns_sans from that real certificate content, not leave it
 // null.
@@ -265,7 +265,7 @@ func TestUnitCertificateImportPopulatesDNSSANs(t *testing.T) {
 
 	if result.DNSSANs.Null {
 		t.Fatalf(
-			"dns_sans is null after import -- this reproduces issue #197: a certificate whose real content "+
+			"dns_sans is null after import -- this reproduces the bug: a certificate whose real content "+
 				"has DNS SAN %q came back from ImportState with dns_sans unset, which forces replacement "+
 				"(cascading into dependent keyfactor_certificate_deployment resources) the moment a config "+
 				"declares the correct value or the resource already had one from its original create-time state.",
@@ -284,7 +284,7 @@ func TestUnitCertificateImportPopulatesDNSSANs(t *testing.T) {
 // TestUnitCertificateImportCNOnlyLeavesDNSSANsNull is the negative-space
 // companion: a certificate with NO DNS SAN at all (a true CN-only
 // enrollment) must still come back from ImportState with dns_sans null --
-// the fix for #197 must not start inventing SANs that were never on the
+// the fix must not start inventing SANs that were never on the
 // certificate, preserving the existing declared-vs-undeclared contract.
 func TestUnitCertificateImportCNOnlyLeavesDNSSANsNull(t *testing.T) {
 	restorePFXPasswordFormatGlobals(t)
@@ -336,7 +336,7 @@ func TestUnitCertificateImportCNOnlyLeavesDNSSANsNull(t *testing.T) {
 }
 
 // TestUnitCertificateSANsAreComputed is the schema-level regression test for
-// issue #197's plan-stability half: dns_sans/ip_sans/uri_sans must be
+// the plan-stability half of the same bug: dns_sans/ip_sans/uri_sans must be
 // Computed (in addition to Optional) with a UseStateForUnknown-style plan
 // modifier so that an import-populated real value survives an undeclared
 // config on the next plan, instead of the framework treating "declared:
@@ -362,7 +362,7 @@ func TestUnitCertificateSANsAreComputed(t *testing.T) {
 			t.Errorf(
 				"%s: expected Computed=true, got false -- without Computed, an undeclared %s plans to Null "+
 					"even when prior state (e.g. from a terraform import) has a real value, and because %s "+
-					"has RequiresReplace, that null-vs-non-null delta forces a full destroy+recreate (issue #197)",
+					"has RequiresReplace, that null-vs-non-null delta forces a full destroy+recreate",
 				name, name, name,
 			)
 		}

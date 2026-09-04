@@ -11,14 +11,13 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- PR #210 full-review findings FIX-5 and FIX-9
-// (data.keyfactor_certificate_collection):
+// Regression tests (data.keyfactor_certificate_collection):
 //
-// FIX-5: same nil-response-nil-error shape covered by resource_keyfactor_
+// Nil-response-nil-error shape: same shape covered by resource_keyfactor_
 // enrollment_pattern_nil_response_unit_test.go's doc comment -- Read()
 // dereferenced its Execute() response with no nil guard.
 //
-// FIX-9: when both id and name are declared, the data source looked up the
+// id/name cross-check: when both id and name are declared, the data source looked up the
 // collection by id only and overwrote state.Name unconditionally from the
 // server response -- if the configured name didn't actually match the
 // collection resolved by id, there was no diagnostic at all, just a
@@ -122,7 +121,7 @@ func TestUnitCertificateCollectionDataSourceIdNameMismatchIsError(t *testing.T) 
 }
 
 // ---------------------------------------------------------------------------
-// Regression test -- full-review round 6 finding FIX-P:
+// Regression test:
 //
 // `name` was schema'd as Optional-only (no Computed), while `id` was
 // correctly Optional+Computed. Read() unconditionally resolves and writes
@@ -174,7 +173,7 @@ func TestUnitCertificateCollectionDataSourceNameAttributeIsComputed(t *testing.T
 // confirming it resolves cleanly and populates state.Name from the server.
 // It cannot itself detect the Core-level consistency violation (Read() is
 // called directly, bypassing Core), but combined with the schema-Computed
-// assertion above, this documents the exact scenario FIX-P addresses.
+// assertion above, this documents the exact scenario the fix addresses.
 func TestUnitCertificateCollectionDataSourceIdOnlyLookupSucceeds(t *testing.T) {
 	ctx := context.Background()
 
@@ -251,9 +250,9 @@ func TestUnitCertificateCollectionDataSourceIdNameMatchSucceeds(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Regression test -- full-review finding F9:
+// Regression test:
 //
-// The id/name cross-check above (FIX-9) compared the resolved and
+// The id/name cross-check above compared the resolved and
 // configured names with a byte-for-byte `!=`. Keyfactor Command's name
 // resolution is case-insensitive (SQL Server default collation), so
 // id=5/name="dashboard certs" against a collection actually named
@@ -302,7 +301,7 @@ func TestUnitCertificateCollectionDataSourceIdNameCaseInsensitiveMatchSucceeds(t
 }
 
 // TestUnitCertificateCollectionDataSourceIdNameGenuineMismatchStillErrors
-// confirms F9's EqualFold fix did not weaken the FIX-9 check itself: a
+// confirms the EqualFold fix did not weaken the underlying id/name cross-check: a
 // genuinely different name (not just a case variant) must still error.
 // TestUnitCertificateCollectionDataSourceIdNameMismatchIsError above already
 // covers this with "Real Name" vs. "Wrong Name" (unrelated strings); this

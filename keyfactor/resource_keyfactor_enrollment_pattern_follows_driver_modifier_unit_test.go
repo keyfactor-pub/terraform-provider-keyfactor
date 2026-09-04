@@ -10,10 +10,10 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- full-review findings F2/F4:
+// Regression tests: mirror attributes must follow their driver.
 //
-// associated_roles/certificate_authorities (F2) and
-// policies.default_certificate_owner_role_name (F4) are read-only mirrors
+// associated_roles/certificate_authorities and
+// policies.default_certificate_owner_role_name are read-only mirrors
 // that the server expands from a write-only "driver" attribute
 // (associated_role_names/certificate_authority_ids/
 // policies.default_certificate_owner_role_id respectively). All three used
@@ -58,7 +58,7 @@ func asEnrollmentPatternState(t *testing.T, ctx context.Context, schema tfsdk.Sc
 }
 
 // TestUnitAssociatedRolesUsesFollowsDriverModifier is the schema-level
-// regression test for F2 (associated_roles / associated_role_names).
+// regression test for the associated_roles/associated_role_names mirror fix.
 func TestUnitAssociatedRolesUsesFollowsDriverModifier(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -83,7 +83,7 @@ func TestUnitAssociatedRolesUsesFollowsDriverModifier(t *testing.T) {
 			t.Error(
 				"associated_roles: still has useStateOrNullModifier attached -- this pins the mirror to its " +
 					"stale prior membership even when associated_role_names is changing this apply, which is " +
-					"exactly the bug F2 fixes",
+					"exactly the bug this fixes",
 			)
 		}
 	}
@@ -93,7 +93,7 @@ func TestUnitAssociatedRolesUsesFollowsDriverModifier(t *testing.T) {
 }
 
 // TestUnitCertificateAuthoritiesUsesFollowsDriverModifier is the
-// schema-level regression test for F2 (certificate_authorities /
+// schema-level regression test for the mirror fix (certificate_authorities /
 // certificate_authority_ids) -- identical shape to the associated_roles
 // check above.
 func TestUnitCertificateAuthoritiesUsesFollowsDriverModifier(t *testing.T) {
@@ -117,7 +117,7 @@ func TestUnitCertificateAuthoritiesUsesFollowsDriverModifier(t *testing.T) {
 			}
 		}
 		if _, ok := m.(useStateOrNullModifier); ok {
-			t.Error("certificate_authorities: still has useStateOrNullModifier attached -- see F2")
+			t.Error("certificate_authorities: still has useStateOrNullModifier attached")
 		}
 	}
 	if !found {
@@ -126,7 +126,7 @@ func TestUnitCertificateAuthoritiesUsesFollowsDriverModifier(t *testing.T) {
 }
 
 // TestUnitDefaultCertificateOwnerRoleNameUsesFollowsDriverModifier is the
-// schema-level regression test for F4
+// schema-level regression test for the owner-role-name mirror fix
 // (policies.default_certificate_owner_role_name /
 // policies.default_certificate_owner_role_id).
 func TestUnitDefaultCertificateOwnerRoleNameUsesFollowsDriverModifier(t *testing.T) {
@@ -162,7 +162,7 @@ func TestUnitDefaultCertificateOwnerRoleNameUsesFollowsDriverModifier(t *testing
 // expansion order never matters for diffing; see KeyfactorEnrollmentPattern-
 // State's doc comment) by invoking followsDriverModifier[types.Set] directly
 // against a real Config/State built from the actual enrollment pattern
-// schema, covering every branch F2's fix depends on.
+// schema, covering every branch the mirror fix depends on.
 func TestUnitFollowsDriverModifierPlansCorrectly_SetDriver(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -252,7 +252,7 @@ func TestUnitFollowsDriverModifierPlansCorrectly_SetDriver(t *testing.T) {
 }
 
 // TestUnitFollowsDriverModifierPlansCorrectly_ScalarDriver is the
-// Int64-driver counterpart to the List-driver test above, covering F4's
+// Int64-driver counterpart to the List-driver test above, covering the owner-role-name mirror fix's
 // policies.default_certificate_owner_role_name /
 // policies.default_certificate_owner_role_id shape.
 func TestUnitFollowsDriverModifierPlansCorrectly_ScalarDriver(t *testing.T) {

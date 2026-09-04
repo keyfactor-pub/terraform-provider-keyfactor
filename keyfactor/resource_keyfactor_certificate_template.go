@@ -64,7 +64,7 @@ func (m useStateOrNullModifier) Modify(_ context.Context, req tfsdk.ModifyAttrib
 // without the framework rejecting it as "Provider produced inconsistent
 // result after apply" (the stale prior value would otherwise be pinned as
 // the "planned" value, which the real post-apply value legitimately no
-// longer matches). See dev-harness Gap B / GH issue #195 follow-up.
+// longer matches).
 type displayNameFollowsFriendlyNameModifier struct{}
 
 func (m displayNameFollowsFriendlyNameModifier) Description(_ context.Context) string {
@@ -283,7 +283,7 @@ type resourceCertificateTemplateType struct{}
 
 func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
-		Description: "Manages a Keyfactor Command Certificate Template. Templates are created/deleted by importing from the CA — this resource only manages template settings (Update + Import). Setting `allowed_enrollment_types=0` effectively disables enrollment for the template.",
+		Description: "Manages a Keyfactor Command Certificate Template. Templates are created/deleted by importing from the CA; this resource only manages template settings (Update + Import). Setting `allowed_enrollment_types=0` effectively disables enrollment for the template.",
 		Attributes: map[string]tfsdk.Attribute{
 			// Identity
 			"id": {
@@ -395,7 +395,7 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				Computed:      true,
-				Description:   "List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead). Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null.",
+				Description:   "List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead). Computed: leaving this attribute undeclared preserves the template's current server-side value rather than clearing it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"requires_approval": {
@@ -433,7 +433,7 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 			"template_regexes": {
 				Optional:      true,
 				Computed:      true,
-				Description:   "Subject field regex validation rules. Deprecated in Command v25+. Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null.",
+				Description:   "Subject field regex validation rules. Deprecated in Command v25+. Computed: leaving this attribute undeclared preserves the template's current server-side value rather than clearing it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
@@ -461,7 +461,7 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 			"template_defaults": {
 				Optional:      true,
 				Computed:      true,
-				Description:   "Default values for subject fields. Deprecated in Command v25+. Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null.",
+				Description:   "Default values for subject fields. Deprecated in Command v25+. Computed: leaving this attribute undeclared preserves the template's current server-side value rather than clearing it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
@@ -479,7 +479,7 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 			"enrollment_fields": {
 				Optional:      true,
 				Computed:      true,
-				Description:   "Custom enrollment fields for CSR/PFX enrollment. Deprecated in Command v25+. Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null.",
+				Description:   "Custom enrollment fields for CSR/PFX enrollment. Deprecated in Command v25+. Computed: leaving this attribute undeclared preserves the template's current server-side value rather than clearing it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
@@ -507,7 +507,7 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 			"metadata_fields": {
 				Optional:      true,
 				Computed:      true,
-				Description:   "Metadata field associations for this template. Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null.",
+				Description:   "Metadata field associations for this template. Computed: leaving this attribute undeclared preserves the template's current server-side value rather than clearing it.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 				Attributes: tfsdk.ListNestedAttributes(
 					map[string]tfsdk.Attribute{
@@ -1189,7 +1189,7 @@ func buildTemplateUpdateRequest(
 	return req
 }
 
-// preserveUndeclaredTemplateFields extends the #195 read-modify-write
+// preserveUndeclaredTemplateFields extends the read-modify-write
 // pattern -- originally scoped to AllowedRequesters/UseAllowedRequesters
 // only (formerly its own preserveAllowedRequesters helper, folded in here
 // since templateResponseToState already computes the identical
@@ -1201,10 +1201,9 @@ func buildTemplateUpdateRequest(
 // server-side rather than leaving it unchanged. Before this fix, an update
 // that only declared (say) friendly_name silently reset every OTHER
 // undeclared Optional field on the template -- observed live: key_retention
-// "FromIssuance" -> "None" and allow_one_click_renewals true -> false
-// (dev-harness certificate_template_demo finding, completes #195). This
+// "FromIssuance" -> "None" and allow_one_click_renewals true -> false. This
 // mirrors the same systematic sweep already applied to
-// keyfactor_template_role_binding's buildTemplateRoleBindingUpdateArg (#190).
+// keyfactor_template_role_binding's buildTemplateRoleBindingUpdateArg.
 //
 // current must come from a GET performed immediately before this update
 // (see Update()), not this resource's own prior Terraform state -- state
@@ -1225,8 +1224,7 @@ func buildTemplateUpdateRequest(
 // declared `x = []` and intends a clear. The checks below key off nil-ness,
 // not len(), for exactly that reason: a `len(plan.X) == 0` check cannot tell
 // those two cases apart and would silently refill a declared-empty list from
-// the server, so the clear the user asked for would never actually happen
-// (see full-review round 2 finding #1).
+// the server, so the clear the user asked for would never actually happen.
 //
 // Every field TemplatesTemplateUpdateRequest can represent is covered here.
 // KeyType is the one further field GetTemplateResponse (the OLDER client
@@ -1248,8 +1246,7 @@ func preserveUndeclaredTemplateFields(plan *KeyfactorCertificateTemplateState, c
 	// CONFIG actually declares the attribute -- NOT on plan null-ness, unlike
 	// every other field below.
 	//
-	// Why plan null-ness is the wrong signal here (full-review round 5
-	// [HIGH]): allowed_requesters is Optional+Computed with
+	// Why plan null-ness is the wrong signal here: allowed_requesters is Optional+Computed with
 	// useStateOrNullModifier, so when config leaves it undeclared, its plan
 	// value isn't Null -- MarkComputedNilsAsUnknown marks it Unknown
 	// (whenever ANY other attribute on this resource changes), and
@@ -1359,8 +1356,8 @@ func preserveUndeclaredTemplateFields(plan *KeyfactorCertificateTemplateState, c
 }
 
 // preserveTfListEmptyVsNull is the types.List analog of
-// preserveListEmptyVsNull (see resource_keyfactor_certificate_store_type.go,
-// issue #192) for Optional+Computed list attributes backed by types.List --
+// preserveListEmptyVsNull (see resource_keyfactor_certificate_store_type.go)
+// for Optional+Computed list attributes backed by types.List --
 // here, allowed_requesters -- rather than a native Go slice.
 //
 // templateResponseToState maps AllowedRequesters to a known list only when
@@ -1372,8 +1369,7 @@ func preserveUndeclaredTemplateFields(plan *KeyfactorCertificateTemplateState, c
 // disagrees with that always-null response shape and Terraform core rejects
 // the apply with "Provider produced inconsistent result after apply" --
 // permanently, since the next Read reproduces the same null vs. the user's
-// still-declared [] on every subsequent plan (full-review round 2 finding
-// #1b).
+// still-declared [] on every subsequent plan.
 //
 // target is only ever Null or a non-empty known list coming out of
 // templateResponseToState, never a known empty list -- so it is enough to
@@ -1485,7 +1481,7 @@ func (r resourceCertificateTemplate) Read(
 	// Reconcile the null-vs-empty shape of the writable collections against
 	// prior state rather than trusting the server response's shape alone --
 	// see preserveTfListEmptyVsNull/preserveListEmptyVsNull's doc comments
-	// (full-review round 2 finding #1b) for why templateResponseToState
+	// for why templateResponseToState
 	// cannot, by itself, tell "declared empty" apart from "undeclared" once
 	// the server reports zero entries.
 	preserveTfListEmptyVsNull(&newState.AllowedRequesters, state.AllowedRequesters)
@@ -1521,8 +1517,7 @@ func (r resourceCertificateTemplate) Update(
 	}
 	// CONFIG (not plan, not state) is the only reliable signal for "did the
 	// user actually declare this attribute" -- see preserveUndeclaredTemplateFields's
-	// allowed_requesters/use_allowed_requesters handling below and full-review
-	// round 5 [HIGH]: an Optional+Computed attribute's plan value can be a
+	// allowed_requesters/use_allowed_requesters handling below: an Optional+Computed attribute's plan value can be a
 	// known, non-null, but STALE value (pinned from prior state by a plan
 	// modifier) even when config never declared it at all.
 	var config KeyfactorCertificateTemplateState
@@ -1550,8 +1545,8 @@ func (r resourceCertificateTemplate) Update(
 	// can already be stale. Read-modify-write against a fresh GET immediately
 	// before this update -- the same "fetch current, then carry forward what
 	// this apply doesn't intend to change" pattern used by
-	// addAllowedRequesterToTemplate/removeRoleFromTemplate (#190) -- is what
-	// actually reflects the current server value. Fixes #195; extended by
+	// addAllowedRequesterToTemplate/removeRoleFromTemplate -- is what
+	// actually reflects the current server value. Extended by
 	// preserveUndeclaredTemplateFields (see its doc comment) to every other
 	// writable field, not just allowed_requesters.
 	//
@@ -1562,7 +1557,7 @@ func (r resourceCertificateTemplate) Update(
 	// plan.TemplatePolicy == nil, but preserveUndeclaredTemplateFields also
 	// fills nested-null template_policy fields when TemplatePolicy itself is
 	// non-nil) -- a plan fully declared except for one nested template_policy
-	// field would skip the fetch and silently lose that field, the same #195
+	// field would skip the fetch and silently lose that field, the same
 	// bug class the gate existed to prevent. The fetch is now unconditional:
 	// one extra cheap GET in the (rare, for a resource with this many optional
 	// fields) fully-declared case, in exchange for removing that drift hazard
@@ -1602,8 +1597,7 @@ func (r resourceCertificateTemplate) Update(
 	// declared `x = []` (a real clear, sent above) must read back as a known
 	// empty list to match the plan's known-empty value, not collapse to null
 	// the way an always-empty-on-clear server response otherwise would. See
-	// preserveTfListEmptyVsNull/preserveListEmptyVsNull's doc comments
-	// (full-review round 2 finding #1b).
+	// preserveTfListEmptyVsNull/preserveListEmptyVsNull's doc comments.
 	preserveTfListEmptyVsNull(&newState.AllowedRequesters, plan.AllowedRequesters)
 	preserveListEmptyVsNull(&newState.TemplateRegexes, plan.TemplateRegexes)
 	preserveListEmptyVsNull(&newState.TemplateDefaults, plan.TemplateDefaults)

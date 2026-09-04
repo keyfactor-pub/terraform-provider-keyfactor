@@ -200,11 +200,11 @@ testunit-record-oauth-role-import:
 
 # Nil-Id error path cassettes are hand-crafted (not recorded), but targets kept for consistency
 testunit-record-oauth-role-nil:
-	@echo "Cassette oauth_security_role_resource_nil_id_create is hand-crafted — no recording needed"
-	@echo "Cassette oauth_security_role_resource_nil_id_import is hand-crafted — no recording needed"
+	@echo "Cassette oauth_security_role_resource_nil_id_create is hand-crafted; no recording needed"
+	@echo "Cassette oauth_security_role_resource_nil_id_import is hand-crafted; no recording needed"
 
 testunit-record-oauth-claim-nil:
-	@echo "Cassette oauth_security_claim_resource_nil_id_create is hand-crafted — no recording needed"
+	@echo "Cassette oauth_security_claim_resource_nil_id_create is hand-crafted; no recording needed"
 
 testunit-record-oauth-role-claim-assoc-import:
 	. $(KEYFACTOR_ENV_FILE) && RECORD_CASSETTES=1 go test ./keyfactor/ -run "TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource_Import" -v -count=1 -timeout 30m
@@ -381,7 +381,7 @@ testint-debug-run:
 	. $(KEYFACTOR_ENV_FILE) && KEYFACTOR_K8S_CREDENTIALS_FILE=$(KEYFACTOR_K8S_CREDENTIALS_FILE) TF_LOG=DEBUG TF_ACC=1 go test ./keyfactor/ -run "$(TEST_NAME)" -v -count=1 -timeout 120m 2>&1 | tee /tmp/tf-debug.log
 
 # Run the basic certificate deploy integration test (no-schedule path).
-# Completes quickly without an orchestrator — stores created without inventory_schedule
+# Completes quickly without an orchestrator; stores created without inventory_schedule
 # skip the validateDeployment polling loop.
 # Requires: KEYFACTOR_K8S_CREDENTIALS_FILE set to a kubeconfig JSON file path.
 testint-deploy:
@@ -984,14 +984,14 @@ api-update-template:
 	$(call KF_API_PUT,https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Templates)
 
 # Certificate API targets
-#   make api-list-certs                              — list 5 most recent certs
-#   make api-get-cert CERT_ID=123                    — get certificate context by ID
-#   make api-download-cert CERT_ID=123               — download cert as P7B (base64 JSON)
-#   make api-inspect-cert-download CERT_ID=123       — download P7B and hex-dump raw bytes (BER investigation)
-#   make api-recover-cert CERT_ID=123                — recover cert+key as STORE format
-#   make api-recover-cert-pfx CERT_ID=123            — recover cert+key as PFX (base64 JSON)
-#   make api-inspect-cert-recover-pfx CERT_ID=123    — recover PFX and hex-dump raw PKCS#12 bytes
-#   make api-recover-cert-pem CERT_ID=123       — recover cert+key as PEM
+#   make api-list-certs                              list 5 most recent certs
+#   make api-get-cert CERT_ID=123                    get certificate context by ID
+#   make api-download-cert CERT_ID=123               download cert as P7B (base64 JSON)
+#   make api-inspect-cert-download CERT_ID=123       download P7B and hex-dump raw bytes (BER investigation)
+#   make api-recover-cert CERT_ID=123                recover cert+key as STORE format
+#   make api-recover-cert-pfx CERT_ID=123            recover cert+key as PFX (base64 JSON)
+#   make api-inspect-cert-recover-pfx CERT_ID=123    recover PFX and hex-dump raw PKCS#12 bytes
+#   make api-recover-cert-pem CERT_ID=123       recover cert+key as PEM
 CERT_ID ?=
 CERT_PASSWORD ?= Tftest123456
 
@@ -1119,8 +1119,8 @@ api-recover-cert-pem:
 
 # ---------------------------------------------------------------------------
 # Enrollment pattern API targets
-#   make api-list-enrollment-patterns             — list all enrollment patterns
-#   make api-get-enrollment-pattern EP_ID=<id>   — get pattern details (KeyInfo, CAs, etc.)
+#   make api-list-enrollment-patterns             list all enrollment patterns
+#   make api-get-enrollment-pattern EP_ID=<id>   get pattern details (KeyInfo, CAs, etc.)
 # ---------------------------------------------------------------------------
 EP_ID ?= 1
 
@@ -1144,19 +1144,19 @@ api-get-enrollment-pattern:
 		-H "Authorization: Bearer $$TOKEN" | jq .
 
 # ---------------------------------------------------------------------------
-# PFX enrollment API targets — raw curl against POST /Enrollment/PFX
+# PFX enrollment API targets: raw curl against POST /Enrollment/PFX
 # Tests all supported key type + size combinations.
 #
 # RSA:
-#   make api-enroll-pfx-rsa-2048  EP_ID=1   — RSA 2048
-#   make api-enroll-pfx-rsa-3072  EP_ID=1   — RSA 3072
-#   make api-enroll-pfx-rsa-4096  EP_ID=1   — RSA 4096
-#   make api-enroll-pfx-rsa-8192  EP_ID=1   — RSA 8192
+#   make api-enroll-pfx-rsa-2048  EP_ID=1   RSA 2048
+#   make api-enroll-pfx-rsa-3072  EP_ID=1   RSA 3072
+#   make api-enroll-pfx-rsa-4096  EP_ID=1   RSA 4096
+#   make api-enroll-pfx-rsa-8192  EP_ID=1   RSA 8192
 #
-# ECC (KeyLength only — curve inferred from size):
-#   make api-enroll-pfx-ecc-p256  EP_ID=1   — ECC P-256  (KeyLength=256)
-#   make api-enroll-pfx-ecc-p384  EP_ID=1   — ECC P-384  (KeyLength=384)
-#   make api-enroll-pfx-ecc-p521  EP_ID=1   — ECC P-521  (KeyLength=521)
+# ECC (KeyLength only; curve inferred from size):
+#   make api-enroll-pfx-ecc-p256  EP_ID=1   ECC P-256  (KeyLength=256)
+#   make api-enroll-pfx-ecc-p384  EP_ID=1   ECC P-384  (KeyLength=384)
+#   make api-enroll-pfx-ecc-p521  EP_ID=1   ECC P-521  (KeyLength=521)
 #
 # ECC (KeyLength + Curve OID both set):
 #   make api-enroll-pfx-ecc-p256-both EP_ID=1
@@ -1164,15 +1164,15 @@ api-get-enrollment-pattern:
 #   make api-enroll-pfx-ecc-p521-both EP_ID=1
 #
 # ECC (debugging variants):
-#   make api-enroll-pfx-ecc-curve EP_ID=1   — KeyType=ECC + Curve OID only (no KeyLength)
-#   make api-enroll-pfx-ecc-nokey EP_ID=1   — Curve OID only, no KeyType
+#   make api-enroll-pfx-ecc-curve EP_ID=1   KeyType=ECC + Curve OID only (no KeyLength)
+#   make api-enroll-pfx-ecc-nokey EP_ID=1   Curve OID only, no KeyType
 #
 # Ed:
 #   make api-enroll-pfx-ed25519   EP_ID=1
 #   make api-enroll-pfx-ed448     EP_ID=1
 #
 # Verify issued cert:
-#   make api-check-cert-key CERT_ID=<n>     — show KeyAlgorithm/KeySize/Curve
+#   make api-check-cert-key CERT_ID=<n>     show KeyAlgorithm/KeySize/Curve
 #
 # Defaults: EP_ID=1  ENROLL_CA=Sub-CA  ENROLL_CN=tf-curl-debug-ecc.example.com
 # Override: make api-enroll-pfx-ecc-p256 EP_ID=2 ENROLL_CA="MyCA" ENROLL_CN="test.example.com"
@@ -1184,7 +1184,7 @@ P256_OID      := 1.2.840.10045.3.1.7
 P384_OID      := 1.3.132.0.34
 P521_OID      := 1.3.132.0.35
 
-# Internal helper — token + curl enrollment + jq summary.
+# Internal helper: token + curl enrollment + jq summary.
 # Each target sets BODY shell var then calls this shared block.
 # NOTE: GNU Make $(call) splits on commas so we avoid it; use explicit targets instead.
 _ENROLL_HDR = -H "x-keyfactor-requested-with: APIClient" -H "x-keyfactor-api-version: 2" -H "x-certificateformat: PFX" -H "Content-Type: application/json"
@@ -1214,7 +1214,7 @@ api-enroll-pfx-rsa-8192:
 
 api-enroll-pfx-rsa: api-enroll-pfx-rsa-2048
 
-# --- ECC (KeyLength only — P-256/P-384/P-521 inferred from size) ---
+# --- ECC (KeyLength only ; P-256/P-384/P-521 inferred from size) ---
 api-enroll-pfx-ecc-p256:
 	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
 	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"ECC\",\"KeyLength\":256,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
@@ -1246,7 +1246,7 @@ api-enroll-pfx-ecc-p521-both:
 	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"ECC\",\"KeyLength\":521,\"Curve\":\"$(P521_OID)\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
 	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
 
-# --- ECC (Curve OID only, no KeyLength — for comparison/debugging) ---
+# --- ECC (Curve OID only, no KeyLength; for comparison/debugging) ---
 api-enroll-pfx-ecc-curve:
 	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$($(_TOKEN_CMD)) && \
 	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"ECC\",\"Curve\":\"$(P256_OID)\",\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
@@ -1270,7 +1270,7 @@ api-enroll-pfx-ed448:
 	BODY="{\"Subject\":\"CN=$(ENROLL_CN)\",\"CertificateAuthority\":\"$(ENROLL_CA)\",\"EnrollmentPatternId\":$(EP_ID),\"KeyType\":\"Ed448\",\"KeyLength\":448,\"Password\":\"$(ENROLL_PW)\",\"IncludeChain\":true,\"Timestamp\":\"$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}" && \
 	curl -sk -X POST "https://$$KEYFACTOR_HOSTNAME/$${KEYFACTOR_API_PATH:-Keyfactor/API}/Enrollment/PFX" $(_ENROLL_HDR) -H "Authorization: Bearer $$TOKEN" -d "$$BODY" | $(_ENROLL_JQ)
 
-# --- Ed25519 / Ed448 (Template name — UI uses this form; compare against EnrollmentPatternId) ---
+# --- Ed25519 / Ed448 (Template name; UI uses this form; compare against EnrollmentPatternId) ---
 ENROLL_TEMPLATE ?= Server_tlsServerAuth-1y
 
 api-enroll-pfx-ed25519-tmpl:
@@ -1345,9 +1345,9 @@ api-check-cert-key:
 		| jq '{Id, IssuedCN, KeyAlgorithm, KeySizeInBits, Curve}'
 
 # Certificate store targets
-#   make api-list-cert-stores                    — list certificate stores (up to 10)
-#   make api-list-cert-stores STORE_QUERY=<q>    — list stores filtered by query (e.g. STORE_QUERY=K8SCert)
-#   make api-get-cert-store STORE_ID=<guid>      — get a specific store by GUID
+#   make api-list-cert-stores                    list certificate stores (up to 10)
+#   make api-list-cert-stores STORE_QUERY=<q>    list stores filtered by query (e.g. STORE_QUERY=K8SCert)
+#   make api-get-cert-store STORE_ID=<guid>      get a specific store by GUID
 STORE_QUERY ?=
 api-list-cert-stores:
 	@. $(KEYFACTOR_ENV_FILE) && TOKEN=$$(curl -sk -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \

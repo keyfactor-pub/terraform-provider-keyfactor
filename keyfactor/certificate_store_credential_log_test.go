@@ -41,9 +41,7 @@ func decodedLogMessages(t *testing.T, captured string) []string {
 }
 
 // TestUnitCertificateStoreCredentialsNotLoggedInPlaintext is a regression
-// test for a HIGH-severity security finding from the full-review
-// adjudication of PR #203 (round 1), later found to have a JSON-escaping
-// bypass in round 3: resource_keyfactor_certificate_store.go's Update() logs
+// test for a HIGH-severity security bug: resource_keyfactor_certificate_store.go's Update() logs
 // *api.UpdateStoreFctArgs -- which carries plaintext Sensitive: true
 // store/server credentials -- twice at Debug level:
 //
@@ -56,7 +54,7 @@ func decodedLogMessages(t *testing.T, captured string) []string {
 //     plan.StorePassword.Value), leaking store_password, and re-embeds the
 //     server credentials a second time via PropertiesString.
 //
-// The round-1 fix masked these by calling tflog.MaskMessageStrings /
+// An initial fix attempt masked these by calling tflog.MaskMessageStrings /
 // tflog.MaskAllFieldValuesStrings with the RAW secret value, which does a
 // literal strings.ReplaceAll of that raw value against the rendered log
 // text. That is sufficient for call site 1 (a %v on a pointer field only
@@ -150,8 +148,8 @@ func TestUnitCertificateStoreCredentialsNotLoggedInPlaintext(t *testing.T) {
 		}
 	})
 
-	t.Run("substring masking of the raw secret against rendered text is bypassed by JSON escaping (round 3 finding)", func(t *testing.T) {
-		// This reproduces the round-1 fix's approach directly to prove the
+	t.Run("substring masking of the raw secret against rendered text is bypassed by JSON escaping", func(t *testing.T) {
+		// This reproduces the initial fix attempt's approach directly to prove the
 		// bypass exists independent of whatever the production code does
 		// today.
 		var buf bytes.Buffer
@@ -276,8 +274,7 @@ func TestUnitRedactUpdateStoreFctArgsForLoggingPreservesNonSecretFields(t *testi
 }
 
 // TestUnitCertificateStoreUpdateResponseNotLoggedInPlaintext is a regression
-// test for a HIGH-severity security finding from round 4 of a full-review
-// cycle, found nine lines below the fix above:
+// test for a HIGH-severity security bug, adjacent to the one above:
 // resource_keyfactor_certificate_store.go's Update() logs the RESPONSE it
 // gets back from Command's PUT /CertificateStores at Trace level --
 // fmt.Sprintf("UpdateStoreResponse: %v", *updateResponse) -- with no

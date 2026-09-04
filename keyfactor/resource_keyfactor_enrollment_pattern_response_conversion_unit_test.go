@@ -8,7 +8,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests -- PR #210 full-review findings F1/F2:
+// Regression tests: nil-vs-non-nil-empty response conversion.
 //
 // enrollmentPatternFieldsToState (enrollment_fields.options) and
 // algorithmDataResponseToResourceEntry (policies.primary_key_algorithms/
@@ -32,7 +32,7 @@ import (
 // non-null empty list).
 //
 // This mirrors the identical bug class already fixed for
-// certStoreTypeDefToState under GitHub issue #192 (see
+// certStoreTypeDefToState (see
 // resource_keyfactor_certificate_store_type_entry_parameters_unit_test.go):
 // a nil Go slice (server truly omitted/nulled the key) must stay Null, but a
 // non-nil Go slice -- even zero-length -- must become a known, non-null
@@ -40,7 +40,7 @@ import (
 // ---------------------------------------------------------------------------
 
 // TestUnitEnrollmentPatternFieldsToStatePreservesEmptyOptions is the direct
-// regression test for finding F1. Before the fix, a non-nil empty
+// regression test. Before the fix, a non-nil empty
 // f.Options ([]string{}) -- the shape the server sends back when the
 // config declared `options = []` -- is collapsed to Null instead of a known
 // empty list.
@@ -138,7 +138,7 @@ func TestUnitEnrollmentPatternFieldsToStatePreservesEmptyOptions(t *testing.T) {
 }
 
 // TestUnitAlgorithmDataResponseToResourceEntryPreservesEmptyBitLengthsAndCurves
-// is the direct regression test for finding F2. Before the fix, non-nil
+// is the direct regression test. Before the fix, non-nil
 // empty a.BitLengths/a.Curves -- the shape the server sends back when the
 // config declared `bit_lengths = []`/`curves = []` (legitimate for an RSA
 // entry, which has no curves) -- are collapsed to Null instead of a known
@@ -234,7 +234,7 @@ func TestUnitAlgorithmDataResponseToResourceEntryPreservesEmptyBitLengthsAndCurv
 }
 
 // ---------------------------------------------------------------------------
-// Regression tests -- PR #210 full-review round 2 finding F1:
+// Regression tests: nil-vs-non-nil-empty CertificateAuthorities.
 //
 // The identical bug class fixed above for enrollmentPatternFieldsToState's
 // nested Options / algorithmDataResponseToResourceEntry's nested
@@ -263,7 +263,7 @@ func TestUnitAlgorithmDataResponseToResourceEntryPreservesEmptyBitLengthsAndCurv
 // confirmed non-nil precisely when the server's JSON carried an actual `[]`
 // for that key, exactly like Options/BitLengths/Curves above.
 //
-// Fix mirrors certStoreTypeDefToState (GitHub issue #192): produce a non-nil
+// Fix mirrors certStoreTypeDefToState: produce a non-nil
 // (possibly zero-length) result whenever the input is non-nil, and nil only
 // when the input is truly nil.
 // ---------------------------------------------------------------------------

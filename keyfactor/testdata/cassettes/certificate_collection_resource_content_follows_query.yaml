@@ -1,0 +1,313 @@
+---
+version: 2
+interactions:
+    - id: 0
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 116
+        host: command.lab.local
+        body: |
+            {"Description":"TF F3 regression test collection","Name":"TFCCFix_TFU641000","Query":"IssuedDN -contains \"demo\""}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateCollections
+        method: POST
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 268
+        body: '{"Id":9,"Name":"TFCCFix_TFU641000","Description":"TF F3 regression test collection","Content":"IssuedDN -contains \"demo\"","Query":"IssuedDN -contains \"demo\"","DuplicationField":0,"ShowOnDashboard":false,"Favorite":false,"EstimatedCertCount":0,"LastEstimated":null}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "268"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 03 Sep 2026 16:42:43 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - b0ff5d0d-e378-4bc3-9563-8808883b50c3
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 5.381744271s
+    - id: 1
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: command.lab.local
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateCollections/9
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 272
+        body: '{"Id":9,"Name":"TFCCFix_TFU641000","Description":"TF F3 regression test collection","Automated":false,"Content":"IssuedDN -contains \"demo\"","DuplicationField":0,"ShowOnDashboard":false,"Favorite":false,"EstimatedCertCount":199,"LastEstimated":"2026-09-03T16:42:43.717Z"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "272"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 03 Sep 2026 16:42:49 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 36e2a471-ac6f-4748-a298-b98680d9d0ca
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 80.091491ms
+    - id: 2
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: command.lab.local
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateCollections/9
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 272
+        body: '{"Id":9,"Name":"TFCCFix_TFU641000","Description":"TF F3 regression test collection","Automated":false,"Content":"IssuedDN -contains \"demo\"","DuplicationField":0,"ShowOnDashboard":false,"Favorite":false,"EstimatedCertCount":199,"LastEstimated":"2026-09-03T16:42:43.717Z"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "272"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 03 Sep 2026 16:42:50 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - eb1b8120-b0fa-4478-bed1-cc830ee3902e
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 28.970383ms
+    - id: 3
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: command.lab.local
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateCollections/9
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 272
+        body: '{"Id":9,"Name":"TFCCFix_TFU641000","Description":"TF F3 regression test collection","Automated":false,"Content":"IssuedDN -contains \"demo\"","DuplicationField":0,"ShowOnDashboard":false,"Favorite":false,"EstimatedCertCount":199,"LastEstimated":"2026-09-03T16:42:43.717Z"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "272"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 03 Sep 2026 16:42:50 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 90f37a0d-3a40-42c4-841e-23ccbdf63d31
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 25.081909ms
+    - id: 4
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 193
+        host: command.lab.local
+        body: |
+            {"Description":"TF F3 regression test collection","DuplicationField":0,"Favorite":false,"Id":9,"Name":"TFCCFix_TFU641000","Query":"IssuedDN -contains \"demo-updated\"","ShowOnDashboard":false}
+        headers:
+            Accept:
+                - application/json
+            Content-Type:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateCollections
+        method: PUT
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 304
+        body: '{"Id":9,"Name":"TFCCFix_TFU641000","Description":"TF F3 regression test collection","Content":"IssuedDN -contains \"demo-updated\"","Query":"IssuedDN -contains \"demo-updated\"","DuplicationField":0,"ShowOnDashboard":false,"Favorite":false,"EstimatedCertCount":0,"LastEstimated":"2026-09-03T16:42:50.6Z"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "304"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 03 Sep 2026 16:42:50 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 3e69a4f6-3905-4f9d-bbda-89a91d7c4c94
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 115.878229ms
+    - id: 5
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: command.lab.local
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateCollections/9
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 276
+        body: '{"Id":9,"Name":"TFCCFix_TFU641000","Description":"TF F3 regression test collection","Automated":false,"Content":"IssuedDN -contains \"demo-updated\"","DuplicationField":0,"ShowOnDashboard":false,"Favorite":false,"EstimatedCertCount":0,"LastEstimated":"2026-09-03T16:42:50.6Z"}'
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "276"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Thu, 03 Sep 2026 16:42:51 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 5d53f531-564a-44a0-8889-75661f36af3d
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 22.308461ms
+    - id: 6
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: command.lab.local
+        headers:
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "1"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/CertificateCollections/9
+        method: DELETE
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        body: ""
+        headers:
+            Api-Supported-Versions:
+                - "1.0"
+            Connection:
+                - keep-alive
+            Date:
+                - Thu, 03 Sep 2026 16:42:51 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - c94998a8-b327-4727-b939-1bd4372555ee
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 204 No Content
+        code: 204
+        duration: 132.220038ms

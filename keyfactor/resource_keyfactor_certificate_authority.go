@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -835,15 +835,18 @@ func buildCARequest(ctx context.Context, plan KeyfactorCertificateAuthority) (v1
 	}
 
 	// Auth Certificate
+	//
+	// AuthCertificate/AuthCertificatePassword are typed map[string]interface{}
+	// on this v25+ request model (unlike ExplicitPassword/ClientSecret, which
+	// remain *CSSCMSDataModelModelsKeyfactorAPISecret) -- an OpenAPI generator
+	// artifact, not a different wire shape. Build the same
+	// {"SecretValue": "..."} object by hand so the request body Command
+	// receives is unchanged.
 	if !plan.AuthCertificate.Null && !plan.AuthCertificate.Unknown {
-		secret := v1.CSSCMSDataModelModelsKeyfactorAPISecret{}
-		secret.SetSecretValue(plan.AuthCertificate.Value)
-		req.AuthCertificate = &secret
+		req.AuthCertificate = map[string]interface{}{"SecretValue": plan.AuthCertificate.Value}
 	}
 	if !plan.AuthCertificatePassword.Null && !plan.AuthCertificatePassword.Unknown {
-		secret := v1.CSSCMSDataModelModelsKeyfactorAPISecret{}
-		secret.SetSecretValue(plan.AuthCertificatePassword.Value)
-		req.AuthCertificatePassword = &secret
+		req.AuthCertificatePassword = map[string]interface{}{"SecretValue": plan.AuthCertificatePassword.Value}
 	}
 
 	// OAuth

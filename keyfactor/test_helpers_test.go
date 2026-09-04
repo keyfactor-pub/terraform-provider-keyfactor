@@ -34,7 +34,7 @@ import (
 	circlEd448 "github.com/cloudflare/circl/sign/ed448"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
-	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v25"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
@@ -162,6 +162,47 @@ func discoverTemplate(t *testing.T, client *api.Client) string {
 	// Fall back to first available
 	t.Logf("Discovered template (fallback): %s (ID: %d)", templates[0].CommonName, templates[0].Id)
 	return templates[0].CommonName
+}
+
+// discoverTemplateID is discoverTemplate's numeric-ID counterpart, for
+// callers that need template_id directly (e.g. keyfactor_enrollment_pattern,
+// whose template_id attribute is an integer, not a name). Applies the exact
+// same selection logic as discoverTemplate (env var override, then prefer a
+// non-approval template, then fall back to the first available) so the two
+// helpers always agree on which template they picked when called in the
+// same test.
+func discoverTemplateID(t *testing.T, client *api.Client) int {
+	t.Helper()
+
+	if name := os.Getenv("KEYFACTOR_CERTIFICATE_TEMPLATE_NAME"); name != "" {
+		templates, err := client.GetTemplates()
+		if err != nil {
+			t.Fatalf("Failed to list templates for discovery: %s", err)
+		}
+		for _, tmpl := range templates {
+			if tmpl.CommonName == name {
+				t.Logf("Using template ID from env-selected template: %s (ID: %d)", name, tmpl.Id)
+				return tmpl.Id
+			}
+		}
+		t.Fatalf("KEYFACTOR_CERTIFICATE_TEMPLATE_NAME=%q did not match any template returned by GetTemplates", name)
+	}
+
+	templates, err := client.GetTemplates()
+	if err != nil {
+		t.Fatalf("Failed to list templates for discovery: %s", err)
+	}
+	if len(templates) == 0 {
+		t.Skip("No certificate templates available in the lab")
+	}
+	for _, tmpl := range templates {
+		if !tmpl.RequiresApproval && tmpl.CommonName != "" {
+			t.Logf("Discovered template ID: %s (ID: %d)", tmpl.CommonName, tmpl.Id)
+			return tmpl.Id
+		}
+	}
+	t.Logf("Discovered template ID (fallback): %s (ID: %d)", templates[0].CommonName, templates[0].Id)
+	return templates[0].Id
 }
 
 // discoverCA returns the certificate authority string for enrollment.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v24/api/keyfactor/v1"
+	v1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -782,7 +782,7 @@ func templateResponseToState(resp *v1.TemplatesTemplateRetrievalResponse) Keyfac
 	}
 
 	// Manageability (v25+)
-	if resp.Manageability.IsSet() && resp.Manageability.Get() != nil {
+	if resp.Manageability != nil {
 		state.Manageability = types.Int64{Value: int64(resp.GetManageability())}
 	} else {
 		state.Manageability = types.Int64{Null: true}
@@ -854,8 +854,8 @@ func templateResponseToState(resp *v1.TemplatesTemplateRetrievalResponse) Keyfac
 		pol.DefaultCertificateOwnerRoleID = nullableInt32ToTfInt64(p.DefaultCertificateOwnerRoleId)
 		pol.DefaultCertificateOwnerRoleName = nullableStringToTfString(p.DefaultCertificateOwnerRoleName)
 
-		if p.KeyInfo != nil {
-			pol.KeyInfo = algorithmDataToKeyInfo(p.KeyInfo)
+		if len(p.PrimaryKeyAlgorithms) > 0 {
+			pol.KeyInfo = algorithmDataToKeyInfo(p.PrimaryKeyAlgorithms)
 		}
 		state.TemplatePolicy = pol
 	}
@@ -925,19 +925,19 @@ func templateResponseToState(resp *v1.TemplatesTemplateRetrievalResponse) Keyfac
 		)
 	}
 
-	// KeyAlgorithms (from KeyAlgorithms.KeyInfo in the SDK struct)
-	if resp.KeyAlgorithms != nil && resp.KeyAlgorithms.KeyInfo != nil {
-		ki := resp.KeyAlgorithms.KeyInfo
-		algEntries := map[string]*v1.CSSCMSDataModelModelsTemplatesAlgorithmsAlgorithmData{
-			"RSA":     ki.RSA,
-			"ECDSA":   ki.ECDSA,
-			"Ed448":   ki.Ed448,
-			"Ed25519": ki.Ed25519,
-		}
-		for _, name := range []string{"RSA", "ECDSA", "Ed448", "Ed25519"} {
-			data := algEntries[name]
-			if data == nil {
-				continue
+	// KeyAlgorithms (from KeyAlgorithms.PrimaryKeyAlgorithms / AlternativeKeyAlgorithms
+	// in the v25+ SDK struct -- the old fixed RSA/ECDSA/Ed448/Ed25519 KeyInfo shape was
+	// replaced by a name-keyed list split into primary and alternative sets; this
+	// "supported key algorithms reported by the CA" attribute represents the full
+	// catalog, so both sets are combined here).
+	if resp.KeyAlgorithms != nil {
+		var combined []v1.EnrollmentPatternsAlgorithmsAlgorithmDataResponse
+		combined = append(combined, resp.KeyAlgorithms.PrimaryKeyAlgorithms...)
+		combined = append(combined, resp.KeyAlgorithms.AlternativeKeyAlgorithms...)
+		for _, data := range combined {
+			name := ""
+			if data.Name.Get() != nil {
+				name = *data.Name.Get()
 			}
 			entry := TemplateKeyAlgorithmEntry{
 				Algorithm: types.String{Value: name},
@@ -965,16 +965,33 @@ func templateResponseToState(resp *v1.TemplatesTemplateRetrievalResponse) Keyfac
 	return state
 }
 
-func algorithmDataToKeyInfo(ki *v1.CSSCMSDataModelModelsTemplatesAlgorithmsKeyInfo) *TemplateKeyInfo {
+// algorithmDataToKeyInfo maps the v25+ name-keyed PrimaryKeyAlgorithms list
+// back onto the pre-v25 fixed RSA/ECDSA/Ed448/Ed25519 TemplateKeyInfo shape
+// exposed by template_policy.key_info. Entries with unrecognized names are
+// dropped (there is no schema slot for them).
+func algorithmDataToKeyInfo(algos []v1.EnrollmentPatternsAlgorithmsAlgorithmDataResponse) *TemplateKeyInfo {
 	result := &TemplateKeyInfo{}
-	result.RSA = algorithmDataToEntry(ki.RSA)
-	result.ECDSA = algorithmDataToEntry(ki.ECDSA)
-	result.Ed448 = algorithmDataToEntry(ki.Ed448)
-	result.Ed25519 = algorithmDataToEntry(ki.Ed25519)
+	for i := range algos {
+		data := &algos[i]
+		name := ""
+		if data.Name.Get() != nil {
+			name = *data.Name.Get()
+		}
+		switch name {
+		case "RSA":
+			result.RSA = algorithmDataToEntry(data)
+		case "ECDSA":
+			result.ECDSA = algorithmDataToEntry(data)
+		case "Ed448":
+			result.Ed448 = algorithmDataToEntry(data)
+		case "Ed25519":
+			result.Ed25519 = algorithmDataToEntry(data)
+		}
+	}
 	return result
 }
 
-func algorithmDataToEntry(data *v1.CSSCMSDataModelModelsTemplatesAlgorithmsAlgorithmData) *TemplateKeyInfoAlgorithm {
+func algorithmDataToEntry(data *v1.EnrollmentPatternsAlgorithmsAlgorithmDataResponse) *TemplateKeyInfoAlgorithm {
 	if data == nil {
 		return nil
 	}
@@ -1022,8 +1039,7 @@ func buildTemplateUpdateRequest(
 		req.AllowedEnrollmentTypes = &et
 	}
 	if !plan.UseAllowedRequesters.Null && !plan.UseAllowedRequesters.Unknown {
-		v := plan.UseAllowedRequesters.Value
-		req.UseAllowedRequesters = &v
+		req.SetUseAllowedRequesters(plan.UseAllowedRequesters.Value)
 	}
 	if !plan.AllowedRequesters.Null && !plan.AllowedRequesters.Unknown {
 		var requesters []string
@@ -1077,7 +1093,7 @@ func buildTemplateUpdateRequest(
 			pol.SetDefaultCertificateOwnerRoleId(int32(p.DefaultCertificateOwnerRoleID.Value))
 		}
 		if p.KeyInfo != nil {
-			pol.KeyInfo = buildKeyInfoRequest(p.KeyInfo)
+			pol.PrimaryKeyAlgorithms = buildKeyInfoRequest(p.KeyInfo)
 		}
 		req.TemplatePolicy = pol
 	}
@@ -1377,20 +1393,30 @@ func preserveTfListEmptyVsNull(target *types.List, reference types.List) {
 	*target = types.List{Elems: []attr.Value{}, ElemType: target.ElemType}
 }
 
-func buildKeyInfoRequest(ki *TemplateKeyInfo) *v1.CSSCMSDataModelModelsTemplatesAlgorithmsKeyInfo {
-	result := &v1.CSSCMSDataModelModelsTemplatesAlgorithmsKeyInfo{}
-	result.RSA = buildAlgorithmDataRequest(ki.RSA)
-	result.ECDSA = buildAlgorithmDataRequest(ki.ECDSA)
-	result.Ed448 = buildAlgorithmDataRequest(ki.Ed448)
-	result.Ed25519 = buildAlgorithmDataRequest(ki.Ed25519)
+// buildKeyInfoRequest maps the pre-v25 fixed RSA/ECDSA/Ed448/Ed25519
+// TemplateKeyInfo shape (template_policy.key_info) onto the v25+ name-keyed
+// PrimaryKeyAlgorithms request list. There is no schema slot for
+// AlternativeKeyAlgorithms, so it is left unset here.
+func buildKeyInfoRequest(ki *TemplateKeyInfo) []v1.EnrollmentPatternsAlgorithmsAlgorithmDataRequestV2 {
+	var result []v1.EnrollmentPatternsAlgorithmsAlgorithmDataRequestV2
+	appendEntry := func(name string, entry *TemplateKeyInfoAlgorithm) {
+		req := buildAlgorithmDataRequest(name, entry)
+		if req != nil {
+			result = append(result, *req)
+		}
+	}
+	appendEntry("RSA", ki.RSA)
+	appendEntry("ECDSA", ki.ECDSA)
+	appendEntry("Ed448", ki.Ed448)
+	appendEntry("Ed25519", ki.Ed25519)
 	return result
 }
 
-func buildAlgorithmDataRequest(entry *TemplateKeyInfoAlgorithm) *v1.CSSCMSDataModelModelsTemplatesAlgorithmsAlgorithmData {
+func buildAlgorithmDataRequest(name string, entry *TemplateKeyInfoAlgorithm) *v1.EnrollmentPatternsAlgorithmsAlgorithmDataRequestV2 {
 	if entry == nil {
 		return nil
 	}
-	data := &v1.CSSCMSDataModelModelsTemplatesAlgorithmsAlgorithmData{}
+	data := &v1.EnrollmentPatternsAlgorithmsAlgorithmDataRequestV2{Name: name}
 	if !entry.BitLengths.Null && !entry.BitLengths.Unknown {
 		var lengths []int64
 		entry.BitLengths.ElementsAs(context.Background(), &lengths, false)

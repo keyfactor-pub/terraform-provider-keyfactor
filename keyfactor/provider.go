@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
-	"github.com/Keyfactor/keyfactor-go-client-sdk/v24"
+	"github.com/Keyfactor/keyfactor-go-client-sdk/v25"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -870,6 +870,8 @@ func (p *provider) GetResources(_ context.Context) (map[string]tfsdk.ResourceTyp
 		"keyfactor_certificate_authority":                 resourceCertificateAuthorityType{},
 		"keyfactor_certificate_template":                  resourceCertificateTemplateType{},
 		"keyfactor_certificate_store_type":                resourceCertStoreTypeDefType{},
+		"keyfactor_certificate_collection":                resourceCertificateCollectionType{},
+		"keyfactor_enrollment_pattern":                    resourceEnrollmentPatternType{},
 	}, nil
 }
 
@@ -879,6 +881,7 @@ func (p *provider) GetDataSources(_ context.Context) (map[string]tfsdk.DataSourc
 		"keyfactor_agent":                   dataSourceAgentType{},
 		"keyfactor_agents":                  dataSourceAgentsType{},
 		"keyfactor_certificate":             dataSourceCertificateType{},
+		"keyfactor_certificate_collection":  dataSourceCertificateCollectionType{},
 		"keyfactor_certificate_store":       dataSourceCertificateStoreType{},
 		"keyfactor_certificate_template":    dataSourceCertificateTemplateType{},
 		"keyfactor_enrollment_pattern":      dataSourceEnrollmentPatternType{},

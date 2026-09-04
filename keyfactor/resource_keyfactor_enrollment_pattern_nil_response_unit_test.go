@@ -56,7 +56,7 @@ func TestUnitEnrollmentPatternCreateHandlesNilResponseWithoutPanic(t *testing.T)
 	config.Name = types.String{Value: "Demo Pattern_TF"}
 	config.TemplateId = types.Int64{Value: 6}
 	config.Policies = &EnrollmentPatternResourcePolicy{}
-	config.AssociatedRoleNames = types.List{Null: true, ElemType: types.StringType}
+	config.AssociatedRoleNames = types.Set{Null: true, ElemType: types.StringType}
 
 	scratch := tfsdk.Plan{Schema: schema}
 	if d := scratch.Set(ctx, &config); d.HasError() {
@@ -96,7 +96,7 @@ func TestUnitEnrollmentPatternReadHandlesNilResponseWithoutPanic(t *testing.T) {
 	state.ID = types.Int64{Value: 42}
 	state.Name = types.String{Value: "Demo Pattern_TF"}
 	state.TemplateId = types.Int64{Value: 6}
-	state.AssociatedRoleNames = types.List{Null: true, ElemType: types.StringType}
+	state.AssociatedRoleNames = types.Set{Null: true, ElemType: types.StringType}
 
 	stateObj := tfsdk.State{Schema: schema}
 	if d := stateObj.Set(ctx, &state); d.HasError() {
@@ -135,7 +135,7 @@ func TestUnitEnrollmentPatternUpdateHandlesNilResponseWithoutPanic(t *testing.T)
 	state.Name = types.String{Value: "Demo Pattern_TF"}
 	state.TemplateId = types.Int64{Value: 6}
 	state.Policies = &EnrollmentPatternResourcePolicy{}
-	state.AssociatedRoleNames = types.List{Null: true, ElemType: types.StringType}
+	state.AssociatedRoleNames = types.Set{Null: true, ElemType: types.StringType}
 
 	config := state
 

@@ -32,32 +32,39 @@ import (
 // the old (request.Plan.Get) code would have crashed immediately decoding
 // it; the fixed code never touches it at all.
 //
-// FIX-4: Update()'s fallback for the two write-only list attributes
-// (associated_role_names, certificate_authority_ids -- see
+// FIX-4: Update()'s fallback for the two write-only-turned-derived Set
+// attributes (associated_role_names, certificate_authority_ids -- see
 // KeyfactorEnrollmentPatternState's doc comment) only checked
-// config.X.Null, not config.X.Unknown. Unlike the raw-Go-slice fields FIX-3
-// covers, types.List CAN represent Unknown without crashing decode -- e.g.
-// `associated_role_names = [keyfactor_security_role.new_role.name]` where
-// that role is created in the same apply leaves config.AssociatedRoleNames
-// genuinely Unknown at Update() time. Without the Unknown check,
-// plan.AssociatedRoleNames stayed Unknown all the way into the final state
-// -- and a Terraform final state must never contain an Unknown value. The
-// fix extends the fallback condition to also cover Unknown, falling back to
-// this resource's own prior Terraform state (there is no other source of
-// truth for these two write-only fields -- Command never echoes them back).
+// config.X.Null, not config.X.Unknown. types.Set CAN represent Unknown
+// without crashing decode (unlike the raw-Go-slice fields FIX-3 covers) --
+// e.g. `associated_role_names = [keyfactor_security_role.new_role.name]`
+// where that role is created in the same apply leaves
+// config.AssociatedRoleNames genuinely Unknown at Update() time. Without the
+// Unknown check, plan.AssociatedRoleNames stayed Unknown all the way into
+// the final state -- and a Terraform final state must never contain an
+// Unknown value. The fix extends the fallback condition to also cover
+// Unknown, falling back (via preserveUndeclaredEnrollmentPatternFields) to
+// the fresh pre-update GET's own AssociatedRoles/CertificateAuthorities
+// expansion -- now derivable into names/ids just like every other refresh
+// path, and a strictly better source of truth than stale prior Terraform
+// state, since it reflects the server's real membership at the moment of
+// this Update() call.
 // ---------------------------------------------------------------------------
 
 // newEnrollmentPatternUpdateTestServer answers the pre-update GET
-// /EnrollmentPatterns/{id} with a minimal canned response and captures the
-// body of the subsequent PUT /EnrollmentPatterns/{id} into *capturedPUTBody,
-// echoing back a minimal, decodable response.
+// /EnrollmentPatterns/{id} with a minimal canned response (including an
+// AssociatedRoles expansion so tests exercising the associated_role_names
+// fallback have a realistic "current server value" to resolve against) and
+// captures the body of the subsequent PUT /EnrollmentPatterns/{id} into
+// *capturedPUTBody, echoing back the same minimal response.
 func newEnrollmentPatternUpdateTestServer(t *testing.T, capturedPUTBody *[]byte) *httptest.Server {
 	t.Helper()
+	const cannedResponse = `{"Id": 42, "Name": "Demo Pattern_TF", "AssociatedRoles": [{"Id": 1, "Name": "InstanceAdmin"}]}`
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"Id": 42, "Name": "Demo Pattern_TF"}`))
+			_, _ = w.Write([]byte(cannedResponse))
 		case http.MethodPut:
 			body, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -65,7 +72,7 @@ func newEnrollmentPatternUpdateTestServer(t *testing.T, capturedPUTBody *[]byte)
 			}
 			*capturedPUTBody = body
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"Id": 42, "Name": "Demo Pattern_TF"}`))
+			_, _ = w.Write([]byte(cannedResponse))
 		default:
 			t.Fatalf("unexpected request method %s %s", r.Method, r.URL.Path)
 		}
@@ -94,7 +101,7 @@ func TestUnitEnrollmentPatternUpdateDoesNotDependOnPlan(t *testing.T) {
 	state.ID = types.Int64{Value: 42}
 	state.Name = types.String{Value: "Demo Pattern_TF"}
 	state.TemplateId = types.Int64{Value: 6}
-	state.AssociatedRoleNames = types.List{
+	state.AssociatedRoleNames = types.Set{
 		ElemType: types.StringType,
 		Elems:    []attr.Value{types.String{Value: "InstanceAdmin"}},
 	}
@@ -142,10 +149,12 @@ func TestUnitEnrollmentPatternUpdateDoesNotDependOnPlan(t *testing.T) {
 // TestUnitEnrollmentPatternUpdateResolvesUnknownAssociatedRoleNamesFromState
 // is the direct regression test for FIX-4: when config.AssociatedRoleNames
 // is genuinely Unknown (e.g. chained from a security role resource created
-// in the same apply), Update() must fall back to this resource's own prior
-// Terraform state -- there is no other source of truth for this write-only
-// field -- rather than leaving the final state's associated_role_names
-// Unknown.
+// in the same apply), Update() must fall back to the fresh pre-update GET's
+// own AssociatedRoles expansion (via preserveUndeclaredEnrollmentPatternFields)
+// rather than leaving the final state's associated_role_names Unknown. The
+// prior Terraform state here is deliberately given a DIFFERENT value than
+// the mocked GET response so the assertions below can distinguish "fell
+// back to the fresh GET" from "fell back to stale state."
 func TestUnitEnrollmentPatternUpdateResolvesUnknownAssociatedRoleNamesFromState(t *testing.T) {
 	ctx := context.Background()
 
@@ -160,9 +169,14 @@ func TestUnitEnrollmentPatternUpdateResolvesUnknownAssociatedRoleNamesFromState(
 	state.ID = types.Int64{Value: 42}
 	state.Name = types.String{Value: "Demo Pattern_TF"}
 	state.TemplateId = types.Int64{Value: 6}
-	state.AssociatedRoleNames = types.List{
+	// Deliberately DIFFERENT from newEnrollmentPatternUpdateTestServer's
+	// mocked GET response ("InstanceAdmin") -- this lets the assertions
+	// below distinguish "fell back to the fresh pre-update GET" (the fixed,
+	// self-healing behavior) from "fell back to stale prior Terraform state"
+	// (the old behavior, which this test previously encoded).
+	state.AssociatedRoleNames = types.Set{
 		ElemType: types.StringType,
-		Elems:    []attr.Value{types.String{Value: "InstanceAdmin"}},
+		Elems:    []attr.Value{types.String{Value: "StaleRole"}},
 	}
 	state.Policies = &EnrollmentPatternResourcePolicy{}
 
@@ -173,11 +187,11 @@ func TestUnitEnrollmentPatternUpdateResolvesUnknownAssociatedRoleNamesFromState(
 
 	// Config: associated_role_names is genuinely Unknown -- e.g. chained
 	// from `keyfactor_security_role.new_role.name`, a resource created in
-	// the same apply. types.List CAN represent Unknown (unlike the raw Go
+	// the same apply. types.Set CAN represent Unknown (unlike the raw Go
 	// slice fields FIX-3 covers), so this decodes without crashing -- the
 	// bug is purely in what Update() does with it afterward.
 	config := state
-	config.AssociatedRoleNames = types.List{Unknown: true, ElemType: types.StringType}
+	config.AssociatedRoleNames = types.Set{Unknown: true, ElemType: types.StringType}
 
 	configScratch := tfsdk.Plan{Schema: schema}
 	if d := configScratch.Set(ctx, &config); d.HasError() {
@@ -205,15 +219,18 @@ func TestUnitEnrollmentPatternUpdateResolvesUnknownAssociatedRoleNamesFromState(
 	if finalState.AssociatedRoleNames.Unknown {
 		t.Fatal(
 			"final state associated_role_names is Unknown -- a final Terraform state must never contain " +
-				"an Unknown value; the config.Unknown fallback must resolve this from prior state",
+				"an Unknown value; the config.Unknown fallback must resolve this from the fresh pre-update GET",
 		)
 	}
 	if finalState.AssociatedRoleNames.Null {
-		t.Fatal("final state associated_role_names is Null, want the prior state's value (InstanceAdmin) preserved")
+		t.Fatal("final state associated_role_names is Null, want the fresh GET's value (InstanceAdmin) preserved")
 	}
 	var got []string
 	finalState.AssociatedRoleNames.ElementsAs(ctx, &got, false)
 	if len(got) != 1 || got[0] != "InstanceAdmin" {
-		t.Errorf("final state associated_role_names = %v, want [InstanceAdmin] (fallback to prior state)", got)
+		t.Errorf(
+			"final state associated_role_names = %v, want [InstanceAdmin] (fallback to the fresh pre-update GET, "+
+				"not the stale prior state value [StaleRole])", got,
+		)
 	}
 }

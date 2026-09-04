@@ -39,13 +39,18 @@ data "keyfactor_certificate_authority" "restrict" {
 # ---------------------------------------------------------------------------
 # keyfactor_enrollment_pattern resource under test.
 #
-# associated_role_names/certificate_authority_ids are write-only: Keyfactor
-# Command expands them into associated_roles/certificate_authorities on read
-# and never echoes back the plain name/ID list, so the provider preserves
-# the last-known value from state on refresh (see
-# resource_keyfactor_enrollment_pattern.go). That means `lab-drift-check`
-# below is expected to show no diff on these fields even though the API
-# never actually confirms them back.
+# associated_role_names/certificate_authority_ids are modeled as Terraform
+# sets, not lists: Keyfactor Command expands them into associated_roles/
+# certificate_authorities on read and never echoes back the plain name/ID
+# list, and Command's expansion order isn't guaranteed to match submission
+# order -- a set's membership-based equality makes that irrelevant, so the
+# provider safely DERIVES both attributes from that same expansion on every
+# refresh (see resource_keyfactor_enrollment_pattern.go), rather than
+# preserving whatever Terraform last wrote. That means `lab-drift-check`
+# below is expected to show no diff on these fields when nothing actually
+# changed server-side -- and, unlike an earlier version of this resource,
+# would now surface a real diff if either were changed directly in Command
+# (e.g. via the UI) outside this demo.
 #
 # associated_role_names, certificate_authority_ids (via restrict_cas), and
 # policies.default_certificate_owner_role_id are driven by variables that

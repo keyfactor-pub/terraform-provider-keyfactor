@@ -45,11 +45,11 @@ import-all:
 	  fi; \
 	done < _import_pairs.txt
 
-## reconcile: Apply after import to reconcile fields not returned by the API
-## (e.g. `associated_role_names`/`certificate_authority_ids`, which GetById
-## never returns in their write shape -- see resource_keyfactor_enrollment_
-## pattern.go). Should produce no further changes beyond re-declaring
-## write-only fields.
+## reconcile: Apply after import to settle any remaining Computed-only
+## fields. `associated_role_names`/`certificate_authority_ids` no longer
+## need reconciling here -- they're derived from GetById's response on
+## import itself (see resource_keyfactor_enrollment_pattern.go) -- so this
+## step is now typically a no-op ("No changes") immediately after import.
 reconcile:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
@@ -114,7 +114,8 @@ lab-update:
 lab-import-all:
 	$(LAB_ENV) $(MAKE) import-all SUFFIX=$(SUFFIX)
 
-## lab-reconcile: Reconcile after import (re-apply to settle write-only field drift)
+## lab-reconcile: Re-apply after import to settle any remaining Computed-only
+## fields (see reconcile's comment above -- typically a no-op now)
 lab-reconcile:
 	$(LAB_ENV) $(MAKE) reconcile SUFFIX=$(SUFFIX)
 

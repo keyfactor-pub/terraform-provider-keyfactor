@@ -73,13 +73,18 @@ func newEnrollmentPatternCreateTestServer(t *testing.T, capturedPOSTBody *[]byte
 		}
 		*capturedPOSTBody = body
 
-		// Canned Create response. All fields besides Id/Name are optional
-		// pointers/slices on the SDK model, and enrollmentPatternResponseToState
-		// is nil-safe for every one of them (nullableStringToTfString,
-		// boolPtrToTfBool, etc.) -- a minimal response is sufficient to
-		// exercise the Create() code path under test.
+		// Canned Create response. All fields besides Id/Name/AssociatedRoles
+		// are optional pointers/slices on the SDK model, and
+		// enrollmentPatternResponseToState is nil-safe for every one of them
+		// (nullableStringToTfString, boolPtrToTfBool, etc.) -- a minimal
+		// response is otherwise sufficient to exercise the Create() code
+		// path under test. AssociatedRoles echoes back the "InstanceAdmin"
+		// role the test declares in config, matching real Command behavior
+		// (the create response's AssociatedRoles expansion is what
+		// associated_role_names is now derived from -- see
+		// enrollmentPatternResponseToState's doc comment).
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"Id": 42, "Name": "Demo Pattern_TF"}`))
+		_, _ = w.Write([]byte(`{"Id": 42, "Name": "Demo Pattern_TF", "AssociatedRoles": [{"Id": 1, "Name": "InstanceAdmin"}]}`))
 	}))
 }
 
@@ -91,8 +96,8 @@ func blankEnrollmentPatternState() KeyfactorEnrollmentPatternState {
 	nullStr := types.String{Null: true}
 	nullBool := types.Bool{Null: true}
 	nullInt := types.Int64{Null: true}
-	nullStrList := types.List{Null: true, ElemType: types.StringType}
-	nullIntList := types.List{Null: true, ElemType: types.Int64Type}
+	nullStrSet := types.Set{Null: true, ElemType: types.StringType}
+	nullIntSet := types.Set{Null: true, ElemType: types.Int64Type}
 	return KeyfactorEnrollmentPatternState{
 		ID:                      nullInt,
 		Name:                    nullStr,
@@ -101,9 +106,9 @@ func blankEnrollmentPatternState() KeyfactorEnrollmentPatternState {
 		Template:                nil,
 		TemplateDefault:         nullBool,
 		UseADPermissions:        nullBool,
-		AssociatedRoleNames:     nullStrList,
+		AssociatedRoleNames:     nullStrSet,
 		AssociatedRoles:         nil,
-		CertificateAuthorityIds: nullIntList,
+		CertificateAuthorityIds: nullIntSet,
 		CertificateAuthorities:  nil,
 		AllowedEnrollmentTypes:  nullInt,
 		Regexes:                 nil,
@@ -151,7 +156,7 @@ func TestUnitEnrollmentPatternCreateResolvesUndeclaredComputedFieldsFromConfig(t
 	config.AllowedEnrollmentTypes = types.Int64{Value: 3}
 	config.TemplateDefault = types.Bool{Value: false}
 	config.RestrictCAs = types.Bool{Value: false}
-	config.AssociatedRoleNames = types.List{
+	config.AssociatedRoleNames = types.Set{
 		ElemType: types.StringType,
 		Elems:    []attr.Value{types.String{Value: "InstanceAdmin"}},
 	}
@@ -181,7 +186,7 @@ func TestUnitEnrollmentPatternCreateResolvesUndeclaredComputedFieldsFromConfig(t
 	// type via tftypes.Transform. This is exactly the shape the real
 	// framework produces and handed to Create() live against kfclab.
 	plan := config
-	plan.CertificateAuthorityIds = types.List{Unknown: true, ElemType: types.Int64Type}
+	plan.CertificateAuthorityIds = types.Set{Unknown: true, ElemType: types.Int64Type}
 	plan.Policies = &EnrollmentPatternResourcePolicy{
 		AllowKeyReuse:                   types.Bool{Unknown: true},
 		AllowWildcards:                  types.Bool{Unknown: true},
@@ -237,9 +242,24 @@ func TestUnitEnrollmentPatternCreateResolvesUndeclaredComputedFieldsFromConfig(t
 		t.Fatalf("failed to read final state: %+v", d)
 	}
 
+	// AssociatedRoleNames is now derived directly from the Create response's
+	// AssociatedRoles expansion (enrollmentPatternResponseToState), not
+	// carried forward from plan/config -- so the final state must reflect
+	// exactly what the canned response echoed back ("InstanceAdmin"), not
+	// merely "not Unknown."
 	if finalState.AssociatedRoleNames.Unknown {
 		t.Error("final state associated_role_names is Unknown, want a resolved value")
 	}
+	var gotRoles []string
+	finalState.AssociatedRoleNames.ElementsAs(ctx, &gotRoles, false)
+	if len(gotRoles) != 1 || gotRoles[0] != "InstanceAdmin" {
+		t.Errorf(
+			"final state associated_role_names = %v, want [InstanceAdmin] (derived from the Create response)",
+			gotRoles,
+		)
+	}
+	// certificate_authority_ids was left undeclared in config, and the
+	// canned response has no CertificateAuthorities -- derives to Null.
 	if finalState.CertificateAuthorityIds.Unknown {
 		t.Error("final state certificate_authority_ids is Unknown, want Null")
 	}
@@ -248,50 +268,29 @@ func TestUnitEnrollmentPatternCreateResolvesUndeclaredComputedFieldsFromConfig(t
 	}
 }
 
-// TestUnitResolveUnknownListToNull is the narrow unit test for the helper
-// itself: Unknown resolves to Null (preserving ElemType); every other value
-// passes through untouched.
-func TestUnitResolveUnknownListToNull(t *testing.T) {
-	unknown := types.List{Unknown: true, ElemType: types.Int64Type}
-	got := resolveUnknownListToNull(unknown)
-	if got.Unknown {
-		t.Error("Unknown list was not resolved to Null")
-	}
-	if !got.Null {
-		t.Errorf("got %+v, want Null", got)
-	}
-	if got.ElemType != types.Int64Type {
-		t.Errorf("ElemType not preserved: got %v, want %v", got.ElemType, types.Int64Type)
-	}
-
-	null := types.List{Null: true, ElemType: types.StringType}
-	if got := resolveUnknownListToNull(null); !got.Null {
-		t.Errorf("Null list was altered: got %+v", got)
-	}
-
-	known := types.List{Elems: []attr.Value{types.String{Value: "a"}}, ElemType: types.StringType}
-	got2 := resolveUnknownListToNull(known)
-	if got2.Null || got2.Unknown || len(got2.Elems) != 1 {
-		t.Errorf("known list was altered: got %+v", got2)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Regression test — keyfactor_enrollment_pattern ImportState() fails with
-// "cannot convert List to tftypes.Value if ElemType field is not set".
+// "cannot convert Set to tftypes.Value if ElemType field is not set".
 //
-// Reproduced live against kfclab via terraform/enrollment_pattern_demo's
-// `terraform import`: GetById's response never carries
-// AssociatedRoleNames/CertificateAuthorityIds in their write shape (see
-// KeyfactorEnrollmentPatternState's doc comment), and
-// enrollmentPatternResponseToState never touches either field, so
-// ImportState's newState left them at Go's zero value for types.List --
-// {Null: false, Unknown: false, ElemType: nil}. That is not a valid "Null"
-// list: response.State.Set's encoder requires ElemType to be set even for a
-// null value, and errors accordingly before the import can complete.
+// Originally reproduced live against kfclab via terraform/enrollment_pattern_
+// demo's `terraform import`: GetById's response never carries a flat
+// AssociatedRoleNames/CertificateAuthorityIds field (Command only ever
+// returns the expanded AssociatedRoles/CertificateAuthorities objects -- see
+// KeyfactorEnrollmentPatternState's doc comment), and at the time this test
+// was written enrollmentPatternResponseToState never derived either field
+// from that expansion, so ImportState's newState left them at Go's zero
+// value for types.List -- {Null: false, Unknown: false, ElemType: nil}. That
+// is not a valid "Null" value: response.State.Set's encoder requires
+// ElemType to be set even for a null value, and errors accordingly before
+// the import can complete.
 //
-// The fix: ImportState explicitly sets both fields to a proper Null list
-// with the correct ElemType before calling State.Set.
+// enrollmentPatternResponseToState now derives associated_role_names/
+// certificate_authority_ids directly from the same AssociatedRoles/
+// CertificateAuthorities expansion on every Create/Read/Update/Import (see
+// its doc comment) -- including a properly-typed Null Set, with ElemType
+// set, when the response has no roles/CAs at all (the case this test
+// exercises). This test now guards that derivation path specifically,
+// rather than an ImportState-only hardcoded assignment.
 // ---------------------------------------------------------------------------
 
 // newEnrollmentPatternImportTestServer serves a canned GetById response for
@@ -337,7 +336,7 @@ func TestUnitEnrollmentPatternImportStateSetsValidNullForWriteOnlyLists(t *testi
 	if resp.Diagnostics.HasError() {
 		t.Fatalf(
 			"ImportState returned diagnostics (this is the live repro: response.State.Set rejects a malformed "+
-				"zero-value types.List with \"cannot convert List to tftypes.Value if ElemType field is not "+
+				"zero-value types.Set with \"cannot convert Set to tftypes.Value if ElemType field is not "+
 				"set\"): %+v",
 			resp.Diagnostics,
 		)

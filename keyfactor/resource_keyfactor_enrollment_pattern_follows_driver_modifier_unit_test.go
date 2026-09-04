@@ -71,7 +71,7 @@ func TestUnitAssociatedRolesUsesFollowsDriverModifier(t *testing.T) {
 
 	found := false
 	for _, m := range attr.PlanModifiers {
-		if fd, ok := m.(followsDriverModifier[types.List]); ok {
+		if fd, ok := m.(followsDriverModifier[types.Set]); ok {
 			found = true
 			wantPath := path.Root("associated_role_names")
 			if fd.driverPath.String() != wantPath.String() {
@@ -88,7 +88,7 @@ func TestUnitAssociatedRolesUsesFollowsDriverModifier(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("associated_roles: expected followsDriverModifier[types.List] among PlanModifiers")
+		t.Error("associated_roles: expected followsDriverModifier[types.Set] among PlanModifiers")
 	}
 }
 
@@ -108,7 +108,7 @@ func TestUnitCertificateAuthoritiesUsesFollowsDriverModifier(t *testing.T) {
 
 	found := false
 	for _, m := range attr.PlanModifiers {
-		if fd, ok := m.(followsDriverModifier[types.List]); ok {
+		if fd, ok := m.(followsDriverModifier[types.Set]); ok {
 			found = true
 			wantPath := path.Root("certificate_authority_ids")
 			if fd.driverPath.String() != wantPath.String() {
@@ -121,7 +121,7 @@ func TestUnitCertificateAuthoritiesUsesFollowsDriverModifier(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("certificate_authorities: expected followsDriverModifier[types.List] among PlanModifiers")
+		t.Error("certificate_authorities: expected followsDriverModifier[types.Set] among PlanModifiers")
 	}
 }
 
@@ -154,55 +154,58 @@ func TestUnitDefaultCertificateOwnerRoleNameUsesFollowsDriverModifier(t *testing
 	}
 }
 
-// TestUnitFollowsDriverModifierPlansCorrectly_ListDriver simulates
-// Terraform Core's plan phase for a List-typed mirror/driver pair (the
+// TestUnitFollowsDriverModifierPlansCorrectly_SetDriver simulates Terraform
+// Core's plan phase for a Set-typed mirror/driver pair (the
 // associated_roles/associated_role_names and certificate_authorities/
-// certificate_authority_ids shape) by invoking followsDriverModifier[types.List]
-// directly against a real Config/State built from the actual enrollment
-// pattern schema, covering every branch F2's fix depends on.
-func TestUnitFollowsDriverModifierPlansCorrectly_ListDriver(t *testing.T) {
+// certificate_authority_ids shape -- associated_role_names/
+// certificate_authority_ids are Sets, not Lists, so that Command's
+// expansion order never matters for diffing; see KeyfactorEnrollmentPattern-
+// State's doc comment) by invoking followsDriverModifier[types.Set] directly
+// against a real Config/State built from the actual enrollment pattern
+// schema, covering every branch F2's fix depends on.
+func TestUnitFollowsDriverModifierPlansCorrectly_SetDriver(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	schema := enrollmentPatternSchemaForTest(t, ctx)
 
-	strList := func(vals ...string) types.List {
-		l := types.List{ElemType: types.StringType}
+	strSet := func(vals ...string) types.Set {
+		s := types.Set{ElemType: types.StringType}
 		for _, v := range vals {
-			l.Elems = append(l.Elems, types.String{Value: v})
+			s.Elems = append(s.Elems, types.String{Value: v})
 		}
-		return l
+		return s
 	}
-	nullStrList := types.List{Null: true, ElemType: types.StringType}
-	unknownStrList := types.List{Unknown: true, ElemType: types.StringType}
+	nullStrSet := types.Set{Null: true, ElemType: types.StringType}
+	unknownStrSet := types.Set{Unknown: true, ElemType: types.StringType}
 
 	tests := []struct {
 		name         string
-		driverState  types.List
-		driverConfig types.List
+		driverState  types.Set
+		driverConfig types.Set
 		wantUnknown  bool
 	}{
 		{
 			name:         "driver undeclared (null config) -- not changing, pin mirror to prior state",
-			driverState:  strList("RoleA"),
-			driverConfig: nullStrList,
+			driverState:  strSet("RoleA"),
+			driverConfig: nullStrSet,
 			wantUnknown:  false,
 		},
 		{
 			name:         "driver re-declared with its current value -- not changing, pin mirror to prior state",
-			driverState:  strList("RoleA"),
-			driverConfig: strList("RoleA"),
+			driverState:  strSet("RoleA"),
+			driverConfig: strSet("RoleA"),
 			wantUnknown:  false,
 		},
 		{
 			name:         "driver changing to a new value -- leave mirror unknown",
-			driverState:  strList("RoleA"),
-			driverConfig: strList("RoleB"),
+			driverState:  strSet("RoleA"),
+			driverConfig: strSet("RoleB"),
 			wantUnknown:  true,
 		},
 		{
 			name:         "driver config itself unknown (chained value) -- leave mirror unknown",
-			driverState:  strList("RoleA"),
-			driverConfig: unknownStrList,
+			driverState:  strSet("RoleA"),
+			driverConfig: unknownStrSet,
 			wantUnknown:  true,
 		},
 	}
@@ -220,14 +223,16 @@ func TestUnitFollowsDriverModifierPlansCorrectly_ListDriver(t *testing.T) {
 			cfg := asEnrollmentPatternConfig(t, ctx, schema, config)
 			st := asEnrollmentPatternState(t, ctx, schema, state)
 
-			m := followsDriverModifier[types.List]{driverPath: path.Root("associated_role_names")}
+			m := followsDriverModifier[types.Set]{driverPath: path.Root("associated_role_names")}
 			req := tfsdk.ModifyAttributePlanRequest{
 				Config: cfg,
 				State:  st,
 				// associated_roles' own config/state -- not exercised by
 				// the modifier's own type-specific logic (it only checks
 				// IsNull/IsUnknown on these, generically), so a stand-in
-				// types.List is sufficient here.
+				// types.List is sufficient here (associated_roles itself
+				// stays a List of {id, name} objects; only the DRIVER --
+				// associated_role_names -- is a Set).
 				AttributeConfig: types.List{Null: true, ElemType: types.Int64Type},
 				AttributeState:  types.List{ElemType: types.Int64Type},
 			}

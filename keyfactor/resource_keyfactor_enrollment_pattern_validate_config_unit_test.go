@@ -67,7 +67,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 	// use_ad_permissions=false check these RestrictCAs-focused cases don't
 	// intend to exercise.
 	noUseADPermissionsCheck := types.Bool{Null: true}
-	noAssociatedRoleNamesCheck := types.List{Null: true, ElemType: types.StringType}
+	noAssociatedRoleNamesCheck := types.Set{Null: true, ElemType: types.StringType}
 
 	// full-review finding F5: a Null (undeclared) certificate_authority_ids
 	// must NOT be a config error -- only a KNOWN, explicitly-empty list is
@@ -85,7 +85,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			RestrictCAs:             types.Bool{Value: true},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			UseADPermissions:        noUseADPermissionsCheck,
 			AssociatedRoleNames:     noAssociatedRoleNamesCheck,
 		}
@@ -106,7 +106,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			RestrictCAs:             types.Bool{Value: true},
-			CertificateAuthorityIds: types.List{ElemType: types.Int64Type, Elems: []attr.Value{}},
+			CertificateAuthorityIds: types.Set{ElemType: types.Int64Type, Elems: []attr.Value{}},
 			UseADPermissions:        noUseADPermissionsCheck,
 			AssociatedRoleNames:     noAssociatedRoleNamesCheck,
 		}
@@ -120,7 +120,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			RestrictCAs: types.Bool{Value: true},
-			CertificateAuthorityIds: types.List{
+			CertificateAuthorityIds: types.Set{
 				ElemType: types.Int64Type,
 				Elems:    []attr.Value{types.Int64{Value: 1}},
 			},
@@ -137,7 +137,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			RestrictCAs:             types.Bool{Unknown: true},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			UseADPermissions:        noUseADPermissionsCheck,
 			AssociatedRoleNames:     noAssociatedRoleNamesCheck,
 		}
@@ -151,7 +151,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			RestrictCAs: types.Bool{Value: false},
-			CertificateAuthorityIds: types.List{
+			CertificateAuthorityIds: types.Set{
 				ElemType: types.Int64Type,
 				Elems:    []attr.Value{types.Int64{Value: 1}},
 			},
@@ -171,7 +171,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			RestrictCAs:             types.Bool{Value: false},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			UseADPermissions:        noUseADPermissionsCheck,
 			AssociatedRoleNames:     noAssociatedRoleNamesCheck,
 		}
@@ -199,7 +199,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_UseADPermissions(t *test
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			UseADPermissions:    types.Bool{Value: false},
-			AssociatedRoleNames: types.List{Null: true, ElemType: types.StringType},
+			AssociatedRoleNames: types.Set{Null: true, ElemType: types.StringType},
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if hasAttributeError(diags, "Missing associated roles for use_ad_permissions = false") {
@@ -218,7 +218,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_UseADPermissions(t *test
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			UseADPermissions:    types.Bool{Value: false},
-			AssociatedRoleNames: types.List{ElemType: types.StringType, Elems: nil},
+			AssociatedRoleNames: types.Set{ElemType: types.StringType, Elems: nil},
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if !hasAttributeError(diags, "Missing associated roles for use_ad_permissions = false") {
@@ -232,7 +232,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_UseADPermissions(t *test
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			UseADPermissions: types.Bool{Value: false},
-			AssociatedRoleNames: types.List{
+			AssociatedRoleNames: types.Set{
 				ElemType: types.StringType,
 				Elems:    []attr.Value{types.String{Value: "Administrator"}},
 			},
@@ -247,7 +247,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_UseADPermissions(t *test
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			UseADPermissions:    types.Bool{Value: true},
-			AssociatedRoleNames: types.List{Null: true, ElemType: types.StringType},
+			AssociatedRoleNames: types.Set{Null: true, ElemType: types.StringType},
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if len(diags) != 0 {
@@ -259,7 +259,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_UseADPermissions(t *test
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
 			UseADPermissions:    types.Bool{Unknown: true},
-			AssociatedRoleNames: types.List{Null: true, ElemType: types.StringType},
+			AssociatedRoleNames: types.Set{Null: true, ElemType: types.StringType},
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if len(diags) != 0 {

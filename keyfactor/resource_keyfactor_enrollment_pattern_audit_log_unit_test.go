@@ -28,8 +28,8 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	t.Run("no changes produces no entries", func(t *testing.T) {
 		t.Parallel()
 		state := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			ForceTemplateDefault:    types.Bool{Null: true},
 			Policies: &EnrollmentPatternResourcePolicy{
 				RFCEnforcement: types.Bool{Value: true},
@@ -46,13 +46,13 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	t.Run("associated_role_names change is reported", func(t *testing.T) {
 		t.Parallel()
 		state := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames: types.List{
+			AssociatedRoleNames: types.Set{
 				ElemType: types.StringType,
 				Elems:    []attr.Value{types.String{Value: "Administrator"}},
 			},
 		}
 		plan := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames: types.List{
+			AssociatedRoleNames: types.Set{
 				ElemType: types.StringType,
 				Elems:    []attr.Value{types.String{Value: "Operator"}},
 			},
@@ -67,10 +67,10 @@ func TestUnitEnrollmentPatternPolicyRelevantFieldChanges(t *testing.T) {
 	t.Run("certificate_authority_ids change is reported", func(t *testing.T) {
 		t.Parallel()
 		state := KeyfactorEnrollmentPatternState{
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 		}
 		plan := KeyfactorEnrollmentPatternState{
-			CertificateAuthorityIds: types.List{
+			CertificateAuthorityIds: types.Set{
 				ElemType: types.Int64Type,
 				Elems:    []attr.Value{types.Int64{Value: 5}},
 			},
@@ -662,11 +662,11 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	t.Run("reports associated_role_names and certificate_authority_ids", func(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames: types.List{
+			AssociatedRoleNames: types.Set{
 				ElemType: types.StringType,
 				Elems:    []attr.Value{types.String{Value: "InstanceAdmin"}},
 			},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 		}
 		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
 		if !anyContains(got, "associated_role_names") {
@@ -688,9 +688,9 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
 			UseADPermissions:        types.Bool{Value: true},
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
 			RestrictCAs:             types.Bool{Value: true},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			AllowedEnrollmentTypes:  types.Int64{Value: 3},
 		}
 		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
@@ -708,8 +708,8 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	t.Run("reports policy fields when Policies is non-nil", func(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			Policies: &EnrollmentPatternResourcePolicy{
 				RFCEnforcement:       types.Bool{Value: true},
 				CertificateOwnerRole: types.Int64{Value: 2},
@@ -727,8 +727,8 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	t.Run("no policy entries when Policies is nil", func(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 		}
 		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
 		if anyContains(got, "policies.") {
@@ -739,11 +739,11 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	t.Run("values are escaped", func(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames: types.List{
+			AssociatedRoleNames: types.Set{
 				ElemType: types.StringType,
 				Elems:    []attr.Value{types.String{Value: "Administrator\nforged"}},
 			},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 		}
 		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
 		for _, entry := range got {
@@ -770,8 +770,8 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 		// created mirrors Create()'s newState AFTER the force-reset to Null
 		// -- i.e. exactly what the function receives in practice.
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			ForceTemplateDefault:    types.Bool{Null: true},
 		}
 		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Value: true})
@@ -786,8 +786,8 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	t.Run("reports force_template_default as (null) when never declared", func(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			ForceTemplateDefault:    types.Bool{Null: true},
 		}
 		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
@@ -807,8 +807,8 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	t.Run("reports policies.default_certificate_owner_override, primary/alternative_key_algorithms", func(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			Policies: &EnrollmentPatternResourcePolicy{
 				DefaultCertificateOwnerOverride: types.Bool{Value: true},
 				PrimaryKeyAlgorithms: []EnrollmentPatternResourceAlgorithm{
@@ -839,8 +839,8 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	t.Run("reports template_default", func(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			TemplateDefault:         types.Bool{Value: true},
 		}
 		got := enrollmentPatternCreationAuditFields(ctx, created, types.Bool{Null: true})
@@ -857,8 +857,8 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	t.Run("reports name and template_id", func(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			Name:                    types.String{Value: "My Enrollment Pattern"},
 			TemplateId:              types.Int64{Value: 17},
 		}
@@ -879,8 +879,8 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	t.Run("reports regexes", func(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			Regexes: []EnrollmentPatternResourceRegex{
 				{
 					SubjectPart: types.String{Value: "CommonName"},
@@ -907,8 +907,8 @@ func TestUnitEnrollmentPatternCreationAuditFields(t *testing.T) {
 	t.Run("reports metadata_fields, defaults, and enrollment_fields", func(t *testing.T) {
 		t.Parallel()
 		created := KeyfactorEnrollmentPatternState{
-			AssociatedRoleNames:     types.List{Null: true, ElemType: types.StringType},
-			CertificateAuthorityIds: types.List{Null: true, ElemType: types.Int64Type},
+			AssociatedRoleNames:     types.Set{Null: true, ElemType: types.StringType},
+			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			MetadataFields: []EnrollmentPatternResourceMetadataField{
 				{MetadataId: types.Int64{Value: 7}, Enrollment: types.Int64{Value: 2}},
 			},

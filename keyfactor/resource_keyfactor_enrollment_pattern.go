@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -157,7 +158,7 @@ Enrollment patterns provide a flexible way to streamline certificate enrollment 
 
 ~> **Important:** Enrollment Patterns are only available in Keyfactor Command v25.0+
 
-~> **Note:** ` + "`associated_role_names`, `certificate_authority_ids`" + ` are write-only: Keyfactor Command does not echo these back in the same shape they were submitted (it expands them into ` + "`associated_roles`/`certificate_authorities`" + `), so the provider preserves the last-known value from state instead of clearing it on refresh.
+~> **Note:** ` + "`associated_role_names`/`certificate_authority_ids`" + ` are modeled as Terraform sets, not lists: Keyfactor Command expands them server-side into ` + "`associated_roles`/`certificate_authorities`" + ` rather than echoing back the flat name/ID list that was submitted, and does not guarantee that expansion preserves submission order. A set's equality is membership-based, not order-based, so the provider safely re-derives both attributes from that expansion on every refresh -- meaning changes made directly in Command (e.g. via the UI, outside Terraform) are detected as drift on the next ` + "`terraform plan`" + ` -- without risking a spurious reordering diff.
 
 For full information on enrollment patterns view the [product documentation](https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern)
 `,
@@ -251,10 +252,10 @@ For full information on enrollment patterns view the [product documentation](htt
 			},
 
 			"associated_role_names": {
-				Type:          types.ListType{ElemType: types.StringType},
+				Type:          types.SetType{ElemType: types.StringType},
 				Optional:      true,
 				Computed:      true,
-				Description:   "Names of the security roles associated with the enrollment pattern. Only users holding one of these roles will be able to use the enrollment pattern if use_ad_permissions is false. Write-only: not returned by the server in this shape (see associated_roles); the provider preserves the last-known value from state on refresh.",
+				Description:   "Names of the security roles associated with the enrollment pattern. Only users holding one of these roles will be able to use the enrollment pattern if use_ad_permissions is false. Modeled as a set (not a list): Command's create/update/GetById responses only ever echo this back as the expanded associated_roles objects, never as a flat name list, and don't guarantee that expansion preserves submission order -- a set's membership-based equality means this attribute is safely re-derived from associated_roles on every refresh (detecting drift from changes made outside Terraform) without risking a spurious reordering diff.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			// Optional required alongside Computed -- see the comment on
@@ -270,9 +271,12 @@ For full information on enrollment patterns view the [product documentation](htt
 				// new membership in the final state disagrees with that
 				// pinned plan value -- "Provider produced inconsistent
 				// result after apply" on this resource's primary update
-				// path. See followsDriverModifier's doc comment.
+				// path. See followsDriverModifier's doc comment. T is
+				// types.Set (not types.List) because that's the type of
+				// the driver attribute (associated_role_names) itself --
+				// this mirror attribute stays a List of {id, name} objects.
 				PlanModifiers: []tfsdk.AttributePlanModifier{
-					followsDriverModifier[types.List]{
+					followsDriverModifier[types.Set]{
 						driverPath:  path.Root("associated_role_names"),
 						description: "Uses the prior state value unless associated_role_names is changing this apply, in which case this attribute is left unknown so it can be recomputed from the server's response.",
 					},
@@ -286,10 +290,10 @@ For full information on enrollment patterns view the [product documentation](htt
 			},
 
 			"certificate_authority_ids": {
-				Type:          types.ListType{ElemType: types.Int64Type},
+				Type:          types.SetType{ElemType: types.Int64Type},
 				Optional:      true,
 				Computed:      true,
-				Description:   "IDs of the certificate authorities to which the enrollment pattern is restricted, if applicable (see restrict_cas). Write-only: not returned by the server in this shape (see certificate_authorities); the provider preserves the last-known value from state on refresh.",
+				Description:   "IDs of the certificate authorities to which the enrollment pattern is restricted, if applicable (see restrict_cas). Modeled as a set (not a list): Command's create/update/GetById responses only ever echo this back as the expanded certificate_authorities objects, never as a flat ID list, and don't guarantee that expansion preserves submission order -- a set's membership-based equality means this attribute is safely re-derived from certificate_authorities on every refresh (detecting drift from changes made outside Terraform) without risking a spurious reordering diff.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			// Optional required alongside Computed -- see the comment on
@@ -300,9 +304,10 @@ For full information on enrollment patterns view the [product documentation](htt
 				Description: "The certificate authorities to which the enrollment pattern is restricted (read-only, expanded from certificate_authority_ids).",
 				// followsDriverModifier (full-review finding F2) -- see
 				// the identical rationale on associated_roles above,
-				// mirrored here for certificate_authority_ids.
+				// mirrored here for certificate_authority_ids. T is
+				// types.Set for the same reason as associated_roles above.
 				PlanModifiers: []tfsdk.AttributePlanModifier{
-					followsDriverModifier[types.List]{
+					followsDriverModifier[types.Set]{
 						driverPath:  path.Root("certificate_authority_ids"),
 						description: "Uses the prior state value unless certificate_authority_ids is changing this apply, in which case this attribute is left unknown so it can be recomputed from the server's response.",
 					},
@@ -545,16 +550,25 @@ type EnrollmentPatternResourceField struct {
 // KeyfactorEnrollmentPatternState is the Terraform state model for
 // keyfactor_enrollment_pattern.
 //
-// AssociatedRoleNames and CertificateAuthorityIds are write-only from the
-// server's perspective: Create/Update/GetById (all three share the same
-// EnrollmentPatternsEnrollmentPatternResponse shape) only ever expand these
-// into AssociatedRoles/CertificateAuthorities objects, never echo back the
-// plain name/ID list that was submitted. Read/Import must therefore preserve
-// these from the prior Terraform state rather than hardcode them null on
-// every un-declared apply, or the provider would either wipe them on refresh
-// or (for Optional+Computed with useStateOrNullModifier) hit "provider
-// produced inconsistent result after apply" -- see
-// KeyfactorCertificateCollectionState's Query field for the same pattern.
+// AssociatedRoleNames and CertificateAuthorityIds are backed by Terraform
+// Sets, not Lists: Create/Update/GetById (all three share the same
+// EnrollmentPatternsEnrollmentPatternResponse shape) never echo back a flat
+// name/ID list -- they only ever expand these into AssociatedRoles/
+// CertificateAuthorities objects -- and Command does not guarantee that
+// expansion preserves submission order. A types.Set's Equal() compares
+// membership only (order-independent), so enrollmentPatternResponseToState
+// safely DERIVES both fields from that same AssociatedRoles/
+// CertificateAuthorities expansion on every Create/Read/Update/Import,
+// rather than preserving whatever was last written to Terraform state: any
+// reordering Command's expansion might apply is invisible to a Set, while a
+// genuine membership change (e.g. a role added/removed directly in the
+// Command UI, outside Terraform) still surfaces as drift on the next
+// `terraform plan`. This was a deliberate design change from an earlier
+// version of this resource, which preserved these two fields from prior
+// state unconditionally (silently masking that kind of drift) -- see
+// KeyfactorCertificateCollectionState's Query field for a case where
+// preserving from prior state is still the right call (that field genuinely
+// has no server-side expansion to derive from at all).
 type KeyfactorEnrollmentPatternState struct {
 	ID          types.Int64  `tfsdk:"id"`
 	Name        types.String `tfsdk:"name"`
@@ -566,10 +580,10 @@ type KeyfactorEnrollmentPatternState struct {
 	TemplateDefault  types.Bool `tfsdk:"template_default"`
 	UseADPermissions types.Bool `tfsdk:"use_ad_permissions"`
 
-	AssociatedRoleNames types.List                      `tfsdk:"associated_role_names"`
+	AssociatedRoleNames types.Set                       `tfsdk:"associated_role_names"`
 	AssociatedRoles     []EnrollmentPatternResourceRole `tfsdk:"associated_roles"`
 
-	CertificateAuthorityIds types.List                    `tfsdk:"certificate_authority_ids"`
+	CertificateAuthorityIds types.Set                     `tfsdk:"certificate_authority_ids"`
 	CertificateAuthorities  []EnrollmentPatternResourceCA `tfsdk:"certificate_authorities"`
 
 	AllowedEnrollmentTypes types.Int64 `tfsdk:"allowed_enrollment_types"`
@@ -603,29 +617,29 @@ func enumPtrToTfInt64[T ~int32](v *T) types.Int64 {
 	return types.Int64{Value: int64(*v)}
 }
 
-// tfListToStringSlice extracts a []string from a types.List, returning nil
-// when the list is null/unknown so callers can distinguish "nothing to send"
-// from "send an explicit empty list."
-func tfListToStringSlice(ctx context.Context, l types.List) []string {
-	if l.Null || l.Unknown {
+// tfSetToStringSlice extracts a []string from a types.Set (associated_role_
+// names), returning nil when the set is null/unknown so callers can
+// distinguish "nothing to send" from "send an explicit empty list."
+func tfSetToStringSlice(ctx context.Context, s types.Set) []string {
+	if s.Null || s.Unknown {
 		return nil
 	}
 	var result []string
-	l.ElementsAs(ctx, &result, false)
+	s.ElementsAs(ctx, &result, false)
 	if result == nil {
 		result = []string{}
 	}
 	return result
 }
 
-// tfListToInt32Slice extracts a []int32 from a types.List of Int64 elements,
-// returning nil when the list is null/unknown.
-func tfListToInt32Slice(ctx context.Context, l types.List) []int32 {
-	if l.Null || l.Unknown {
+// tfSetToInt32Slice extracts a []int32 from a types.Set of Int64 elements
+// (certificate_authority_ids), returning nil when the set is null/unknown.
+func tfSetToInt32Slice(ctx context.Context, s types.Set) []int32 {
+	if s.Null || s.Unknown {
 		return nil
 	}
 	var vals []int64
-	l.ElementsAs(ctx, &vals, false)
+	s.ElementsAs(ctx, &vals, false)
 	result := make([]int32, len(vals))
 	for i, v := range vals {
 		result[i] = int32(v)
@@ -702,6 +716,44 @@ func tfListLogString(ctx context.Context, l types.List) string {
 			vals = append(vals, fmt.Sprintf("%v", e))
 		}
 	}
+	quoted := make([]string, len(vals))
+	for i, v := range vals {
+		quoted[i] = fmt.Sprintf("%q", v)
+	}
+	return "[" + strings.Join(quoted, ",") + "]"
+}
+
+// tfSetLogString is tfListLogString's types.Set counterpart, used for the
+// two Set-backed attributes (associated_role_names, certificate_authority_
+// ids -- see KeyfactorEnrollmentPatternState's doc comment) in this
+// resource's audit-log diffs. Deliberately renders elements sorted, not in
+// Elems' incidental order: since a Set's own equality is order-independent,
+// two semantically-identical Sets built from responses on different
+// requests could otherwise render as visibly different audit-log strings
+// (e.g. "[RoleA,RoleB]" vs. "[RoleB,RoleA]"), which would misleadingly look
+// like a change to a human reading TF_LOG=DEBUG output even though nothing
+// about the actual membership changed.
+func tfSetLogString(ctx context.Context, s types.Set) string {
+	if s.Unknown {
+		return "(unknown)"
+	}
+	if s.Null {
+		return "(null)"
+	}
+	var vals []string
+	s.ElementsAs(ctx, &vals, false)
+	if vals == nil {
+		// ElementsAs above only succeeds directly for []string; for a set
+		// of a different element type (e.g. certificate_authority_ids'
+		// Int64 elements), fall back to formatting the raw attr.Value
+		// elements so this still produces a readable, non-empty log line
+		// instead of silently reporting "[]" for a populated non-string
+		// set.
+		for _, e := range s.Elems {
+			vals = append(vals, fmt.Sprintf("%v", e))
+		}
+	}
+	sort.Strings(vals)
 	quoted := make([]string, len(vals))
 	for i, v := range vals {
 		quoted[i] = fmt.Sprintf("%q", v)
@@ -873,9 +925,9 @@ func enrollmentPatternPolicyRelevantFieldChanges(
 	appendIfChanged("name", tfStringLogString(prior.Name), tfStringLogString(updated.Name))
 	appendIfChanged("template_default", tfBoolLogString(prior.TemplateDefault), tfBoolLogString(updated.TemplateDefault))
 	appendIfChanged("use_ad_permissions", tfBoolLogString(prior.UseADPermissions), tfBoolLogString(updated.UseADPermissions))
-	appendIfChanged("associated_role_names", tfListLogString(ctx, prior.AssociatedRoleNames), tfListLogString(ctx, updated.AssociatedRoleNames))
+	appendIfChanged("associated_role_names", tfSetLogString(ctx, prior.AssociatedRoleNames), tfSetLogString(ctx, updated.AssociatedRoleNames))
 	appendIfChanged("restrict_cas", tfBoolLogString(prior.RestrictCAs), tfBoolLogString(updated.RestrictCAs))
-	appendIfChanged("certificate_authority_ids", tfListLogString(ctx, prior.CertificateAuthorityIds), tfListLogString(ctx, updated.CertificateAuthorityIds))
+	appendIfChanged("certificate_authority_ids", tfSetLogString(ctx, prior.CertificateAuthorityIds), tfSetLogString(ctx, updated.CertificateAuthorityIds))
 	appendIfChanged("allowed_enrollment_types", tfInt64LogString(prior.AllowedEnrollmentTypes), tfInt64LogString(updated.AllowedEnrollmentTypes))
 	appendIfChanged("regexes", regexListLogString(prior.Regexes), regexListLogString(updated.Regexes))
 	appendIfChanged(
@@ -1130,9 +1182,9 @@ func enrollmentPatternCreationAuditFields(
 	add("template_id", tfInt64LogString(created.TemplateId))
 	add("template_default", tfBoolLogString(created.TemplateDefault))
 	add("use_ad_permissions", tfBoolLogString(created.UseADPermissions))
-	add("associated_role_names", tfListLogString(ctx, created.AssociatedRoleNames))
+	add("associated_role_names", tfSetLogString(ctx, created.AssociatedRoleNames))
 	add("restrict_cas", tfBoolLogString(created.RestrictCAs))
-	add("certificate_authority_ids", tfListLogString(ctx, created.CertificateAuthorityIds))
+	add("certificate_authority_ids", tfSetLogString(ctx, created.CertificateAuthorityIds))
 	add("allowed_enrollment_types", tfInt64LogString(created.AllowedEnrollmentTypes))
 	add("regexes", regexListLogString(created.Regexes))
 	add("metadata_fields", metadataFieldListLogString(created.MetadataFields))
@@ -1629,39 +1681,79 @@ func (m templateDefaultFollowsForceModifier) Modify(ctx context.Context, req tfs
 	resp.AttributePlan = req.AttributeState
 }
 
-// resolveUnknownListToNull resolves an Unknown types.List to Null, leaving
-// every other value (Null or known) untouched.
+// enrollmentPatternAssociatedRoleNamesToSet derives associated_role_names
+// directly from the same AssociatedRoles expansion the server returns,
+// rather than preserving whatever was last written to Terraform state --
+// see KeyfactorEnrollmentPatternState's doc comment for why a Set (not a
+// List) makes this safe regardless of the expansion's actual order. Mirrors
+// nil-vs-non-nil-empty handling: a Go-nil response slice (server omitted the
+// field entirely) resolves to a proper Null Set with ElemType set (NOT the
+// Go zero-value types.Set{}, which the framework's encoder rejects with
+// "cannot convert Set to tftypes.Value if ElemType field is not set" --
+// reproduced live against kfclab via terraform/enrollment_pattern_demo's
+// `terraform import`).
 //
-// Used for write-only list attributes (associated_role_names,
-// certificate_authority_ids -- see KeyfactorEnrollmentPatternState's doc
-// comment) whose Create-time plan value can legitimately still be Unknown
-// when left undeclared in config: useStateOrNullModifier only carries a
-// value forward from PRIOR state, and on Create there is no prior state at
-// all (fwserver's StateGetAttributeValue returns a Go nil, not a typed Null,
-// for every attribute when the whole state is nil), so the modifier's
-// "nothing to carry forward" guard leaves the plan exactly as the
-// framework's default Computed handling set it: Unknown. For most
-// Optional+Computed fields that's fine -- Create()'s API response fills in
-// the real value afterward. But these two fields are write-only: Command
-// never echoes them back in any response, so there is no source of truth to
-// resolve the Unknown plan value to except Null. Passing Unknown straight
-// into response.State.Set makes the framework reject the whole Create with
-// "Value Conversion Error: unhandled unknown value" -- reproduced live
-// against kfclab via terraform/enrollment_pattern_demo (config that leaves
-// certificate_authority_ids undeclared).
-func resolveUnknownListToNull(l types.List) types.List {
-	if l.Unknown {
-		return types.List{Null: true, ElemType: l.ElemType}
+// Verified live against kfclab (raw API, restrict_cas=false/no CAs
+// configured -- the CertificateAuthorities-side analog of this function's
+// own "no roles" case): Command's Create/GetById responses send an
+// EXPLICIT `"CertificateAuthorities": []` for that case, never omitting the
+// key -- which Go's json.Unmarshal decodes as a non-nil, zero-length slice,
+// not nil. By the identical response-model shape/serialization path,
+// AssociatedRoles almost certainly behaves the same way for
+// use_ad_permissions=true with no roles (not verified directly -- this
+// lab has no AD-integrated Command instance to exercise that specific
+// combination against). Practical effect: this function returns a KNOWN,
+// non-null, empty Set (not Null) in that case, and tfSetToStringSlice/
+// tfSetToInt32Slice then return a non-nil empty []string{}/[]int32{} for
+// it (since only Null/Unknown short-circuit to nil there) -- so
+// buildEnrollmentPatternCreateRequest/UpdateRequest will send an explicit
+// `[]` on the wire even when the corresponding attribute was left
+// undeclared in config. This is harmless in practice: it only occurs when
+// the field is already genuinely empty/inapplicable
+// (restrict_cas=false/use_ad_permissions=true), so re-sending `[]` is a
+// true no-op server-side, and it never surfaces as a Terraform plan diff
+// (both sides of any comparison are consistently this same known-empty
+// Set). Confirmed deliberately here rather than left as an accidental
+// implementation detail.
+func enrollmentPatternAssociatedRoleNamesToSet(roles []v1.EnrollmentPatternsEnrollmentPatternAssociatedRoleResponse) types.Set {
+	if roles == nil {
+		return types.Set{Null: true, ElemType: types.StringType}
 	}
-	return l
+	elems := make([]attr.Value, 0, len(roles))
+	for _, role := range roles {
+		if name := role.Name.Get(); name != nil {
+			elems = append(elems, types.String{Value: *name})
+		}
+	}
+	return types.Set{Elems: elems, ElemType: types.StringType}
+}
+
+// enrollmentPatternCAIdsToSet is enrollmentPatternAssociatedRoleNamesToSet's
+// counterpart for certificate_authority_ids, deriving it from the same
+// CertificateAuthorities expansion -- see that function's doc comment for
+// the confirmed nil-vs-explicit-empty response shape this mirrors.
+func enrollmentPatternCAIdsToSet(cas []v1.EnrollmentPatternsEnrollmentPatternCAResponse) types.Set {
+	if cas == nil {
+		return types.Set{Null: true, ElemType: types.Int64Type}
+	}
+	elems := make([]attr.Value, 0, len(cas))
+	for _, ca := range cas {
+		if ca.Id != nil {
+			elems = append(elems, types.Int64{Value: int64(*ca.Id)})
+		}
+	}
+	return types.Set{Elems: elems, ElemType: types.Int64Type}
 }
 
 // enrollmentPatternResponseToState maps the shared Create/Update/GetById
 // response shape (EnrollmentPatternsEnrollmentPatternResponse) onto Terraform
-// state. Callers are responsible for re-applying the write-only fields
-// (AssociatedRoleNames, CertificateAuthorityIds, ForceTemplateDefault) this
-// function cannot populate from any response -- see
-// KeyfactorEnrollmentPatternState's doc comment.
+// state. Callers are responsible for re-applying ForceTemplateDefault, which
+// this function cannot populate from any response (Command never persists
+// it -- it's a one-shot directive, not a stored setting). AssociatedRoleNames/
+// CertificateAuthorityIds, by contrast, ARE derived here (see
+// enrollmentPatternAssociatedRoleNamesToSet/enrollmentPatternCAIdsToSet and
+// KeyfactorEnrollmentPatternState's doc comment) -- callers no longer need to
+// re-apply those two from prior state.
 func enrollmentPatternResponseToState(resp *v1.EnrollmentPatternsEnrollmentPatternResponse) KeyfactorEnrollmentPatternState {
 	state := KeyfactorEnrollmentPatternState{}
 
@@ -1683,7 +1775,9 @@ func enrollmentPatternResponseToState(resp *v1.EnrollmentPatternsEnrollmentPatte
 	state.TemplateDefault = boolPtrToTfBool(resp.TemplateDefault)
 	state.UseADPermissions = boolPtrToTfBool(resp.UseADPermissions)
 
+	state.AssociatedRoleNames = enrollmentPatternAssociatedRoleNamesToSet(resp.AssociatedRoles)
 	state.AssociatedRoles = enrollmentPatternAssociatedRolesToState(resp.AssociatedRoles)
+	state.CertificateAuthorityIds = enrollmentPatternCAIdsToSet(resp.CertificateAuthorities)
 	state.CertificateAuthorities = enrollmentPatternCAsToState(resp.CertificateAuthorities)
 
 	state.AllowedEnrollmentTypes = enrollmentTypePtrToTfInt64(resp.AllowedEnrollmentTypes)
@@ -1905,10 +1999,10 @@ func buildEnrollmentPatternCreateRequest(ctx context.Context, plan KeyfactorEnro
 	if !plan.UseADPermissions.Null && !plan.UseADPermissions.Unknown {
 		req.SetUseADPermissions(plan.UseADPermissions.Value)
 	}
-	if roles := tfListToStringSlice(ctx, plan.AssociatedRoleNames); roles != nil {
+	if roles := tfSetToStringSlice(ctx, plan.AssociatedRoleNames); roles != nil {
 		req.SetAssociatedRoles(roles)
 	}
-	if caIds := tfListToInt32Slice(ctx, plan.CertificateAuthorityIds); caIds != nil {
+	if caIds := tfSetToInt32Slice(ctx, plan.CertificateAuthorityIds); caIds != nil {
 		req.SetCertificateAuthorities(caIds)
 	}
 	if !plan.AllowedEnrollmentTypes.Null && !plan.AllowedEnrollmentTypes.Unknown {
@@ -1956,10 +2050,10 @@ func buildEnrollmentPatternUpdateRequest(ctx context.Context, plan KeyfactorEnro
 	if !plan.UseADPermissions.Null && !plan.UseADPermissions.Unknown {
 		req.SetUseADPermissions(plan.UseADPermissions.Value)
 	}
-	if roles := tfListToStringSlice(ctx, plan.AssociatedRoleNames); roles != nil {
+	if roles := tfSetToStringSlice(ctx, plan.AssociatedRoleNames); roles != nil {
 		req.SetAssociatedRoles(roles)
 	}
-	if caIds := tfListToInt32Slice(ctx, plan.CertificateAuthorityIds); caIds != nil {
+	if caIds := tfSetToInt32Slice(ctx, plan.CertificateAuthorityIds); caIds != nil {
 		req.SetCertificateAuthorities(caIds)
 	}
 	if !plan.AllowedEnrollmentTypes.Null && !plan.AllowedEnrollmentTypes.Unknown {
@@ -1998,11 +2092,14 @@ func buildEnrollmentPatternUpdateRequest(ctx context.Context, plan KeyfactorEnro
 // cleared server-side instead of left unchanged. current must come from a
 // GET performed immediately before the update (see Update()).
 //
-// AssociatedRoleNames/CertificateAuthorityIds are NOT handled here -- unlike
-// every other field, no response (including this fresh GET) ever echoes them
-// back in their write shape, so there is no "current server value" to fall
-// back to. Update() falls back to its own prior Terraform state for those
-// two instead, exactly as certificate_collection's Query field does.
+// AssociatedRoleNames/CertificateAuthorityIds ARE handled here, like every
+// other field: enrollmentPatternResponseToState now derives both directly
+// from this same fresh GET's AssociatedRoles/CertificateAuthorities
+// expansion (see its doc comment and KeyfactorEnrollmentPatternState's doc
+// comment), so `c.AssociatedRoleNames`/`c.CertificateAuthorityIds` reflect
+// the server's actual current membership at the moment of this Update()
+// call -- a strictly better fallback than this resource's own, potentially
+// stale, prior Terraform state.
 func preserveUndeclaredEnrollmentPatternFields(
 	plan *KeyfactorEnrollmentPatternState,
 	current *v1.EnrollmentPatternsEnrollmentPatternResponse,
@@ -2012,6 +2109,12 @@ func preserveUndeclaredEnrollmentPatternFields(
 	}
 	c := enrollmentPatternResponseToState(current)
 
+	if plan.AssociatedRoleNames.Null || plan.AssociatedRoleNames.Unknown {
+		plan.AssociatedRoleNames = c.AssociatedRoleNames
+	}
+	if plan.CertificateAuthorityIds.Null || plan.CertificateAuthorityIds.Unknown {
+		plan.CertificateAuthorityIds = c.CertificateAuthorityIds
+	}
 	if plan.Description.Null || plan.Description.Unknown {
 		plan.Description = c.Description
 	}
@@ -2143,9 +2246,8 @@ func validateEnrollmentPatternConfigConstraints(cfg KeyfactorEnrollmentPatternSt
 	// certificate_authority_ids is NOT a config error on its own -- per
 	// this function's own doc comment above ("A null/unknown value for
 	// any attribute involved is never an error"), it means "undeclared,"
-	// which Update()'s prior-state fallback (see the
-	// plan.CertificateAuthorityIds.Null || plan.CertificateAuthorityIds
-	// .Unknown check in Update()) explicitly supports falling back to
+	// which preserveUndeclaredEnrollmentPatternFields's fallback (via
+	// Update()'s pre-update GET) explicitly supports falling back to
 	// existing server-side CAs for. Only a KNOWN, explicitly-empty list
 	// (`certificate_authority_ids = []`) is a genuine config error here.
 	// The pre-fix version incorrectly treated Null the same as
@@ -2180,9 +2282,9 @@ func validateEnrollmentPatternConfigConstraints(cfg KeyfactorEnrollmentPatternSt
 		// rolesKnownEmpty -- see caIdsKnownEmpty's doc comment above for
 		// the identical null-vs-known-empty rationale (full-review
 		// finding F5): a Null/Unknown associated_role_names is
-		// "undeclared," not an error, since Update()'s prior-state
-		// fallback explicitly supports preserving existing membership
-		// for it.
+		// "undeclared," not an error, since preserveUndeclaredEnrollment
+		// PatternFields's fallback explicitly supports preserving
+		// existing membership for it.
 		rolesKnownEmpty := rolesKnown && len(cfg.AssociatedRoleNames.Elems) == 0
 		if rolesKnownEmpty {
 			diags.AddAttributeError(
@@ -2326,21 +2428,12 @@ func (r resourceEnrollmentPattern) Create(
 	if plan.EnrollmentFields != nil {
 		newState.EnrollmentFields = reconcileEnrollmentFieldsOptionsFromPlan(plan.EnrollmentFields, newState.EnrollmentFields)
 	}
-	// On Create there is no prior Terraform state at all, so
-	// useStateOrNullModifier's Computed handling (see
-	// resource_keyfactor_certificate_template.go) has nothing to carry
-	// forward and correctly leaves an undeclared associated_role_names /
-	// certificate_authority_ids Unknown in the plan -- that's the right
-	// behavior for Optional+Computed fields in general (it lets other
-	// resources fill the real value from the API response). But these two
-	// fields are write-only: Command never echoes them back, so there is
-	// no response-derived value either, and copying the still-Unknown plan
-	// value straight into final state below makes the framework reject the
-	// whole Create with "Value Conversion Error: unhandled unknown value".
-	// Resolve to Null explicitly -- the only value actually available when
-	// the field was never declared on first apply.
-	newState.AssociatedRoleNames = resolveUnknownListToNull(plan.AssociatedRoleNames)
-	newState.CertificateAuthorityIds = resolveUnknownListToNull(plan.CertificateAuthorityIds)
+	// associated_role_names/certificate_authority_ids need no special
+	// handling here: enrollmentPatternResponseToState above already derived
+	// both directly from this Create response's AssociatedRoles/
+	// CertificateAuthorities expansion (see its doc comment), which is
+	// always a known, properly-typed value (Null or a concrete Set) --
+	// never Unknown -- regardless of whether they were declared in config.
 	// force_template_default is Optional-only (full-review finding F1): its
 	// planned value is always exactly the declared config value (Null if
 	// undeclared), so the final state must echo that same value back --
@@ -2428,18 +2521,22 @@ func (r resourceEnrollmentPattern) Read(
 		newState.EnrollmentFields = reconcileEnrollmentFieldsOptionsFromPlan(state.EnrollmentFields, newState.EnrollmentFields)
 	}
 
-	// GetById never returns AssociatedRoleNames/CertificateAuthorityIds in
-	// their write shape -- preserve from the prior state (see
-	// KeyfactorEnrollmentPatternState's doc comment). force_template_default
-	// is likewise never returned by Command (it's a one-shot directive, not
-	// a persisted setting) -- preserve the last-declared value from prior
-	// state rather than hardcoding Null, matching the write-only
-	// preservation pattern used for the other two fields (full-review
+	// associated_role_names/certificate_authority_ids need no special
+	// handling here: enrollmentPatternResponseToState above already derived
+	// both from this GetById response's AssociatedRoles/
+	// CertificateAuthorities expansion (see its doc comment and
+	// KeyfactorEnrollmentPatternState's doc comment) -- this is the
+	// self-healing drift-detection behavior: if either was changed directly
+	// in Command (e.g. via the UI) since the last apply, this refresh now
+	// surfaces that as a diff on the next `terraform plan` instead of
+	// silently pinning to whatever Terraform last wrote.
+	//
+	// force_template_default is never returned by Command (it's a one-shot
+	// directive, not a persisted setting) -- preserve the last-declared
+	// value from prior state rather than hardcoding Null (full-review
 	// finding F1): force_template_default is Optional-only, so its plan is
 	// always exactly the declared config value, and a plain refresh
 	// (nothing declared differently) must not silently clear it.
-	newState.AssociatedRoleNames = state.AssociatedRoleNames
-	newState.CertificateAuthorityIds = state.CertificateAuthorityIds
 	newState.ForceTemplateDefault = state.ForceTemplateDefault
 
 	diags = response.State.Set(ctx, &newState)
@@ -2529,24 +2626,16 @@ func (r resourceEnrollmentPattern) Update(
 		)...)
 		return
 	}
+	// preserveUndeclaredEnrollmentPatternFields also covers associated_role_
+	// names/certificate_authority_ids (falling back to this same fresh GET's
+	// derived value, not stale prior Terraform state, when config leaves
+	// either Null or Unknown -- e.g. `associated_role_names =
+	// [keyfactor_security_role.my_role.name]` where that role is created in
+	// the same apply, PR #210 full-review finding FIX-4) -- see its doc
+	// comment. Without that Unknown handling, plan.AssociatedRoleNames/
+	// CertificateAuthorityIds would stay Unknown all the way into newState
+	// below, and a final state must never contain an Unknown value.
 	preserveUndeclaredEnrollmentPatternFields(&plan, current)
-
-	// associated_role_names / certificate_authority_ids have no server-side
-	// source of truth at all (see KeyfactorEnrollmentPatternState's doc
-	// comment) -- fall back to this resource's own prior state, not the
-	// fresh GET, when config leaves them undeclared (Null) OR when config
-	// is Unknown (e.g. `associated_role_names =
-	// [keyfactor_security_role.my_role.name]` where that role is created
-	// in the same apply -- PR #210 full-review finding FIX-4). Without the
-	// Unknown check, plan.AssociatedRoleNames/CertificateAuthorityIds would
-	// stay Unknown all the way into newState below, and a final state must
-	// never contain an Unknown value.
-	if plan.AssociatedRoleNames.Null || plan.AssociatedRoleNames.Unknown {
-		plan.AssociatedRoleNames = state.AssociatedRoleNames
-	}
-	if plan.CertificateAuthorityIds.Null || plan.CertificateAuthorityIds.Unknown {
-		plan.CertificateAuthorityIds = state.CertificateAuthorityIds
-	}
 
 	// full-review finding F8 (Case A) -- see the identical comment above
 	// Create()'s equivalent override for the full rationale: force the
@@ -2611,8 +2700,14 @@ func (r resourceEnrollmentPattern) Update(
 	}
 
 	newState := enrollmentPatternResponseToState(resp)
-	newState.AssociatedRoleNames = plan.AssociatedRoleNames
-	newState.CertificateAuthorityIds = plan.CertificateAuthorityIds
+	// associated_role_names/certificate_authority_ids need no special
+	// handling here: enrollmentPatternResponseToState above already derived
+	// both directly from this PUT response's AssociatedRoles/
+	// CertificateAuthorities expansion -- the server's actual, freshly-
+	// persisted membership, which should match what buildEnrollmentPattern-
+	// UpdateRequest sent from `plan` above (see preserveUndeclaredEnrollment
+	// PatternFields's doc comment for the undeclared-field fallback that
+	// determined `plan`'s value in that case).
 	// force_template_default: see the identical comment on Create()'s
 	// equivalent assignment above (full-review finding F1) -- plan is
 	// decoded from Config, so this is exactly the value the user declared
@@ -2734,23 +2829,14 @@ func (r resourceEnrollmentPattern) ImportState(
 		return
 	}
 
-	// GetById never returns AssociatedRoleNames/CertificateAuthorityIds in
-	// their write shape, so an imported pattern starts with these null in
-	// state -- the next apply will need them re-declared in configuration if
-	// the user wants Terraform to manage them going forward (same caveat as
-	// certificate_collection's Query field on import).
-	//
-	// enrollmentPatternResponseToState never touches these two fields, so
-	// without the explicit assignment below they are left at Go's zero
-	// value for types.List -- {Null: false, Unknown: false, ElemType: nil}.
-	// That is NOT a valid "Null" list: response.State.Set's encoder requires
-	// ElemType to be set even for a null value, and errors with "cannot
-	// convert List to tftypes.Value if ElemType field is not set" --
-	// reproduced live against kfclab (terraform/enrollment_pattern_demo's
-	// `terraform import`).
+	// associated_role_names/certificate_authority_ids need no special
+	// handling here: enrollmentPatternResponseToState derives both directly
+	// from this GetById response's AssociatedRoles/CertificateAuthorities
+	// expansion (see its doc comment), so an imported pattern's real
+	// membership is populated immediately -- unlike an earlier version of
+	// this resource, which hardcoded both to Null on import (forcing the
+	// user to re-declare them from scratch to bring them under management).
 	newState := enrollmentPatternResponseToState(resp)
-	newState.AssociatedRoleNames = types.List{Null: true, ElemType: types.StringType}
-	newState.CertificateAuthorityIds = types.List{Null: true, ElemType: types.Int64Type}
 	newState.ForceTemplateDefault = types.Bool{Null: true}
 
 	diags := response.State.Set(ctx, &newState)

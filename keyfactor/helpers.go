@@ -431,6 +431,58 @@ func addOAuthSecurityClaimToRole(
 	return result
 }
 
+// ---------------------------------------------------------------------------
+// OAuth security role <-> claim association: concurrent-write reconciliation
+// ---------------------------------------------------------------------------
+//
+// Keyfactor Command's V2 Security Roles API has no optimistic-concurrency
+// primitive: neither SecuritySecurityRolesSecurityRoleUpdateRequest nor
+// SecuritySecurityRolesSecurityRoleResponse carries an ETag, If-Match header
+// support, or a revision/version field (confirmed by inspection of the
+// vendored SDK models). Every write is GET current role -> mutate the
+// in-memory Claims slice by exactly one entry -> PUT the entire role. Two
+// callers racing on the SAME role with DIFFERENT claims can both GET before
+// either PUTs; the second PUT to land wins outright and silently drops
+// whatever the first call wrote. Command returns 200 OK for both PUTs --
+// there is no conflict response to detect and retry on.
+//
+// oauthRoleClaimReconcileMaxAttempts bounds the number of GET-modify-PUT-
+// verify cycles Create/Delete will attempt before giving up and surfacing an
+// error to the practitioner (better than looping forever, and consistent
+// with the customer's own out-of-band retry workaround for this exact
+// problem).
+const oauthRoleClaimReconcileMaxAttempts = 5
+
+// oauthRoleClaimReconcileBaseDelay is the base for the jittered exponential
+// backoff between reconcile attempts.
+const oauthRoleClaimReconcileBaseDelay = 150 * time.Millisecond
+
+// oauthRoleClaimReconcileBackoff returns a jittered, exponentially increasing
+// delay for retry attempt N (1-indexed), capped at 2 seconds.
+func oauthRoleClaimReconcileBackoff(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	d := oauthRoleClaimReconcileBaseDelay * time.Duration(int64(1)<<uint(attempt-1))
+	maxDelay := 2 * time.Second
+	if d > maxDelay {
+		d = maxDelay
+	}
+	// Half fixed, half jitter, to avoid two racing callers retrying in lockstep.
+	jitter := time.Duration(mathRand.Int63n(int64(d)/2 + 1))
+	return d/2 + jitter
+}
+
+// oauthRoleHasClaim reports whether claimId is present in role's Claims.
+func oauthRoleHasClaim(role *kfv2.SecuritySecurityRolesSecurityRoleResponse, claimId int32) bool {
+	for _, claim := range role.Claims {
+		if claim.Id != nil && *claim.Id == claimId {
+			return true
+		}
+	}
+	return false
+}
+
 // DNSSANStoTerraform converts a slice of DNS SANs (Subject Alternative Names) into a Terraform-compatible
 // `types.List`. The function can either allow duplicates or ensure unique entries based on the
 // `allowDuplicates` parameter.

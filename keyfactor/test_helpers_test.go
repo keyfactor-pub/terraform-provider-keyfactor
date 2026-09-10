@@ -1295,6 +1295,12 @@ type oauthRoleClaimAssocTestParams struct {
 	RoleName1  string `json:"role_name_1"`
 	RoleName2  string `json:"role_name_2"`
 	ClaimValue string `json:"claim_value"`
+	// AuthScheme is the OAuth provider_authentication_scheme to use for the
+	// claim. Not every lab has a "System" identity provider scheme
+	// registered (kfclab does not; it uses "Active Directory") -- older
+	// cassette .params.json files predate this field and fall back to
+	// "System" for backward compatibility.
+	AuthScheme string `json:"auth_scheme"`
 }
 
 func writeOAuthRoleClaimAssocTestParams(cassettePath string, params oauthRoleClaimAssocTestParams) {
@@ -1307,6 +1313,7 @@ func readOAuthRoleClaimAssocTestParams(cassettePath string) oauthRoleClaimAssocT
 		RoleName1:  "tf-unit-role-assoc-1",
 		RoleName2:  "tf-unit-role-assoc-2",
 		ClaimValue: "tf-unit-claim-assoc",
+		AuthScheme: "System",
 	}
 	data, err := os.ReadFile(cassettePath + ".params.json")
 	if err != nil {
@@ -1315,6 +1322,9 @@ func readOAuthRoleClaimAssocTestParams(cassettePath string) oauthRoleClaimAssocT
 	var params oauthRoleClaimAssocTestParams
 	if json.Unmarshal(data, &params) != nil {
 		return defaults
+	}
+	if params.AuthScheme == "" {
+		params.AuthScheme = "System"
 	}
 	return params
 }
@@ -3298,6 +3308,8 @@ type oauthMultiAssocTestParams struct {
 	RoleName    string `json:"role_name"`
 	ClaimValue1 string `json:"claim_value_1"`
 	ClaimValue2 string `json:"claim_value_2"`
+	// AuthScheme: see oauthRoleClaimAssocTestParams.AuthScheme.
+	AuthScheme string `json:"auth_scheme"`
 }
 
 func writeOAuthMultiAssocTestParams(cassettePath string, params oauthMultiAssocTestParams) {
@@ -3310,6 +3322,7 @@ func readOAuthMultiAssocTestParams(cassettePath string) oauthMultiAssocTestParam
 		RoleName:    "tf-unit-role-multi-assoc",
 		ClaimValue1: "tf-unit-claim-multi-1",
 		ClaimValue2: "tf-unit-claim-multi-2",
+		AuthScheme:  "System",
 	}
 	data, err := os.ReadFile(cassettePath + ".params.json")
 	if err != nil {
@@ -3318,6 +3331,9 @@ func readOAuthMultiAssocTestParams(cassettePath string) oauthMultiAssocTestParam
 	var params oauthMultiAssocTestParams
 	if json.Unmarshal(data, &params) != nil {
 		return defaults
+	}
+	if params.AuthScheme == "" {
+		params.AuthScheme = "System"
 	}
 	return params
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"time"
 
 	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -154,75 +155,109 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 	tflog.Debug(ctx, fmt.Sprintf("Deleting OAuth security role claim association. Role ID %d, Claim ID %d...", roleId, claimId))
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
-	req := api.NewGetSecurityRolesByIdRequest(ctx, int32(roleId))
 
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security role ID %d...", roleId))
+	// GET-modify-PUT-verify retry loop: see the reconcileOAuthRoleClaim*
+	// helpers in helpers.go for why this is necessary (Command's role PUT has
+	// no optimistic-concurrency primitive, so a concurrent Create/Delete on a
+	// different claim of the same role can silently clobber this change).
+	var lastErr error
+	for attempt := 1; attempt <= oauthRoleClaimReconcileMaxAttempts; attempt++ {
+		remoteState, httpReq, err := api.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
+		if err != nil {
+			if httpReq != nil && httpReq.StatusCode == 404 {
+				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+				response.State.RemoveResource(ctx)
+				return
+			}
 
-	remoteState, httpReq, err := req.Execute()
+			response.Diagnostics.AddError(
+				"Unknown OAuth security role error.",
+				fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
+			)
+			return
+		}
 
-	if err != nil {
-		if httpReq != nil && httpReq.StatusCode == 404 {
-			tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+		if !oauthRoleHasClaim(remoteState, claimId) {
+			// Already removed (either a prior attempt's PUT stuck, or someone
+			// else already removed it). Nothing left to do.
+			tflog.Debug(ctx, "OAuth security role claim associated deleted successfully.")
 			response.State.RemoveResource(ctx)
 			return
 		}
 
-		response.Diagnostics.AddError(
-			"Unknown OAuth security role error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
-		)
+		updatedClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteState, &claimId)
+		if !ok {
+			return
+		}
+		claims := *updatedClaims
 
-		return
-	}
+		updateReq := api.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
+			Id:              roleId,
+			Name:            derefOrEmpty(remoteState.Name.Get()),
+			Description:     derefOrEmpty(remoteState.Description.Get()),
+			EmailAddress:    remoteState.EmailAddress,
+			PermissionSetId: derefOrEmpty(remoteState.PermissionSetId),
+			Permissions:     remoteState.Permissions,
+			Claims:          claims,
+		})
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to remove claim ID %d (attempt %d/%d)...", roleId, claimId, attempt, oauthRoleClaimReconcileMaxAttempts))
 
-	updatedClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteState, &claimId)
-	if !ok {
-		return
-	}
-	claims := *updatedClaims
+		_, httpResp, err := updateReq.Execute()
+		if err != nil {
+			if httpResp != nil && httpResp.StatusCode == 404 {
+				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+				response.State.RemoveResource(ctx)
+				return
+			}
 
-	tflog.Debug(ctx, "Data source was able to import state of OAuth security role resource from remote source using ID")
+			var body []byte
+			if httpResp != nil {
+				defer httpResp.Body.Close()
+				body, _ = io.ReadAll(httpResp.Body)
+			}
 
-	updateReq := api.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
-		Id:              int32(roleId),
-		Name:            derefOrEmpty(remoteState.Name.Get()),
-		Description:     derefOrEmpty(remoteState.Description.Get()),
-		EmailAddress:    remoteState.EmailAddress,
-		PermissionSetId: derefOrEmpty(remoteState.PermissionSetId),
-		Permissions:     remoteState.Permissions,
-		Claims:          claims,
-	})
+			response.Diagnostics.AddError(
+				"Error updating security role claim association.",
+				fmt.Sprintf("Could not update OAuth security role assocation on role ID %d to delete claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), string(body)),
+			)
+			return
+		}
 
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to remove claim ID %d...", roleId, claimId))
+		// Verify with a fresh GET: catches a concurrent writer's PUT landing
+		// between our PUT above and now.
+		verifyState, httpReq2, err := api.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
+		if err != nil {
+			if httpReq2 != nil && httpReq2.StatusCode == 404 {
+				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+				response.State.RemoveResource(ctx)
+				return
+			}
+			response.Diagnostics.AddError(
+				"Unknown OAuth security role error.",
+				fmt.Sprintf("Unknown error while trying to verify removal of claim ID %d from OAuth security role ID %d from Keyfactor. ", claimId, roleId)+err.Error(),
+			)
+			return
+		}
 
-	_, httpResp, err := updateReq.Execute()
-
-	if err != nil {
-		if httpResp != nil && httpResp.StatusCode == 404 {
-			tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
+		if !oauthRoleHasClaim(verifyState, claimId) {
+			tflog.Debug(ctx, "OAuth security role claim associated deleted successfully.")
 			response.State.RemoveResource(ctx)
 			return
 		}
 
-		var body []byte
-		if httpResp != nil {
-			defer httpResp.Body.Close()
-			body, _ = io.ReadAll(httpResp.Body)
-		}
-
-		response.Diagnostics.AddError(
-			"Error updating security role claim association.",
-			fmt.Sprintf("Could not update OAuth security role assocation on role ID %d to delete claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), string(body)),
-		)
-		return
+		lastErr = fmt.Errorf("claim ID %d was still present on role ID %d after PUT+verify (attempt %d/%d) -- a concurrent writer likely reverted this change", claimId, roleId, attempt, oauthRoleClaimReconcileMaxAttempts)
+		tflog.Warn(ctx, lastErr.Error())
+		time.Sleep(oauthRoleClaimReconcileBackoff(attempt))
 	}
 
-	tflog.Debug(ctx, "OAuth security role claim associated deleted successfully.")
-
-	// Remove resource from state
-	response.State.RemoveResource(ctx)
+	response.Diagnostics.AddError(
+		"Error deleting security role claim association (concurrent write contention).",
+		fmt.Sprintf(
+			"Could not remove claim ID %d from OAuth security role ID %d after %d attempts: %s. Another writer is repeatedly modifying this role's claims at the same time; retry once contention subsides.",
+			claimId, roleId, oauthRoleClaimReconcileMaxAttempts, lastErr,
+		),
+	)
 }
 
 func (r resourceOAuthSecurityRoleClaimAssociation) Create(
@@ -251,22 +286,6 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 	tflog.Debug(ctx, fmt.Sprintf("Creating OAuth security role claim association. Role ID: %d, Claim ID: %d", roleId, claimId))
 
 	roleApi := r.p.sdkClient.V2.SecurityRolesApi
-	roleRequest := roleApi.NewGetSecurityRolesByIdRequest(ctx, int32(roleId))
-
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to get OAuth security role ID %d...", roleId))
-
-	remoteRoleState, httpResp, err := roleRequest.Execute()
-
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Unknown OAuth security role error.",
-			fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
-		)
-
-		return
-	}
-
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpResp.StatusCode))
 
 	claimsApi := r.p.sdkClient.V1.SecurityClaimsApi
 	claimRequest := claimsApi.NewGetSecurityClaimsByIdRequest(ctx, claimId)
@@ -286,12 +305,6 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 
-	existingClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteRoleState, nil)
-	if !ok {
-		return
-	}
-	claims := *existingClaims
-
 	provider := *remoteClaimState.Provider
 	claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(*remoteClaimState.ClaimType.Get())
 
@@ -303,7 +316,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 		return
 	}
 
-	// Add remote claim to request
+	// The claim definition to add. Built once, since it doesn't change
+	// across reconcile attempts.
 	temp := v2.SecurityRoleClaimDefinitionsRoleClaimDefinitionRequest{
 		ClaimType:                    *claimTypeEnum,
 		ClaimValue:                   *remoteClaimState.ClaimValue.Get(),
@@ -311,33 +325,90 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 		Description:                  *remoteClaimState.Description.Get(),
 	}
 
-	updatedClaims := addOAuthSecurityClaimToRole(ctx, claims, temp)
-
-	tflog.Debug(ctx, "Data source was able to import state of OAuth security claim from remote source using ID")
-
-	updateReq := roleApi.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
-		Id:              int32(roleId),
-		Name:            derefOrEmpty(remoteRoleState.Name.Get()),
-		Description:     derefOrEmpty(remoteRoleState.Description.Get()),
-		EmailAddress:    remoteRoleState.EmailAddress,
-		PermissionSetId: derefOrEmpty(remoteRoleState.PermissionSetId),
-		Permissions:     remoteRoleState.Permissions,
-		Claims:          updatedClaims,
-	})
-
-	tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to add security claim id %d...", roleId, claimId))
-
-	_, httpResp, err = updateReq.Execute()
-	if err != nil {
-		var body []byte
-		if httpResp != nil {
-			defer httpResp.Body.Close()
-			body, _ = io.ReadAll(httpResp.Body)
+	// GET-modify-PUT-verify retry loop: see the reconcileOAuthRoleClaim*
+	// helpers in helpers.go for why this is necessary (Command's role PUT has
+	// no optimistic-concurrency primitive, so a concurrent Create/Delete on a
+	// different claim of the same role can silently clobber this change).
+	var lastErr error
+	created := false
+	for attempt := 1; attempt <= oauthRoleClaimReconcileMaxAttempts; attempt++ {
+		remoteRoleState, _, err := roleApi.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Unknown OAuth security role error.",
+				fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
+			)
+			return
 		}
 
+		if oauthRoleHasClaim(remoteRoleState, claimId) {
+			// Already associated (either a prior attempt's PUT stuck, or
+			// someone else already added it). Nothing left to do.
+			created = true
+			break
+		}
+
+		existingClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteRoleState, nil)
+		if !ok {
+			return
+		}
+		updatedClaims := addOAuthSecurityClaimToRole(ctx, *existingClaims, temp)
+
+		updateReq := roleApi.NewUpdateSecurityRolesRequest(ctx).SecuritySecurityRolesSecurityRoleUpdateRequest(v2.SecuritySecurityRolesSecurityRoleUpdateRequest{
+			Id:              roleId,
+			Name:            derefOrEmpty(remoteRoleState.Name.Get()),
+			Description:     derefOrEmpty(remoteRoleState.Description.Get()),
+			EmailAddress:    remoteRoleState.EmailAddress,
+			PermissionSetId: derefOrEmpty(remoteRoleState.PermissionSetId),
+			Permissions:     remoteRoleState.Permissions,
+			Claims:          updatedClaims,
+		})
+
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to add security claim id %d (attempt %d/%d)...", roleId, claimId, attempt, oauthRoleClaimReconcileMaxAttempts))
+
+		_, httpResp2, err := updateReq.Execute()
+		if err != nil {
+			var body []byte
+			if httpResp2 != nil {
+				defer httpResp2.Body.Close()
+				body, _ = io.ReadAll(httpResp2.Body)
+			}
+
+			response.Diagnostics.AddError(
+				"Error creating security role claim association.",
+				fmt.Sprintf("Could not create OAuth security role assocation on role ID %d to add claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), string(body)),
+			)
+			return
+		}
+
+		// Verify with a fresh GET: catches a concurrent writer's PUT landing
+		// between our PUT above and now.
+		verifyState, _, err := roleApi.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Unknown OAuth security role error.",
+				fmt.Sprintf("Unknown error while trying to verify addition of claim ID %d to OAuth security role ID %d from Keyfactor. ", claimId, roleId)+err.Error(),
+			)
+			return
+		}
+
+		if oauthRoleHasClaim(verifyState, claimId) {
+			created = true
+			break
+		}
+
+		lastErr = fmt.Errorf("claim ID %d was not present on role ID %d after PUT+verify (attempt %d/%d) -- a concurrent writer likely overwrote it", claimId, roleId, attempt, oauthRoleClaimReconcileMaxAttempts)
+		tflog.Warn(ctx, lastErr.Error())
+		time.Sleep(oauthRoleClaimReconcileBackoff(attempt))
+	}
+
+	if !created {
 		response.Diagnostics.AddError(
-			"Error creating security role claim association.",
-			fmt.Sprintf("Could not create OAuth security role assocation on role ID %d to add claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), string(body)),
+			"Error creating security role claim association (concurrent write contention).",
+			fmt.Sprintf(
+				"Could not add claim ID %d to OAuth security role ID %d after %d attempts: %s. Another writer is repeatedly modifying this role's claims at the same time; retry once contention subsides.",
+				claimId, roleId, oauthRoleClaimReconcileMaxAttempts, lastErr,
+			),
 		)
 		return
 	}

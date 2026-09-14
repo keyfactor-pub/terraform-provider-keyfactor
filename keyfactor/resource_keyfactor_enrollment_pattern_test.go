@@ -17,7 +17,10 @@ import (
 // pattern can be imported by display name as well as by numeric ID.
 // Enrollment patterns require Command v25+; the test skips on older labs.
 //
-// Step 1 creates the pattern via Terraform.
+// Step 1 creates the pattern via Terraform (with an associated role, which
+//
+//	some Command deployments require for pattern creation).
+//
 // Step 2 imports it by name (the new name-based path) and verifies the
 //
 //	resulting state matches a subsequent Read.
@@ -34,18 +37,19 @@ func TestIntKeyfactorEnrollmentPatternResource_Import(t *testing.T) {
 	}
 
 	templateID := discoverTemplateID(t, client)
-	name := acctest.RandomWithPrefix("tf-int-ep-imp")
+	patternName := acctest.RandomWithPrefix("tf-int-ep-imp")
+	roleName := acctest.RandomWithPrefix("tf-int-ep-imp-role")
 	resourcePath := "keyfactor_enrollment_pattern.import_test"
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
-			// Step 1: Create the enrollment pattern via Terraform.
+			// Step 1: Create the enrollment pattern via Terraform (with a role).
 			{
-				Config: testAccEnrollmentPatternResourceConfig(name, templateID),
+				Config: testAccEnrollmentPatternResourceConfig(patternName, roleName, templateID),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(resourcePath, "id"),
-					resource.TestCheckResourceAttr(resourcePath, "name", name),
+					resource.TestCheckResourceAttr(resourcePath, "name", patternName),
 					resource.TestCheckResourceAttr(resourcePath, "template_id", fmt.Sprintf("%d", templateID)),
 				),
 			},
@@ -55,7 +59,7 @@ func TestIntKeyfactorEnrollmentPatternResource_Import(t *testing.T) {
 				ImportState:       true,
 				ImportStateVerify: true,
 				ImportStateIdFunc: func(state *terraform.State) (string, error) {
-					return name, nil
+					return patternName, nil
 				},
 			},
 			// Step 3: Import by numeric ID — confirms the pre-existing path is unbroken.
@@ -71,14 +75,26 @@ func TestIntKeyfactorEnrollmentPatternResource_Import(t *testing.T) {
 }
 
 // testAccEnrollmentPatternResourceConfig returns a minimal HCL configuration
-// for a keyfactor_enrollment_pattern resource with the given name and
-// template_id. All other attributes are Optional+Computed and can be
-// omitted; the server fills them in with defaults.
-func testAccEnrollmentPatternResourceConfig(name string, templateID int) string {
+// for a keyfactor_enrollment_pattern resource. It creates a supporting
+// keyfactor_oauth_security_role because some Command deployments require at
+// least one associated role when creating an enrollment pattern.
+func testAccEnrollmentPatternResourceConfig(patternName, roleName string, templateID int) string {
 	return fmt.Sprintf(`
-resource "keyfactor_enrollment_pattern" "import_test" {
-  name        = %q
-  template_id = %d
+data "keyfactor_permission_set" "ep_import_global" {
+  name = "Global"
 }
-`, name, templateID)
+
+resource "keyfactor_oauth_security_role" "ep_import_test_role" {
+  name              = %q
+  description       = "Created by terraform-provider integration test"
+  permission_set_id = data.keyfactor_permission_set.ep_import_global.id
+  permissions       = ["/metadata/types/read/"]
+}
+
+resource "keyfactor_enrollment_pattern" "import_test" {
+  name                  = %q
+  template_id           = %d
+  associated_role_names = [keyfactor_oauth_security_role.ep_import_test_role.name]
+}
+`, roleName, patternName, templateID)
 }

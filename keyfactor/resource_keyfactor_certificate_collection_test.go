@@ -75,11 +75,13 @@ func TestIntKeyfactorCertificateCollectionResource_Import(t *testing.T) {
 // testAccCertificateCollectionResourceConfig returns a minimal HCL
 // configuration for a keyfactor_certificate_collection resource with the
 // given name and query expression.
+// description is always set because some Command deployments require it.
 func testAccCertificateCollectionResourceConfig(name, query string) string {
 	return fmt.Sprintf(`
 resource "keyfactor_certificate_collection" "import_test" {
-  name  = %q
-  query = %q
+  name        = %q
+  description = "Created by terraform-provider integration test"
+  query       = %q
 }
 `, name, query)
 }

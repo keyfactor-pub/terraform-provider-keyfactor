@@ -6,7 +6,8 @@ description: |-
   Manages a Keyfactor Command enrollment pattern using the "/EnrollmentPatterns" API.
   Enrollment patterns provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
   ~> Important: Enrollment Patterns are only available in Keyfactor Command v25.0+
-  ~> Note: associated_role_names/certificate_authority_ids are modeled as Terraform sets, not lists, because Command doesn't guarantee the order it returns them in. Values are re-derived from the server on every refresh, so changes made outside Terraform (e.g. via the UI) will show up as drift on the next terraform plan; this is expected.
+  ~> Note: certificate_authority_ids is modeled as a Terraform set, not a list, because Command doesn't guarantee the order it returns them in. Values are re-derived from the server on every refresh, so changes made outside Terraform (e.g. via the UI) will show up as drift on the next terraform plan; this is expected.
+  ~> Role binding: role membership is managed via the separate keyfactor_enrollment_pattern_role_binding resource — one resource per (pattern, role) pair. Editing use_ad_permissions or other pattern fields via this resource will never clobber role assignments managed by those binding resources.
   For full information on enrollment patterns view the product documentation https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern
 ---
 
@@ -18,7 +19,9 @@ Enrollment patterns provide a flexible way to streamline certificate enrollment 
 
 ~> **Important:** Enrollment Patterns are only available in Keyfactor Command v25.0+
 
-~> **Note:** `associated_role_names`/`certificate_authority_ids` are modeled as Terraform sets, not lists, because Command doesn't guarantee the order it returns them in. Values are re-derived from the server on every refresh, so changes made outside Terraform (e.g. via the UI) will show up as drift on the next `terraform plan`; this is expected.
+~> **Note:** `certificate_authority_ids` is modeled as a Terraform set, not a list, because Command doesn't guarantee the order it returns them in. Values are re-derived from the server on every refresh, so changes made outside Terraform (e.g. via the UI) will show up as drift on the next `terraform plan`; this is expected.
+
+~> **Role binding:** role membership is managed via the separate `keyfactor_enrollment_pattern_role_binding` resource — one resource per (pattern, role) pair. Editing `use_ad_permissions` or other pattern fields via this resource will never clobber role assignments managed by those binding resources.
 
 For full information on enrollment patterns view the [product documentation](https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern)
 
@@ -35,8 +38,6 @@ For full information on enrollment patterns view the [product documentation](htt
 ### Optional
 
 - `allowed_enrollment_types` (Number) Bitmask of enrollment types allowed for the enrollment pattern: 1=CSR, 2=PFX, 3=both.
-- `associated_role_names` (Set of String) Names of the security roles associated with the enrollment pattern. Only users holding one of these roles will be able to use the enrollment pattern if use_ad_permissions is false. Modeled as a set (not a list) because Command doesn't guarantee the order it returns them in; the value is re-derived from associated_roles on every refresh, so out-of-band changes may show up as drift.
-- `associated_roles` (Attributes List) The security roles associated with the enrollment pattern (read-only, expanded from associated_role_names). (see [below for nested schema](#nestedatt--associated_roles))
 - `certificate_authorities` (Attributes List) The certificate authorities to which the enrollment pattern is restricted (read-only, expanded from certificate_authority_ids). (see [below for nested schema](#nestedatt--certificate_authorities))
 - `certificate_authority_ids` (Set of Number) IDs of the certificate authorities to which the enrollment pattern is restricted, if applicable (see restrict_cas). Modeled as a set (not a list) because Command doesn't guarantee the order it returns them in; the value is re-derived from certificate_authorities on every refresh, so out-of-band changes may show up as drift.
 - `defaults` (Attributes List) Default subject values specific to this enrollment pattern. These take precedence over system-wide default subject settings. (see [below for nested schema](#nestedatt--defaults))
@@ -49,20 +50,11 @@ For full information on enrollment patterns view the [product documentation](htt
 - `restrict_cas` (Boolean) Whether the enrollment pattern should be restricted to the certificate authorities listed in certificate_authority_ids. If true, at least one CA must be configured.
 - `template` (Attributes) The certificate template associated with the enrollment pattern (read-only, expanded from template_id). (see [below for nested schema](#nestedatt--template))
 - `template_default` (Boolean) Whether this enrollment pattern is the default pattern for the associated template. A certificate template can have only one default enrollment pattern, which is required for the template to be used for enrollment. If no other enrollment pattern for the template exists or is marked as default, this option is automatically enabled when a new pattern is created. ~> If this is the very first enrollment pattern created for its template, Command may automatically mark it as the default regardless of an explicit `template_default = false` here; this provider cannot detect that case ahead of time, so declaring `template_default = false` for what may turn out to be a template's first pattern carries a risk of "Provider produced inconsistent result after apply". Leaving this attribute undeclared avoids the risk entirely.
-- `use_ad_permissions` (Boolean) Whether Active Directory permissions should be used for certificate enrollment authorization (true) or whether Keyfactor Command security roles should be used (false). If false, at least one value must be provided for associated_role_names.
+- `use_ad_permissions` (Boolean) Whether Active Directory permissions should be used for certificate enrollment authorization (true) or whether Keyfactor Command security roles should be used (false). When false, grant access by creating keyfactor_enrollment_pattern_role_binding resources.
 
 ### Read-Only
 
 - `id` (Number) The server-assigned ID of the enrollment pattern.
-
-<a id="nestedatt--associated_roles"></a>
-### Nested Schema for `associated_roles`
-
-Read-Only:
-
-- `id` (Number)
-- `name` (String)
-
 
 <a id="nestedatt--certificate_authorities"></a>
 ### Nested Schema for `certificate_authorities`

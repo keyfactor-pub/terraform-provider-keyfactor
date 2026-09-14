@@ -3204,6 +3204,42 @@ func getEnrollmentPatternByName(
 	return &response[0], nil
 }
 
+// ---------------------------------------------------------------------------
+// Enrollment pattern role binding helpers
+// ---------------------------------------------------------------------------
+
+// enrollmentPatternHasRole reports whether roleName is present in the
+// pattern's AssociatedRoles. Used by the GET-modify-PUT-verify reconcile
+// loop in keyfactor_enrollment_pattern_role_binding's Create/Delete.
+func enrollmentPatternHasRole(resp *kfv1.EnrollmentPatternsEnrollmentPatternResponse, roleName string) bool {
+	for _, role := range resp.AssociatedRoles {
+		if name := role.Name.Get(); name != nil && *name == roleName {
+			return true
+		}
+	}
+	return false
+}
+
+// extractEnrollmentPatternRoleNames returns the role names from the pattern's
+// AssociatedRoles as a plain []string. When AssociatedRoles is nil (server
+// omitted the field), returns nil; when non-nil but empty, returns a non-nil
+// empty slice. The nil-vs-empty distinction matters: buildEnrollmentPattern-
+// UpdateRequest only calls SetAssociatedRoles when preservedRoleNames is
+// non-nil, so a nil here means "omit from PUT body" while an empty non-nil
+// means "explicitly clear to []".
+func extractEnrollmentPatternRoleNames(resp *kfv1.EnrollmentPatternsEnrollmentPatternResponse) []string {
+	if resp.AssociatedRoles == nil {
+		return nil
+	}
+	result := make([]string, 0, len(resp.AssociatedRoles))
+	for _, role := range resp.AssociatedRoles {
+		if name := role.Name.Get(); name != nil {
+			result = append(result, *name)
+		}
+	}
+	return result
+}
+
 // Queries security permissions by name and returns the first matching permission set.
 func getSecurityPermissionSetByName(
 	ctx context.Context,

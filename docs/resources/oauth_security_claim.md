@@ -17,42 +17,42 @@ Used to manage Keyfactor Command Security Claims using the V1 `/Security/Claims`
 
 ```terraform
 resource "keyfactor_oauth_security_claim" "subject_system_claim" {
-  claim_type                     = "OAuthSubject" # OAuthSubject=5
+  claim_type                     = "OAuthSubject"
   claim_value                    = "example_username" # Format will vary by identity provider
   description                    = "Example oAuth Subject Claim"
   provider_authentication_scheme = "System"
 }
 
 resource "keyfactor_oauth_security_claim" "object_id_system_claim" {
-  claim_type                     = "OAuthOid" # OAuthOid=3
+  claim_type                     = "OAuthOid"
   claim_value                    = "9689d5e3-d565-4dda-bf93-a48ec614b311" # Format will vary by identity provider
   description                    = "Example oAuth Object ID Claim"
   provider_authentication_scheme = "System"
 }
 
 resource "keyfactor_oauth_security_claim" "group_system_claim" {
-  claim_type                     = "OAuthRole" # OAuthRole=4
+  claim_type                     = "OAuthRole"
   claim_value                    = "Example Role Name" # Format will vary by identity provider
   description                    = "Example oAuth role claim"
   provider_authentication_scheme = "System"
 }
 
 resource "keyfactor_oauth_security_claim" "client_id_system_claim" {
-  claim_type                     = "OAuthClientId" # OAuthClientId=6
+  claim_type                     = "OAuthClientId"
   claim_value                    = "9689d5e3-d565-4dda-bf93-a48ec614b311" # Format will vary by identity provider
   description                    = "Example oAuth Client ID claim"
   provider_authentication_scheme = "System"
 }
 
 resource "keyfactor_oauth_security_claim" "ad_user_claim" {
-  claim_type                     = "User" # User=0 
+  claim_type                     = "User"
   claim_value                    = "EXAMPLE\\terraformer"
   description                    = "Example Security Claim for Active Directory User"
   provider_authentication_scheme = "Active Directory"
 }
 
 resource "keyfactor_oauth_security_claim" "ad_group_claim" {
-  claim_type                     = "Group" # Group=1 
+  claim_type                     = "Group"
   claim_value                    = "EXAMPLE\\Terraformers"
   description                    = "Example Security Claim for Active Directory Group"
   provider_authentication_scheme = "Active Directory"
@@ -82,7 +82,7 @@ resource "keyfactor_oauth_security_claim" "api_role_claim" {
 
 ### Required
 
-- `claim_type` (String) A string containing the claim type of the OAuth security claim in Keyfactor. This is Command's own enum (`CSSCMSCoreEnumsClaimType` in the vendored SDK), not provider-derived: `0=User, 1=Group, 2=Computer, 3=OAuthOid, 4=OAuthRole, 5=OAuthSubject, 6=OAuthClientId`. Changing this value forces a new resource.
+- `claim_type` (String) A string containing the claim type of the OAuth security claim in Keyfactor. This is Command's own enum (`CSSCMSCoreEnumsClaimType` in the SDK), not provider-derived: `0=User, 1=Group, 2=Computer, 3=OAuthOid, 4=OAuthRole, 5=OAuthSubject, 6=OAuthClientId`. Changing this value forces a new resource.
 - `claim_value` (String) A string containing the claim value of the OAuth security claim in Keyfactor. For implementations authenticated using Active Directory, this will be in NetBIOS format (`DOMAIN\account-name`). For example, group `KEYEXAMPLE\PKI Administrators` or for a computer, machine account `KEYEXAMPLE\MyServer$`. For implementations authenticated using OAuth, this will be in the format defined by the Name Claim Type. Changing this value forces a new resource.
 - `description` (String) A string containing the description of the OAuth security claim in Keyfactor
 - `provider_authentication_scheme` (String) The authentication scheme of an Identity Provider to associate with the OAuth security claim. Changing this value forces a new resource.

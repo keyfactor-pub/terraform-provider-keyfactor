@@ -102,6 +102,16 @@ type OAuthSecurityRoleClaimAssociation struct {
 	ClaimID types.Int64  `tfsdk:"claim_id"` // ID of the OAuth security claim to be associated with the OAuth security role.
 }
 
+// EnrollmentPatternRoleBinding is the Terraform state model for
+// keyfactor_enrollment_pattern_role_binding. ID is the composite key
+// "<enrollment_pattern_name>:<role_name>", a stable import handle that
+// practitioners hold without needing internal server IDs.
+type EnrollmentPatternRoleBinding struct {
+	ID                    types.String `tfsdk:"id"`
+	EnrollmentPatternName types.String `tfsdk:"enrollment_pattern_name"`
+	RoleName              types.String `tfsdk:"role_name"`
+}
+
 // CommandCertificate represents a certificate entity in Keyfactor.
 //
 // NOTE: This struct has two ID-related fields due to a Terraform testing framework requirement:

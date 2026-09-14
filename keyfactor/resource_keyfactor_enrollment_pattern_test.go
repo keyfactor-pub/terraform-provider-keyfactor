@@ -17,9 +17,9 @@ import (
 // pattern can be imported by display name as well as by numeric ID.
 // Enrollment patterns require Command v25+; the test skips on older labs.
 //
-// Step 1 creates the pattern via Terraform (with an associated role, which
+// Step 1 creates the pattern via Terraform along with a role binding (some
 //
-//	some Command deployments require for pattern creation).
+//	Command deployments require at least one role to be associated).
 //
 // Step 2 imports it by name (the new name-based path) and verifies the
 //
@@ -76,8 +76,10 @@ func TestIntKeyfactorEnrollmentPatternResource_Import(t *testing.T) {
 
 // testAccEnrollmentPatternResourceConfig returns a minimal HCL configuration
 // for a keyfactor_enrollment_pattern resource. It creates a supporting
-// keyfactor_oauth_security_role because some Command deployments require at
-// least one associated role when creating an enrollment pattern.
+// keyfactor_oauth_security_role and a keyfactor_enrollment_pattern_role_binding
+// because some Command deployments require at least one associated role when
+// an enrollment pattern exists. Role membership is now managed via the
+// dedicated binding resource rather than the pattern's own schema.
 func testAccEnrollmentPatternResourceConfig(patternName, roleName string, templateID int) string {
 	return fmt.Sprintf(`
 data "keyfactor_permission_set" "ep_import_global" {
@@ -92,9 +94,13 @@ resource "keyfactor_oauth_security_role" "ep_import_test_role" {
 }
 
 resource "keyfactor_enrollment_pattern" "import_test" {
-  name                  = %q
-  template_id           = %d
-  associated_role_names = [keyfactor_oauth_security_role.ep_import_test_role.name]
+  name        = %q
+  template_id = %d
+}
+
+resource "keyfactor_enrollment_pattern_role_binding" "import_test_binding" {
+  enrollment_pattern_name = keyfactor_enrollment_pattern.import_test.name
+  role_name               = keyfactor_oauth_security_role.ep_import_test_role.name
 }
 `, roleName, patternName, templateID)
 }

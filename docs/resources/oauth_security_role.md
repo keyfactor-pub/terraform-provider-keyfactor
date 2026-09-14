@@ -196,9 +196,11 @@ resource "keyfactor_oauth_security_role" "collection_five_user" {
 ### Required
 
 - `description` (String) A string containing the description of the OAuth security role.
-- `name` (String) Description of the OAuth security role
+- `name` (String) Name of the OAuth security role
 - `permission_set_id` (String) The ID of the permission set associated with the OAuth security role. This is used to identify the permissions associated with the role.
 - `permissions` (Set of String) A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role. For more information about allowed permission values, please refer to the Keyfactor Command [Version Two Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version2).
+
+~> **Replace semantics, not additive:** every `terraform apply` sends the full declared `permissions` set to Command, and Command's update response fully replaces server-side permissions with it. There is no merge with permissions granted outside this configuration (e.g. via the Command portal) -- whatever isn't declared here is removed on the next apply.
 
 ### Optional
 

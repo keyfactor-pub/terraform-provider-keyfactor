@@ -2775,13 +2775,23 @@ func (r resourceEnrollmentPattern) ImportState(
 ) {
 	tflog.Info(ctx, fmt.Sprintf("ImportState called on enrollment pattern with ID %q", request.ID))
 
-	id, err := strconv.Atoi(request.ID)
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Invalid enrollment pattern ID.",
-			fmt.Sprintf("Import ID must be an integer, got %q: %s", request.ID, err.Error()),
-		)
-		return
+	var id int
+	if numericID, parseErr := strconv.Atoi(request.ID); parseErr == nil {
+		// Numeric ID path — preserved unchanged.
+		id = numericID
+	} else {
+		// Non-numeric: treat as a pattern name and resolve to an ID.
+		tflog.Debug(ctx, fmt.Sprintf("Import ID %q is not numeric; querying by name", request.ID))
+		found, err := getEnrollmentPatternByName(ctx, r.p.sdkClient, request.ID)
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Error importing enrollment pattern by name.",
+				fmt.Sprintf("Could not find enrollment pattern %q by name: %s", request.ID, err.Error()),
+			)
+			return
+		}
+		id = int(found.GetId())
+		tflog.Debug(ctx, fmt.Sprintf("Resolved enrollment pattern name %q to ID %d", request.ID, id))
 	}
 
 	patternApi := r.p.sdkClient.V1.EnrollmentPatternApi

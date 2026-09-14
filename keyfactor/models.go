@@ -104,7 +104,7 @@ type OAuthSecurityRoleClaimAssociation struct {
 
 // EnrollmentPatternRoleBinding is the Terraform state model for
 // keyfactor_enrollment_pattern_role_binding. ID is the composite key
-// "<enrollment_pattern_name>:<role_name>", a stable import handle that
+// "<enrollment_pattern_name>//<role_name>", a stable import handle that
 // practitioners hold without needing internal server IDs.
 type EnrollmentPatternRoleBinding struct {
 	ID                    types.String `tfsdk:"id"`

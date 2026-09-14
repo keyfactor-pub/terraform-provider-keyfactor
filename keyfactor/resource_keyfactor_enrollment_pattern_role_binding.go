@@ -60,6 +60,8 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 	request tfsdk.CreateResourceRequest,
 	response *tfsdk.CreateResourceResponse,
 ) {
+	LogFunctionEntry(ctx, "resourceEnrollmentPatternRoleBinding.Create")
+
 	ok := checkIfProviderIsConfigured(r.p, &response.Diagnostics)
 	if !ok {
 		return
@@ -81,7 +83,9 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 
 	// Resolve the pattern name to an ID once (outside the retry loop; the
 	// ID is stable and looking it up on every retry wastes a round-trip).
+	LogFunctionCall(ctx, "getEnrollmentPatternByName")
 	foundPattern, err := getEnrollmentPatternByName(ctx, r.p.sdkClient, patternName)
+	LogFunctionReturned(ctx, "getEnrollmentPatternByName")
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error resolving enrollment pattern by name.",
@@ -217,6 +221,7 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 		return
 	}
 
+	LogFunctionExit(ctx, "resourceEnrollmentPatternRoleBinding.Create")
 	tflog.Info(ctx, "Enrollment pattern role binding created successfully.")
 }
 
@@ -225,6 +230,7 @@ func (r resourceEnrollmentPatternRoleBinding) Read(
 	request tfsdk.ReadResourceRequest,
 	response *tfsdk.ReadResourceResponse,
 ) {
+	LogFunctionEntry(ctx, "resourceEnrollmentPatternRoleBinding.Read")
 	tflog.Info(ctx, "Read called on enrollment pattern role binding resource")
 
 	state, ok := getState[EnrollmentPatternRoleBinding](ctx, &request.State, &response.Diagnostics)
@@ -242,11 +248,22 @@ func (r resourceEnrollmentPatternRoleBinding) Read(
 	// hold, and it doubles as the drift-detection mechanism (if the pattern
 	// was renamed or deleted out-of-band, Read removes this binding from state
 	// rather than silently leaving stale state behind).
+	LogFunctionCall(ctx, "getEnrollmentPatternByName")
 	foundPattern, err := getEnrollmentPatternByName(ctx, r.p.sdkClient, patternName)
+	LogFunctionReturned(ctx, "getEnrollmentPatternByName")
 	if err != nil {
-		// Pattern no longer exists (deleted out-of-band) -- remove from state.
-		tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %q not found; removing role binding from state: %s", patternName, err.Error()))
-		response.State.RemoveResource(ctx)
+		if isNotFoundError(err) {
+			// Pattern genuinely doesn't exist (deleted out-of-band) -- remove from state.
+			tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %q not found; removing role binding from state: %s", patternName, err.Error()))
+			response.State.RemoveResource(ctx)
+			return
+		}
+		// Transport or server error -- surface it so Terraform retries on the
+		// next plan/apply instead of silently orphaning this binding in state.
+		response.Diagnostics.AddError(
+			"Error reading enrollment pattern.",
+			fmt.Sprintf("Could not read enrollment pattern %q: %s", patternName, err.Error()),
+		)
 		return
 	}
 
@@ -271,6 +288,7 @@ func (r resourceEnrollmentPatternRoleBinding) Read(
 		return
 	}
 
+	LogFunctionExit(ctx, "resourceEnrollmentPatternRoleBinding.Read")
 	tflog.Debug(ctx, "Enrollment pattern role binding resource read successfully.")
 }
 
@@ -288,6 +306,7 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 	request tfsdk.DeleteResourceRequest,
 	response *tfsdk.DeleteResourceResponse,
 ) {
+	LogFunctionEntry(ctx, "resourceEnrollmentPatternRoleBinding.Delete")
 	tflog.Info(ctx, "Delete called on enrollment pattern role binding resource")
 
 	state, ok := getState[EnrollmentPatternRoleBinding](ctx, &request.State, &response.Diagnostics)
@@ -303,10 +322,21 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 	tflog.Debug(ctx, fmt.Sprintf("Deleting enrollment pattern role binding: pattern=%q role=%q", patternName, roleName))
 
 	// Resolve the pattern name to an ID once before the retry loop.
+	LogFunctionCall(ctx, "getEnrollmentPatternByName")
 	foundPattern, err := getEnrollmentPatternByName(ctx, r.p.sdkClient, patternName)
+	LogFunctionReturned(ctx, "getEnrollmentPatternByName")
 	if err != nil {
-		// Pattern no longer exists -- the binding is already gone.
-		tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %q not found during delete; treating as already removed: %s", patternName, err.Error()))
+		if isNotFoundError(err) {
+			// Pattern genuinely doesn't exist -- the binding is already gone.
+			tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %q not found during delete; treating as already removed: %s", patternName, err.Error()))
+			return
+		}
+		// Transport or server error -- surface it so Terraform reports failure
+		// instead of silently claiming the resource was deleted.
+		response.Diagnostics.AddError(
+			"Error resolving enrollment pattern during delete.",
+			fmt.Sprintf("Could not look up enrollment pattern %q: %s", patternName, err.Error()),
+		)
 		return
 	}
 	patternID := foundPattern.GetId()
@@ -414,6 +444,8 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 			),
 		)
 	}
+
+	LogFunctionExit(ctx, "resourceEnrollmentPatternRoleBinding.Delete")
 }
 
 // ImportState imports a role binding by its composite ID "<patternName>//<roleName>".
@@ -424,6 +456,7 @@ func (r resourceEnrollmentPatternRoleBinding) ImportState(
 	request tfsdk.ImportResourceStateRequest,
 	response *tfsdk.ImportResourceStateResponse,
 ) {
+	LogFunctionEntry(ctx, "resourceEnrollmentPatternRoleBinding.ImportState")
 	tflog.Info(ctx, "ImportState called on enrollment pattern role binding resource")
 
 	parts := strings.SplitN(request.ID, "//", 2)
@@ -442,7 +475,9 @@ func (r resourceEnrollmentPatternRoleBinding) ImportState(
 	tflog.SetField(ctx, "role_name", roleName)
 
 	// Verify the binding exists on the server before importing.
+	LogFunctionCall(ctx, "getEnrollmentPatternByName")
 	foundPattern, err := getEnrollmentPatternByName(ctx, r.p.sdkClient, patternName)
+	LogFunctionReturned(ctx, "getEnrollmentPatternByName")
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error importing enrollment pattern role binding.",
@@ -465,6 +500,7 @@ func (r resourceEnrollmentPatternRoleBinding) ImportState(
 		RoleName:              types.String{Value: roleName},
 	}
 
+	LogFunctionExit(ctx, "resourceEnrollmentPatternRoleBinding.ImportState")
 	diags := response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)
 }

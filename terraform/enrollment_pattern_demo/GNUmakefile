@@ -13,6 +13,10 @@
 
 include ../demo-common.mk
 
+# Default role name for the binding import. Override with ROLE=<name> on the
+# command line (matches var.associated_role_name default).
+ROLE ?= InstanceAdmin
+
 # ---------------------------------------------------------------------------
 # Terraform lifecycle
 # ---------------------------------------------------------------------------
@@ -25,16 +29,16 @@ plan:
 apply:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
-## import-all: Remove the managed pattern from state then re-import by numeric ID
+## import-all: Remove the managed resources from state then re-import by ID
 import-all:
 	@echo "==> Capturing state..."
 	$(UNSET_BASIC) $(TF) show -json > tf_state.json
 	python3 ../_export_ids.py keyfactor_enrollment_pattern
-	@echo "==> Removing from state..."
+	@echo "==> Removing enrollment pattern from state..."
 	@while IFS=' ' read -r name id; do \
 	  $(UNSET_BASIC) $(TF) state rm "keyfactor_enrollment_pattern.$$name" 2>&1 | grep Removed; \
 	done < _import_pairs.txt
-	@echo "==> Re-importing by numeric ID..."
+	@echo "==> Re-importing enrollment pattern by numeric ID..."
 	@while IFS=' ' read -r name id; do \
 	  result=$$($(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" "keyfactor_enrollment_pattern.$$name" "$$id" 2>&1); \
 	  if echo "$$result" | grep -q "Import successful"; then \
@@ -44,12 +48,23 @@ import-all:
 	    echo "$$result" | tail -3; \
 	  fi; \
 	done < _import_pairs.txt
+	@echo "==> Removing role binding from state..."
+	$(UNSET_BASIC) $(TF) state rm "keyfactor_enrollment_pattern_role_binding.demo" 2>&1 | grep -E "Removed|no state" || true
+	@echo "==> Re-importing role binding by composite key (patternName:roleName)..."
+	@PATTERN_NAME="Demo Pattern$(SUFFIX)"; \
+	 ROLE_NAME="$(ROLE)"; \
+	 COMPOSITE_ID="$${PATTERN_NAME}:$${ROLE_NAME}"; \
+	 result=$$($(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" "keyfactor_enrollment_pattern_role_binding.demo" "$${COMPOSITE_ID}" 2>&1); \
+	 if echo "$$result" | grep -q "Import successful"; then \
+	   echo "OK: role_binding.demo (ID=$${COMPOSITE_ID})"; \
+	 else \
+	   echo "FAIL: role_binding.demo (ID=$${COMPOSITE_ID})"; \
+	   echo "$$result" | tail -3; \
+	 fi
 
 ## reconcile: Apply after import to settle any remaining Computed-only
-## fields. `associated_role_names`/`certificate_authority_ids` no longer
-## need reconciling here -- they're derived from GetById's response on
-## import itself (see resource_keyfactor_enrollment_pattern.go) -- so this
-## step is now typically a no-op ("No changes") immediately after import.
+## fields. This step is typically a no-op ("No changes") immediately after
+## import, since GetById populates all Computed fields on import itself.
 reconcile:
 	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
 
@@ -88,7 +103,7 @@ lab-apply:
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 
 ## lab-update: Apply with an updated description AND changed driver
-## attributes (associated_role_names, certificate_authority_ids,
+## attributes (role binding, certificate_authority_ids,
 ## policies.default_certificate_owner_role_id) to verify the in-place
 ## update path -- full-review Phase 1 required tests, item 3: this demo
 ## previously never touched these fields, which is why the mirror-pinning
@@ -110,9 +125,10 @@ lab-update:
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 	$(LAB_ENV) $(MAKE) plan SUFFIX=$(SUFFIX)
 
-## lab-import-all: Import the enrollment pattern using lab credentials
+## lab-import-all: Import all resources using lab credentials
+## Pass ROLE=<role_name> to override the role name used for the composite binding key.
 lab-import-all:
-	$(LAB_ENV) $(MAKE) import-all SUFFIX=$(SUFFIX)
+	$(LAB_ENV) $(MAKE) import-all SUFFIX=$(SUFFIX) ROLE=$(ROLE)
 
 ## lab-reconcile: Re-apply after import to settle any remaining Computed-only
 ## fields (see reconcile's comment above -- typically a no-op now)

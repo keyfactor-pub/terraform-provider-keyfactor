@@ -14,8 +14,7 @@ principal) → a **role/claim association** binding the two → an **enrollment 
 only the role's holders can use.
 
 Each step is a separate resource, so multiple teams/workspaces can compose these
-independently (see the note on `associated_role_names` below) without stepping on each
-other's configuration.
+independently without stepping on each other's configuration.
 
 ## 1. Certificate collection
 
@@ -98,22 +97,32 @@ resource "keyfactor_enrollment_pattern" "app_a_pattern" {
   name        = "AppA Enrollment Pattern"
   template_id = data.keyfactor_certificate_template.app_a_template.id
 
-  use_ad_permissions    = false
-  associated_role_names = [keyfactor_oauth_security_role.app_a_role.name]
+  use_ad_permissions = false
 }
 ```
 
-~> **`associated_role_names` is replace, not additive, today.** Every apply overwrites the
-pattern's full declared role list; there is no GET-append-PUT. If more than one
-workspace/team needs to bind different roles to the *same* shared enrollment pattern, two
-configs both writing `associated_role_names` on that pattern will clobber each other's
-roles -- this is the same replace-semantics caveat as `keyfactor_oauth_security_role.permissions`
-above, just on the enrollment pattern side. A dedicated
-`keyfactor_enrollment_pattern_role_binding` join resource (mirroring the shape of
-`keyfactor_oauth_security_role_claim_association` in step 4) is planned to close this gap the
-same way the association resource already does for role/claim bindings; until it ships,
-model shared patterns carefully or keep one workspace as the sole owner of a given
-pattern's `associated_role_names`.
+## 6. Bind the role to the enrollment pattern
+
+[`keyfactor_enrollment_pattern_role_binding`](../resources/enrollment_pattern_role_binding.md)
+is a separate join resource -- one per `(enrollment_pattern_name, role_name)` pair --
+mirroring exactly the shape of `keyfactor_oauth_security_role_claim_association` in step 4.
+Because each binding is its own resource, multiple workspaces can independently add or
+remove roles on the *same* shared enrollment pattern without clobbering each other: the
+provider's GET-modify-PUT-verify retry loop makes concurrent creates and deletes safe.
+
+```terraform
+resource "keyfactor_enrollment_pattern_role_binding" "app_a_binding" {
+  enrollment_pattern_name = keyfactor_enrollment_pattern.app_a_pattern.name
+  role_name               = keyfactor_oauth_security_role.app_a_role.name
+}
+```
+
+The binding is importable by composite key `"<pattern_name>:<role_name>"`:
+
+```shell
+terraform import keyfactor_enrollment_pattern_role_binding.app_a_binding \
+  "AppA Enrollment Pattern:AppA-Role"
+```
 
 ## Summary
 
@@ -123,6 +132,9 @@ keyfactor_certificate_collection
         v  (collection ID scopes the role's permissions)
 keyfactor_oauth_security_role  <---- keyfactor_oauth_security_role_claim_association ----  keyfactor_oauth_security_claim
         |
-        v  (role name restricts who can enroll)
+        v  (role name used in the binding resource)
+keyfactor_enrollment_pattern_role_binding
+        |
+        v  (enrollment_pattern_name references the pattern)
 keyfactor_enrollment_pattern
 ```

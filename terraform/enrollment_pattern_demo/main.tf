@@ -39,26 +39,17 @@ data "keyfactor_certificate_authority" "restrict" {
 # ---------------------------------------------------------------------------
 # keyfactor_enrollment_pattern resource under test.
 #
-# associated_role_names/certificate_authority_ids are modeled as Terraform
-# sets, not lists: Keyfactor Command expands them into associated_roles/
-# certificate_authorities on read and never echoes back the plain name/ID
-# list, and Command's expansion order isn't guaranteed to match submission
-# order -- a set's membership-based equality makes that irrelevant, so the
-# provider safely DERIVES both attributes from that same expansion on every
-# refresh (see resource_keyfactor_enrollment_pattern.go), rather than
-# preserving whatever Terraform last wrote. That means `lab-drift-check`
-# below is expected to show no diff on these fields when nothing actually
-# changed server-side -- and, unlike an earlier version of this resource,
-# would now surface a real diff if either were changed directly in Command
-# (e.g. via the UI) outside this demo.
-#
-# associated_role_names, certificate_authority_ids (via restrict_cas), and
+# certificate_authority_ids (via restrict_cas) and
 # policies.default_certificate_owner_role_id are driven by variables that
 # lab-update (see GNUmakefile) changes in place, exercising the
-# associated_roles/certificate_authorities/policies.default_certificate_
-# owner_role_name mirror follow-the-driver fixes (full-review findings
-# F2/F4) through a real Terraform apply -- not just direct Create()/Update()
-# calls, which is how these findings originally shipped undetected.
+# certificate_authorities/policies.default_certificate_owner_role_name
+# mirror follow-the-driver fixes (full-review findings F2/F4) through a
+# real Terraform apply -- not just direct Create()/Update() calls, which
+# is how these findings originally shipped undetected.
+#
+# Role membership is now managed separately via
+# keyfactor_enrollment_pattern_role_binding (see below) -- it has been
+# removed from this resource entirely.
 #
 # force_template_default is deliberately NOT exercised here -- see
 # variables.tf's comment for why (it would steal TemplateDefault status
@@ -70,7 +61,6 @@ resource "keyfactor_enrollment_pattern" "demo" {
   template_id               = data.keyfactor_certificate_template.demo.id
   description               = var.description_override != "" ? var.description_override : "Terraform harness demo pattern"
   allowed_enrollment_types  = 3 # 1=CSR, 2=PFX, 3=both
-  associated_role_names     = [var.associated_role_name]
   template_default          = false
   restrict_cas              = true
   certificate_authority_ids = [tonumber(data.keyfactor_certificate_authority.restrict.id)]
@@ -89,6 +79,19 @@ resource "keyfactor_enrollment_pattern" "demo" {
   # resource_keyfactor_enrollment_pattern.go) regardless of whether this
   # attribute is set, so server-side defaults apply automatically for the
   # sub-fields not declared above.
+}
+
+# ---------------------------------------------------------------------------
+# Role binding: grant associated_role_name access to this enrollment pattern.
+#
+# keyfactor_enrollment_pattern_role_binding manages role membership as a
+# separate, fine-grained resource. Each binding is independently importable
+# by composite key "<pattern_name>:<role_name>", and concurrent creates/
+# deletes are safe via the provider's GET-modify-PUT-verify retry loop.
+# ---------------------------------------------------------------------------
+resource "keyfactor_enrollment_pattern_role_binding" "demo" {
+  enrollment_pattern_name = keyfactor_enrollment_pattern.demo.name
+  role_name               = var.associated_role_name
 }
 
 # ---------------------------------------------------------------------------

@@ -29,16 +29,18 @@ func (r resourceOAuthSecurityRoleClaimAssociationType) GetSchema(_ context.Conte
 				Type:          types.Int64Type,
 				Required:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "Internal ID of the OAuth security role. Changing this value forces a new resource.",
+				Description:   "Internal ID of the OAuth security role. This is the computed `id` output of a keyfactor_oauth_security_role resource or data source. Changing this value forces a new resource.",
 			},
 			"claim_id": {
 				Type:          types.Int64Type,
 				Required:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
-				Description:   "Internal ID of the OAuth security claim. Changing this value forces a new resource.",
+				Description:   "Internal ID of the OAuth security claim. This is the computed `id` output of a keyfactor_oauth_security_claim resource. Changing this value forces a new resource.",
 			},
 		},
 		Description: "Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+",
+		MarkdownDescription: "Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+\n\n" +
+			"~> **Where `role_id`/`claim_id` come from:** both are the computed `id` output of their respective resources -- `role_id` from [`keyfactor_oauth_security_role`](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role), `claim_id` from [`keyfactor_oauth_security_claim`](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_claim) (see that resource's `id` attribute under **Read-Only**). Reference them directly, e.g. `role_id = keyfactor_oauth_security_role.example.id` and `claim_id = keyfactor_oauth_security_claim.example.id`, rather than looking the IDs up out of band.",
 	}, nil
 }
 

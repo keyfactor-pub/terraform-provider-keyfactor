@@ -690,13 +690,23 @@ func (r resourceCertificateCollection) ImportState(
 ) {
 	tflog.Info(ctx, fmt.Sprintf("ImportState called on certificate collection with ID %q", request.ID))
 
-	id, err := strconv.Atoi(request.ID)
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Invalid certificate collection ID.",
-			fmt.Sprintf("Import ID must be an integer, got %q: %s", request.ID, err.Error()),
-		)
-		return
+	var id int
+	if numericID, parseErr := strconv.Atoi(request.ID); parseErr == nil {
+		// Numeric ID path — preserved unchanged.
+		id = numericID
+	} else {
+		// Non-numeric: treat as a collection name and resolve to an ID.
+		tflog.Debug(ctx, fmt.Sprintf("Import ID %q is not numeric; querying by name", request.ID))
+		found, err := getCertificateCollectionByName(ctx, r.p.sdkClient, request.ID)
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Error importing certificate collection by name.",
+				fmt.Sprintf("Could not find certificate collection %q by name: %s", request.ID, err.Error()),
+			)
+			return
+		}
+		id = int(found.GetId())
+		tflog.Debug(ctx, fmt.Sprintf("Resolved collection name %q to ID %d", request.ID, id))
 	}
 
 	collectionApi := r.p.sdkClient.V1.CertificateCollectionApi

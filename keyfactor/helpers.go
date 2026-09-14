@@ -3150,6 +3150,60 @@ func getSecurityRoleByName(
 	return &response[0], nil
 }
 
+// getCertificateCollectionByName queries certificate collections by name and
+// returns the first matching collection, or an error if none is found.
+// Uses the same QueryString filter pattern as getSecurityRoleByName.
+func getCertificateCollectionByName(
+	ctx context.Context,
+	apiClient *keyfactor.APIClient,
+	collectionName string,
+) (*kfv1.CSSCMSDataModelModelsCertificateQuery, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting certificate collection from remote source. Collection Name: %s", collectionName))
+
+	api := apiClient.V1.CertificateCollectionApi
+	req := api.
+		NewGetCertificateCollectionsRequest(ctx).
+		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", collectionName))
+
+	response, _, err := req.Execute()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 {
+		return nil, fmt.Errorf("no certificate collection found with name %q", collectionName)
+	}
+
+	return &response[0], nil
+}
+
+// getEnrollmentPatternByName queries enrollment patterns by name and returns
+// the first matching pattern, or an error if none is found.
+// Uses the same QueryString filter pattern as getSecurityRoleByName.
+func getEnrollmentPatternByName(
+	ctx context.Context,
+	apiClient *keyfactor.APIClient,
+	patternName string,
+) (*kfv1.EnrollmentPatternsEnrollmentPatternResponse, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting enrollment pattern from remote source. Pattern Name: %s", patternName))
+
+	api := apiClient.V1.EnrollmentPatternApi
+	req := api.
+		NewGetEnrollmentPatternsRequest(ctx).
+		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", patternName))
+
+	response, _, err := req.Execute()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 {
+		return nil, fmt.Errorf("no enrollment pattern found with name %q", patternName)
+	}
+
+	return &response[0], nil
+}
+
 // Queries security permissions by name and returns the first matching permission set.
 func getSecurityPermissionSetByName(
 	ctx context.Context,

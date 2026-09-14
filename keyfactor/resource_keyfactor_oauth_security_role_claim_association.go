@@ -97,7 +97,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Read(
 		return
 	}
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+	if httpReq != nil {
+		tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+	}
 
 	// See if the claim is associated with the role
 	remoteClaimFound := false
@@ -299,7 +301,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 		return
 	}
 
-	tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+	if httpReq != nil {
+		tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
+	}
 
 	provider := *remoteClaimState.Provider
 	claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(*remoteClaimState.ClaimType.Get())

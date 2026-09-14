@@ -1157,8 +1157,11 @@ func enrollmentPatternCAsToState(cas []v1.EnrollmentPatternsEnrollmentPatternCAR
 	return result
 }
 
-// enrollmentPatternRegexesToState -- see enrollmentPatternAssociatedRolesToState's
-// doc comment; identical nil-vs-non-nil-empty fix for Regexes.
+// enrollmentPatternRegexesToState maps the server Regexes response to state.
+// Returns nil when the outer slice is nil (server omitted the field), so that
+// a nil response does not collapse a non-nil-but-empty configured value back
+// to Null (which would trigger "Provider produced inconsistent result after
+// apply"). Callers that need an empty, non-nil slice must check and convert.
 func enrollmentPatternRegexesToState(regexes []v1.EnrollmentPatternsEnrollmentPatternRegexesResponse) []EnrollmentPatternResourceRegex {
 	if regexes == nil {
 		return nil
@@ -1177,7 +1180,7 @@ func enrollmentPatternRegexesToState(regexes []v1.EnrollmentPatternsEnrollmentPa
 	return result
 }
 
-// enrollmentPatternMetadataFieldsToState -- see enrollmentPatternAssociatedRolesToState's
+// enrollmentPatternMetadataFieldsToState -- see enrollmentPatternRegexesToState's
 // doc comment; identical nil-vs-non-nil-empty fix for MetadataFields.
 func enrollmentPatternMetadataFieldsToState(fields []v1.EnrollmentPatternsEnrollmentPatternMetadataFieldResponse) []EnrollmentPatternResourceMetadataField {
 	if fields == nil {
@@ -1199,7 +1202,7 @@ func enrollmentPatternMetadataFieldsToState(fields []v1.EnrollmentPatternsEnroll
 	return result
 }
 
-// enrollmentPatternDefaultsToState -- see enrollmentPatternAssociatedRolesToState's
+// enrollmentPatternDefaultsToState -- see enrollmentPatternRegexesToState's
 // doc comment; identical nil-vs-non-nil-empty fix for Defaults.
 func enrollmentPatternDefaultsToState(defaults []v1.EnrollmentPatternsEnrollmentPatternDefaultResponse) []EnrollmentPatternResourceDefault {
 	if defaults == nil {
@@ -1244,8 +1247,7 @@ func enrollmentPatternDefaultsToState(defaults []v1.EnrollmentPatternsEnrollment
 func enrollmentPatternFieldsToState(fields []v1.EnrollmentPatternsEnrollmentPatternFieldResponse) []EnrollmentPatternResourceField {
 	// EnrollmentFields itself (the outer slice, as opposed to each entry's
 	// nested Options handled above) is subject to the identical nil-vs-
-	// non-nil-empty bug -- see enrollmentPatternAssociatedRolesToState's doc
-	// comment.
+	// non-nil-empty bug -- see enrollmentPatternRegexesToState's doc comment.
 	if fields == nil {
 		return nil
 	}
@@ -1352,10 +1354,10 @@ func enrollmentPatternPolicyResponseToState(p *v1.EnrollmentPatternsEnrollmentPa
 	// PrimaryKeyAlgorithms/AlternativeKeyAlgorithms themselves (the outer
 	// slices, as opposed to each entry's nested BitLengths/Curves handled by
 	// algorithmDataResponseToResourceEntry above) are subject to the
-	// identical nil-vs-non-nil-empty bug -- see
-	// enrollmentPatternAssociatedRolesToState's doc comment. Appending onto
-	// a nil-initialized pol.PrimaryKeyAlgorithms/AlternativeKeyAlgorithms
-	// (the bug -- fixed here) would collapse a non-nil-but-empty response
+	// identical nil-vs-non-nil-empty bug -- see enrollmentPatternRegexesToState's
+	// doc comment. Appending onto a nil-initialized
+	// pol.PrimaryKeyAlgorithms/AlternativeKeyAlgorithms (the bug -- fixed
+	// here) would collapse a non-nil-but-empty response
 	// (`primary_key_algorithms = []`) back to nil/Null.
 	if p.PrimaryKeyAlgorithms != nil {
 		pol.PrimaryKeyAlgorithms = make([]EnrollmentPatternResourceAlgorithm, 0, len(p.PrimaryKeyAlgorithms))
@@ -1402,12 +1404,6 @@ func enrollmentPatternPolicyResponseToState(p *v1.EnrollmentPatternsEnrollmentPa
 // "computed mirror pinned to prior state while Update() writes a
 // response-derived value" case in this resource instead of hand-
 // duplicating the same logic per mirror attribute:
-//   - associated_roles follows associated_role_names: changing
-//     associated_role_names must NOT leave the stale
-//     associated_roles membership pinned as a known planned value, or
-//     Update()'s genuinely-new membership in the final state triggers
-//     "Provider produced inconsistent result after apply" on this
-//     resource's primary update path.
 //   - certificate_authorities follows certificate_authority_ids (identical
 //     shape for the CA-restriction mirror).
 //   - policies.default_certificate_owner_role_name follows
@@ -1418,8 +1414,7 @@ func enrollmentPatternPolicyResponseToState(p *v1.EnrollmentPatternsEnrollmentPa
 //
 // T must be a concrete attr.Value-implementing type that Config/State's
 // reflection-based GetAttribute can decode into (e.g. types.List,
-// types.Int64) -- see the callers below for the two shapes currently
-// needed.
+// types.Int64) -- see the callers below for the shapes currently needed.
 type followsDriverModifier[T attr.Value] struct {
 	driverPath  path.Path
 	description string
@@ -1582,11 +1577,11 @@ func enrollmentPatternCAIdsToSet(cas []v1.EnrollmentPatternsEnrollmentPatternCAR
 // response shape (EnrollmentPatternsEnrollmentPatternResponse) onto Terraform
 // state. Callers are responsible for re-applying ForceTemplateDefault, which
 // this function cannot populate from any response (Command never persists
-// it -- it's a one-shot directive, not a stored setting). AssociatedRoleNames/
-// CertificateAuthorityIds, by contrast, ARE derived here (see
-// enrollmentPatternAssociatedRoleNamesToSet/enrollmentPatternCAIdsToSet and
-// KeyfactorEnrollmentPatternState's doc comment) -- callers no longer need to
-// re-apply those two from prior state.
+// it -- it's a one-shot directive, not a stored setting).
+// CertificateAuthorityIds are derived here from the server response; role
+// membership is externalized to keyfactor_enrollment_pattern_role_binding
+// resources and is NOT managed here (see KeyfactorEnrollmentPatternState's
+// doc comment for the full design rationale).
 func enrollmentPatternResponseToState(resp *v1.EnrollmentPatternsEnrollmentPatternResponse) KeyfactorEnrollmentPatternState {
 	state := KeyfactorEnrollmentPatternState{}
 

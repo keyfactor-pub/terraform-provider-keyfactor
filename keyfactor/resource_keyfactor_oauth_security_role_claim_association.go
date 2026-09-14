@@ -6,7 +6,6 @@ import (
 	"io"
 	"strconv"
 	"strings"
-	"time"
 
 	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -158,38 +157,34 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
 
-	// GET-modify-PUT-verify retry loop: see the reconcileOAuthRoleClaim*
-	// helpers in helpers.go for why this is necessary (Command's role PUT has
-	// no optimistic-concurrency primitive, so a concurrent Create/Delete on a
-	// different claim of the same role can silently clobber this change).
-	var lastErr error
-	for attempt := 1; attempt <= oauthRoleClaimReconcileMaxAttempts; attempt++ {
+	// GET-modify-PUT-verify retry loop: see reconcileWithRetry in helpers.go
+	// for why this is necessary (Command's role PUT has no optimistic-
+	// concurrency primitive, so a concurrent Create/Delete on a different
+	// claim of the same role can silently clobber this change).
+	deleted, lastErr := reconcileWithRetry(ctx, func(attempt int) (reconcileOutcome, error) {
 		remoteState, httpReq, err := api.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 		if err != nil {
 			if httpReq != nil && httpReq.StatusCode == 404 {
 				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
-				response.State.RemoveResource(ctx)
-				return
+				return reconcileDone, nil // role gone; treat as removed
 			}
-
 			response.Diagnostics.AddError(
 				"Unknown OAuth security role error.",
-				fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
+				fmt.Sprintf("Unknown error while trying to read OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
 			)
-			return
+			return reconcileFatal, nil
 		}
 
 		if !oauthRoleHasClaim(remoteState, claimId) {
 			// Already removed (either a prior attempt's PUT stuck, or someone
 			// else already removed it). Nothing left to do.
 			tflog.Debug(ctx, "OAuth security role claim associated deleted successfully.")
-			response.State.RemoveResource(ctx)
-			return
+			return reconcileDone, nil
 		}
 
 		updatedClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteState, &claimId)
 		if !ok {
-			return
+			return reconcileFatal, nil
 		}
 		claims := *updatedClaims
 
@@ -203,27 +198,24 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 			Claims:          claims,
 		})
 
-		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to remove claim ID %d (attempt %d/%d)...", roleId, claimId, attempt, oauthRoleClaimReconcileMaxAttempts))
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to remove claim ID %d (attempt %d/%d)...", roleId, claimId, attempt, reconcileMaxAttempts))
 
 		_, httpResp, err := updateReq.Execute()
 		if err != nil {
 			if httpResp != nil && httpResp.StatusCode == 404 {
 				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
-				response.State.RemoveResource(ctx)
-				return
+				return reconcileDone, nil
 			}
-
 			var body []byte
 			if httpResp != nil {
-				defer httpResp.Body.Close()
 				body, _ = io.ReadAll(httpResp.Body)
+				httpResp.Body.Close()
 			}
-
 			response.Diagnostics.AddError(
 				"Error updating security role claim association.",
 				fmt.Sprintf("Could not update OAuth security role assocation on role ID %d to delete claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), string(body)),
 			)
-			return
+			return reconcileFatal, nil
 		}
 
 		// Verify with a fresh GET: catches a concurrent writer's PUT landing
@@ -232,34 +224,36 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 		if err != nil {
 			if httpReq2 != nil && httpReq2.StatusCode == 404 {
 				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
-				response.State.RemoveResource(ctx)
-				return
+				return reconcileDone, nil
 			}
 			response.Diagnostics.AddError(
 				"Unknown OAuth security role error.",
 				fmt.Sprintf("Unknown error while trying to verify removal of claim ID %d from OAuth security role ID %d from Keyfactor. ", claimId, roleId)+err.Error(),
 			)
-			return
+			return reconcileFatal, nil
 		}
 
 		if !oauthRoleHasClaim(verifyState, claimId) {
 			tflog.Debug(ctx, "OAuth security role claim associated deleted successfully.")
-			response.State.RemoveResource(ctx)
-			return
+			return reconcileDone, nil
 		}
 
-		lastErr = fmt.Errorf("claim ID %d was still present on role ID %d after PUT+verify (attempt %d/%d) -- a concurrent writer likely reverted this change", claimId, roleId, attempt, oauthRoleClaimReconcileMaxAttempts)
-		tflog.Warn(ctx, lastErr.Error())
-		time.Sleep(oauthRoleClaimReconcileBackoff(attempt))
-	}
+		return reconcileRetry, fmt.Errorf("claim ID %d was still present on role ID %d after PUT+verify (attempt %d/%d) -- a concurrent writer likely reverted this change", claimId, roleId, attempt, reconcileMaxAttempts)
+	})
 
-	response.Diagnostics.AddError(
-		"Error deleting security role claim association (concurrent write contention).",
-		fmt.Sprintf(
-			"Could not remove claim ID %d from OAuth security role ID %d after %d attempts: %s. Another writer is repeatedly modifying this role's claims at the same time; retry once contention subsides.",
-			claimId, roleId, oauthRoleClaimReconcileMaxAttempts, lastErr,
-		),
-	)
+	if deleted {
+		response.State.RemoveResource(ctx)
+		return
+	}
+	if !response.Diagnostics.HasError() {
+		response.Diagnostics.AddError(
+			"Error deleting security role claim association (concurrent write contention).",
+			fmt.Sprintf(
+				"Could not remove claim ID %d from OAuth security role ID %d after %d attempts: %s. Another writer is repeatedly modifying this role's claims at the same time; retry once contention subsides.",
+				claimId, roleId, reconcileMaxAttempts, lastErr,
+			),
+		)
+	}
 }
 
 func (r resourceOAuthSecurityRoleClaimAssociation) Create(
@@ -327,32 +321,36 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 		Description:                  *remoteClaimState.Description.Get(),
 	}
 
-	// GET-modify-PUT-verify retry loop: see the reconcileOAuthRoleClaim*
-	// helpers in helpers.go for why this is necessary (Command's role PUT has
-	// no optimistic-concurrency primitive, so a concurrent Create/Delete on a
-	// different claim of the same role can silently clobber this change).
-	var lastErr error
-	created := false
-	for attempt := 1; attempt <= oauthRoleClaimReconcileMaxAttempts; attempt++ {
-		remoteRoleState, _, err := roleApi.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
+	// GET-modify-PUT-verify retry loop: see reconcileWithRetry in helpers.go
+	// for why this is necessary (Command's role PUT has no optimistic-
+	// concurrency primitive, so a concurrent Create/Delete on a different
+	// claim of the same role can silently clobber this change).
+	created, lastErr := reconcileWithRetry(ctx, func(attempt int) (reconcileOutcome, error) {
+		remoteRoleState, httpRespGet, err := roleApi.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 		if err != nil {
-			response.Diagnostics.AddError(
-				"Unknown OAuth security role error.",
-				fmt.Sprintf("Unknown error while trying to import OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
-			)
-			return
+			if httpRespGet != nil && httpRespGet.StatusCode == 404 {
+				response.Diagnostics.AddError(
+					"OAuth security role not found.",
+					fmt.Sprintf("OAuth security role ID %d was not found while creating the claim association. The role may have been deleted.", roleId),
+				)
+			} else {
+				response.Diagnostics.AddError(
+					"Unknown OAuth security role error.",
+					fmt.Sprintf("Unknown error while trying to read OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
+				)
+			}
+			return reconcileFatal, nil
 		}
 
 		if oauthRoleHasClaim(remoteRoleState, claimId) {
 			// Already associated (either a prior attempt's PUT stuck, or
 			// someone else already added it). Nothing left to do.
-			created = true
-			break
+			return reconcileDone, nil
 		}
 
 		existingClaims, ok := mapOAuthSecurityClaimsFromRole(ctx, &response.Diagnostics, remoteRoleState, nil)
 		if !ok {
-			return
+			return reconcileFatal, nil
 		}
 		updatedClaims := addOAuthSecurityClaimToRole(ctx, *existingClaims, temp)
 
@@ -366,21 +364,20 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 			Claims:          updatedClaims,
 		})
 
-		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to add security claim id %d (attempt %d/%d)...", roleId, claimId, attempt, oauthRoleClaimReconcileMaxAttempts))
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to add security claim id %d (attempt %d/%d)...", roleId, claimId, attempt, reconcileMaxAttempts))
 
 		_, httpResp2, err := updateReq.Execute()
 		if err != nil {
 			var body []byte
 			if httpResp2 != nil {
-				defer httpResp2.Body.Close()
 				body, _ = io.ReadAll(httpResp2.Body)
+				httpResp2.Body.Close()
 			}
-
 			response.Diagnostics.AddError(
 				"Error creating security role claim association.",
 				fmt.Sprintf("Could not create OAuth security role assocation on role ID %d to add claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), string(body)),
 			)
-			return
+			return reconcileFatal, nil
 		}
 
 		// Verify with a fresh GET: catches a concurrent writer's PUT landing
@@ -391,27 +388,26 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 				"Unknown OAuth security role error.",
 				fmt.Sprintf("Unknown error while trying to verify addition of claim ID %d to OAuth security role ID %d from Keyfactor. ", claimId, roleId)+err.Error(),
 			)
-			return
+			return reconcileFatal, nil
 		}
 
 		if oauthRoleHasClaim(verifyState, claimId) {
-			created = true
-			break
+			return reconcileDone, nil
 		}
 
-		lastErr = fmt.Errorf("claim ID %d was not present on role ID %d after PUT+verify (attempt %d/%d) -- a concurrent writer likely overwrote it", claimId, roleId, attempt, oauthRoleClaimReconcileMaxAttempts)
-		tflog.Warn(ctx, lastErr.Error())
-		time.Sleep(oauthRoleClaimReconcileBackoff(attempt))
-	}
+		return reconcileRetry, fmt.Errorf("claim ID %d was not present on role ID %d after PUT+verify (attempt %d/%d) -- a concurrent writer likely overwrote it", claimId, roleId, attempt, reconcileMaxAttempts)
+	})
 
-	if !created {
+	if !created && !response.Diagnostics.HasError() {
 		response.Diagnostics.AddError(
 			"Error creating security role claim association (concurrent write contention).",
 			fmt.Sprintf(
 				"Could not add claim ID %d to OAuth security role ID %d after %d attempts: %s. Another writer is repeatedly modifying this role's claims at the same time; retry once contention subsides.",
-				claimId, roleId, oauthRoleClaimReconcileMaxAttempts, lastErr,
+				claimId, roleId, reconcileMaxAttempts, lastErr,
 			),
 		)
+	}
+	if !created {
 		return
 	}
 

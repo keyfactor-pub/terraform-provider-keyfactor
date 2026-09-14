@@ -120,9 +120,9 @@ func newConcurrentEPRoleBindingRaceHarness(
 }
 
 // addRole adds roleName to the pattern's AssociatedRoles via GET-modify-PUT,
-// retrying up to oauthRoleClaimReconcileMaxAttempts times on conflict.
+// retrying up to reconcileMaxAttempts times on conflict.
 func (h *concurrentEPRoleBindingRaceHarness) addRole(ctx context.Context, roleName string) error {
-	for attempt := 1; attempt <= oauthRoleClaimReconcileMaxAttempts; attempt++ {
+	for attempt := 1; attempt <= reconcileMaxAttempts; attempt++ {
 		resp, _, err := h.sdk.V1.EnrollmentPatternApi.
 			NewGetEnrollmentPatternsByIdRequest(ctx, h.patternID).
 			XKeyfactorRequestedWith("APIClient").
@@ -155,8 +155,8 @@ func (h *concurrentEPRoleBindingRaceHarness) addRole(ctx context.Context, roleNa
 			EnrollmentPatternsEnrollmentPatternRequest(*body).
 			Execute()
 		if putErr != nil {
-			if attempt < oauthRoleClaimReconcileMaxAttempts {
-				delay := oauthRoleClaimReconcileBackoff(attempt)
+			if attempt < reconcileMaxAttempts {
+				delay := reconcileBackoff(attempt)
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -170,13 +170,13 @@ func (h *concurrentEPRoleBindingRaceHarness) addRole(ctx context.Context, roleNa
 			return nil
 		}
 	}
-	return fmt.Errorf("addRole: failed to verify role %q present after %d attempts", roleName, oauthRoleClaimReconcileMaxAttempts)
+	return fmt.Errorf("addRole: failed to verify role %q present after %d attempts", roleName, reconcileMaxAttempts)
 }
 
 // removeRole removes roleName from the pattern's AssociatedRoles via
 // GET-modify-PUT, retrying on conflict.
 func (h *concurrentEPRoleBindingRaceHarness) removeRole(ctx context.Context, roleName string) error {
-	for attempt := 1; attempt <= oauthRoleClaimReconcileMaxAttempts; attempt++ {
+	for attempt := 1; attempt <= reconcileMaxAttempts; attempt++ {
 		resp, _, err := h.sdk.V1.EnrollmentPatternApi.
 			NewGetEnrollmentPatternsByIdRequest(ctx, h.patternID).
 			XKeyfactorRequestedWith("APIClient").
@@ -215,8 +215,8 @@ func (h *concurrentEPRoleBindingRaceHarness) removeRole(ctx context.Context, rol
 			EnrollmentPatternsEnrollmentPatternRequest(*body).
 			Execute()
 		if putErr != nil {
-			if attempt < oauthRoleClaimReconcileMaxAttempts {
-				delay := oauthRoleClaimReconcileBackoff(attempt)
+			if attempt < reconcileMaxAttempts {
+				delay := reconcileBackoff(attempt)
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -230,7 +230,7 @@ func (h *concurrentEPRoleBindingRaceHarness) removeRole(ctx context.Context, rol
 			return nil
 		}
 	}
-	return fmt.Errorf("removeRole: failed to verify role %q absent after %d attempts", roleName, oauthRoleClaimReconcileMaxAttempts)
+	return fmt.Errorf("removeRole: failed to verify role %q absent after %d attempts", roleName, reconcileMaxAttempts)
 }
 
 // runConcurrent runs fn(role1) and fn(role2) in parallel and returns both errors.

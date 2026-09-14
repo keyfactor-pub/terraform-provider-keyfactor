@@ -446,24 +446,26 @@ func addOAuthSecurityClaimToRole(
 // whatever the first call wrote. Command returns 200 OK for both PUTs --
 // there is no conflict response to detect and retry on.
 //
-// oauthRoleClaimReconcileMaxAttempts bounds the number of GET-modify-PUT-
-// verify cycles Create/Delete will attempt before giving up and surfacing an
-// error to the practitioner (better than looping forever, and consistent
-// with the customer's own out-of-band retry workaround for this exact
-// problem).
-const oauthRoleClaimReconcileMaxAttempts = 5
+// reconcileMaxAttempts bounds the number of GET-modify-PUT-verify cycles
+// Create/Delete will attempt before giving up and surfacing an error to the
+// practitioner (better than looping forever, and consistent with the
+// customer's own out-of-band retry workaround for this exact problem).
+// Shared by keyfactor_oauth_security_role_claim_association and
+// keyfactor_enrollment_pattern_role_binding — both resources face the same
+// Command API concurrency profile.
+const reconcileMaxAttempts = 5
 
-// oauthRoleClaimReconcileBaseDelay is the base for the jittered exponential
-// backoff between reconcile attempts.
-const oauthRoleClaimReconcileBaseDelay = 150 * time.Millisecond
+// reconcileBaseDelay is the base for the jittered exponential backoff between
+// reconcile attempts.
+const reconcileBaseDelay = 150 * time.Millisecond
 
-// oauthRoleClaimReconcileBackoff returns a jittered, exponentially increasing
-// delay for retry attempt N (1-indexed), capped at 2 seconds.
-func oauthRoleClaimReconcileBackoff(attempt int) time.Duration {
+// reconcileBackoff returns a jittered, exponentially increasing delay for
+// retry attempt N (1-indexed), capped at 2 seconds.
+func reconcileBackoff(attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1
 	}
-	d := oauthRoleClaimReconcileBaseDelay * time.Duration(int64(1)<<uint(attempt-1))
+	d := reconcileBaseDelay * time.Duration(int64(1)<<uint(attempt-1))
 	maxDelay := 2 * time.Second
 	if d > maxDelay {
 		d = maxDelay
@@ -471,6 +473,53 @@ func oauthRoleClaimReconcileBackoff(attempt int) time.Duration {
 	// Half fixed, half jitter, to avoid two racing callers retrying in lockstep.
 	jitter := time.Duration(mathRand.Int63n(int64(d)/2 + 1))
 	return d/2 + jitter
+}
+
+// reconcileOutcome is the signal returned by a reconcileWithRetry step function.
+type reconcileOutcome int
+
+const (
+	// reconcileDone signals that the operation converged (success or idempotent
+	// no-op). reconcileWithRetry returns (true, nil).
+	reconcileDone reconcileOutcome = iota
+	// reconcileFatal signals that a non-retryable error occurred; the step
+	// must have already added diagnostics. reconcileWithRetry returns (false, nil).
+	reconcileFatal
+	// reconcileRetry signals that a concurrent-write race was detected. The
+	// error value is logged at Warn level and the loop retries after backoff.
+	reconcileRetry
+)
+
+// reconcileWithRetry runs step up to reconcileMaxAttempts times with jittered
+// exponential backoff between reconcileRetry results. It centralises the
+// retry skeleton that is common across keyfactor_oauth_security_role_claim_association
+// and keyfactor_enrollment_pattern_role_binding, removing the boilerplate from
+// each call site while leaving resource-specific GET/mutate/PUT/verify logic in
+// the step closure.
+//
+//   - On reconcileDone  → returns (true, nil) immediately.
+//   - On reconcileFatal → returns (false, nil); caller must handle its own diagnostics.
+//   - On reconcileRetry → logs err at Warn, sleeps, then retries.
+//   - After reconcileMaxAttempts exhausted → returns (false, lastRaceErr).
+func reconcileWithRetry(
+	ctx context.Context,
+	step func(attempt int) (reconcileOutcome, error),
+) (bool, error) {
+	var lastErr error
+	for attempt := 1; attempt <= reconcileMaxAttempts; attempt++ {
+		outcome, err := step(attempt)
+		switch outcome {
+		case reconcileDone:
+			return true, nil
+		case reconcileFatal:
+			return false, nil
+		case reconcileRetry:
+			lastErr = err
+			tflog.Warn(ctx, err.Error())
+			time.Sleep(reconcileBackoff(attempt))
+		}
+	}
+	return false, lastErr
 }
 
 // oauthRoleHasClaim reports whether claimId is present in role's Claims.
@@ -3161,9 +3210,12 @@ func getCertificateCollectionByName(
 	tflog.Debug(ctx, fmt.Sprintf("Getting certificate collection from remote source. Collection Name: %s", collectionName))
 
 	api := apiClient.V1.CertificateCollectionApi
+	// Escape embedded double-quotes so a name like `foo"bar` does not break
+	// the PQL filter or match an unintended collection.
+	escapedName := strings.ReplaceAll(collectionName, `"`, `\"`)
 	req := api.
 		NewGetCertificateCollectionsRequest(ctx).
-		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", collectionName))
+		QueryString(fmt.Sprintf(`((Name -eq "%s"))`, escapedName))
 
 	response, _, err := req.Execute()
 	if err != nil {
@@ -3188,9 +3240,12 @@ func getEnrollmentPatternByName(
 	tflog.Debug(ctx, fmt.Sprintf("Getting enrollment pattern from remote source. Pattern Name: %s", patternName))
 
 	api := apiClient.V1.EnrollmentPatternApi
+	// Escape embedded double-quotes so a name like `foo"bar` does not break
+	// the PQL filter or match an unintended enrollment pattern.
+	escapedPatternName := strings.ReplaceAll(patternName, `"`, `\"`)
 	req := api.
 		NewGetEnrollmentPatternsRequest(ctx).
-		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", patternName))
+		QueryString(fmt.Sprintf(`((Name -eq "%s"))`, escapedPatternName))
 
 	response, _, err := req.Execute()
 	if err != nil {
@@ -3213,7 +3268,10 @@ func getEnrollmentPatternByName(
 // loop in keyfactor_enrollment_pattern_role_binding's Create/Delete.
 func enrollmentPatternHasRole(resp *kfv1.EnrollmentPatternsEnrollmentPatternResponse, roleName string) bool {
 	for _, role := range resp.AssociatedRoles {
-		if name := role.Name.Get(); name != nil && *name == roleName {
+		// Case-insensitive comparison: Command may normalize role name casing
+		// (e.g. store "Admin" when the practitioner wrote "admin"), so an
+		// exact-string match would fail to detect the role as present.
+		if name := role.Name.Get(); name != nil && strings.EqualFold(*name, roleName) {
 			return true
 		}
 	}

@@ -31,6 +31,6 @@ Use one `keyfactor_enrollment_pattern_role_binding` resource per (enrollment pat
 
 ### Read-Only
 
-- `id` (String) Composite key "<enrollment_pattern_name>:<role_name>", stable across imports.
+- `id` (String) Composite key "<enrollment_pattern_name>//<role_name>", stable across imports.
 
 

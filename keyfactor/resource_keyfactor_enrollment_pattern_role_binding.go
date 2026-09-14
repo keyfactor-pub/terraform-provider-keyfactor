@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -30,7 +29,7 @@ Use one ` + "`keyfactor_enrollment_pattern_role_binding`" + ` resource per (enro
 			"id": {
 				Type:        types.StringType,
 				Computed:    true,
-				Description: `Composite key "<enrollment_pattern_name>:<role_name>", stable across imports.`,
+				Description: `Composite key "<enrollment_pattern_name>//<role_name>", stable across imports.`,
 			},
 			"enrollment_pattern_name": {
 				Type:          types.StringType,
@@ -99,11 +98,9 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 	// sub-endpoint exists -- confirmed by inspection of the v25 SDK's
 	// EnrollmentPatternApi method list). Two concurrent Create calls on the
 	// same pattern can both GET before either PUTs; the second PUT wins and
-	// silently drops the first call's addition. The retry loop detects this
-	// via the verify GET and retries with jittered backoff.
-	var lastErr error
-	created := false
-	for attempt := 1; attempt <= oauthRoleClaimReconcileMaxAttempts; attempt++ {
+	// silently drops the first call's addition. reconcileWithRetry detects
+	// this via the verify GET and retries with jittered backoff.
+	created, lastErr := reconcileWithRetry(ctx, func(attempt int) (reconcileOutcome, error) {
 		currentResp, httpResp, err := patternApi.NewGetEnrollmentPatternsByIdRequest(ctx, patternID).
 			XKeyfactorRequestedWith("APIClient").
 			XKeyfactorApiVersion("1").
@@ -114,20 +111,19 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 					"Enrollment pattern not found.",
 					fmt.Sprintf("Enrollment pattern %q (ID %d) no longer exists.", patternName, patternID),
 				)
-				return
+			} else {
+				response.Diagnostics.AddError(
+					"Error reading enrollment pattern.",
+					fmt.Sprintf("Could not read enrollment pattern %q (ID %d): %s", patternName, patternID, err.Error()),
+				)
 			}
-			response.Diagnostics.AddError(
-				"Error reading enrollment pattern.",
-				fmt.Sprintf("Could not read enrollment pattern %q (ID %d): %s", patternName, patternID, err.Error()),
-			)
-			return
+			return reconcileFatal, nil
 		}
 
 		// Idempotency: if the role is already present, nothing left to do.
 		if enrollmentPatternHasRole(currentResp, roleName) {
 			tflog.Debug(ctx, fmt.Sprintf("Role %q already present on enrollment pattern %q -- skipping PUT", roleName, patternName))
-			created = true
-			break
+			return reconcileDone, nil
 		}
 
 		// Add the role to the current list.
@@ -135,10 +131,10 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 		newRoles := append(currentRoles, roleName) //nolint:gocritic // intentional append-to-external slice
 
 		// Build a full update request preserving all other fields.
-		state := enrollmentPatternResponseToState(currentResp)
-		updateBody := buildEnrollmentPatternUpdateRequest(ctx, state, newRoles)
+		epState := enrollmentPatternResponseToState(currentResp)
+		updateBody := buildEnrollmentPatternUpdateRequest(ctx, epState, newRoles)
 
-		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to add role %q to enrollment pattern %q (attempt %d/%d)...", roleName, patternName, attempt, oauthRoleClaimReconcileMaxAttempts))
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to add role %q to enrollment pattern %q (attempt %d/%d)...", roleName, patternName, attempt, reconcileMaxAttempts))
 
 		_, httpResp2, err := patternApi.NewUpdateEnrollmentPatternsByIdRequest(ctx, patternID).
 			XKeyfactorRequestedWith("APIClient").
@@ -151,18 +147,18 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 					"Enrollment pattern not found during update.",
 					fmt.Sprintf("Enrollment pattern %q (ID %d) disappeared during role binding creation.", patternName, patternID),
 				)
-				return
+				return reconcileFatal, nil
 			}
 			var body []byte
 			if httpResp2 != nil {
-				defer httpResp2.Body.Close()
 				body, _ = io.ReadAll(httpResp2.Body)
+				httpResp2.Body.Close()
 			}
 			response.Diagnostics.AddError(
 				"Error updating enrollment pattern.",
 				fmt.Sprintf("Could not add role %q to enrollment pattern %q: %s. Details: %s", roleName, patternName, err.Error(), string(body)),
 			)
-			return
+			return reconcileFatal, nil
 		}
 
 		// Verify: a fresh GET confirms the change stuck and wasn't clobbered
@@ -177,39 +173,39 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 					"Enrollment pattern not found during verification.",
 					fmt.Sprintf("Enrollment pattern %q (ID %d) disappeared during role binding verification.", patternName, patternID),
 				)
-				return
+			} else {
+				response.Diagnostics.AddError(
+					"Error verifying enrollment pattern role binding.",
+					fmt.Sprintf("Could not verify addition of role %q to enrollment pattern %q: %s", roleName, patternName, err.Error()),
+				)
 			}
-			response.Diagnostics.AddError(
-				"Error verifying enrollment pattern role binding.",
-				fmt.Sprintf("Could not verify addition of role %q to enrollment pattern %q: %s", roleName, patternName, err.Error()),
-			)
-			return
+			return reconcileFatal, nil
 		}
 
 		if enrollmentPatternHasRole(verifyResp, roleName) {
-			created = true
-			break
+			return reconcileDone, nil
 		}
 
-		lastErr = fmt.Errorf("role %q was not present on enrollment pattern %q after PUT+verify (attempt %d/%d) -- a concurrent writer likely overwrote it", roleName, patternName, attempt, oauthRoleClaimReconcileMaxAttempts)
-		tflog.Warn(ctx, lastErr.Error())
-		time.Sleep(oauthRoleClaimReconcileBackoff(attempt))
-	}
+		return reconcileRetry, fmt.Errorf("role %q was not present on enrollment pattern %q after PUT+verify (attempt %d/%d) -- a concurrent writer likely overwrote it", roleName, patternName, attempt, reconcileMaxAttempts)
+	})
 
-	if !created {
+	if !created && !response.Diagnostics.HasError() {
 		response.Diagnostics.AddError(
 			"Error creating enrollment pattern role binding (concurrent write contention).",
 			fmt.Sprintf(
 				"Could not add role %q to enrollment pattern %q after %d attempts: %s. "+
 					"Another writer is repeatedly modifying this pattern's roles at the same time; retry once contention subsides.",
-				roleName, patternName, oauthRoleClaimReconcileMaxAttempts, lastErr,
+				roleName, patternName, reconcileMaxAttempts, lastErr,
 			),
 		)
 		return
 	}
+	if !created {
+		return
+	}
 
 	result := EnrollmentPatternRoleBinding{
-		ID:                    types.String{Value: fmt.Sprintf("%s:%s", patternName, roleName)},
+		ID:                    types.String{Value: fmt.Sprintf("%s//%s", patternName, roleName)},
 		EnrollmentPatternName: types.String{Value: patternName},
 		RoleName:              types.String{Value: roleName},
 	}
@@ -265,7 +261,7 @@ func (r resourceEnrollmentPatternRoleBinding) Read(
 
 	// State is unchanged -- just confirm it's still correct.
 	result := EnrollmentPatternRoleBinding{
-		ID:                    types.String{Value: fmt.Sprintf("%s:%s", patternName, roleName)},
+		ID:                    types.String{Value: fmt.Sprintf("%s//%s", patternName, roleName)},
 		EnrollmentPatternName: types.String{Value: patternName},
 		RoleName:              types.String{Value: roleName},
 	}
@@ -319,8 +315,7 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 
 	// GET-modify-PUT-verify retry loop -- see Create()'s identical loop for
 	// the full rationale. Mirrors the claim association resource's Delete shape.
-	var lastErr error
-	for attempt := 1; attempt <= oauthRoleClaimReconcileMaxAttempts; attempt++ {
+	deleted, lastErr := reconcileWithRetry(ctx, func(attempt int) (reconcileOutcome, error) {
 		currentResp, httpResp, err := patternApi.NewGetEnrollmentPatternsByIdRequest(ctx, patternID).
 			XKeyfactorRequestedWith("APIClient").
 			XKeyfactorApiVersion("1").
@@ -328,35 +323,39 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 		if err != nil {
 			if httpResp != nil && httpResp.StatusCode == 404 {
 				tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %q (ID %d) not found; treating as already removed", patternName, patternID))
-				return
+				return reconcileDone, nil
 			}
 			response.Diagnostics.AddError(
 				"Error reading enrollment pattern.",
 				fmt.Sprintf("Could not read enrollment pattern %q (ID %d) before role removal: %s", patternName, patternID, err.Error()),
 			)
-			return
+			return reconcileFatal, nil
 		}
 
 		// Idempotency: if the role is already absent, nothing left to do.
 		if !enrollmentPatternHasRole(currentResp, roleName) {
 			tflog.Debug(ctx, fmt.Sprintf("Role %q already absent from enrollment pattern %q -- skipping PUT", roleName, patternName))
-			return
+			return reconcileDone, nil
 		}
 
-		// Remove the role from the current list.
+		// Remove the role from the current list. Use case-insensitive
+		// comparison to match the same normalisation applied by
+		// enrollmentPatternHasRole: if Command stored "Admin" and the
+		// practitioner wrote "admin", an exact-match filter would leave the
+		// role in the list and the verify step would see it as still present.
 		currentRoles := extractEnrollmentPatternRoleNames(currentResp)
 		newRoles := make([]string, 0, len(currentRoles))
 		for _, r := range currentRoles {
-			if r != roleName {
+			if !strings.EqualFold(r, roleName) {
 				newRoles = append(newRoles, r)
 			}
 		}
 
 		// Build a full update request preserving all other fields.
-		state := enrollmentPatternResponseToState(currentResp)
-		updateBody := buildEnrollmentPatternUpdateRequest(ctx, state, newRoles)
+		epState := enrollmentPatternResponseToState(currentResp)
+		updateBody := buildEnrollmentPatternUpdateRequest(ctx, epState, newRoles)
 
-		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to remove role %q from enrollment pattern %q (attempt %d/%d)...", roleName, patternName, attempt, oauthRoleClaimReconcileMaxAttempts))
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to remove role %q from enrollment pattern %q (attempt %d/%d)...", roleName, patternName, attempt, reconcileMaxAttempts))
 
 		_, httpResp2, err := patternApi.NewUpdateEnrollmentPatternsByIdRequest(ctx, patternID).
 			XKeyfactorRequestedWith("APIClient").
@@ -366,18 +365,18 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 		if err != nil {
 			if httpResp2 != nil && httpResp2.StatusCode == 404 {
 				tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %q (ID %d) disappeared during role removal; treating as removed", patternName, patternID))
-				return
+				return reconcileDone, nil
 			}
 			var body []byte
 			if httpResp2 != nil {
-				defer httpResp2.Body.Close()
 				body, _ = io.ReadAll(httpResp2.Body)
+				httpResp2.Body.Close()
 			}
 			response.Diagnostics.AddError(
 				"Error updating enrollment pattern.",
 				fmt.Sprintf("Could not remove role %q from enrollment pattern %q: %s. Details: %s", roleName, patternName, err.Error(), string(body)),
 			)
-			return
+			return reconcileFatal, nil
 		}
 
 		// Verify the change stuck.
@@ -388,36 +387,38 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 		if err != nil {
 			if httpResp3 != nil && httpResp3.StatusCode == 404 {
 				// Pattern gone -- binding is certainly removed.
-				return
+				return reconcileDone, nil
 			}
 			response.Diagnostics.AddError(
 				"Error verifying enrollment pattern role removal.",
 				fmt.Sprintf("Could not verify removal of role %q from enrollment pattern %q: %s", roleName, patternName, err.Error()),
 			)
-			return
+			return reconcileFatal, nil
 		}
 
 		if !enrollmentPatternHasRole(verifyResp, roleName) {
 			tflog.Debug(ctx, "Enrollment pattern role binding deleted successfully.")
-			return
+			return reconcileDone, nil
 		}
 
-		lastErr = fmt.Errorf("role %q was still present on enrollment pattern %q after PUT+verify (attempt %d/%d) -- a concurrent writer likely reverted this change", roleName, patternName, attempt, oauthRoleClaimReconcileMaxAttempts)
-		tflog.Warn(ctx, lastErr.Error())
-		time.Sleep(oauthRoleClaimReconcileBackoff(attempt))
-	}
+		return reconcileRetry, fmt.Errorf("role %q was still present on enrollment pattern %q after PUT+verify (attempt %d/%d) -- a concurrent writer likely reverted this change", roleName, patternName, attempt, reconcileMaxAttempts)
+	})
 
-	response.Diagnostics.AddError(
-		"Error deleting enrollment pattern role binding (concurrent write contention).",
-		fmt.Sprintf(
-			"Could not remove role %q from enrollment pattern %q after %d attempts: %s. "+
-				"Another writer is repeatedly modifying this pattern's roles at the same time; retry once contention subsides.",
-			roleName, patternName, oauthRoleClaimReconcileMaxAttempts, lastErr,
-		),
-	)
+	if !deleted && !response.Diagnostics.HasError() {
+		response.Diagnostics.AddError(
+			"Error deleting enrollment pattern role binding (concurrent write contention).",
+			fmt.Sprintf(
+				"Could not remove role %q from enrollment pattern %q after %d attempts: %s. "+
+					"Another writer is repeatedly modifying this pattern's roles at the same time; retry once contention subsides.",
+				roleName, patternName, reconcileMaxAttempts, lastErr,
+			),
+		)
+	}
 }
 
-// ImportState imports a role binding by its composite ID "<patternName>:<roleName>".
+// ImportState imports a role binding by its composite ID "<patternName>//<roleName>".
+// The "//" delimiter avoids ambiguity when the pattern name contains a colon
+// (e.g. "Dept:Finance"). Run: terraform import keyfactor_enrollment_pattern_role_binding.x 'PatternName//RoleName'
 func (r resourceEnrollmentPatternRoleBinding) ImportState(
 	ctx context.Context,
 	request tfsdk.ImportResourceStateRequest,
@@ -425,11 +426,11 @@ func (r resourceEnrollmentPatternRoleBinding) ImportState(
 ) {
 	tflog.Info(ctx, "ImportState called on enrollment pattern role binding resource")
 
-	parts := strings.SplitN(request.ID, ":", 2)
+	parts := strings.SplitN(request.ID, "//", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		response.Diagnostics.AddError(
 			"Invalid import ID",
-			fmt.Sprintf("Expected import ID in format '<enrollmentPatternName>:<roleName>', got %q.", request.ID),
+			fmt.Sprintf("Expected import ID in format '<enrollmentPatternName>//<roleName>', got %q.", request.ID),
 		)
 		return
 	}
@@ -459,7 +460,7 @@ func (r resourceEnrollmentPatternRoleBinding) ImportState(
 	}
 
 	result := EnrollmentPatternRoleBinding{
-		ID:                    types.String{Value: fmt.Sprintf("%s:%s", patternName, roleName)},
+		ID:                    types.String{Value: fmt.Sprintf("%s//%s", patternName, roleName)},
 		EnrollmentPatternName: types.String{Value: patternName},
 		RoleName:              types.String{Value: roleName},
 	}

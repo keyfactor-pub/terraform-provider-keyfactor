@@ -3449,6 +3449,27 @@ func convertStringArrayToTerraform(options []string) []attr.Value {
 	return output
 }
 
+// enumPtrToTfInt64 converts any int32-backed enum pointer (e.g.
+// *CSSCMSCoreEnumsMetadataTypeEnrollment, *CSSCMSCoreEnumsTemplateEnrollment-
+// FieldType, *CSSCMSCoreEnumsTemplateCertificateOwnerRole) to types.Int64,
+// mapping nil (server field omitted) to Null so a subsequent write does not
+// silently send the zero value of the enum.
+func enumPtrToTfInt64[T ~int32](v *T) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
+}
+
+// stringSliceToTfList converts a slice of strings to a types.List with
+// StringType elements.
+func stringSliceToTfList(vals []string) types.List {
+	return types.List{
+		ElemType: types.StringType,
+		Elems:    convertStringArrayToTerraform(vals),
+	}
+}
+
 // convertIntArrayToTerraform converts a slice of integers (int, int32, int64) to a slice of Terraform attr.Value objects.
 func convertIntArrayToTerraform(lengths any) []attr.Value {
 	var result []attr.Value

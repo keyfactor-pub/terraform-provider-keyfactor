@@ -544,18 +544,6 @@ type KeyfactorEnrollmentPatternState struct {
 // Small conversion helpers local to this resource
 // ---------------------------------------------------------------------------
 
-// enumPtrToTfInt64 converts any int32-backed enum pointer (e.g.
-// *CSSCMSCoreEnumsMetadataTypeEnrollment, *CSSCMSCoreEnumsTemplateEnrollment-
-// FieldType, *CSSCMSCoreEnumsTemplateCertificateOwnerRole) to types.Int64,
-// mapping nil (server field omitted) to Null so a subsequent write does not
-// silently send the zero value of the enum.
-func enumPtrToTfInt64[T ~int32](v *T) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
-}
-
 // tfSetToInt32Slice extracts a []int32 from a types.Set of Int64 elements
 // (certificate_authority_ids), returning nil when the set is null/unknown.
 func tfSetToInt32Slice(ctx context.Context, s types.Set) []int32 {
@@ -1606,7 +1594,7 @@ func enrollmentPatternResponseToState(resp *v1.EnrollmentPatternsEnrollmentPatte
 	state.CertificateAuthorityIds = enrollmentPatternCAIdsToSet(resp.CertificateAuthorities)
 	state.CertificateAuthorities = enrollmentPatternCAsToState(resp.CertificateAuthorities)
 
-	state.AllowedEnrollmentTypes = enrollmentTypePtrToTfInt64(resp.AllowedEnrollmentTypes)
+	state.AllowedEnrollmentTypes = enumPtrToTfInt64(resp.AllowedEnrollmentTypes)
 
 	state.Regexes = enrollmentPatternRegexesToState(resp.Regexes)
 	state.MetadataFields = enrollmentPatternMetadataFieldsToState(resp.MetadataFields)

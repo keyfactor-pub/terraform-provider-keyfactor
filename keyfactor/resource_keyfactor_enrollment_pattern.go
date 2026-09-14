@@ -1795,15 +1795,34 @@ func buildEnrollmentPatternFieldsRequest(ctx context.Context, plan []EnrollmentP
 	return result
 }
 
-// buildEnrollmentPatternCreateRequest builds the POST /EnrollmentPatterns
-// body. template_id/name/policies are always sent (Template and Name are
-// required scalar fields on the SDK struct; Policies per the "always send
-// Policies" note on buildEnrollmentPatternPolicyRequest).
-func buildEnrollmentPatternCreateRequest(ctx context.Context, plan KeyfactorEnrollmentPatternState) v1.EnrollmentPatternsEnrollmentPatternCreateRequest {
-	req := *v1.NewEnrollmentPatternsEnrollmentPatternCreateRequest(
-		int32(plan.TemplateId.Value), plan.Name.Value, buildEnrollmentPatternPolicyRequest(ctx, plan.Policies),
-	)
+// enrollmentPatternCommonSetter is the shared subset of setter methods
+// implemented by both EnrollmentPatternsEnrollmentPatternCreateRequest and
+// EnrollmentPatternsEnrollmentPatternRequest. It lets setEnrollmentPatternCommonFields
+// populate the identical fields without duplicating the logic.
+type enrollmentPatternCommonSetter interface {
+	SetDescription(v string)
+	SetTemplateDefault(v bool)
+	SetUseADPermissions(v bool)
+	SetCertificateAuthorities(v []int32)
+	SetAllowedEnrollmentTypes(v int32)
+	SetRegexes(v []v1.EnrollmentPatternsEnrollmentPatternRegexesRequest)
+	SetMetadataFields(v []v1.EnrollmentPatternsEnrollmentPatternMetadataFieldRequest)
+	SetRestrictCAs(v bool)
+	SetDefaults(v []v1.EnrollmentPatternsEnrollmentPatternDefaultRequest)
+	SetEnrollmentFields(v []v1.EnrollmentPatternsEnrollmentPatternFieldRequest)
+}
 
+// setEnrollmentPatternCommonFields populates the fields shared between the
+// create and update request bodies. Fields unique to one request type
+// (TemplateId for create, AssociatedRoles for update) are handled by the
+// individual builders.
+//
+// nil vs non-nil-empty (NOT len > 0) is the deliberate gate on list fields --
+// see buildEnrollmentPatternPolicyRequest's doc comment for why: the request
+// models' ToMap() sends an explicit `[]` for any non-nil list, so a
+// plan-declared empty list (e.g. `regexes = []`) must reach the setter with a
+// non-nil empty slice to actually clear the field server-side.
+func setEnrollmentPatternCommonFields(ctx context.Context, req enrollmentPatternCommonSetter, plan KeyfactorEnrollmentPatternState) {
 	if !plan.Description.Null && !plan.Description.Unknown {
 		req.SetDescription(plan.Description.Value)
 	}
@@ -1819,13 +1838,6 @@ func buildEnrollmentPatternCreateRequest(ctx context.Context, plan KeyfactorEnro
 	if !plan.AllowedEnrollmentTypes.Null && !plan.AllowedEnrollmentTypes.Unknown {
 		req.SetAllowedEnrollmentTypes(int32(plan.AllowedEnrollmentTypes.Value))
 	}
-	// nil vs non-nil-empty (NOT len > 0) is the deliberate gate here -- see
-	// buildEnrollmentPatternPolicyRequest's doc comment above for why: the
-	// request models' ToMap() sends an explicit `[]` for any non-nil list,
-	// so a plan-declared empty list (e.g. `regexes = []`) must reach
-	// SetRegexes with a non-nil empty slice to actually clear the field
-	// server-side, rather than being gated out and silently leaving the
-	// prior value in place.
 	if plan.Regexes != nil {
 		req.SetRegexes(buildEnrollmentPatternRegexesRequest(plan.Regexes))
 	}
@@ -1841,6 +1853,17 @@ func buildEnrollmentPatternCreateRequest(ctx context.Context, plan KeyfactorEnro
 	if plan.EnrollmentFields != nil {
 		req.SetEnrollmentFields(buildEnrollmentPatternFieldsRequest(ctx, plan.EnrollmentFields))
 	}
+}
+
+// buildEnrollmentPatternCreateRequest builds the POST /EnrollmentPatterns
+// body. template_id/name/policies are always sent (Template and Name are
+// required scalar fields on the SDK struct; Policies per the "always send
+// Policies" note on buildEnrollmentPatternPolicyRequest).
+func buildEnrollmentPatternCreateRequest(ctx context.Context, plan KeyfactorEnrollmentPatternState) v1.EnrollmentPatternsEnrollmentPatternCreateRequest {
+	req := *v1.NewEnrollmentPatternsEnrollmentPatternCreateRequest(
+		int32(plan.TemplateId.Value), plan.Name.Value, buildEnrollmentPatternPolicyRequest(ctx, plan.Policies),
+	)
+	setEnrollmentPatternCommonFields(ctx, &req, plan)
 	return req
 }
 
@@ -1859,46 +1882,9 @@ func buildEnrollmentPatternUpdateRequest(ctx context.Context, plan KeyfactorEnro
 	req := *v1.NewEnrollmentPatternsEnrollmentPatternRequest(
 		plan.Name.Value, buildEnrollmentPatternPolicyRequest(ctx, plan.Policies),
 	)
-
-	if !plan.Description.Null && !plan.Description.Unknown {
-		req.SetDescription(plan.Description.Value)
-	}
-	if !plan.TemplateDefault.Null && !plan.TemplateDefault.Unknown {
-		req.SetTemplateDefault(plan.TemplateDefault.Value)
-	}
-	if !plan.UseADPermissions.Null && !plan.UseADPermissions.Unknown {
-		req.SetUseADPermissions(plan.UseADPermissions.Value)
-	}
+	setEnrollmentPatternCommonFields(ctx, &req, plan)
 	if preservedRoleNames != nil {
 		req.SetAssociatedRoles(preservedRoleNames)
-	}
-	if caIds := tfSetToInt32Slice(ctx, plan.CertificateAuthorityIds); caIds != nil {
-		req.SetCertificateAuthorities(caIds)
-	}
-	if !plan.AllowedEnrollmentTypes.Null && !plan.AllowedEnrollmentTypes.Unknown {
-		req.SetAllowedEnrollmentTypes(int32(plan.AllowedEnrollmentTypes.Value))
-	}
-	// nil vs non-nil-empty (NOT len > 0) is the deliberate gate here -- see
-	// buildEnrollmentPatternPolicyRequest's doc comment above for why: the
-	// request models' ToMap() sends an explicit `[]` for any non-nil list,
-	// so a plan-declared empty list (e.g. `regexes = []`) must reach
-	// SetRegexes with a non-nil empty slice to actually clear the field
-	// server-side, rather than being gated out and silently leaving the
-	// prior value in place.
-	if plan.Regexes != nil {
-		req.SetRegexes(buildEnrollmentPatternRegexesRequest(plan.Regexes))
-	}
-	if plan.MetadataFields != nil {
-		req.SetMetadataFields(buildEnrollmentPatternMetadataFieldsRequest(plan.MetadataFields))
-	}
-	if !plan.RestrictCAs.Null && !plan.RestrictCAs.Unknown {
-		req.SetRestrictCAs(plan.RestrictCAs.Value)
-	}
-	if plan.Defaults != nil {
-		req.SetDefaults(buildEnrollmentPatternDefaultsRequest(plan.Defaults))
-	}
-	if plan.EnrollmentFields != nil {
-		req.SetEnrollmentFields(buildEnrollmentPatternFieldsRequest(ctx, plan.EnrollmentFields))
 	}
 	return req
 }

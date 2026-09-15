@@ -50,10 +50,10 @@ import-all:
 	done < _import_pairs.txt
 	@echo "==> Removing role binding from state..."
 	$(UNSET_BASIC) $(TF) state rm "keyfactor_enrollment_pattern_role_binding.demo" 2>&1 | grep -E "Removed|no state" || true
-	@echo "==> Re-importing role binding by composite key (patternName:roleName)..."
+	@echo "==> Re-importing role binding by composite key (patternName//roleName)..."
 	@PATTERN_NAME="Demo Pattern$(SUFFIX)"; \
 	 ROLE_NAME="$(ROLE)"; \
-	 COMPOSITE_ID="$${PATTERN_NAME}:$${ROLE_NAME}"; \
+	 COMPOSITE_ID="$${PATTERN_NAME}//$${ROLE_NAME}"; \
 	 result=$$($(UNSET_BASIC) $(TF) import -var="suffix=$(SUFFIX)" "keyfactor_enrollment_pattern_role_binding.demo" "$${COMPOSITE_ID}" 2>&1); \
 	 if echo "$$result" | grep -q "Import successful"; then \
 	   echo "OK: role_binding.demo (ID=$${COMPOSITE_ID})"; \

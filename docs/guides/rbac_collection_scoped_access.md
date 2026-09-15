@@ -117,11 +117,11 @@ resource "keyfactor_enrollment_pattern_role_binding" "app_a_binding" {
 }
 ```
 
-The binding is importable by composite key `"<pattern_name>:<role_name>"`:
+The binding is importable by composite key `"<pattern_name>//<role_name>"`:
 
 ```shell
 terraform import keyfactor_enrollment_pattern_role_binding.app_a_binding \
-  "AppA Enrollment Pattern:AppA-Role"
+  "AppA Enrollment Pattern//AppA-Role"
 ```
 
 ## Summary

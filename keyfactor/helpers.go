@@ -1089,21 +1089,6 @@ func flattenTemplateRegexes(regexes []api.TemplateRegex) types.List {
 	return result
 }
 
-func flattenAllowedRequesters(requesters []string) types.List {
-	result := types.List{
-		ElemType: types.StringType,
-		Elems:    []attr.Value{},
-	}
-
-	if len(requesters) > 0 {
-		for _, requester := range requesters {
-			result.Elems = append(result.Elems, types.String{Value: requester})
-		}
-	}
-
-	return result
-}
-
 func isNullString(s string) bool {
 	switch s {
 	case "", "null":

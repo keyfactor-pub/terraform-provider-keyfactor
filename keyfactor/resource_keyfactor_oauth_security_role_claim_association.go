@@ -305,6 +305,14 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 		tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 	}
 
+	if remoteClaimState == nil {
+		response.Diagnostics.Append(nilAPIResponseDiagnostics(
+			"Unknown OAuth security claim error.",
+			fmt.Sprintf("fetching OAuth security claim ID %d", claimId),
+		)...)
+		return
+	}
+
 	provider := *remoteClaimState.Provider
 	claimTypeEnum, err := v2.ParseCSSCMSCoreEnumsClaimType(*remoteClaimState.ClaimType.Get())
 
@@ -386,8 +394,15 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 		// Verify with a fresh GET: catches a concurrent writer's PUT landing
 		// between our PUT above and now.
-		verifyState, _, err := roleApi.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
+		verifyState, httpRespVerify, err := roleApi.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 		if err != nil {
+			if httpRespVerify != nil && httpRespVerify.StatusCode == 404 {
+				response.Diagnostics.AddError(
+					"OAuth security role not found.",
+					fmt.Sprintf("OAuth security role ID %d was deleted while verifying the claim association. The role may have been removed by another process.", roleId),
+				)
+				return reconcileFatal, nil
+			}
 			response.Diagnostics.AddError(
 				"Unknown OAuth security role error.",
 				fmt.Sprintf("Unknown error while trying to verify addition of claim ID %d to OAuth security role ID %d from Keyfactor. ", claimId, roleId)+err.Error(),

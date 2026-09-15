@@ -43,7 +43,7 @@ jobs:
       # - name: Guard against GA release with pre-release dependencies
       #   run: ./scripts/check_ga_release_deps.sh "${{ env.TAG_NAME }}"
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v4
+        uses: goreleaser/goreleaser-action@v7
         with:
           args: release --clean
         env:

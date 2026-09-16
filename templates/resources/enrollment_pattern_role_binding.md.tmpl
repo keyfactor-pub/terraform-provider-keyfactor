@@ -9,6 +9,10 @@ description: |-
 
 {{ .Description | trimspace }}
 
+## Example Usage
+
+{{ codefile "terraform" "examples/resources/keyfactor_enrollment_pattern_role_binding/resource.tf" }}
+
 ## Authoritative vs. non-authoritative role management
 
 `keyfactor_enrollment_pattern_role_binding` is the **non-authoritative** resource for
@@ -87,4 +91,13 @@ Import is supported using the following syntax:
 
 ```shell
 terraform import keyfactor_enrollment_pattern_role_binding.example "PatternName//RoleName"
+```
+
+Or using an HCL import block:
+
+```terraform
+import {
+  to = keyfactor_enrollment_pattern_role_binding.example
+  id = "PatternName//RoleName"
+}
 ```

@@ -18,6 +18,20 @@ Use one `keyfactor_enrollment_pattern_role_binding` resource per (enrollment pat
 
 ~> **Concurrency note:** Command's enrollment pattern PUT endpoint replaces the full role list atomically at the server; there is no per-role sub-endpoint. This resource uses a GET-modify-PUT-verify retry loop (up to 5 attempts with jittered backoff) to reduce — but not eliminate — the lost-update window when two bindings for the same pattern are applied concurrently. For best results, avoid running more than one `terraform apply` concurrently against the same enrollment pattern.
 
+## Example Usage
+
+```terraform
+resource "keyfactor_enrollment_pattern_role_binding" "example" {
+  enrollment_pattern_name = "Web Server Pattern"
+  role_name               = "WebServerTerraformer"
+}
+
+import {
+  to = keyfactor_enrollment_pattern_role_binding.example
+  id = "Web Server Pattern//WebServerTerraformer"
+}
+```
+
 ## Authoritative vs. non-authoritative role management
 
 `keyfactor_enrollment_pattern_role_binding` is the **non-authoritative** resource for
@@ -106,4 +120,13 @@ Import is supported using the following syntax:
 
 ```shell
 terraform import keyfactor_enrollment_pattern_role_binding.example "PatternName//RoleName"
+```
+
+Or using an HCL import block:
+
+```terraform
+import {
+  to = keyfactor_enrollment_pattern_role_binding.example
+  id = "PatternName//RoleName"
+}
 ```

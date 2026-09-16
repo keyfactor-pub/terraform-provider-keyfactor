@@ -6,7 +6,7 @@ description: |-
   Reads an existing enrollment pattern from Keyfactor Command using the "/EnrollmentPatterns" API.
   Enrollment patterns can be looked up in two ways:
   By identifier (name or numeric ID): an exact name match takes precedence; otherwise identifier is matched against the pattern's internal ID as a decimal string (so "007" never matches ID 7). A value that matches a different pattern by name than by ID returns an error.By template_short_name (AD common name): performs a server-side query for enrollment patterns associated with the given template short name. If multiple patterns match, set template_default = true to select the default pattern for the template, or use identifier with the specific pattern name.
-  identifier and template_short_name are mutually exclusive exactly one must be set.
+  identifier and template_short_name are mutually exclusive — exactly one must be set.
   Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
   ~> Important: Enrollment Patterns are only available in Keyfactor Command v25.0+
   For full information on enrollment patterns view the product documentation https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern
@@ -21,7 +21,7 @@ Enrollment patterns can be looked up in two ways:
 - By `identifier` (name or numeric ID): an exact name match takes precedence; otherwise `identifier` is matched against the pattern's internal ID as a decimal string (so `"007"` never matches ID 7). A value that matches a different pattern by name than by ID returns an error.
 - By `template_short_name` (AD common name): performs a server-side query for enrollment patterns associated with the given template short name. If multiple patterns match, set `template_default = true` to select the default pattern for the template, or use `identifier` with the specific pattern name.
 
-`identifier` and `template_short_name` are mutually exclusive exactly one must be set.
+`identifier` and `template_short_name` are mutually exclusive — exactly one must be set.
 
 Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
 
@@ -46,6 +46,23 @@ data "keyfactor_enrollment_pattern" "ep_10" {
 # Fetch enrollment pattern based on name
 data "keyfactor_enrollment_pattern" "ep_2yrTest" {
   identifier = "2YrTestWebServer (2YrTestWebServer)"
+}
+
+# Fetch enrollment pattern by template short name (works when exactly one pattern exists for the template)
+data "keyfactor_enrollment_pattern" "by_template" {
+  template_short_name = "WebServer"
+}
+
+# Fetch the DEFAULT enrollment pattern for a template (use when multiple patterns share the same template)
+data "keyfactor_enrollment_pattern" "by_template_default" {
+  template_short_name = "WebServer"
+  template_default    = true
+}
+
+# Fetch a NON-DEFAULT enrollment pattern for a template
+data "keyfactor_enrollment_pattern" "by_template_non_default" {
+  template_short_name = "WebServer"
+  template_default    = false
 }
 ```
 

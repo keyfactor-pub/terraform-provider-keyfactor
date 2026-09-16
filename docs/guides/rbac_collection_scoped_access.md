@@ -91,7 +91,7 @@ that role (and therefore that claim) can enroll against it.
 Command requires at least one role when `use_ad_permissions = false`, so bootstrap the
 pattern with the role in `associated_role_names`. The `lifecycle { ignore_changes }` block
 hands off ongoing role management to the separate `keyfactor_enrollment_pattern_role_binding`
-resource in step 6  after the first apply, subsequent applies will not touch the role list
+resource in step 6 — after the first apply, subsequent applies will not touch the role list
 even if the role reference changes.
 
 ```terraform
@@ -138,13 +138,13 @@ terraform import keyfactor_enrollment_pattern_role_binding.app_a_binding \
 ## Role management: authoritative vs. non-authoritative
 
 The provider exposes two separate mechanisms for enrolling roles on a pattern. Choose one
-approach per pattern  mixing both on the same pattern leads to the authoritative resource
+approach per pattern — mixing both on the same pattern leads to the authoritative resource
 replacing the binding-managed roles on every apply.
 
-| Mechanism | Behaviour |
-|---|---|
-| `associated_role_names` on `keyfactor_enrollment_pattern` | **Authoritative**  every apply sends the declared list to Command and replaces whatever is there server-side. |
-| `keyfactor_enrollment_pattern_role_binding` | **Non-authoritative / additive**  each binding resource independently adds or removes exactly one role without touching the rest of the list. |
+| Mechanism | Analog | Behaviour |
+|---|---|---|
+| `associated_role_names` on `keyfactor_enrollment_pattern` | GCP `google_project_iam_binding` | **Authoritative** — every apply sends the declared list to Command and replaces whatever is there server-side. |
+| `keyfactor_enrollment_pattern_role_binding` | GCP `google_project_iam_member` | **Non-authoritative / additive** — each binding resource independently adds or removes exactly one role without touching the rest of the list. |
 
 ### When to use `associated_role_names` (authoritative)
 
@@ -203,7 +203,8 @@ This is the pattern shown in steps 5–6 above.
 `keyfactor_enrollment_pattern_role_binding` does not prevent two independent configs from
 claiming the same `(pattern, role)` pair. If both do:
 
-- A `terraform destroy` from **either** config removes the role from the pattern for **both**.
+- A `terraform destroy` from **either** config removes the role from the pattern for
+  **both** — exactly the same limitation as GCP's `google_project_iam_member`.
 - The surviving config's next `terraform plan` will show the binding needs recreation.
 
 Each `role_binding` should reference a role that only **one** config owns. If a role is

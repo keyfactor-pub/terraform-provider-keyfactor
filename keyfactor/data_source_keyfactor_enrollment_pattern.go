@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -11,23 +12,17 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// allowedEnrollmentTypesPtrToTfInt64 converts the legacy keyfactor-go-client
-// v3 API model's *int AllowedEnrollmentTypes field to types.Int64, guarding
-// against a nil pointer the same way every other pointer field in
-// dataSourceEnrollmentPattern.Read is already guarded (pattern.Template,
-// pattern.AssociatedRoles, pattern.CertificateAuthorities, pattern.Regexes,
-// pattern.MetadataFields, pattern.Defaults, pattern.EnrollmentFields,
-// pattern.Policies). AllowedEnrollmentTypes is nil whenever Command omits
-// the key from the response -- a real, reachable case, since the
-// corresponding resource attribute (allowed_enrollment_types) is
-// Optional+Computed, i.e. explicitly designed to be left unset. Without this
-// guard, dereferencing the nil pointer panics on every `terraform plan`/
+// allowedEnrollmentTypesPtrToTfInt64 converts the SDK
+// *CSSCMSCoreEnumsEnrollmentType AllowedEnrollmentTypes field to types.Int64,
+// guarding against a nil pointer the same way every other pointer field in
+// dataSourceEnrollmentPattern.Read is already guarded. AllowedEnrollmentTypes
+// is nil whenever Command omits the key from the response -- a real, reachable
+// case, since the corresponding resource attribute (allowed_enrollment_types)
+// is Optional+Computed, i.e. explicitly designed to be left unset. Without
+// this guard, dereferencing the nil pointer panics on every `terraform plan`/
 // `refresh` against such a pattern.
-func allowedEnrollmentTypesPtrToTfInt64(v *int) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v), Null: isNullId(*v)}
+func allowedEnrollmentTypesPtrToTfInt64(v *kfv1.CSSCMSCoreEnumsEnrollmentType) types.Int64 {
+	return enumPtrToTfInt64(v)
 }
 
 // enrollmentPatternCandidate is the minimal (ID, Name) shape
@@ -345,7 +340,10 @@ func (r dataSourceEnrollmentPattern) Read(
 	patternName := state.Identifier.Value
 	tflog.SetField(ctx, "pattern_name", patternName)
 
-	enrollmentPatterns, err := r.p.client.GetEnrollmentPatterns()
+	enrollmentPatterns, _, err := r.p.sdkClient.V1.EnrollmentPatternApi.
+		NewGetEnrollmentPatternsRequest(ctx).
+		ReturnLimit(500).
+		Execute()
 
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -374,7 +372,7 @@ func (r dataSourceEnrollmentPattern) Read(
 	// look numeric.
 	candidates := make([]enrollmentPatternCandidate, len(enrollmentPatterns))
 	for i, p := range enrollmentPatterns {
-		candidates[i] = enrollmentPatternCandidate{ID: p.ID, Name: p.Name}
+		candidates[i] = enrollmentPatternCandidate{ID: int(p.GetId()), Name: p.GetName()}
 	}
 	matchedIdx, resolveErr := enrollmentPatternResolveIdentifier(patternName, candidates)
 	if resolveErr != nil {
@@ -383,74 +381,51 @@ func (r dataSourceEnrollmentPattern) Read(
 	}
 
 	for i, pattern := range enrollmentPatterns {
-		tflog.Debug(ctx, fmt.Sprintf("Checking enrollment pattern: ID=%d, Name=%q", pattern.ID, pattern.Name))
+		tflog.Debug(ctx, fmt.Sprintf("Checking enrollment pattern: ID=%d, Name=%q", pattern.GetId(), pattern.GetName()))
 		if i == matchedIdx {
 			tflog.Info(ctx, fmt.Sprintf("Found enrollment pattern with name: %q", patternName))
 
 			// Map the enrollment pattern data to the result
 			result = CertificateEnrollmentPattern{
 				Identifier:  state.Identifier,
-				ID:          types.Int64{Value: int64(pattern.ID)},
-				Name:        types.String{Value: pattern.Name},
-				Description: types.String{Value: pattern.Description},
+				ID:          types.Int64{Value: int64(pattern.GetId())},
+				Name:        nullableStringToTfString(pattern.Name),
+				Description: nullableStringToTfString(pattern.Description),
 			}
 
 			if pattern.Template != nil {
 				tflog.Debug(
 					ctx, fmt.Sprintf(
 						"Enrollment pattern %q has template ID: %d", patternName,
-						pattern.Template.Id,
+						pattern.Template.GetId(),
 					),
 				)
-				patternTemplate := *pattern.Template
+				tmpl := pattern.Template
 				result.Template = &EnrollmentPatternTemplate{
-					Id: types.Int64{
-						Value: int64(patternTemplate.Id),
-						Null:  isNullId(patternTemplate.Id),
-					},
-					TemplateName: types.String{
-						Value: patternTemplate.TemplateName,
-						Null:  isNullString(patternTemplate.TemplateName),
-					},
-					CommonName: types.String{
-						Value: patternTemplate.CommonName,
-						Null:  isNullString(patternTemplate.CommonName),
-					},
-					ConfigurationTenant: types.String{
-						Value: patternTemplate.ConfigurationTenant,
-						Null:  isNullString(patternTemplate.ConfigurationTenant),
-					},
-					RequiresApproval: types.Bool{
-						Value: patternTemplate.RequiresApproval,
-					},
-					FriendlyName: types.String{
-						Value: patternTemplate.FriendlyName,
-						Null:  isNullString(patternTemplate.FriendlyName),
-					},
+					Id:                  int32PtrToTfInt64(tmpl.Id),
+					TemplateName:        nullableStringToTfString(tmpl.TemplateName),
+					CommonName:          nullableStringToTfString(tmpl.CommonName),
+					ConfigurationTenant: nullableStringToTfString(tmpl.ConfigurationTenant),
+					RequiresApproval:    boolPtrToTfBool(tmpl.RequiresApproval),
+					FriendlyName:        nullableStringToTfString(tmpl.FriendlyName),
 				}
 			}
 
-			result.TemplateDefault = types.Bool{Value: pattern.TemplateDefault}
-			result.UseADPermissions = types.Bool{Value: pattern.UseADPermissions}
+			result.TemplateDefault = boolPtrToTfBool(pattern.TemplateDefault)
+			result.UseADPermissions = boolPtrToTfBool(pattern.UseADPermissions)
 			result.AllowedEnrollmentTypes = allowedEnrollmentTypesPtrToTfInt64(pattern.AllowedEnrollmentTypes)
-			result.RestrictCAs = types.Bool{Value: pattern.RestrictCAs}
+			result.RestrictCAs = boolPtrToTfBool(pattern.RestrictCAs)
 
 			// Associated Roles
 			result.AssociatedRoles = &[]EnrollmentPatternAssociatedRole{}
-			if pattern.AssociatedRoles != nil && len(pattern.AssociatedRoles) > 0 {
+			if len(pattern.AssociatedRoles) > 0 {
 				tflog.Debug(ctx, "Handling associated roles")
 				var assocRoles []EnrollmentPatternAssociatedRole
 				for _, role := range pattern.AssociatedRoles {
 					assocRoles = append(
 						assocRoles, EnrollmentPatternAssociatedRole{
-							Id: types.Int64{
-								Value: int64(role.Id),
-								Null:  isNullId(role.Id),
-							},
-							Name: types.String{
-								Value: role.Name,
-								Null:  isNullString(role.Name),
-							},
+							Id:   int32PtrToTfInt64(role.Id),
+							Name: nullableStringToTfString(role.Name),
 						},
 					)
 				}
@@ -459,28 +434,16 @@ func (r dataSourceEnrollmentPattern) Read(
 
 			// Certificate Authorities
 			result.CertificateAuthorities = &[]EnrollmentPatternCA{}
-			if pattern.CertificateAuthorities != nil && len(pattern.CertificateAuthorities) > 0 {
+			if len(pattern.CertificateAuthorities) > 0 {
 				tflog.Debug(ctx, "Handling certificate authorities")
 				var cas []EnrollmentPatternCA
 				for _, ca := range pattern.CertificateAuthorities {
 					cas = append(
 						cas, EnrollmentPatternCA{
-							Id: types.Int64{
-								Value: int64(ca.Id),
-								Null:  isNullId(ca.Id),
-							},
-							LogicalName: types.String{
-								Value: ca.LogicalName,
-								Null:  isNullString(ca.LogicalName),
-							},
-							HostName: types.String{
-								Value: ca.HostName,
-								Null:  isNullString(ca.HostName),
-							},
-							ConfigurationTenant: types.String{
-								Value: ca.ConfigurationTenant,
-								Null:  isNullString(ca.ConfigurationTenant),
-							},
+							Id:                  int32PtrToTfInt64(ca.Id),
+							LogicalName:         nullableStringToTfString(ca.LogicalName),
+							HostName:            nullableStringToTfString(ca.HostName),
+							ConfigurationTenant: nullableStringToTfString(ca.ConfigurationTenant),
 						},
 					)
 				}
@@ -489,27 +452,16 @@ func (r dataSourceEnrollmentPattern) Read(
 
 			// Regexes
 			result.Regexes = &[]EnrollmentPatternRegexes{}
-			if pattern.Regexes != nil && len(pattern.Regexes) > 0 {
+			if len(pattern.Regexes) > 0 {
 				tflog.Debug(ctx, "Handling regexes")
 				var regexes []EnrollmentPatternRegexes
 				for _, regex := range pattern.Regexes {
 					regexes = append(
 						regexes, EnrollmentPatternRegexes{
-							SubjectPart: types.String{
-								Value: regex.SubjectPart,
-								Null:  isNullString(regex.SubjectPart),
-							},
-							Regex: types.String{
-								Value: regex.Regex,
-								Null:  isNullString(regex.Regex),
-							},
-							Error: types.String{
-								Value: regex.Error,
-								Null:  isNullString(regex.Error),
-							},
-							CaseSensitive: types.Bool{
-								Value: regex.CaseSensitive,
-							},
+							SubjectPart:   nullableStringToTfString(regex.SubjectPart),
+							Regex:         nullableStringToTfString(regex.Regex),
+							Error:         nullableStringToTfString(regex.Error),
+							CaseSensitive: boolPtrToTfBool(regex.CaseSensitive),
 						},
 					)
 				}
@@ -518,35 +470,18 @@ func (r dataSourceEnrollmentPattern) Read(
 
 			// Metadata Fields
 			result.MetadataFields = &[]EnrollmentPatternMetadataField{}
-			if pattern.MetadataFields != nil && len(pattern.MetadataFields) > 0 {
+			if len(pattern.MetadataFields) > 0 {
 				tflog.Debug(ctx, "Handling metadata fields")
 				var metadataFields []EnrollmentPatternMetadataField
 				for _, field := range pattern.MetadataFields {
 					metadataFields = append(
 						metadataFields, EnrollmentPatternMetadataField{
-							MetadataId: types.Int64{
-								Value: int64(field.MetadataId),
-								Null:  isNullId(field.MetadataId),
-							},
-							DefaultValue: types.String{
-								Value: field.DefaultValue,
-								Null:  isNullString(field.DefaultValue),
-							},
-							Validation: types.String{
-								Value: field.Validation,
-								Null:  isNullString(field.Validation),
-							},
-							Enrollment: types.Int64{
-								Value: int64(field.Enrollment),
-								Null:  isNullId(field.Enrollment),
-							},
-							Message: types.String{
-								Value: field.Message,
-								Null:  isNullString(field.Message),
-							},
-							CaseSensitive: types.Bool{
-								Value: field.CaseSensitive,
-							},
+							MetadataId:    int32PtrToTfInt64(field.MetadataId),
+							DefaultValue:  nullableStringToTfString(field.DefaultValue),
+							Validation:    nullableStringToTfString(field.Validation),
+							Enrollment:    enumPtrToTfInt64(field.Enrollment),
+							Message:       nullableStringToTfString(field.Message),
+							CaseSensitive: boolPtrToTfBool(field.CaseSensitive),
 						},
 					)
 				}
@@ -555,20 +490,14 @@ func (r dataSourceEnrollmentPattern) Read(
 
 			// Defaults
 			result.Defaults = &[]EnrollmentPatternDefault{}
-			if pattern.Defaults != nil && len(pattern.Defaults) > 0 {
+			if len(pattern.Defaults) > 0 {
 				tflog.Debug(ctx, "Handling defaults")
 				var epDefaults []EnrollmentPatternDefault
 				for _, def := range pattern.Defaults {
 					epDefaults = append(
 						epDefaults, EnrollmentPatternDefault{
-							SubjectPart: types.String{
-								Value: def.SubjectPart,
-								Null:  isNullString(def.SubjectPart),
-							},
-							Value: types.String{
-								Value: def.Value,
-								Null:  isNullString(def.Value),
-							},
+							SubjectPart: nullableStringToTfString(def.SubjectPart),
+							Value:       nullableStringToTfString(def.Value),
 						},
 					)
 				}
@@ -576,58 +505,38 @@ func (r dataSourceEnrollmentPattern) Read(
 			}
 
 			// Enrollment Fields
+			// The SDK's EnrollmentPatternsEnrollmentPatternFieldResponse only
+			// carries Name, DataType, and Options -- the remaining fields
+			// (Id, DefaultValue, Validation, Enrollment, Message, DependsOn,
+			// DependsOnValue, Hint) are not returned by the listing endpoint
+			// and are set to Null here.
 			result.EnrollmentFields = &[]EnrollmentPatternField{}
-			if pattern.EnrollmentFields != nil && len(pattern.EnrollmentFields) > 0 {
+			if len(pattern.EnrollmentFields) > 0 {
 				tflog.Debug(ctx, "Handling enrollment fields")
 				var erFields []EnrollmentPatternField
 				for _, field := range pattern.EnrollmentFields {
+					var optList types.List
+					if field.Options == nil {
+						optList = types.List{ElemType: types.StringType, Null: true}
+					} else {
+						optList = types.List{
+							ElemType: types.StringType,
+							Elems:    convertStringArrayToTerraform(field.Options),
+						}
+					}
 					erFields = append(
 						erFields, EnrollmentPatternField{
-							Id: types.Int64{
-								Value: int64(field.Id),
-								Null:  isNullId(field.Id),
-							},
-							Name: types.String{
-								Value: field.Name,
-								Null:  isNullString(field.Name),
-							},
-							DefaultValue: types.String{
-								Value: field.DefaultValue,
-								Null:  isNullString(field.DefaultValue),
-							},
-							Validation: types.String{
-								Value: field.Validation,
-								Null:  isNullString(field.Validation),
-							},
-							Enrollment: types.Int64{
-								Value: int64(field.Enrollment),
-								Null:  isNullId(field.Enrollment),
-							},
-							Message: types.String{
-								Value: field.Message,
-								Null:  isNullString(field.Message),
-							},
-							Options: types.List{
-								ElemType: types.StringType,
-								Elems:    convertStringArrayToTerraform(field.Options),
-								Null:     len(field.Options) == 0,
-							},
-							DependsOn: types.String{
-								Value: field.DependsOn,
-								Null:  isNullString(field.DependsOn),
-							},
-							DependsOnValue: types.String{
-								Value: field.DependsOnValue,
-								Null:  isNullString(field.DependsOnValue),
-							},
-							DataType: types.Int64{
-								Value: int64(field.DataType),
-								Null:  isNullId(field.DataType),
-							},
-							Hint: types.String{
-								Value: field.Hint,
-								Null:  isNullString(field.Hint),
-							},
+							Id:             types.Int64{Null: true},
+							Name:           nullableStringToTfString(field.Name),
+							DefaultValue:   types.String{Null: true},
+							Validation:     types.String{Null: true},
+							Enrollment:     types.Int64{Null: true},
+							Message:        types.String{Null: true},
+							Options:        optList,
+							DependsOn:      types.String{Null: true},
+							DependsOnValue: types.String{Null: true},
+							DataType:       enumPtrToTfInt64(field.DataType),
+							Hint:           types.String{Null: true},
 						},
 					)
 				}
@@ -638,69 +547,29 @@ func (r dataSourceEnrollmentPattern) Read(
 			result.Policies = &EnrollmentPatternPolicyResponse{}
 			if pattern.Policies != nil {
 				tflog.Debug(ctx, "Handling policies")
-				var policies = EnrollmentPatternPolicyResponse{
-					AllowKeyReuse:  types.Bool{Value: pattern.Policies.AllowKeyReuse},
-					AllowWildcards: types.Bool{Value: pattern.Policies.AllowWildcards},
-					RFCEnforcement: types.Bool{Value: pattern.Policies.RFCEnforcement},
-					CertificateOwnerRole: types.Int64{
-						Value: int64(pattern.Policies.CertificateOwnerRole),
-						Null:  isNullId(pattern.Policies.CertificateOwnerRole),
-					},
-					DefaultCertificateOwnerOverride: types.Bool{Value: pattern.Policies.DefaultCertificateOwnerOverride},
-					DefaultCertificateOwnerRoleId: types.Int64{
-						Value: int64(pattern.Policies.DefaultCertificateOwnerRoleId),
-						Null:  isNullId(pattern.Policies.DefaultCertificateOwnerRoleId),
-					},
-					DefaultCertificateOwnerRoleName: types.String{
-						Value: pattern.Policies.DefaultCertificateOwnerRoleName,
-						Null:  isNullString(pattern.Policies.DefaultCertificateOwnerRoleName),
-					},
-					PrimaryKeyAlgorithms:     []EnrollmentPatternsAlgorithmsAlgorithmData{},
-					AlternativeKeyAlgorithms: []EnrollmentPatternsAlgorithmsAlgorithmData{},
+				pol := pattern.Policies
+				policies := EnrollmentPatternPolicyResponse{
+					AllowKeyReuse:                   nullableBoolToTfBool(pol.AllowKeyReuse),
+					AllowWildcards:                  nullableBoolToTfBool(pol.AllowWildcards),
+					RFCEnforcement:                  nullableBoolToTfBool(pol.RFCEnforcement),
+					CertificateOwnerRole:            enumPtrToTfInt64(pol.CertificateOwnerRole),
+					DefaultCertificateOwnerOverride: boolPtrToTfBool(pol.DefaultCertificateOwnerOverride),
+					DefaultCertificateOwnerRoleId:   nullableInt32ToTfInt64(pol.DefaultCertificateOwnerRoleId),
+					DefaultCertificateOwnerRoleName: nullableStringToTfString(pol.DefaultCertificateOwnerRoleName),
+					PrimaryKeyAlgorithms:            []EnrollmentPatternsAlgorithmsAlgorithmData{},
+					AlternativeKeyAlgorithms:        []EnrollmentPatternsAlgorithmsAlgorithmData{},
 				}
-				if pattern.Policies.PrimaryKeyAlgorithms != nil && len(pattern.Policies.PrimaryKeyAlgorithms) > 0 {
-					for _, algo := range pattern.Policies.PrimaryKeyAlgorithms {
-						keyAlgo := EnrollmentPatternsAlgorithmsAlgorithmData{
-							Name: types.String{
-								Value: algo.Name,
-								Null:  isNullString(algo.Name),
-							},
-							BitLengths: types.List{
-								ElemType: types.Int64Type,
-								Elems:    convertIntArrayToTerraform(algo.BitLengths),
-								Null:     len(algo.BitLengths) == 0,
-							},
-							CurveName: types.List{
-								ElemType: types.StringType,
-								Elems:    convertStringArrayToTerraform(algo.Curves),
-								Null:     len(algo.Curves) == 0,
-							},
-						}
+				if len(pol.PrimaryKeyAlgorithms) > 0 {
+					for _, algo := range pol.PrimaryKeyAlgorithms {
 						policies.PrimaryKeyAlgorithms = append(
-							policies.PrimaryKeyAlgorithms, keyAlgo,
+							policies.PrimaryKeyAlgorithms, sdkAlgorithmDataToTf(algo),
 						)
 					}
 				}
-				if pattern.Policies.AlternativeKeyAlgorithms != nil && len(pattern.Policies.AlternativeKeyAlgorithms) > 0 {
-					for _, algo := range pattern.Policies.AlternativeKeyAlgorithms {
-						altAlgo := EnrollmentPatternsAlgorithmsAlgorithmData{
-							Name: types.String{
-								Value: algo.Name,
-								Null:  isNullString(algo.Name),
-							},
-							BitLengths: types.List{
-								ElemType: types.Int64Type,
-								Elems:    convertIntArrayToTerraform(algo.BitLengths),
-								Null:     len(algo.BitLengths) == 0,
-							},
-							CurveName: types.List{
-								ElemType: types.StringType,
-								Elems:    convertStringArrayToTerraform(algo.Curves),
-								Null:     len(algo.Curves) == 0,
-							},
-						}
+				if len(pol.AlternativeKeyAlgorithms) > 0 {
+					for _, algo := range pol.AlternativeKeyAlgorithms {
 						policies.AlternativeKeyAlgorithms = append(
-							policies.AlternativeKeyAlgorithms, altAlgo,
+							policies.AlternativeKeyAlgorithms, sdkAlgorithmDataToTf(algo),
 						)
 					}
 				}
@@ -731,4 +600,30 @@ func (r dataSourceEnrollmentPattern) Read(
 	if response.Diagnostics.HasError() {
 		return
 	}
+}
+
+// sdkAlgorithmDataToTf converts a single SDK AlgorithmDataResponse entry
+// (from the Policies.PrimaryKeyAlgorithms or AlternativeKeyAlgorithms slice)
+// into the data source's EnrollmentPatternsAlgorithmsAlgorithmData TF type.
+func sdkAlgorithmDataToTf(algo kfv1.EnrollmentPatternsAlgorithmsAlgorithmDataResponse) EnrollmentPatternsAlgorithmsAlgorithmData {
+	entry := EnrollmentPatternsAlgorithmsAlgorithmData{
+		Name: nullableStringToTfString(algo.Name),
+	}
+	if algo.BitLengths == nil {
+		entry.BitLengths = types.List{ElemType: types.Int64Type, Null: true}
+	} else {
+		entry.BitLengths = types.List{
+			ElemType: types.Int64Type,
+			Elems:    convertIntArrayToTerraform(algo.BitLengths),
+		}
+	}
+	if algo.Curves == nil {
+		entry.CurveName = types.List{ElemType: types.StringType, Null: true}
+	} else {
+		entry.CurveName = types.List{
+			ElemType: types.StringType,
+			Elems:    convertStringArrayToTerraform(algo.Curves),
+		}
+	}
+	return entry
 }

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
@@ -11,13 +12,12 @@ import (
 // Regression test:
 //
 // dataSourceEnrollmentPattern.Read unconditionally dereferenced
-// pattern.AllowedEnrollmentTypes (a *int on the legacy keyfactor-go-client v3
-// API model), which is nil whenever Command omits the key from the response
-// -- a real, reachable case since the corresponding resource attribute
-// (allowed_enrollment_types) is Optional+Computed. Every other pointer field
-// in the same Read() function is nil-checked before use; this was the one
-// field that was missed, and it panicked unconditionally (both
-// dereferences) on `terraform plan`/`refresh` against such a pattern.
+// pattern.AllowedEnrollmentTypes, which is nil whenever Command omits the key
+// from the response -- a real, reachable case since the corresponding resource
+// attribute (allowed_enrollment_types) is Optional+Computed. Every other
+// pointer field in the same Read() function is nil-checked before use; this
+// was the one field that was missed, and it panicked unconditionally on every
+// `terraform plan`/`refresh` against such a pattern.
 //
 // allowedEnrollmentTypesPtrToTfInt64 is the pure conversion function
 // factored out of Read() so this can be verified directly, without standing
@@ -46,24 +46,29 @@ func TestUnitAllowedEnrollmentTypesPtrToTfInt64(t *testing.T) {
 	t.Run("non-nil pointer produces the pointed-to value", func(t *testing.T) {
 		t.Parallel()
 
-		v := 3
+		v := kfv1.CSSCMSCoreEnumsEnrollmentType(3)
 		got := allowedEnrollmentTypesPtrToTfInt64(&v)
 		if got.Null || got.Value != 3 {
 			t.Errorf("got %+v, want {Value: 3, Null: false}", got)
 		}
 	})
 
-	t.Run("non-nil pointer to the isNullId sentinel value produces Null", func(t *testing.T) {
+	t.Run("non-nil pointer to zero value produces non-Null (enum value 0 is valid)", func(t *testing.T) {
 		t.Parallel()
 
-		// isNullId's sentinel (see helpers.go) is the legacy v3 API client's
-		// way of representing "no value" for a plain (non-pointer) int
-		// field elsewhere in this same response model; preserve that
-		// behavior for the pointer case too.
-		v := 0
+		// CSSCMSCoreEnumsEnrollmentType(0) is a real enum value returned by
+		// Command when the enrollment type is set to the first option. Unlike
+		// the old legacy-client *int representation (where 0 was treated as
+		// "no value" via isNullId), the SDK uses a nil pointer to represent
+		// absence, so a non-nil pointer to value 0 must produce a known
+		// (non-Null) Int64.
+		v := kfv1.CSSCMSCoreEnumsEnrollmentType(0)
 		got := allowedEnrollmentTypesPtrToTfInt64(&v)
-		if !got.Null {
-			t.Errorf("got %+v, want Null for the isNullId sentinel value", got)
+		if got.Null {
+			t.Errorf("got Null, want {Value: 0, Null: false} -- enum value 0 is valid, not a sentinel")
+		}
+		if got.Value != 0 {
+			t.Errorf("got Value=%d, want 0", got.Value)
 		}
 	})
 }

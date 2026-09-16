@@ -175,8 +175,12 @@ func TestUnitEnrollmentPatternSelectByTemplateShortName(t *testing.T) {
 		if err == nil {
 			t.Fatal("err = nil, want a not-found error")
 		}
-		if !strings.Contains(err.Error(), "no enrollment pattern found") {
-			t.Errorf("err = %q, want it to mention \"no enrollment pattern found\"", err.Error())
+		// Must mention "no default enrollment pattern found" (the filter=true-specific message).
+		if !strings.Contains(err.Error(), "no default enrollment pattern found") {
+			t.Errorf("err = %q, want it to mention \"no default enrollment pattern found\"", err.Error())
+		}
+		if !strings.Contains(err.Error(), "Entity_ClientAuth") {
+			t.Errorf("err = %q, want it to include the template short name", err.Error())
 		}
 		// Must NOT tell the user to set template_default=true when they already did.
 		if strings.Contains(err.Error(), "template_default = true") {

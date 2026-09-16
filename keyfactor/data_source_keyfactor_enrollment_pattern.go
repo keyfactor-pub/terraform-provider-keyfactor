@@ -120,8 +120,17 @@ func enrollmentPatternSelectByTemplateShortName(count int, templateShortName str
 			templateShortName,
 		)
 
+	case count == 0 && templateDefaultFilter != nil && *templateDefaultFilter:
+		// User explicitly asked for default patterns and got none.
+		return fmt.Errorf(
+			"no default enrollment pattern found for template short name %q; "+
+				"the template may exist but have no pattern marked as default — "+
+				"try omitting template_default to find any pattern for the template",
+			templateShortName,
+		)
+
 	case count == 0:
-		// Either no filter or filter=true: nothing found at all.
+		// No filter applied; nothing found at all.
 		return fmt.Errorf(
 			"no enrollment pattern found for template short name %q; "+
 				"ensure the template name is correct and at least one enrollment pattern references it",
@@ -475,9 +484,13 @@ func (r dataSourceEnrollmentPattern) Read(
 		ctx = tflog.SetField(ctx, "pattern_identifier", patternName)
 		tflog.Debug(ctx, "Searching for enrollment pattern by name or ID")
 
+		// TODO: the API does not support server-side filtering by name in the
+		// identifier (name-or-ID) path, so we fetch all patterns client-side and
+		// resolve. The cap is set high enough to avoid silently missing patterns
+		// in large deployments. If pagination is added to the API, switch to it.
 		enrollmentPatterns, _, err := r.p.sdkClient.V1.EnrollmentPatternApi.
 			NewGetEnrollmentPatternsRequest(ctx).
-			ReturnLimit(500).
+			ReturnLimit(10000).
 			Execute()
 		if err != nil {
 			response.Diagnostics.AddError(

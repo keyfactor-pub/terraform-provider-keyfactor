@@ -515,7 +515,9 @@ func reconcileWithRetry(
 			return false, nil
 		case reconcileRetry:
 			lastErr = err
-			tflog.Warn(ctx, err.Error())
+			if err != nil {
+				tflog.Warn(ctx, "retrying after transient error: "+err.Error())
+			}
 			time.Sleep(reconcileBackoff(attempt))
 		}
 	}
@@ -3165,9 +3167,12 @@ func getSecurityRoleByName(
 	tflog.Debug(ctx, fmt.Sprintf("Getting security role from remote source. Role Name: %s", roleName))
 
 	api := apiClient.V2.SecurityRolesApi
+	// Escape backslashes first, then double-quotes, to prevent QueryString injection.
+	escapedRoleName := strings.ReplaceAll(roleName, `\`, `\\`)
+	escapedRoleName = strings.ReplaceAll(escapedRoleName, `"`, `\"`)
 	req := api.
 		NewGetSecurityRolesRequest(ctx).
-		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", roleName))
+		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", escapedRoleName))
 
 	response, _, err := req.Execute()
 
@@ -3195,9 +3200,10 @@ func getCertificateCollectionByName(
 	tflog.Debug(ctx, fmt.Sprintf("Getting certificate collection from remote source. Collection Name: %s", collectionName))
 
 	api := apiClient.V1.CertificateCollectionApi
-	// Escape embedded double-quotes so a name like `foo"bar` does not break
-	// the PQL filter or match an unintended collection.
-	escapedName := strings.ReplaceAll(collectionName, `"`, `\"`)
+	// Escape backslashes first, then double-quotes, to prevent QueryString injection.
+	// Backslashes must be escaped first so the quote-escape backslashes are not double-escaped.
+	escapedName := strings.ReplaceAll(collectionName, `\`, `\\`)
+	escapedName = strings.ReplaceAll(escapedName, `"`, `\"`)
 	req := api.
 		NewGetCertificateCollectionsRequest(ctx).
 		QueryString(fmt.Sprintf(`((Name -eq "%s"))`, escapedName))
@@ -3225,9 +3231,10 @@ func getEnrollmentPatternByName(
 	tflog.Debug(ctx, fmt.Sprintf("Getting enrollment pattern from remote source. Pattern Name: %s", patternName))
 
 	api := apiClient.V1.EnrollmentPatternApi
-	// Escape embedded double-quotes so a name like `foo"bar` does not break
-	// the PQL filter or match an unintended enrollment pattern.
-	escapedPatternName := strings.ReplaceAll(patternName, `"`, `\"`)
+	// Escape backslashes first, then double-quotes, to prevent QueryString injection.
+	// Backslashes must be escaped first so the quote-escape backslashes are not double-escaped.
+	escapedPatternName := strings.ReplaceAll(patternName, `\`, `\\`)
+	escapedPatternName = strings.ReplaceAll(escapedPatternName, `"`, `\"`)
 	req := api.
 		NewGetEnrollmentPatternsRequest(ctx).
 		QueryString(fmt.Sprintf(`((Name -eq "%s"))`, escapedPatternName))

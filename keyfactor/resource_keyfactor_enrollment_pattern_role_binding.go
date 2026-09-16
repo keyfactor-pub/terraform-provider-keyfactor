@@ -474,17 +474,27 @@ func (r resourceEnrollmentPatternRoleBinding) ImportState(
 	LogFunctionEntry(ctx, "resourceEnrollmentPatternRoleBinding.ImportState")
 	tflog.Info(ctx, "ImportState called on enrollment pattern role binding resource")
 
-	parts := strings.SplitN(request.ID, "//", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+	// Split on the LAST occurrence of "//" so that pattern names containing "//"
+	// (e.g. "Dept//Finance") are preserved intact. The role name is assumed to
+	// never contain "//" — that is the invariant the delimiter was chosen to satisfy.
+	const sep = "//"
+	idx := strings.LastIndex(request.ID, sep)
+	if idx == -1 {
 		response.Diagnostics.AddError(
 			"Invalid import ID",
 			fmt.Sprintf("Expected import ID in format '<enrollmentPatternName>//<roleName>', got %q.", request.ID),
 		)
 		return
 	}
-
-	patternName := parts[0]
-	roleName := parts[1]
+	patternName := request.ID[:idx]
+	roleName := request.ID[idx+len(sep):]
+	if patternName == "" || roleName == "" {
+		response.Diagnostics.AddError(
+			"Invalid import ID",
+			fmt.Sprintf("Expected import ID in format '<enrollmentPatternName>//<roleName>', got %q.", request.ID),
+		)
+		return
+	}
 
 	tflog.SetField(ctx, "enrollment_pattern_name", patternName)
 	tflog.SetField(ctx, "role_name", roleName)

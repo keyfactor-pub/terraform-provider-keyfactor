@@ -60,7 +60,7 @@ func (r resourceCertificateCollectionType) GetSchema(_ context.Context) (tfsdk.S
 				// required value -- expected, and no different from any
 				// other Required attribute's import behavior.
 				Required:    true,
-				Description: "The query expression that defines which certificates belong to this collection. This attribute must always be declared and must never be removed from configuration once set. Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form. Note: a certificate collection can only be imported and managed by Terraform if it has a non-empty query.",
+				Description: "The query expression that defines which certificates belong to this collection. This attribute must always be declared and must never be removed from configuration once set. Not returned by the server on read (a Keyfactor Command API limitation); the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form. Changes to `query` made outside of Terraform (e.g. in the Command UI) will not be detected by the provider. Note: a certificate collection can only be imported and managed by Terraform if it has a non-empty query.",
 			},
 			"content": {
 				Type:        types.StringType,

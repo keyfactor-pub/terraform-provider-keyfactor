@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -135,8 +136,15 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 		newRoles := append(currentRoles, roleName) //nolint:gocritic // intentional append-to-external slice
 
 		// Build a full update request preserving all other fields.
+		// Override AssociatedRoleNames with the newly computed list so
+		// buildEnrollmentPatternUpdateRequest sends it verbatim.
 		epState := enrollmentPatternResponseToState(currentResp)
-		updateBody := buildEnrollmentPatternUpdateRequest(ctx, epState, newRoles)
+		roleElems := make([]attr.Value, 0, len(newRoles))
+		for _, r := range newRoles {
+			roleElems = append(roleElems, types.String{Value: r})
+		}
+		epState.AssociatedRoleNames = types.Set{Elems: roleElems, ElemType: types.StringType}
+		updateBody := buildEnrollmentPatternUpdateRequest(ctx, epState)
 
 		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to add role %q to enrollment pattern %q (attempt %d/%d)...", roleName, patternName, attempt, reconcileMaxAttempts))
 
@@ -382,8 +390,15 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 		}
 
 		// Build a full update request preserving all other fields.
+		// Override AssociatedRoleNames with the newly computed list so
+		// buildEnrollmentPatternUpdateRequest sends it verbatim.
 		epState := enrollmentPatternResponseToState(currentResp)
-		updateBody := buildEnrollmentPatternUpdateRequest(ctx, epState, newRoles)
+		roleElems := make([]attr.Value, 0, len(newRoles))
+		for _, r := range newRoles {
+			roleElems = append(roleElems, types.String{Value: r})
+		}
+		epState.AssociatedRoleNames = types.Set{Elems: roleElems, ElemType: types.StringType}
+		updateBody := buildEnrollmentPatternUpdateRequest(ctx, epState)
 
 		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to remove role %q from enrollment pattern %q (attempt %d/%d)...", roleName, patternName, attempt, reconcileMaxAttempts))
 

@@ -11,24 +11,29 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests: restrict_cas config-time enforcement.
+// Regression tests: restrict_cas and use_ad_permissions config-time
+// enforcement.
 //
 // restrict_cas's schema description states "If true, at least one CA must
-// be configured" -- but until validateEnrollmentPatternConfigConstraints
-// (called from resourceEnrollmentPattern.ValidateConfig) was added, nothing
-// actually enforced this constraint. A config declaring restrict_cas = true
-// with no certificate_authority_ids would silently apply -- Command may or
-// may not reject it, but the provider gave no config-time feedback.
+// be configured" and use_ad_permissions's schema description states "If
+// false, at least one value must be provided for associated_role_names" --
+// but until validateEnrollmentPatternConfigConstraints (called from
+// resourceEnrollmentPattern.ValidateConfig) was added, nothing actually
+// enforced either constraint. A config declaring restrict_cas = true with no
+// certificate_authority_ids (or use_ad_permissions = false with no
+// associated_role_names) would silently apply -- Command may or may not
+// reject it, but the provider gave no config-time feedback.
 //
 // The ORIGINAL version of this check treated a Null (undeclared)
-// certificate_authority_ids identically to a KNOWN, explicitly-empty one --
-// contradicting this same function's own doc comment ("A null/unknown value
-// ... is never an error"). That broke the ordinary import-then-manage flow:
-// GetById never echoes certificate_authority_ids back (see
-// KeyfactorEnrollmentPatternState's doc comment), so an imported pattern's
-// certificate_authority_ids always starts Null in state, and a config that
-// re-declares restrict_cas=true while leaving certificate_authority_ids
-// undeclared -- relying on Update()'s prior-state fallback -- hard-errored.
+// certificate_authority_ids/associated_role_names identically to a KNOWN,
+// explicitly-empty one -- contradicting this same function's own doc
+// comment ("A null/unknown value ... is never an error"). That broke the
+// ordinary import-then-manage flow: GetById never echoes either field back
+// (see KeyfactorEnrollmentPatternState's doc comment), so an imported
+// pattern's certificate_authority_ids/associated_role_names always starts
+// Null in state, and a config that re-declares restrict_cas=true/
+// use_ad_permissions=false while leaving the corresponding list undeclared
+// -- relying on Update()'s prior-state fallback -- hard-errored.
 // Several sub-tests below were updated to assert the corrected behavior; see
 // each one's comment for what it asserted before the fix.
 // ---------------------------------------------------------------------------
@@ -59,6 +64,9 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 	// (Null: false, Value: false) is a known false which differs from the
 	// undeclared case these RestrictCAs-focused tests don't intend to probe.
 	noUseADPermissionsCheck := types.Bool{Null: true}
+	// AssociatedRoleNames is left Null in every case below -- the
+	// use_ad_permissions check is skipped when UseADPermissions is Null.
+	noAssociatedRoleNamesCheck := types.Set{Null: true, ElemType: types.StringType}
 
 	// A Null (undeclared) certificate_authority_ids
 	// must NOT be a config error -- only a KNOWN, explicitly-empty list is
@@ -78,6 +86,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 			RestrictCAs:             types.Bool{Value: true},
 			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			UseADPermissions:        noUseADPermissionsCheck,
+			AssociatedRoleNames:     noAssociatedRoleNamesCheck,
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if hasAttributeError(diags, "Missing certificate authorities for restrict_cas") {
@@ -98,6 +107,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 			RestrictCAs:             types.Bool{Value: true},
 			CertificateAuthorityIds: types.Set{ElemType: types.Int64Type, Elems: []attr.Value{}},
 			UseADPermissions:        noUseADPermissionsCheck,
+			AssociatedRoleNames:     noAssociatedRoleNamesCheck,
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if !hasAttributeError(diags, "Missing certificate authorities for restrict_cas") {
@@ -113,7 +123,8 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 				ElemType: types.Int64Type,
 				Elems:    []attr.Value{types.Int64{Value: 1}},
 			},
-			UseADPermissions: noUseADPermissionsCheck,
+			UseADPermissions:    noUseADPermissionsCheck,
+			AssociatedRoleNames: noAssociatedRoleNamesCheck,
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if hasAttributeError(diags, "Missing certificate authorities for restrict_cas") {
@@ -127,6 +138,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 			RestrictCAs:             types.Bool{Unknown: true},
 			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			UseADPermissions:        noUseADPermissionsCheck,
+			AssociatedRoleNames:     noAssociatedRoleNamesCheck,
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if len(diags) != 0 {
@@ -142,7 +154,8 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 				ElemType: types.Int64Type,
 				Elems:    []attr.Value{types.Int64{Value: 1}},
 			},
-			UseADPermissions: noUseADPermissionsCheck,
+			UseADPermissions:    noUseADPermissionsCheck,
+			AssociatedRoleNames: noAssociatedRoleNamesCheck,
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if diags.HasError() {
@@ -159,10 +172,93 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 			RestrictCAs:             types.Bool{Value: false},
 			CertificateAuthorityIds: types.Set{Null: true, ElemType: types.Int64Type},
 			UseADPermissions:        noUseADPermissionsCheck,
+			AssociatedRoleNames:     noAssociatedRoleNamesCheck,
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if len(diags) != 0 {
 			t.Errorf("diags = %+v, want no diagnostics", diags)
+		}
+	})
+}
+
+func TestUnitValidateEnrollmentPatternConfigConstraints_UseADPermissions(t *testing.T) {
+	t.Parallel()
+
+	// A Null (undeclared) associated_role_names must NOT be a config error --
+	// see the identical certificate_authority_ids/restrict_cas rationale
+	// above. This is the import-then-manage flow: an imported pattern's
+	// associated_role_names starts Null in state, and re-declaring
+	// use_ad_permissions = false while leaving associated_role_names
+	// undeclared -- relying on Update()'s prior-state fallback to preserve
+	// existing membership -- must NOT hard-error just because it's undeclared.
+	t.Run("use_ad_permissions=false with no associated_role_names (undeclared/null) is not an error", func(t *testing.T) {
+		t.Parallel()
+		cfg := KeyfactorEnrollmentPatternState{
+			UseADPermissions:    types.Bool{Value: false},
+			AssociatedRoleNames: types.Set{Null: true, ElemType: types.StringType},
+		}
+		diags := validateEnrollmentPatternConfigConstraints(cfg)
+		if hasAttributeError(diags, "Missing associated roles for use_ad_permissions = false") {
+			t.Errorf(
+				"diags = %+v, want no error for use_ad_permissions=false with associated_role_names "+
+					"undeclared (null) -- null means \"undeclared,\" not \"empty\"; only a known, "+
+					"explicitly-empty list should error", diags,
+			)
+		}
+	})
+
+	// Unlike the Null case above, a KNOWN, explicitly-empty list genuinely
+	// means "zero roles configured" -- this is the real error case.
+	t.Run("use_ad_permissions=false with an explicitly empty associated_role_names is an error", func(t *testing.T) {
+		t.Parallel()
+		cfg := KeyfactorEnrollmentPatternState{
+			UseADPermissions:    types.Bool{Value: false},
+			AssociatedRoleNames: types.Set{ElemType: types.StringType, Elems: nil},
+		}
+		diags := validateEnrollmentPatternConfigConstraints(cfg)
+		if !hasAttributeError(diags, "Missing associated roles for use_ad_permissions = false") {
+			t.Errorf(
+				"diags = %+v, want an error for use_ad_permissions=false with associated_role_names = []", diags,
+			)
+		}
+	})
+
+	t.Run("use_ad_permissions=false with a non-empty associated_role_names is not an error", func(t *testing.T) {
+		t.Parallel()
+		cfg := KeyfactorEnrollmentPatternState{
+			UseADPermissions: types.Bool{Value: false},
+			AssociatedRoleNames: types.Set{
+				ElemType: types.StringType,
+				Elems:    []attr.Value{types.String{Value: "Administrator"}},
+			},
+		}
+		diags := validateEnrollmentPatternConfigConstraints(cfg)
+		if diags.HasError() {
+			t.Errorf("diags = %+v, want no error when associated_role_names is non-empty", diags)
+		}
+	})
+
+	t.Run("use_ad_permissions=true with no associated_role_names is clean", func(t *testing.T) {
+		t.Parallel()
+		cfg := KeyfactorEnrollmentPatternState{
+			UseADPermissions:    types.Bool{Value: true},
+			AssociatedRoleNames: types.Set{Null: true, ElemType: types.StringType},
+		}
+		diags := validateEnrollmentPatternConfigConstraints(cfg)
+		if len(diags) != 0 {
+			t.Errorf("diags = %+v, want no diagnostics", diags)
+		}
+	})
+
+	t.Run("use_ad_permissions unknown is never an error", func(t *testing.T) {
+		t.Parallel()
+		cfg := KeyfactorEnrollmentPatternState{
+			UseADPermissions:    types.Bool{Unknown: true},
+			AssociatedRoleNames: types.Set{Null: true, ElemType: types.StringType},
+		}
+		diags := validateEnrollmentPatternConfigConstraints(cfg)
+		if len(diags) != 0 {
+			t.Errorf("diags = %+v, want no diagnostics when use_ad_permissions is Unknown", diags)
 		}
 	})
 }
@@ -172,11 +268,12 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 // resourceEnrollmentPattern.ValidateConfig method (not just the factored-out
 // validateEnrollmentPatternConfigConstraints helper) against a Config shape
 // matching exactly what a user would write immediately after `terraform
-// import` -- restrict_cas=true re-declared (matching the server's current
-// setting), but certificate_authority_ids left undeclared, because
-// GetById/ImportState never echoes it back (see KeyfactorEnrollmentPatternState's
+// import` -- restrict_cas=true and use_ad_permissions=false re-declared
+// (matching the server's current settings), but certificate_authority_ids
+// and associated_role_names left undeclared, because GetById/ImportState
+// never echoes either field back (see KeyfactorEnrollmentPatternState's
 // doc comment). Before the fix, this exact ordinary post-import config
-// hard-errored on restrict_cas.
+// hard-errored on both fields simultaneously.
 func TestUnitEnrollmentPatternValidateConfig_ImportThenManageDoesNotError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -187,8 +284,9 @@ func TestUnitEnrollmentPatternValidateConfig_ImportThenManageDoesNotError(t *tes
 	cfg.TemplateId = types.Int64{Value: 1}
 	cfg.RestrictCAs = types.Bool{Value: true}
 	cfg.UseADPermissions = types.Bool{Value: false}
-	// certificate_authority_ids deliberately left at blankEnrollmentPatternState's
-	// Null default -- exactly what a post-import config looks like.
+	// certificate_authority_ids / associated_role_names deliberately left
+	// at blankEnrollmentPatternState's Null default -- exactly what a
+	// post-import config looks like.
 
 	config := asEnrollmentPatternConfig(t, ctx, schema, cfg)
 
@@ -200,6 +298,12 @@ func TestUnitEnrollmentPatternValidateConfig_ImportThenManageDoesNotError(t *tes
 	if hasAttributeError(response.Diagnostics, "Missing certificate authorities for restrict_cas") {
 		t.Errorf(
 			"diags = %+v, want no error for restrict_cas=true with certificate_authority_ids undeclared "+
+				"(the post-import shape)", response.Diagnostics,
+		)
+	}
+	if hasAttributeError(response.Diagnostics, "Missing associated roles for use_ad_permissions = false") {
+		t.Errorf(
+			"diags = %+v, want no error for use_ad_permissions=false with associated_role_names undeclared "+
 				"(the post-import shape)", response.Diagnostics,
 		)
 	}

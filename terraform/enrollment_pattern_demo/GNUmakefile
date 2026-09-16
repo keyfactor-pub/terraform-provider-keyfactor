@@ -14,8 +14,8 @@
 include ../demo-common.mk
 
 # Default role name for the binding import. Override with ROLE=<name> on the
-# command line (matches var.associated_role_name default).
-ROLE ?= InstanceAdmin
+# command line (matches var.binding_role_name default).
+ROLE ?= Administrator
 
 # ---------------------------------------------------------------------------
 # Terraform lifecycle
@@ -103,21 +103,27 @@ lab-apply:
 	$(LAB_ENV) $(MAKE) apply SUFFIX=$(SUFFIX)
 
 ## lab-update: Apply with an updated description AND changed driver
-## attributes (role binding, certificate_authority_ids,
+## attributes (binding_role_name, certificate_authority_ids,
 ## policies.default_certificate_owner_role_id) to verify the in-place
 ## update path -- full-review Phase 1 required tests, item 3: this demo
 ## previously never touched these fields, which is why the mirror-pinning
 ## bugs (F2/F4) shipped undetected despite a green harness. Plan after each
 ## apply should show "No changes".
+##
+## Note: associated_role_name is intentionally NOT varied here -- the
+## enrollment_pattern resource has lifecycle.ignore_changes =
+## [associated_role_names], so changes to that variable have no effect
+## after initial create. Changing binding_role_name exercises the
+## role_binding resource's update path instead.
 lab-update:
 	@echo "==> Step 1: update description + driver attributes (in-place update)..."
 	$(LAB_ENV) TF_VAR_description_override="Updated by harness" \
-	  TF_VAR_associated_role_name="Administrator" \
+	  TF_VAR_binding_role_name="InstanceAdmin" \
 	  TF_VAR_owner_role_name="Administrator" \
 	  TF_VAR_ca_name="OpenBao Root CA" \
 	  $(MAKE) apply SUFFIX=$(SUFFIX)
 	$(LAB_ENV) TF_VAR_description_override="Updated by harness" \
-	  TF_VAR_associated_role_name="Administrator" \
+	  TF_VAR_binding_role_name="InstanceAdmin" \
 	  TF_VAR_owner_role_name="Administrator" \
 	  TF_VAR_ca_name="OpenBao Root CA" \
 	  $(MAKE) plan SUFFIX=$(SUFFIX)

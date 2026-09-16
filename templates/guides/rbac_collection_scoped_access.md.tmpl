@@ -88,6 +88,12 @@ resource "keyfactor_oauth_security_role_claim_association" "app_a_binding" {
 Finally, restrict an enrollment pattern to holders of `app_a_role` so only identities with
 that role (and therefore that claim) can enroll against it.
 
+Command requires at least one role when `use_ad_permissions = false`, so bootstrap the
+pattern with the role in `associated_role_names`. The `lifecycle { ignore_changes }` block
+hands off ongoing role management to the separate `keyfactor_enrollment_pattern_role_binding`
+resource in step 6 — after the first apply, subsequent applies will not touch the role list
+even if the role reference changes.
+
 ```terraform
 data "keyfactor_certificate_template" "app_a_template" {
   identifier = "WebServer"
@@ -97,7 +103,12 @@ resource "keyfactor_enrollment_pattern" "app_a_pattern" {
   name        = "AppA Enrollment Pattern"
   template_id = data.keyfactor_certificate_template.app_a_template.id
 
-  use_ad_permissions = false
+  use_ad_permissions    = false
+  associated_role_names = [keyfactor_oauth_security_role.app_a_role.name]
+
+  lifecycle {
+    ignore_changes = [associated_role_names]
+  }
 }
 ```
 
@@ -117,12 +128,88 @@ resource "keyfactor_enrollment_pattern_role_binding" "app_a_binding" {
 }
 ```
 
-The binding is importable by composite key `"<pattern_name>:<role_name>"`:
+The binding is importable by composite key `"<pattern_name>//<role_name>"`:
 
 ```shell
 terraform import keyfactor_enrollment_pattern_role_binding.app_a_binding \
-  "AppA Enrollment Pattern:AppA-Role"
+  "AppA Enrollment Pattern//AppA-Role"
 ```
+
+## Role management: authoritative vs. non-authoritative
+
+The provider exposes two separate mechanisms for enrolling roles on a pattern. Choose one
+approach per pattern — mixing both on the same pattern leads to the authoritative resource
+replacing the binding-managed roles on every apply.
+
+| Mechanism | Analog | Behaviour |
+|---|---|---|
+| `associated_role_names` on `keyfactor_enrollment_pattern` | GCP `google_project_iam_binding` | **Authoritative** — every apply sends the declared list to Command and replaces whatever is there server-side. |
+| `keyfactor_enrollment_pattern_role_binding` | GCP `google_project_iam_member` | **Non-authoritative / additive** — each binding resource independently adds or removes exactly one role without touching the rest of the list. |
+
+### When to use `associated_role_names` (authoritative)
+
+Use `associated_role_names` when a **single Terraform config owns the complete role list**
+for the pattern. Every `terraform apply` replaces the server-side list with exactly what is
+declared.
+
+```terraform
+resource "keyfactor_enrollment_pattern" "single_owner" {
+  name               = "AppA Enrollment Pattern"
+  template_id        = data.keyfactor_certificate_template.t.id
+  use_ad_permissions = false
+  associated_role_names = [
+    keyfactor_oauth_security_role.app_a_role.name,
+    keyfactor_oauth_security_role.app_b_role.name,
+  ]
+}
+```
+
+### When to use `keyfactor_enrollment_pattern_role_binding` (non-authoritative)
+
+Use `keyfactor_enrollment_pattern_role_binding` when **multiple independent Terraform configs
+or workspaces** each manage their own role on a shared pattern. Each binding resource is
+safe to apply and destroy without knowing or touching the roles other configs have added.
+
+```terraform
+# Workspace A (owns app_a_role binding only)
+resource "keyfactor_enrollment_pattern_role_binding" "app_a" {
+  enrollment_pattern_name = "Shared Enrollment Pattern"
+  role_name               = "AppA-Role"
+}
+
+# Workspace B (owns app_b_role binding only -- independent apply/destroy)
+resource "keyfactor_enrollment_pattern_role_binding" "app_b" {
+  enrollment_pattern_name = "Shared Enrollment Pattern"
+  role_name               = "AppB-Role"
+}
+```
+
+### Bootstrap pattern (this guide's approach)
+
+When `use_ad_permissions = false`, Command requires at least one role at create time. The
+recommended bootstrap pattern:
+
+1. Declare `associated_role_names` on the `keyfactor_enrollment_pattern` resource with the
+   initial role (one your config already owns).
+2. Add `lifecycle { ignore_changes = [associated_role_names] }` so subsequent applies do not
+   touch the list.
+3. Manage all additional roles via separate `keyfactor_enrollment_pattern_role_binding`
+   resources.
+
+This is the pattern shown in steps 5–6 above.
+
+### Shared-binding caution
+
+`keyfactor_enrollment_pattern_role_binding` does not prevent two independent configs from
+claiming the same `(pattern, role)` pair. If both do:
+
+- A `terraform destroy` from **either** config removes the role from the pattern for
+  **both** — exactly the same limitation as GCP's `google_project_iam_member`.
+- The surviving config's next `terraform plan` will show the binding needs recreation.
+
+Each `role_binding` should reference a role that only **one** config owns. If a role is
+shared across independent configs, prefer `associated_role_names` with authoritative
+ownership in a single config.
 
 ## Summary
 

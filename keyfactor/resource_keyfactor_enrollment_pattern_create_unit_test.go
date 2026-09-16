@@ -90,6 +90,7 @@ func blankEnrollmentPatternState() KeyfactorEnrollmentPatternState {
 	nullBool := types.Bool{Null: true}
 	nullInt := types.Int64{Null: true}
 	nullIntSet := types.Set{Null: true, ElemType: types.Int64Type}
+	nullStrSet := types.Set{Null: true, ElemType: types.StringType}
 	return KeyfactorEnrollmentPatternState{
 		ID:                      nullInt,
 		Name:                    nullStr,
@@ -98,6 +99,8 @@ func blankEnrollmentPatternState() KeyfactorEnrollmentPatternState {
 		Template:                nil,
 		TemplateDefault:         nullBool,
 		UseADPermissions:        nullBool,
+		AssociatedRoleNames:     nullStrSet,
+		AssociatedRoles:         nil,
 		CertificateAuthorityIds: nullIntSet,
 		CertificateAuthorities:  nil,
 		AllowedEnrollmentTypes:  nullInt,

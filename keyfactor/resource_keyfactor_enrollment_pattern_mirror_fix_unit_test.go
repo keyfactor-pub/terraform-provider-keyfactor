@@ -116,9 +116,10 @@ resource "keyfactor_role" "role_b" {
 	if !step2 {
 		return roles + fmt.Sprintf(`
 resource "keyfactor_enrollment_pattern" "test" {
-  name               = "TFEPFix%s"
-  template_id        = %d
-  use_ad_permissions = false
+  name                 = "TFEPFix%s"
+  template_id          = %d
+  use_ad_permissions   = false
+  associated_role_names = [keyfactor_role.role_a.name]
 
   policies = {
     certificate_owner_role             = 2
@@ -129,14 +130,15 @@ resource "keyfactor_enrollment_pattern" "test" {
 `, suffix, templateID)
 	}
 
-	// Step 2: change policies.default_certificate_owner_role_id and declare
-	// force_template_default = true in the same apply.
+	// Step 2: change associated_role_names and policies.default_certificate_owner_role_id
+	// and declare force_template_default = true in the same apply.
 	return roles + fmt.Sprintf(`
 resource "keyfactor_enrollment_pattern" "test" {
-  name                   = "TFEPFix%s"
-  template_id            = %d
-  use_ad_permissions     = false
+  name                  = "TFEPFix%s"
+  template_id           = %d
+  use_ad_permissions    = false
   force_template_default = true
+  associated_role_names = [keyfactor_role.role_b.name]
 
   policies = {
     certificate_owner_role             = 2

@@ -2,11 +2,13 @@ package keyfactor
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -132,5 +134,126 @@ func TestUnitEnrollmentPatternUpdateDoesNotDependOnPlan(t *testing.T) {
 
 	if len(putBody) == 0 {
 		t.Fatal("no PUT /EnrollmentPatterns request was captured -- Update() did not complete")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Regression test: lifecycle.ignore_changes = [associated_role_names] must
+// preserve roles added by role_binding resources through an Update().
+//
+// Root cause: Update() decoded all fields from request.Config. Terraform Core
+// injects the prior-state value of an ignored attribute into request.Plan, but
+// Config always holds the literal config expression. When Config declares
+// `associated_role_names = ["InstanceAdmin"]` and a role_binding previously
+// added "Administrator" (making the prior state = {"InstanceAdmin","Administrator"}),
+// lifecycle.ignore_changes injects {"InstanceAdmin","Administrator"} into Plan
+// but Config still has only ["InstanceAdmin"]. Reading Config caused Update()
+// to send only ["InstanceAdmin"], producing "Provider produced inconsistent
+// result after apply" because the plan promised both roles.
+//
+// The fix: after decoding Config, overwrite associated_role_names with the
+// Plan value (types.Set can safely represent Unknown unlike raw Go slices).
+// ---------------------------------------------------------------------------
+
+// TestUnitEnrollmentPatternUpdateUsesPlanAssociatedRoleNamesNotConfig verifies
+// that when request.Plan carries extra roles (injected by Terraform Core's
+// lifecycle.ignore_changes from the prior state), Update() sends ALL of them
+// in the PUT body rather than only the roles the Config declares.
+func TestUnitEnrollmentPatternUpdateUsesPlanAssociatedRoleNamesNotConfig(t *testing.T) {
+	ctx := context.Background()
+
+	var putBody []byte
+	server := newEnrollmentPatternUpdateTestServer(t, &putBody)
+	defer server.Close()
+
+	sdkClient := newTemplateUpdateSDKClient(server)
+	schema := enrollmentPatternSchemaForTest(t, ctx)
+
+	// Config: what the user declared in HCL -- only InstanceAdmin.
+	configState := blankEnrollmentPatternState()
+	configState.Name = types.String{Value: "Demo Pattern_TF"}
+	configState.TemplateId = types.Int64{Value: 6}
+	configState.UseADPermissions = types.Bool{Value: false}
+	configState.AssociatedRoleNames = types.Set{
+		ElemType: types.StringType,
+		Elems:    []attr.Value{types.String{Value: "InstanceAdmin"}},
+	}
+
+	configScratch := tfsdk.Plan{Schema: schema}
+	if d := configScratch.Set(ctx, &configState); d.HasError() {
+		t.Fatalf("test setup: configScratch.Set returned diagnostics: %+v", d)
+	}
+	configObj := tfsdk.Config{Schema: schema, Raw: configScratch.Raw}
+
+	// Plan: lifecycle.ignore_changes = [associated_role_names] causes Terraform
+	// Core to inject the prior state value {"InstanceAdmin","Administrator"} into
+	// request.Plan. Config still holds only ["InstanceAdmin"], but the Plan
+	// carries both because "Administrator" was added by a role_binding resource
+	// on a previous apply.
+	planState := configState
+	planState.AssociatedRoleNames = types.Set{
+		ElemType: types.StringType,
+		Elems: []attr.Value{
+			types.String{Value: "InstanceAdmin"},
+			types.String{Value: "Administrator"},
+		},
+	}
+	planScratch := tfsdk.Plan{Schema: schema}
+	if d := planScratch.Set(ctx, &planState); d.HasError() {
+		t.Fatalf("test setup: planScratch.Set returned diagnostics: %+v", d)
+	}
+
+	// Prior state: needs the resource ID so Update() can call GetById + PutById.
+	stateState := blankEnrollmentPatternState()
+	stateState.ID = types.Int64{Value: 42}
+	stateState.Name = types.String{Value: "Demo Pattern_TF"}
+	stateObj := tfsdk.State{Schema: schema}
+	if d := stateObj.Set(ctx, &stateState); d.HasError() {
+		t.Fatalf("test setup: stateObj.Set returned diagnostics: %+v", d)
+	}
+
+	r := resourceEnrollmentPattern{p: provider{configured: true, sdkClient: sdkClient}}
+	req := tfsdk.UpdateResourceRequest{Config: configObj, Plan: planScratch, State: stateObj}
+	resp := &tfsdk.UpdateResourceResponse{State: tfsdk.State{Schema: schema}}
+
+	r.Update(ctx, req, resp)
+
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("Update returned diagnostics: %+v", resp.Diagnostics)
+	}
+	if len(putBody) == 0 {
+		t.Fatal("Update() made no PUT request")
+	}
+
+	// Verify the PUT body's AssociatedRoles contains BOTH roles. Before the
+	// fix, Update decoded associated_role_names from Config (= ["InstanceAdmin"])
+	// and omitted "Administrator" from the PUT -- contradicting the Plan's
+	// {"InstanceAdmin","Administrator"} and triggering "Provider produced
+	// inconsistent result after apply".
+	var bodyMap map[string]interface{}
+	if err := json.Unmarshal(putBody, &bodyMap); err != nil {
+		t.Fatalf("failed to parse PUT body as JSON: %v\nBody: %s", err, putBody)
+	}
+	rolesRaw, ok := bodyMap["AssociatedRoles"]
+	if !ok {
+		t.Fatalf("PUT body missing AssociatedRoles field; body: %s", putBody)
+	}
+	rolesSlice, _ := rolesRaw.([]interface{})
+	sentRoles := make(map[string]bool, len(rolesSlice))
+	for _, v := range rolesSlice {
+		if s, ok := v.(string); ok {
+			sentRoles[s] = true
+		}
+	}
+	for _, want := range []string{"InstanceAdmin", "Administrator"} {
+		if !sentRoles[want] {
+			t.Errorf(
+				"PUT body AssociatedRoles missing %q; got %v\n"+
+					"(Before fix: Update read associated_role_names from Config=[\"InstanceAdmin\"] "+
+					"instead of Plan=[\"InstanceAdmin\",\"Administrator\"], dropping the role preserved "+
+					"by lifecycle.ignore_changes and causing \"Provider produced inconsistent result after apply\")",
+				want, rolesSlice,
+			)
+		}
 	}
 }

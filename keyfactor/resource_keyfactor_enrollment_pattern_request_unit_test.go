@@ -140,7 +140,7 @@ func TestUnitBuildEnrollmentPatternUpdateRequestClearsExplicitEmptyLists(t *test
 		},
 	}
 
-	req := buildEnrollmentPatternUpdateRequest(ctx, plan, nil)
+	req := buildEnrollmentPatternUpdateRequest(ctx, plan)
 
 	body, err := req.ToMap()
 	if err != nil {
@@ -191,7 +191,7 @@ func TestUnitBuildEnrollmentPatternUpdateRequestOmitsUndeclaredLists(t *testing.
 		// Go's zero value (nil) -- simulating an undeclared attribute.
 	}
 
-	req := buildEnrollmentPatternUpdateRequest(ctx, plan, nil)
+	req := buildEnrollmentPatternUpdateRequest(ctx, plan)
 
 	body, err := req.ToMap()
 	if err != nil {

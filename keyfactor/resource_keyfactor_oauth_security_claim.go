@@ -345,7 +345,7 @@ func (r resourceOAuthSecurityClaim) Create(
 				Description:                  plan.Description.Value,
 				ProviderAuthenticationScheme: authenticationScheme,
 			},
-	)
+		)
 
 	createResponse, httpReq, err := req.Execute()
 	if err != nil {

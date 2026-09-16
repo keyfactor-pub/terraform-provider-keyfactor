@@ -89,18 +89,40 @@ either a clean duplicate or a clean conflict error.
 
 ### G3 — `query` does not read back (resolved)
 
-Confirmed as a Command API limitation: `GET /CertificateCollections/{id}`
-does not include `Query` in its response projection. No alternative
-endpoint or parameter returns it.
+Confirmed as a Command API limitation. We verified all four
+CertificateCollections endpoints against their SDK response models and
+the live kfclab API:
 
-The provider mitigates this by preserving the `query` value from prior
-state on Read, so a plain `terraform refresh` does not wipe it out. The
-`content_follows_query` unit tests verify the drift-detection behavior:
-when the practitioner changes `query` in config, the provider sends the
-updated value on Update and the content attribute tracks the new query
-result. The only limitation is that out-of-band changes to the query
-string (made directly in the Command UI) are not detected by the
-provider, because Command does not return the field.
+| Endpoint | Response model | Has `Query`? |
+|----------|---------------|-------------|
+| `POST` (Create) | `CertificateCollectionsCertificateCollectionResponse` | Yes |
+| `PUT` (Update) | `CertificateCollectionsCertificateCollectionResponse` | Yes |
+| `GET /{id}` (GetById) | `CSSCMSDataModelModelsCertificateQuery` | No |
+| `GET` (List) | `CertificateCollectionsCertificateCollectionListResponse` | No |
+
+`Query` is only present in Create/Update responses. Neither read
+endpoint returns it, and the listing endpoint confirmed `Query: null`
+for every collection in the lab, including those with populated
+`Content` expressions. There is no alternative endpoint or parameter
+that surfaces it.
+
+The provider handles this as follows:
+
+- **Create and Update** read `Query` from the response and persist it
+  to state. This is correct and round-trips cleanly.
+- **Read** (refresh/plan) preserves `Query` from prior state, so a
+  plain `terraform refresh` does not wipe it out.
+- **Import** lands with `Query` null. The first plan after import sets
+  it from config, which is the correct behavior (the practitioner's
+  config is the source of truth).
+
+Drift detection works for config-driven changes: when the practitioner
+changes `query` in HCL, the provider sends it on Update, and the
+computed `content` attribute tracks the materialized query result. The
+only limitation is that out-of-band changes to the query string (made
+directly in the Command UI) are not detected, because Command does not
+return the field on any read endpoint. This is a Command API constraint
+the provider cannot work around.
 
 ### G4 — Unpaginated enrollment pattern list (complete)
 

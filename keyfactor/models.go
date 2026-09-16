@@ -414,6 +414,7 @@ type CertificateTemplateRoleBinding struct {
 
 type CertificateEnrollmentPattern struct {
 	Identifier             types.String                       `tfsdk:"identifier"`
+	TemplateShortName      types.String                       `tfsdk:"template_short_name"`
 	ID                     types.Int64                        `tfsdk:"id"`
 	Name                   types.String                       `tfsdk:"name"`
 	Description            types.String                       `tfsdk:"description"`

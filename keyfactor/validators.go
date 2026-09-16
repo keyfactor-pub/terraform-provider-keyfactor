@@ -35,8 +35,13 @@ func RequiresReplaceIfPreviouslySet() tfsdk.AttributePlanModifier {
 // attribute is also set. Used to prevent meaningless combinations such as
 // specifying key_type/key_size/curve alongside a CSR (the key is already
 // embedded in the CSR and these fields would be silently ignored).
+//
+// The optional message field provides extra context appended to the error
+// description. When empty, a default CSR-specific message is used to preserve
+// backward compatibility for existing callers.
 type conflictsWithAttrValidator struct {
 	otherAttr string
+	message   string // optional; defaults to CSR key-type context when empty
 }
 
 func (v conflictsWithAttrValidator) Description(ctx context.Context) string {
@@ -59,13 +64,18 @@ func (v conflictsWithAttrValidator) Validate(
 	diags := req.Config.GetAttribute(ctx, path.Root(v.otherAttr), &otherVal)
 	resp.Diagnostics.Append(diags...)
 	if otherVal != nil && !otherVal.IsNull() && !otherVal.IsUnknown() {
+		extra := "The key type is determined by the CSR."
+		if v.message != "" {
+			extra = v.message
+		}
 		resp.Diagnostics.AddAttributeError(
 			req.AttributePath,
 			"Conflicting Attributes",
 			fmt.Sprintf(
-				"`%s` cannot be set when `%s` is also set. The key type is determined by the CSR.",
+				"`%s` cannot be set when `%s` is also set. %s",
 				req.AttributePath.String(),
 				v.otherAttr,
+				extra,
 			),
 		)
 	}

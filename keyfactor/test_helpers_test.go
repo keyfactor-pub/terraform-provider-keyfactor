@@ -2721,6 +2721,26 @@ data "keyfactor_enrollment_pattern" "test" {
 `, identifier)
 }
 
+// testAccEnrollmentPatternDataSourceConfigByTemplateShortName generates HCL
+// for reading an enrollment pattern by template short name (AD common name).
+// When templateDefault is true, template_default = true is also set to filter
+// to the default pattern for the given template.
+func testAccEnrollmentPatternDataSourceConfigByTemplateShortName(templateShortName string, templateDefault bool) string {
+	if templateDefault {
+		return fmt.Sprintf(`
+data "keyfactor_enrollment_pattern" "test" {
+  template_short_name = "%s"
+  template_default    = true
+}
+`, templateShortName)
+	}
+	return fmt.Sprintf(`
+data "keyfactor_enrollment_pattern" "test" {
+  template_short_name = "%s"
+}
+`, templateShortName)
+}
+
 // testAccCertDeployConfig generates HCL for deploying a certificate to a store.
 // certResourceRef and storeResourceRef are Terraform resource references (e.g. "keyfactor_certificate.test").
 func testAccCertDeployConfig(certResourceRef, storeResourceRef string) string {

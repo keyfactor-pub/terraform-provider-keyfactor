@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -93,15 +94,96 @@ func enrollmentPatternResolveIdentifier(identifier string, candidates []enrollme
 	}
 }
 
+// enrollmentPatternSelectByTemplateShortName validates the count of patterns
+// returned by a server-side template_short_name QueryString filter and returns
+// a descriptive error when the count is not exactly 1.
+//
+// templateDefaultFilter reflects the user's template_default config value:
+//
+//   - nil  — template_default was omitted; no TemplateDefault filter was applied.
+//   - *true  — TemplateDefault -eq "true" was applied (user wants default patterns).
+//   - *false — TemplateDefault -eq "false" was applied (user wants non-default patterns).
+//
+// Error messages are tailored to each case so the guidance never contradicts
+// the user's explicit intent (e.g. a user who set template_default=false is
+// not told to "set template_default=true").
+func enrollmentPatternSelectByTemplateShortName(count int, templateShortName string, templateDefaultFilter *bool) error {
+	switch {
+	case count == 1:
+		return nil
+
+	case count == 0 && templateDefaultFilter != nil && !*templateDefaultFilter:
+		// User explicitly asked for non-default patterns and got none.
+		return fmt.Errorf(
+			"no non-default enrollment patterns found for template short name %q; "+
+				"try omitting template_default or set template_default = true to select the default pattern",
+			templateShortName,
+		)
+
+	case count == 0:
+		// Either no filter or filter=true: nothing found at all.
+		return fmt.Errorf(
+			"no enrollment pattern found for template short name %q; "+
+				"ensure the template name is correct and at least one enrollment pattern references it",
+			templateShortName,
+		)
+
+	case templateDefaultFilter != nil && *templateDefaultFilter:
+		// User asked for default patterns; got multiple (unexpected).
+		return fmt.Errorf(
+			"found %d default enrollment patterns for template short name %q; "+
+				"this is unexpected — use identifier with the specific pattern name",
+			count, templateShortName,
+		)
+
+	case templateDefaultFilter != nil && !*templateDefaultFilter:
+		// User asked for non-default patterns; got multiple.
+		return fmt.Errorf(
+			"found %d non-default enrollment patterns for template short name %q; "+
+				"use identifier with the specific pattern name",
+			count, templateShortName,
+		)
+
+	default:
+		// No filter applied; got multiple.
+		return fmt.Errorf(
+			"found %d enrollment patterns for template short name %q; "+
+				"set template_default = true to select the default pattern for the template, "+
+				"or use identifier with the specific pattern name",
+			count, templateShortName,
+		)
+	}
+}
+
 type dataSourceEnrollmentPatternType struct{}
 
 func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Schema, diag.Diagnostics) {
 	return tfsdk.Schema{
 		Attributes: map[string]tfsdk.Attribute{
 			"identifier": {
-				Type:        types.StringType,
-				Required:    true,
-				Description: "The name or internal ID (integer) of the enrollment pattern to look up. An exact name match takes precedence; otherwise this value is matched against the pattern's internal ID as a decimal string (so \"007\" never matches ID 7). A value that matches a different pattern by name than by ID returns an error rather than silently picking one.",
+				Type:     types.StringType,
+				Optional: true,
+				Validators: []tfsdk.AttributeValidator{
+					atLeastOneOfValidator{otherAttr: "template_short_name"},
+				},
+				Description: "The name or internal ID (integer) of the enrollment pattern to look up. " +
+					"An exact name match takes precedence; otherwise this value is matched against the pattern's " +
+					"internal ID as a decimal string (so \"007\" never matches ID 7). A value that matches a " +
+					"different pattern by name than by ID returns an error rather than silently picking one. " +
+					"Mutually exclusive with template_short_name.",
+			},
+			"template_short_name": {
+				Type:     types.StringType,
+				Optional: true,
+				Validators: []tfsdk.AttributeValidator{
+					conflictsWithAttrValidator{
+						otherAttr: "identifier",
+						message:   "Use either identifier or template_short_name, not both.",
+					},
+				},
+				Description: "The template short name (AD common name) to filter enrollment patterns by. " +
+					"Mutually exclusive with identifier. When multiple patterns match, set " +
+					"template_default = true to select the default pattern for the template.",
 			},
 			"id": {
 				Type:        types.Int64Type,
@@ -133,9 +215,22 @@ func (r dataSourceEnrollmentPatternType) GetSchema(_ context.Context) (tfsdk.Sch
 				Description: "An object containing information for the template associated with the enrollment pattern.",
 			},
 			"template_default": {
-				Type:        types.BoolType,
-				Computed:    true,
-				Description: "A Boolean indicating whether this enrollment pattern is the default pattern for the associated template (true) or not (false). A certificate template can have only one default enrollment pattern, which is required for the template to be used for enrollment. If no other enrollment pattern for the template exists or is marked as default, this option will automatically be enabled when a new pattern is created.",
+				Type:     types.BoolType,
+				Optional: true,
+				Computed: true,
+				Validators: []tfsdk.AttributeValidator{
+					conflictsWithAttrValidator{
+						otherAttr: "identifier",
+						message:   "template_default is a filter that only applies when template_short_name is set.",
+					},
+				},
+				Description: "A Boolean indicating whether this enrollment pattern is the default pattern for " +
+					"the associated template (true) or not (false). A certificate template can have only one " +
+					"default enrollment pattern, which is required for the template to be used for enrollment. " +
+					"If no other enrollment pattern for the template exists or is marked as default, this option " +
+					"will automatically be enabled when a new pattern is created. " +
+					"When set in configuration, only valid alongside template_short_name: setting " +
+					"template_default = true filters to the default pattern for the given template short name.",
 			},
 			"use_ad_permissions": {
 				Type:        types.BoolType,
@@ -300,7 +395,12 @@ Once created for the enrollment pattern, these values are shown in Keyfactor Com
 		MarkdownDescription: `
 Reads an existing enrollment pattern from Keyfactor Command using the "/EnrollmentPatterns" API.
 
-~> **Note:** The enrollment pattern can be identified by its name or internal ID. An exact name match takes precedence; otherwise ` + "`identifier`" + ` is matched against the pattern's internal ID as a decimal string (so ` + "`\"007\"`" + ` never matches ID 7). A value that matches a different pattern by name than by ID returns an error.
+Enrollment patterns can be looked up in two ways:
+
+- By ` + "`identifier`" + ` (name or numeric ID): an exact name match takes precedence; otherwise ` + "`identifier`" + ` is matched against the pattern's internal ID as a decimal string (so ` + "`\"007\"`" + ` never matches ID 7). A value that matches a different pattern by name than by ID returns an error.
+- By ` + "`template_short_name`" + ` (AD common name): performs a server-side query for enrollment patterns associated with the given template short name. If multiple patterns match, set ` + "`template_default = true`" + ` to select the default pattern for the template, or use ` + "`identifier`" + ` with the specific pattern name.
+
+` + "`identifier`" + ` and ` + "`template_short_name`" + ` are mutually exclusive — exactly one must be set.
 
 Enrollment patterns in Keyfactor Command provide a flexible way to streamline certificate enrollment by defining default values, policies, and access configurations for specific certificate templates and certificate authorities. This functionality helps reduce duplication of templates at the CA level while meeting diverse business requirements.
 
@@ -337,263 +437,322 @@ func (r dataSourceEnrollmentPattern) Read(
 	}
 
 	tflog.Info(ctx, "Read called on enrollment pattern data source")
-	patternName := state.Identifier.Value
-	tflog.SetField(ctx, "pattern_name", patternName)
 
-	enrollmentPatterns, _, err := r.p.sdkClient.V1.EnrollmentPatternApi.
-		NewGetEnrollmentPatternsRequest(ctx).
-		ReturnLimit(500).
-		Execute()
+	// Validate mutually exclusive lookup keys.
+	identifierSet := !state.Identifier.Null && !state.Identifier.Unknown && state.Identifier.Value != ""
+	templateShortNameSet := !state.TemplateShortName.Null && !state.TemplateShortName.Unknown && state.TemplateShortName.Value != ""
 
-	if err != nil {
+	if !identifierSet && !templateShortNameSet {
 		response.Diagnostics.AddError(
-			"Error listing enrollment patterns from Keyfactor.",
-			"Error reading enrollment patterns: "+err.Error(),
+			"Missing required attribute",
+			"Exactly one of 'identifier' or 'template_short_name' must be set.",
+		)
+		return
+	}
+	if identifierSet && templateShortNameSet {
+		response.Diagnostics.AddError(
+			"Conflicting attributes",
+			"'identifier' and 'template_short_name' are mutually exclusive; set exactly one.",
 		)
 		return
 	}
 
-	var result CertificateEnrollmentPattern
-	found := false
-
-	ctx = tflog.SetField(ctx, "pattern_identifier", patternName)
-	tflog.Debug(ctx, "Searching for enrollment pattern by name or ID")
-
-	// Resolve identifier against ALL candidates up
-	// front, using name-or-ID semantics (see
-	// enrollmentPatternResolveIdentifier's doc comment) -- an exact name
-	// match wins deterministically; a canonical ID-string match
-	// (fmt.Sprint(id) == identifier, so "007" never matches ID 7) is the
-	// fallback; a genuine match on BOTH for two DIFFERENT patterns is an
-	// error, not a silent pick. This replaces the previous strict
-	// ID-only-or-name-only priority, which made a pattern
-	// named e.g. "2025" unreachable (or worse, silently resolved to a
-	// different pattern with ID 2025) purely because its name happened to
-	// look numeric.
-	candidates := make([]enrollmentPatternCandidate, len(enrollmentPatterns))
-	for i, p := range enrollmentPatterns {
-		candidates[i] = enrollmentPatternCandidate{ID: int(p.GetId()), Name: p.GetName()}
-	}
-	matchedIdx, resolveErr := enrollmentPatternResolveIdentifier(patternName, candidates)
-	if resolveErr != nil {
-		response.Diagnostics.AddError("Enrollment pattern not found", resolveErr.Error())
+	// template_default is only meaningful alongside template_short_name.
+	templateDefaultSet := !state.TemplateDefault.Null && !state.TemplateDefault.Unknown
+	if templateDefaultSet && identifierSet {
+		response.Diagnostics.AddError(
+			"Invalid attribute combination",
+			"'template_default' is only valid when 'template_short_name' is set; it cannot be used with 'identifier'.",
+		)
 		return
 	}
 
-	for i, pattern := range enrollmentPatterns {
-		tflog.Debug(ctx, fmt.Sprintf("Checking enrollment pattern: ID=%d, Name=%q", pattern.GetId(), pattern.GetName()))
-		if i == matchedIdx {
-			tflog.Info(ctx, fmt.Sprintf("Found enrollment pattern with name: %q", patternName))
+	// Fetch the target pattern via the appropriate lookup path.
+	var targetPattern kfv1.EnrollmentPatternsEnrollmentPatternResponse
 
-			// Map the enrollment pattern data to the result
-			result = CertificateEnrollmentPattern{
-				Identifier:  state.Identifier,
-				ID:          types.Int64{Value: int64(pattern.GetId())},
-				Name:        nullableStringToTfString(pattern.Name),
-				Description: nullableStringToTfString(pattern.Description),
+	if identifierSet {
+		patternName := state.Identifier.Value
+		ctx = tflog.SetField(ctx, "pattern_identifier", patternName)
+		tflog.Debug(ctx, "Searching for enrollment pattern by name or ID")
+
+		enrollmentPatterns, _, err := r.p.sdkClient.V1.EnrollmentPatternApi.
+			NewGetEnrollmentPatternsRequest(ctx).
+			ReturnLimit(500).
+			Execute()
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Error listing enrollment patterns from Keyfactor.",
+				"Error reading enrollment patterns: "+err.Error(),
+			)
+			return
+		}
+
+		// Resolve identifier against all candidates using name-or-ID semantics
+		// (see enrollmentPatternResolveIdentifier's doc comment). An exact name
+		// match wins deterministically; a canonical ID-string match is the
+		// fallback; a genuine match on both for two different patterns is an
+		// error rather than a silent pick.
+		candidates := make([]enrollmentPatternCandidate, len(enrollmentPatterns))
+		for i, p := range enrollmentPatterns {
+			candidates[i] = enrollmentPatternCandidate{ID: int(p.GetId()), Name: p.GetName()}
+		}
+		matchedIdx, resolveErr := enrollmentPatternResolveIdentifier(patternName, candidates)
+		if resolveErr != nil {
+			response.Diagnostics.AddError("Enrollment pattern not found", resolveErr.Error())
+			return
+		}
+		targetPattern = enrollmentPatterns[matchedIdx]
+	} else {
+		// template_short_name path: server-side QueryString filter.
+		templateShortName := state.TemplateShortName.Value
+		ctx = tflog.SetField(ctx, "template_short_name", templateShortName)
+		tflog.Debug(ctx, "Searching for enrollment pattern by template short name")
+
+		// F6+F1: escape backslashes first, then double quotes, to prevent
+		// QueryString injection. Backslashes must be escaped first so the
+		// quote-escape backslashes themselves are not double-escaped.
+		//   foo\  → foo\\ (backslash escape)
+		//   foo"  → foo\" (quote escape)
+		//   foo\" → foo\\" (backslash escapes first, then quote)
+		escapedShortName := strings.ReplaceAll(templateShortName, `\`, `\\`)
+		escapedShortName = strings.ReplaceAll(escapedShortName, `"`, `\"`)
+		queryStr := fmt.Sprintf("TemplateShortName -eq \"%s\"", escapedShortName)
+
+		// templateDefaultFilterPtr mirrors the user's template_default config:
+		//   nil    — omitted in config; no TemplateDefault filter applied
+		//   *true  — user set template_default = true; filter for defaults
+		//   *false — user set template_default = false; filter for non-defaults
+		// This pointer is passed to enrollmentPatternSelectByTemplateShortName so
+		// the error message reflects the user's actual intent rather than
+		// assuming they did not filter.
+		var templateDefaultFilterPtr *bool
+		if templateDefaultSet {
+			val := state.TemplateDefault.Value
+			templateDefaultFilterPtr = &val
+			if val {
+				queryStr += " AND TemplateDefault -eq \"true\""
+			} else {
+				queryStr += " AND TemplateDefault -eq \"false\""
 			}
+		}
 
-			if pattern.Template != nil {
-				tflog.Debug(
-					ctx, fmt.Sprintf(
-						"Enrollment pattern %q has template ID: %d", patternName,
-						pattern.Template.GetId(),
-					),
-				)
-				tmpl := pattern.Template
-				result.Template = &EnrollmentPatternTemplate{
-					Id:                  int32PtrToTfInt64(tmpl.Id),
-					TemplateName:        nullableStringToTfString(tmpl.TemplateName),
-					CommonName:          nullableStringToTfString(tmpl.CommonName),
-					ConfigurationTenant: nullableStringToTfString(tmpl.ConfigurationTenant),
-					RequiresApproval:    boolPtrToTfBool(tmpl.RequiresApproval),
-					FriendlyName:        nullableStringToTfString(tmpl.FriendlyName),
-				}
-			}
+		enrollmentPatterns, _, err := r.p.sdkClient.V1.EnrollmentPatternApi.
+			NewGetEnrollmentPatternsRequest(ctx).
+			QueryString(queryStr).
+			ReturnLimit(500).
+			Execute()
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Error listing enrollment patterns from Keyfactor.",
+				"Error reading enrollment patterns: "+err.Error(),
+			)
+			return
+		}
 
-			result.TemplateDefault = boolPtrToTfBool(pattern.TemplateDefault)
-			result.UseADPermissions = boolPtrToTfBool(pattern.UseADPermissions)
-			result.AllowedEnrollmentTypes = allowedEnrollmentTypesPtrToTfInt64(pattern.AllowedEnrollmentTypes)
-			result.RestrictCAs = boolPtrToTfBool(pattern.RestrictCAs)
+		if selectErr := enrollmentPatternSelectByTemplateShortName(
+			len(enrollmentPatterns), templateShortName, templateDefaultFilterPtr,
+		); selectErr != nil {
+			response.Diagnostics.AddError("Enrollment pattern lookup failed", selectErr.Error())
+			return
+		}
+		targetPattern = enrollmentPatterns[0]
+	}
 
-			// Associated Roles
-			result.AssociatedRoles = &[]EnrollmentPatternAssociatedRole{}
-			if len(pattern.AssociatedRoles) > 0 {
-				tflog.Debug(ctx, "Handling associated roles")
-				var assocRoles []EnrollmentPatternAssociatedRole
-				for _, role := range pattern.AssociatedRoles {
-					assocRoles = append(
-						assocRoles, EnrollmentPatternAssociatedRole{
-							Id:   int32PtrToTfInt64(role.Id),
-							Name: nullableStringToTfString(role.Name),
-						},
-					)
-				}
-				result.AssociatedRoles = &assocRoles
-			}
+	// Map the found pattern to state. Identifier and TemplateShortName are
+	// preserved from the config so write-only filter attributes round-trip
+	// correctly (null when not used, user value when used).
+	result := CertificateEnrollmentPattern{
+		Identifier:        state.Identifier,
+		TemplateShortName: state.TemplateShortName,
+		ID:                types.Int64{Value: int64(targetPattern.GetId())},
+		Name:              nullableStringToTfString(targetPattern.Name),
+		Description:       nullableStringToTfString(targetPattern.Description),
+	}
 
-			// Certificate Authorities
-			result.CertificateAuthorities = &[]EnrollmentPatternCA{}
-			if len(pattern.CertificateAuthorities) > 0 {
-				tflog.Debug(ctx, "Handling certificate authorities")
-				var cas []EnrollmentPatternCA
-				for _, ca := range pattern.CertificateAuthorities {
-					cas = append(
-						cas, EnrollmentPatternCA{
-							Id:                  int32PtrToTfInt64(ca.Id),
-							LogicalName:         nullableStringToTfString(ca.LogicalName),
-							HostName:            nullableStringToTfString(ca.HostName),
-							ConfigurationTenant: nullableStringToTfString(ca.ConfigurationTenant),
-						},
-					)
-				}
-				result.CertificateAuthorities = &cas
-			}
-
-			// Regexes
-			result.Regexes = &[]EnrollmentPatternRegexes{}
-			if len(pattern.Regexes) > 0 {
-				tflog.Debug(ctx, "Handling regexes")
-				var regexes []EnrollmentPatternRegexes
-				for _, regex := range pattern.Regexes {
-					regexes = append(
-						regexes, EnrollmentPatternRegexes{
-							SubjectPart:   nullableStringToTfString(regex.SubjectPart),
-							Regex:         nullableStringToTfString(regex.Regex),
-							Error:         nullableStringToTfString(regex.Error),
-							CaseSensitive: boolPtrToTfBool(regex.CaseSensitive),
-						},
-					)
-				}
-				result.Regexes = &regexes
-			}
-
-			// Metadata Fields
-			result.MetadataFields = &[]EnrollmentPatternMetadataField{}
-			if len(pattern.MetadataFields) > 0 {
-				tflog.Debug(ctx, "Handling metadata fields")
-				var metadataFields []EnrollmentPatternMetadataField
-				for _, field := range pattern.MetadataFields {
-					metadataFields = append(
-						metadataFields, EnrollmentPatternMetadataField{
-							MetadataId:    int32PtrToTfInt64(field.MetadataId),
-							DefaultValue:  nullableStringToTfString(field.DefaultValue),
-							Validation:    nullableStringToTfString(field.Validation),
-							Enrollment:    enumPtrToTfInt64(field.Enrollment),
-							Message:       nullableStringToTfString(field.Message),
-							CaseSensitive: boolPtrToTfBool(field.CaseSensitive),
-						},
-					)
-				}
-				result.MetadataFields = &metadataFields
-			}
-
-			// Defaults
-			result.Defaults = &[]EnrollmentPatternDefault{}
-			if len(pattern.Defaults) > 0 {
-				tflog.Debug(ctx, "Handling defaults")
-				var epDefaults []EnrollmentPatternDefault
-				for _, def := range pattern.Defaults {
-					epDefaults = append(
-						epDefaults, EnrollmentPatternDefault{
-							SubjectPart: nullableStringToTfString(def.SubjectPart),
-							Value:       nullableStringToTfString(def.Value),
-						},
-					)
-				}
-				result.Defaults = &epDefaults
-			}
-
-			// Enrollment Fields
-			// The SDK's EnrollmentPatternsEnrollmentPatternFieldResponse only
-			// carries Name, DataType, and Options -- the remaining fields
-			// (Id, DefaultValue, Validation, Enrollment, Message, DependsOn,
-			// DependsOnValue, Hint) are not returned by the listing endpoint
-			// and are set to Null here.
-			result.EnrollmentFields = &[]EnrollmentPatternField{}
-			if len(pattern.EnrollmentFields) > 0 {
-				tflog.Debug(ctx, "Handling enrollment fields")
-				var erFields []EnrollmentPatternField
-				for _, field := range pattern.EnrollmentFields {
-					var optList types.List
-					if field.Options == nil {
-						optList = types.List{ElemType: types.StringType, Null: true}
-					} else {
-						optList = types.List{
-							ElemType: types.StringType,
-							Elems:    convertStringArrayToTerraform(field.Options),
-						}
-					}
-					erFields = append(
-						erFields, EnrollmentPatternField{
-							Id:             types.Int64{Null: true},
-							Name:           nullableStringToTfString(field.Name),
-							DefaultValue:   types.String{Null: true},
-							Validation:     types.String{Null: true},
-							Enrollment:     types.Int64{Null: true},
-							Message:        types.String{Null: true},
-							Options:        optList,
-							DependsOn:      types.String{Null: true},
-							DependsOnValue: types.String{Null: true},
-							DataType:       enumPtrToTfInt64(field.DataType),
-							Hint:           types.String{Null: true},
-						},
-					)
-				}
-				result.EnrollmentFields = &erFields
-			}
-
-			// Policies
-			result.Policies = &EnrollmentPatternPolicyResponse{}
-			if pattern.Policies != nil {
-				tflog.Debug(ctx, "Handling policies")
-				pol := pattern.Policies
-				policies := EnrollmentPatternPolicyResponse{
-					AllowKeyReuse:                   nullableBoolToTfBool(pol.AllowKeyReuse),
-					AllowWildcards:                  nullableBoolToTfBool(pol.AllowWildcards),
-					RFCEnforcement:                  nullableBoolToTfBool(pol.RFCEnforcement),
-					CertificateOwnerRole:            enumPtrToTfInt64(pol.CertificateOwnerRole),
-					DefaultCertificateOwnerOverride: boolPtrToTfBool(pol.DefaultCertificateOwnerOverride),
-					DefaultCertificateOwnerRoleId:   nullableInt32ToTfInt64(pol.DefaultCertificateOwnerRoleId),
-					DefaultCertificateOwnerRoleName: nullableStringToTfString(pol.DefaultCertificateOwnerRoleName),
-					PrimaryKeyAlgorithms:            []EnrollmentPatternsAlgorithmsAlgorithmData{},
-					AlternativeKeyAlgorithms:        []EnrollmentPatternsAlgorithmsAlgorithmData{},
-				}
-				if len(pol.PrimaryKeyAlgorithms) > 0 {
-					for _, algo := range pol.PrimaryKeyAlgorithms {
-						policies.PrimaryKeyAlgorithms = append(
-							policies.PrimaryKeyAlgorithms, sdkAlgorithmDataToTf(algo),
-						)
-					}
-				}
-				if len(pol.AlternativeKeyAlgorithms) > 0 {
-					for _, algo := range pol.AlternativeKeyAlgorithms {
-						policies.AlternativeKeyAlgorithms = append(
-							policies.AlternativeKeyAlgorithms, sdkAlgorithmDataToTf(algo),
-						)
-					}
-				}
-				result.Policies = &policies
-			}
-
-			tflog.Debug(ctx, "Completed mapping enrollment pattern data")
-			found = true
-			break
+	if targetPattern.Template != nil {
+		tflog.Debug(
+			ctx, fmt.Sprintf(
+				"Enrollment pattern %q has template ID: %d", targetPattern.GetName(),
+				targetPattern.Template.GetId(),
+			),
+		)
+		tmpl := targetPattern.Template
+		result.Template = &EnrollmentPatternTemplate{
+			Id:                  int32PtrToTfInt64(tmpl.Id),
+			TemplateName:        nullableStringToTfString(tmpl.TemplateName),
+			CommonName:          nullableStringToTfString(tmpl.CommonName),
+			ConfigurationTenant: nullableStringToTfString(tmpl.ConfigurationTenant),
+			RequiresApproval:    boolPtrToTfBool(tmpl.RequiresApproval),
+			FriendlyName:        nullableStringToTfString(tmpl.FriendlyName),
 		}
 	}
-	if !found {
-		// Defensive only: enrollmentPatternResolveIdentifier already
-		// returned a descriptive "not found"/ambiguous error above (and
-		// this function returned before reaching here) for every case
-		// that function can detect. This should be unreachable in
-		// practice -- it would only trip if matchedIdx pointed outside
-		// enrollmentPatterns, which resolveErr == nil rules out.
-		response.Diagnostics.AddError(
-			"Enrollment pattern not found",
-			fmt.Sprintf("Could not find enrollment pattern with identifier: %s", patternName),
-		)
-		return
+
+	result.TemplateDefault = boolPtrToTfBool(targetPattern.TemplateDefault)
+	result.UseADPermissions = boolPtrToTfBool(targetPattern.UseADPermissions)
+	result.AllowedEnrollmentTypes = allowedEnrollmentTypesPtrToTfInt64(targetPattern.AllowedEnrollmentTypes)
+	result.RestrictCAs = boolPtrToTfBool(targetPattern.RestrictCAs)
+
+	// Associated Roles
+	result.AssociatedRoles = &[]EnrollmentPatternAssociatedRole{}
+	if len(targetPattern.AssociatedRoles) > 0 {
+		tflog.Debug(ctx, "Handling associated roles")
+		var assocRoles []EnrollmentPatternAssociatedRole
+		for _, role := range targetPattern.AssociatedRoles {
+			assocRoles = append(
+				assocRoles, EnrollmentPatternAssociatedRole{
+					Id:   int32PtrToTfInt64(role.Id),
+					Name: nullableStringToTfString(role.Name),
+				},
+			)
+		}
+		result.AssociatedRoles = &assocRoles
 	}
+
+	// Certificate Authorities
+	result.CertificateAuthorities = &[]EnrollmentPatternCA{}
+	if len(targetPattern.CertificateAuthorities) > 0 {
+		tflog.Debug(ctx, "Handling certificate authorities")
+		var cas []EnrollmentPatternCA
+		for _, ca := range targetPattern.CertificateAuthorities {
+			cas = append(
+				cas, EnrollmentPatternCA{
+					Id:                  int32PtrToTfInt64(ca.Id),
+					LogicalName:         nullableStringToTfString(ca.LogicalName),
+					HostName:            nullableStringToTfString(ca.HostName),
+					ConfigurationTenant: nullableStringToTfString(ca.ConfigurationTenant),
+				},
+			)
+		}
+		result.CertificateAuthorities = &cas
+	}
+
+	// Regexes
+	result.Regexes = &[]EnrollmentPatternRegexes{}
+	if len(targetPattern.Regexes) > 0 {
+		tflog.Debug(ctx, "Handling regexes")
+		var regexes []EnrollmentPatternRegexes
+		for _, regex := range targetPattern.Regexes {
+			regexes = append(
+				regexes, EnrollmentPatternRegexes{
+					SubjectPart:   nullableStringToTfString(regex.SubjectPart),
+					Regex:         nullableStringToTfString(regex.Regex),
+					Error:         nullableStringToTfString(regex.Error),
+					CaseSensitive: boolPtrToTfBool(regex.CaseSensitive),
+				},
+			)
+		}
+		result.Regexes = &regexes
+	}
+
+	// Metadata Fields
+	result.MetadataFields = &[]EnrollmentPatternMetadataField{}
+	if len(targetPattern.MetadataFields) > 0 {
+		tflog.Debug(ctx, "Handling metadata fields")
+		var metadataFields []EnrollmentPatternMetadataField
+		for _, field := range targetPattern.MetadataFields {
+			metadataFields = append(
+				metadataFields, EnrollmentPatternMetadataField{
+					MetadataId:    int32PtrToTfInt64(field.MetadataId),
+					DefaultValue:  nullableStringToTfString(field.DefaultValue),
+					Validation:    nullableStringToTfString(field.Validation),
+					Enrollment:    enumPtrToTfInt64(field.Enrollment),
+					Message:       nullableStringToTfString(field.Message),
+					CaseSensitive: boolPtrToTfBool(field.CaseSensitive),
+				},
+			)
+		}
+		result.MetadataFields = &metadataFields
+	}
+
+	// Defaults
+	result.Defaults = &[]EnrollmentPatternDefault{}
+	if len(targetPattern.Defaults) > 0 {
+		tflog.Debug(ctx, "Handling defaults")
+		var epDefaults []EnrollmentPatternDefault
+		for _, def := range targetPattern.Defaults {
+			epDefaults = append(
+				epDefaults, EnrollmentPatternDefault{
+					SubjectPart: nullableStringToTfString(def.SubjectPart),
+					Value:       nullableStringToTfString(def.Value),
+				},
+			)
+		}
+		result.Defaults = &epDefaults
+	}
+
+	// Enrollment Fields
+	// The SDK's EnrollmentPatternsEnrollmentPatternFieldResponse only
+	// carries Name, DataType, and Options -- the remaining fields
+	// (Id, DefaultValue, Validation, Enrollment, Message, DependsOn,
+	// DependsOnValue, Hint) are not returned by the listing endpoint
+	// and are set to Null here.
+	result.EnrollmentFields = &[]EnrollmentPatternField{}
+	if len(targetPattern.EnrollmentFields) > 0 {
+		tflog.Debug(ctx, "Handling enrollment fields")
+		var erFields []EnrollmentPatternField
+		for _, field := range targetPattern.EnrollmentFields {
+			var optList types.List
+			if field.Options == nil {
+				optList = types.List{ElemType: types.StringType, Null: true}
+			} else {
+				optList = types.List{
+					ElemType: types.StringType,
+					Elems:    convertStringArrayToTerraform(field.Options),
+				}
+			}
+			erFields = append(
+				erFields, EnrollmentPatternField{
+					Id:             types.Int64{Null: true},
+					Name:           nullableStringToTfString(field.Name),
+					DefaultValue:   types.String{Null: true},
+					Validation:     types.String{Null: true},
+					Enrollment:     types.Int64{Null: true},
+					Message:        types.String{Null: true},
+					Options:        optList,
+					DependsOn:      types.String{Null: true},
+					DependsOnValue: types.String{Null: true},
+					DataType:       enumPtrToTfInt64(field.DataType),
+					Hint:           types.String{Null: true},
+				},
+			)
+		}
+		result.EnrollmentFields = &erFields
+	}
+
+	// Policies
+	result.Policies = &EnrollmentPatternPolicyResponse{}
+	if targetPattern.Policies != nil {
+		tflog.Debug(ctx, "Handling policies")
+		pol := targetPattern.Policies
+		policies := EnrollmentPatternPolicyResponse{
+			AllowKeyReuse:                   nullableBoolToTfBool(pol.AllowKeyReuse),
+			AllowWildcards:                  nullableBoolToTfBool(pol.AllowWildcards),
+			RFCEnforcement:                  nullableBoolToTfBool(pol.RFCEnforcement),
+			CertificateOwnerRole:            enumPtrToTfInt64(pol.CertificateOwnerRole),
+			DefaultCertificateOwnerOverride: boolPtrToTfBool(pol.DefaultCertificateOwnerOverride),
+			DefaultCertificateOwnerRoleId:   nullableInt32ToTfInt64(pol.DefaultCertificateOwnerRoleId),
+			DefaultCertificateOwnerRoleName: nullableStringToTfString(pol.DefaultCertificateOwnerRoleName),
+			PrimaryKeyAlgorithms:            []EnrollmentPatternsAlgorithmsAlgorithmData{},
+			AlternativeKeyAlgorithms:        []EnrollmentPatternsAlgorithmsAlgorithmData{},
+		}
+		if len(pol.PrimaryKeyAlgorithms) > 0 {
+			for _, algo := range pol.PrimaryKeyAlgorithms {
+				policies.PrimaryKeyAlgorithms = append(
+					policies.PrimaryKeyAlgorithms, sdkAlgorithmDataToTf(algo),
+				)
+			}
+		}
+		if len(pol.AlternativeKeyAlgorithms) > 0 {
+			for _, algo := range pol.AlternativeKeyAlgorithms {
+				policies.AlternativeKeyAlgorithms = append(
+					policies.AlternativeKeyAlgorithms, sdkAlgorithmDataToTf(algo),
+				)
+			}
+		}
+		result.Policies = &policies
+	}
+
+	tflog.Debug(ctx, "Completed mapping enrollment pattern data")
 
 	diags = response.State.Set(ctx, &result)
 	response.Diagnostics.Append(diags...)

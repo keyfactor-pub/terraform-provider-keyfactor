@@ -391,6 +391,13 @@ func (r resourceCertificateCollection) Create(
 	}
 
 	newState := collectionResponseToState(resp)
+	// Command normalizes query strings by inserting spaces inside parentheses
+	// (e.g. "(X)" becomes "( X )"). Preserving the plan value here prevents
+	// "provider produced inconsistent result after apply": the Create response
+	// carries the server-normalized form, which would differ from the plan value
+	// and trigger the framework's post-apply consistency check. Read() already
+	// preserves state.Query for the same reason (GetById has no Query field).
+	newState.Query = plan.Query
 	tflog.Debug(ctx, fmt.Sprintf("Created certificate collection ID %d", newState.ID.Value))
 	// Field-level audit logging for the collection's defining (and only
 	// access-control-relevant) field on this initial create -- mirrors the
@@ -627,16 +634,14 @@ func (r resourceCertificateCollection) Update(
 
 	newState := collectionResponseToState(resp)
 
-	// The update response DOES carry Query, but fall back to whatever we
-	// just decided to send (plan/state-derived) in case the server ever
-	// omits it in the response body.
-	if newState.Query.Null {
-		if !plan.Query.Null {
-			newState.Query = plan.Query
-		} else {
-			newState.Query = state.Query
-		}
-	}
+	// The update response carries Query, but Command normalizes it by inserting
+	// spaces inside parentheses (e.g. "(X)" becomes "( X )"). Always preserving
+	// the plan value -- rather than conditionally falling back only when the
+	// server returns null -- prevents "provider produced inconsistent result after
+	// apply": the server-normalized form would differ from the plan value and
+	// trigger the framework's post-apply consistency check. query is Required, so
+	// plan.Query is always a concrete non-null value here.
+	newState.Query = plan.Query
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)

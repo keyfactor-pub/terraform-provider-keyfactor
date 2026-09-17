@@ -27,6 +27,7 @@ import (
 	mathRand "math/rand"
 
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"reflect"
@@ -453,26 +454,60 @@ func addOAuthSecurityClaimToRole(
 // Shared by keyfactor_oauth_security_role_claim_association and
 // keyfactor_enrollment_pattern_role_binding — both resources face the same
 // Command API concurrency profile.
-const reconcileMaxAttempts = 5
+const reconcileMaxAttempts = 8
 
 // reconcileBaseDelay is the base for the jittered exponential backoff between
 // reconcile attempts.
 const reconcileBaseDelay = 150 * time.Millisecond
 
 // reconcileBackoff returns a jittered, exponentially increasing delay for
-// retry attempt N (1-indexed), capped at 2 seconds.
+// retry attempt N (1-indexed), capped at 15 seconds.
+//
+// Backoff sequence (no jitter, worst case):
+//
+//	attempt 1: 150ms, 2: 300ms, 3: 600ms, 4: 1.2s, 5: 2.4s,
+//	6: 4.8s, 7: 9.6s, 8+: 15s (cap)
+//
+// Total max sleep across 8 attempts ≈ 34s.
 func reconcileBackoff(attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1
 	}
 	d := reconcileBaseDelay * time.Duration(int64(1)<<uint(attempt-1))
-	maxDelay := 2 * time.Second
+	maxDelay := 15 * time.Second
 	if d > maxDelay {
 		d = maxDelay
 	}
 	// Half fixed, half jitter, to avoid two racing callers retrying in lockstep.
 	jitter := time.Duration(mathRand.Int63n(int64(d)/2 + 1))
 	return d/2 + jitter
+}
+
+// parseRetryAfter parses the Retry-After response header per RFC 9110 §10.2.3.
+// It handles both the delay-seconds form ("Retry-After: 30") and the HTTP-date
+// form ("Retry-After: Thu, 17 Sep 2026 12:00:00 GMT"). Returns 0 if the header
+// is absent, empty, or unparseable — callers should fall back to their own
+// backoff strategy when 0 is returned.
+func parseRetryAfter(resp *http.Response) time.Duration {
+	if resp == nil {
+		return 0
+	}
+	raw := resp.Header.Get("Retry-After")
+	if raw == "" {
+		return 0
+	}
+	// Try delay-seconds first (most common for REST APIs).
+	if secs, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil && secs > 0 {
+		return time.Duration(secs * float64(time.Second))
+	}
+	// Try HTTP-date form.
+	if t, err := http.ParseTime(raw); err == nil {
+		d := time.Until(t)
+		if d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 // reconcileOutcome is the signal returned by a reconcileWithRetry step function.
@@ -503,11 +538,11 @@ const (
 //   - After reconcileMaxAttempts exhausted → returns (false, lastRaceErr).
 func reconcileWithRetry(
 	ctx context.Context,
-	step func(attempt int) (reconcileOutcome, error),
+	step func(attempt int) (reconcileOutcome, error, time.Duration),
 ) (bool, error) {
 	var lastErr error
 	for attempt := 1; attempt <= reconcileMaxAttempts; attempt++ {
-		outcome, err := step(attempt)
+		outcome, err, serverDelay := step(attempt)
 		switch outcome {
 		case reconcileDone:
 			return true, nil
@@ -518,7 +553,12 @@ func reconcileWithRetry(
 			if err != nil {
 				tflog.Warn(ctx, "retrying after transient error: "+err.Error())
 			}
-			time.Sleep(reconcileBackoff(attempt))
+			if serverDelay > 0 {
+				tflog.Info(ctx, fmt.Sprintf("server requested retry delay: %s", serverDelay))
+				time.Sleep(serverDelay)
+			} else {
+				time.Sleep(reconcileBackoff(attempt))
+			}
 		}
 	}
 	return false, lastErr

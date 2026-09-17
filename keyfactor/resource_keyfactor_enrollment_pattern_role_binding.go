@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -105,12 +107,15 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 	// same pattern can both GET before either PUTs; the second PUT wins and
 	// silently drops the first call's addition. reconcileWithRetry detects
 	// this via the verify GET and retries with jittered backoff.
-	created, lastErr := reconcileWithRetry(ctx, func(attempt int) (reconcileOutcome, error) {
+	created, lastErr := reconcileWithRetry(ctx, func(attempt int) (reconcileOutcome, error, time.Duration) {
 		currentResp, httpResp, err := patternApi.NewGetEnrollmentPatternsByIdRequest(ctx, patternID).
 			XKeyfactorRequestedWith("APIClient").
 			XKeyfactorApiVersion("1").
 			Execute()
 		if err != nil {
+			if httpResp != nil && httpResp.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), parseRetryAfter(httpResp)
+			}
 			if httpResp != nil && httpResp.StatusCode == 404 {
 				response.Diagnostics.AddError(
 					"Enrollment pattern not found.",
@@ -122,13 +127,13 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 					fmt.Sprintf("Could not read enrollment pattern %q (ID %d): %s", patternName, patternID, err.Error()),
 				)
 			}
-			return reconcileFatal, nil
+			return reconcileFatal, nil, 0
 		}
 
 		// Idempotency: if the role is already present, nothing left to do.
 		if enrollmentPatternHasRole(currentResp, roleName) {
 			tflog.Debug(ctx, fmt.Sprintf("Role %q already present on enrollment pattern %q -- skipping PUT", roleName, patternName))
-			return reconcileDone, nil
+			return reconcileDone, nil, 0
 		}
 
 		// Add the role to the current list.
@@ -154,12 +159,15 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 			EnrollmentPatternsEnrollmentPatternRequest(updateBody).
 			Execute()
 		if err != nil {
+			if httpResp2 != nil && httpResp2.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), parseRetryAfter(httpResp2)
+			}
 			if httpResp2 != nil && httpResp2.StatusCode == 404 {
 				response.Diagnostics.AddError(
 					"Enrollment pattern not found during update.",
 					fmt.Sprintf("Enrollment pattern %q (ID %d) disappeared during role binding creation.", patternName, patternID),
 				)
-				return reconcileFatal, nil
+				return reconcileFatal, nil, 0
 			}
 			var body []byte
 			if httpResp2 != nil {
@@ -170,7 +178,7 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 				"Error updating enrollment pattern.",
 				fmt.Sprintf("Could not add role %q to enrollment pattern %q: %s. Details: %s", roleName, patternName, err.Error(), string(body)),
 			)
-			return reconcileFatal, nil
+			return reconcileFatal, nil, 0
 		}
 
 		// Verify: a fresh GET confirms the change stuck and wasn't clobbered
@@ -180,6 +188,9 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 			XKeyfactorApiVersion("1").
 			Execute()
 		if err != nil {
+			if httpResp3 != nil && httpResp3.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), parseRetryAfter(httpResp3)
+			}
 			if httpResp3 != nil && httpResp3.StatusCode == 404 {
 				response.Diagnostics.AddError(
 					"Enrollment pattern not found during verification.",
@@ -191,14 +202,14 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 					fmt.Sprintf("Could not verify addition of role %q to enrollment pattern %q: %s", roleName, patternName, err.Error()),
 				)
 			}
-			return reconcileFatal, nil
+			return reconcileFatal, nil, 0
 		}
 
 		if enrollmentPatternHasRole(verifyResp, roleName) {
-			return reconcileDone, nil
+			return reconcileDone, nil, 0
 		}
 
-		return reconcileRetry, fmt.Errorf("role %q was not present on enrollment pattern %q after PUT+verify (attempt %d/%d) -- a concurrent writer likely overwrote it", roleName, patternName, attempt, reconcileMaxAttempts)
+		return reconcileRetry, fmt.Errorf("role %q was not present on enrollment pattern %q after PUT+verify (attempt %d/%d) -- a concurrent writer likely overwrote it", roleName, patternName, attempt, reconcileMaxAttempts), 0
 	})
 
 	if !created && !response.Diagnostics.HasError() {
@@ -353,27 +364,30 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 
 	// GET-modify-PUT-verify retry loop -- see Create()'s identical loop for
 	// the full rationale. Mirrors the claim association resource's Delete shape.
-	deleted, lastErr := reconcileWithRetry(ctx, func(attempt int) (reconcileOutcome, error) {
+	deleted, lastErr := reconcileWithRetry(ctx, func(attempt int) (reconcileOutcome, error, time.Duration) {
 		currentResp, httpResp, err := patternApi.NewGetEnrollmentPatternsByIdRequest(ctx, patternID).
 			XKeyfactorRequestedWith("APIClient").
 			XKeyfactorApiVersion("1").
 			Execute()
 		if err != nil {
+			if httpResp != nil && httpResp.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), parseRetryAfter(httpResp)
+			}
 			if httpResp != nil && httpResp.StatusCode == 404 {
 				tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %q (ID %d) not found; treating as already removed", patternName, patternID))
-				return reconcileDone, nil
+				return reconcileDone, nil, 0
 			}
 			response.Diagnostics.AddError(
 				"Error reading enrollment pattern.",
 				fmt.Sprintf("Could not read enrollment pattern %q (ID %d) before role removal: %s", patternName, patternID, err.Error()),
 			)
-			return reconcileFatal, nil
+			return reconcileFatal, nil, 0
 		}
 
 		// Idempotency: if the role is already absent, nothing left to do.
 		if !enrollmentPatternHasRole(currentResp, roleName) {
 			tflog.Debug(ctx, fmt.Sprintf("Role %q already absent from enrollment pattern %q -- skipping PUT", roleName, patternName))
-			return reconcileDone, nil
+			return reconcileDone, nil, 0
 		}
 
 		// Remove the role from the current list. Use case-insensitive
@@ -408,9 +422,12 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 			EnrollmentPatternsEnrollmentPatternRequest(updateBody).
 			Execute()
 		if err != nil {
+			if httpResp2 != nil && httpResp2.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), parseRetryAfter(httpResp2)
+			}
 			if httpResp2 != nil && httpResp2.StatusCode == 404 {
 				tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %q (ID %d) disappeared during role removal; treating as removed", patternName, patternID))
-				return reconcileDone, nil
+				return reconcileDone, nil, 0
 			}
 			var body []byte
 			if httpResp2 != nil {
@@ -421,7 +438,7 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 				"Error updating enrollment pattern.",
 				fmt.Sprintf("Could not remove role %q from enrollment pattern %q: %s. Details: %s", roleName, patternName, err.Error(), string(body)),
 			)
-			return reconcileFatal, nil
+			return reconcileFatal, nil, 0
 		}
 
 		// Verify the change stuck.
@@ -430,23 +447,26 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 			XKeyfactorApiVersion("1").
 			Execute()
 		if err != nil {
+			if httpResp3 != nil && httpResp3.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), parseRetryAfter(httpResp3)
+			}
 			if httpResp3 != nil && httpResp3.StatusCode == 404 {
 				// Pattern gone -- binding is certainly removed.
-				return reconcileDone, nil
+				return reconcileDone, nil, 0
 			}
 			response.Diagnostics.AddError(
 				"Error verifying enrollment pattern role removal.",
 				fmt.Sprintf("Could not verify removal of role %q from enrollment pattern %q: %s", roleName, patternName, err.Error()),
 			)
-			return reconcileFatal, nil
+			return reconcileFatal, nil, 0
 		}
 
 		if !enrollmentPatternHasRole(verifyResp, roleName) {
 			tflog.Debug(ctx, "Enrollment pattern role binding deleted successfully.")
-			return reconcileDone, nil
+			return reconcileDone, nil, 0
 		}
 
-		return reconcileRetry, fmt.Errorf("role %q was still present on enrollment pattern %q after PUT+verify (attempt %d/%d) -- a concurrent writer likely reverted this change", roleName, patternName, attempt, reconcileMaxAttempts)
+		return reconcileRetry, fmt.Errorf("role %q was still present on enrollment pattern %q after PUT+verify (attempt %d/%d) -- a concurrent writer likely reverted this change", roleName, patternName, attempt, reconcileMaxAttempts), 0
 	})
 
 	if !deleted && !response.Diagnostics.HasError() {

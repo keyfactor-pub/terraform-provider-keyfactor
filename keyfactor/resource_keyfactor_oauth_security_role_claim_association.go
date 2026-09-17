@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -172,8 +171,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
 				return reconcileDone, nil, 0 // role gone; treat as removed
 			}
-			if httpReq != nil && httpReq.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), parseRetryAfter(httpReq)
+			if is429, retryDelay := check429(httpReq, "initial GET"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), retryDelay
 			}
 			response.Diagnostics.AddError(
 				"Unknown OAuth security role error.",
@@ -213,8 +212,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
 				return reconcileDone, nil, 0
 			}
-			if httpResp != nil && httpResp.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), parseRetryAfter(httpResp)
+			if is429, retryDelay := check429(httpResp, "PUT"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), retryDelay
 			}
 			var body []byte
 			if httpResp != nil {
@@ -236,8 +235,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
 				return reconcileDone, nil, 0
 			}
-			if httpReq2 != nil && httpReq2.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), parseRetryAfter(httpReq2)
+			if is429, retryDelay := check429(httpReq2, "verify GET"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), retryDelay
 			}
 			response.Diagnostics.AddError(
 				"Unknown OAuth security role error.",
@@ -351,8 +350,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 	created, lastErr := reconcileWithRetry(ctx, func(attempt int) (reconcileOutcome, error, time.Duration) {
 		remoteRoleState, httpRespGet, err := roleApi.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 		if err != nil {
-			if httpRespGet != nil && httpRespGet.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), parseRetryAfter(httpRespGet)
+			if is429, retryDelay := check429(httpRespGet, "initial GET"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), retryDelay
 			}
 			if httpRespGet != nil && httpRespGet.StatusCode == 404 {
 				response.Diagnostics.AddError(
@@ -394,8 +393,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 		_, httpResp2, err := updateReq.Execute()
 		if err != nil {
-			if httpResp2 != nil && httpResp2.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), parseRetryAfter(httpResp2)
+			if is429, retryDelay := check429(httpResp2, "PUT"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), retryDelay
 			}
 			var body []byte
 			if httpResp2 != nil {
@@ -413,8 +412,8 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 		// between our PUT above and now.
 		verifyState, httpRespVerify, err := roleApi.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 		if err != nil {
-			if httpRespVerify != nil && httpRespVerify.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), parseRetryAfter(httpRespVerify)
+			if is429, retryDelay := check429(httpRespVerify, "verify GET"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), retryDelay
 			}
 			if httpRespVerify != nil && httpRespVerify.StatusCode == 404 {
 				response.Diagnostics.AddError(

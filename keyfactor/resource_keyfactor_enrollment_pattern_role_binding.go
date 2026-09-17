@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -113,8 +112,8 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 			XKeyfactorApiVersion("1").
 			Execute()
 		if err != nil {
-			if httpResp != nil && httpResp.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), parseRetryAfter(httpResp)
+			if is429, retryDelay := check429(httpResp, "initial GET"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), retryDelay
 			}
 			if httpResp != nil && httpResp.StatusCode == 404 {
 				response.Diagnostics.AddError(
@@ -159,8 +158,8 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 			EnrollmentPatternsEnrollmentPatternRequest(updateBody).
 			Execute()
 		if err != nil {
-			if httpResp2 != nil && httpResp2.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), parseRetryAfter(httpResp2)
+			if is429, retryDelay := check429(httpResp2, "PUT"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), retryDelay
 			}
 			if httpResp2 != nil && httpResp2.StatusCode == 404 {
 				response.Diagnostics.AddError(
@@ -188,8 +187,8 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 			XKeyfactorApiVersion("1").
 			Execute()
 		if err != nil {
-			if httpResp3 != nil && httpResp3.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), parseRetryAfter(httpResp3)
+			if is429, retryDelay := check429(httpResp3, "verify GET"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), retryDelay
 			}
 			if httpResp3 != nil && httpResp3.StatusCode == 404 {
 				response.Diagnostics.AddError(
@@ -370,8 +369,8 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 			XKeyfactorApiVersion("1").
 			Execute()
 		if err != nil {
-			if httpResp != nil && httpResp.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), parseRetryAfter(httpResp)
+			if is429, retryDelay := check429(httpResp, "initial GET"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), retryDelay
 			}
 			if httpResp != nil && httpResp.StatusCode == 404 {
 				tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %q (ID %d) not found; treating as already removed", patternName, patternID))
@@ -422,8 +421,8 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 			EnrollmentPatternsEnrollmentPatternRequest(updateBody).
 			Execute()
 		if err != nil {
-			if httpResp2 != nil && httpResp2.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), parseRetryAfter(httpResp2)
+			if is429, retryDelay := check429(httpResp2, "PUT"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), retryDelay
 			}
 			if httpResp2 != nil && httpResp2.StatusCode == 404 {
 				tflog.Info(ctx, fmt.Sprintf("Enrollment pattern %q (ID %d) disappeared during role removal; treating as removed", patternName, patternID))
@@ -447,8 +446,8 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 			XKeyfactorApiVersion("1").
 			Execute()
 		if err != nil {
-			if httpResp3 != nil && httpResp3.StatusCode == http.StatusTooManyRequests {
-				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), parseRetryAfter(httpResp3)
+			if is429, retryDelay := check429(httpResp3, "verify GET"); is429 {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), retryDelay
 			}
 			if httpResp3 != nil && httpResp3.StatusCode == 404 {
 				// Pattern gone -- binding is certainly removed.

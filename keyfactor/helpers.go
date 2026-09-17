@@ -510,6 +510,25 @@ func parseRetryAfter(resp *http.Response) time.Duration {
 	return 0
 }
 
+// escapePQLValue escapes a string for safe embedding inside a PQL quoted value.
+// Backslashes must be escaped first so the quote-escape backslashes are not
+// double-escaped.
+func escapePQLValue(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return s
+}
+
+// check429 returns (true, retryDelay) when httpResp indicates HTTP 429.
+// label is used only for call-site documentation; callers construct the error
+// message themselves so the label does not appear in the error text here.
+func check429(httpResp *http.Response, _ string) (bool, time.Duration) {
+	if httpResp != nil && httpResp.StatusCode == http.StatusTooManyRequests {
+		return true, parseRetryAfter(httpResp)
+	}
+	return false, 0
+}
+
 // reconcileOutcome is the signal returned by a reconcileWithRetry step function.
 type reconcileOutcome int
 
@@ -554,15 +573,23 @@ func reconcileWithRetry(
 				tflog.Warn(ctx, "retrying after transient error: "+err.Error())
 			}
 			if serverDelay > 0 {
-				maxRetryDelay := time.Duration(MaxClientTimeoutSeconds) * time.Second
+				maxRetryDelay := 120 * time.Second
 				if serverDelay > maxRetryDelay {
-					tflog.Warn(ctx, fmt.Sprintf("server requested retry delay %s exceeds provider timeout ceiling %s; clamping", serverDelay, maxRetryDelay))
+					tflog.Warn(ctx, fmt.Sprintf("server requested retry delay %s exceeds 120s ceiling; clamping", serverDelay))
 					serverDelay = maxRetryDelay
 				}
 				tflog.Info(ctx, fmt.Sprintf("server requested retry delay: %s", serverDelay))
-				time.Sleep(serverDelay)
+				select {
+				case <-time.After(serverDelay):
+				case <-ctx.Done():
+					return false, ctx.Err()
+				}
 			} else {
-				time.Sleep(reconcileBackoff(attempt))
+				select {
+				case <-time.After(reconcileBackoff(attempt)):
+				case <-ctx.Done():
+					return false, ctx.Err()
+				}
 			}
 		}
 	}
@@ -3170,7 +3197,7 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	api := apiClient.V1.SecurityClaimsApi
 	req := api.
 		NewGetSecurityClaimsRequest(ctx).
-		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\" and ClaimType -eq %d))", claimValue, *claimTypeEnum))
+		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\" and ClaimType -eq %d))", escapePQLValue(claimValue), *claimTypeEnum))
 
 	response, _, err := api.GetSecurityClaimsExecute(req)
 
@@ -3212,12 +3239,9 @@ func getSecurityRoleByName(
 	tflog.Debug(ctx, fmt.Sprintf("Getting security role from remote source. Role Name: %s", roleName))
 
 	api := apiClient.V2.SecurityRolesApi
-	// Escape backslashes first, then double-quotes, to prevent QueryString injection.
-	escapedRoleName := strings.ReplaceAll(roleName, `\`, `\\`)
-	escapedRoleName = strings.ReplaceAll(escapedRoleName, `"`, `\"`)
 	req := api.
 		NewGetSecurityRolesRequest(ctx).
-		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", escapedRoleName))
+		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", escapePQLValue(roleName)))
 
 	response, _, err := req.Execute()
 
@@ -3245,13 +3269,9 @@ func getCertificateCollectionByName(
 	tflog.Debug(ctx, fmt.Sprintf("Getting certificate collection from remote source. Collection Name: %s", collectionName))
 
 	api := apiClient.V1.CertificateCollectionApi
-	// Escape backslashes first, then double-quotes, to prevent QueryString injection.
-	// Backslashes must be escaped first so the quote-escape backslashes are not double-escaped.
-	escapedName := strings.ReplaceAll(collectionName, `\`, `\\`)
-	escapedName = strings.ReplaceAll(escapedName, `"`, `\"`)
 	req := api.
 		NewGetCertificateCollectionsRequest(ctx).
-		QueryString(fmt.Sprintf(`((Name -eq "%s"))`, escapedName))
+		QueryString(fmt.Sprintf(`((Name -eq "%s"))`, escapePQLValue(collectionName)))
 
 	response, _, err := req.Execute()
 	if err != nil {
@@ -3276,13 +3296,9 @@ func getEnrollmentPatternByName(
 	tflog.Debug(ctx, fmt.Sprintf("Getting enrollment pattern from remote source. Pattern Name: %s", patternName))
 
 	api := apiClient.V1.EnrollmentPatternApi
-	// Escape backslashes first, then double-quotes, to prevent QueryString injection.
-	// Backslashes must be escaped first so the quote-escape backslashes are not double-escaped.
-	escapedPatternName := strings.ReplaceAll(patternName, `\`, `\\`)
-	escapedPatternName = strings.ReplaceAll(escapedPatternName, `"`, `\"`)
 	req := api.
 		NewGetEnrollmentPatternsRequest(ctx).
-		QueryString(fmt.Sprintf(`((Name -eq "%s"))`, escapedPatternName))
+		QueryString(fmt.Sprintf(`((Name -eq "%s"))`, escapePQLValue(patternName)))
 
 	response, _, err := req.Execute()
 	if err != nil {

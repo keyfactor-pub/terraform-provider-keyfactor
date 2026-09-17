@@ -499,6 +499,13 @@ func (r dataSourceEnrollmentPattern) Read(
 			)
 			return
 		}
+		if len(enrollmentPatterns) == 10000 {
+			response.Diagnostics.AddWarning(
+				"Enrollment pattern list may be truncated.",
+				"The server returned exactly 10000 enrollment patterns, which is the maximum page size. "+
+					"Some patterns may not be visible. Contact your administrator to reduce the number of patterns or use the ID-based identifier instead.",
+			)
+		}
 
 		// Resolve identifier against all candidates using name-or-ID semantics
 		// (see enrollmentPatternResolveIdentifier's doc comment). An exact name

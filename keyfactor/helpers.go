@@ -554,6 +554,11 @@ func reconcileWithRetry(
 				tflog.Warn(ctx, "retrying after transient error: "+err.Error())
 			}
 			if serverDelay > 0 {
+				maxRetryDelay := time.Duration(MaxClientTimeoutSeconds) * time.Second
+				if serverDelay > maxRetryDelay {
+					tflog.Warn(ctx, fmt.Sprintf("server requested retry delay %s exceeds provider timeout ceiling %s; clamping", serverDelay, maxRetryDelay))
+					serverDelay = maxRetryDelay
+				}
 				tflog.Info(ctx, fmt.Sprintf("server requested retry delay: %s", serverDelay))
 				time.Sleep(serverDelay)
 			} else {

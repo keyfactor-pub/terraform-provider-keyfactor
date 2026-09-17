@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -171,6 +172,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
 				return reconcileDone, nil, 0 // role gone; treat as removed
 			}
+			if httpReq != nil && httpReq.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), parseRetryAfter(httpReq)
+			}
 			response.Diagnostics.AddError(
 				"Unknown OAuth security role error.",
 				fmt.Sprintf("Unknown error while trying to read OAuth security role ID %d from Keyfactor. Read failed. ", roleId)+err.Error(),
@@ -209,6 +213,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
 				return reconcileDone, nil, 0
 			}
+			if httpResp != nil && httpResp.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), parseRetryAfter(httpResp)
+			}
 			var body []byte
 			if httpResp != nil {
 				body, _ = io.ReadAll(httpResp.Body)
@@ -228,6 +235,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 			if httpReq2 != nil && httpReq2.StatusCode == 404 {
 				tflog.Info(ctx, fmt.Sprintf("OAuth Security Role %d not found in remote system. Removing from state", roleId))
 				return reconcileDone, nil, 0
+			}
+			if httpReq2 != nil && httpReq2.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), parseRetryAfter(httpReq2)
 			}
 			response.Diagnostics.AddError(
 				"Unknown OAuth security role error.",
@@ -341,6 +351,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 	created, lastErr := reconcileWithRetry(ctx, func(attempt int) (reconcileOutcome, error, time.Duration) {
 		remoteRoleState, httpRespGet, err := roleApi.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 		if err != nil {
+			if httpRespGet != nil && httpRespGet.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on initial GET"), parseRetryAfter(httpRespGet)
+			}
 			if httpRespGet != nil && httpRespGet.StatusCode == 404 {
 				response.Diagnostics.AddError(
 					"OAuth security role not found.",
@@ -381,6 +394,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 		_, httpResp2, err := updateReq.Execute()
 		if err != nil {
+			if httpResp2 != nil && httpResp2.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on PUT"), parseRetryAfter(httpResp2)
+			}
 			var body []byte
 			if httpResp2 != nil {
 				body, _ = io.ReadAll(httpResp2.Body)
@@ -397,6 +413,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 		// between our PUT above and now.
 		verifyState, httpRespVerify, err := roleApi.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 		if err != nil {
+			if httpRespVerify != nil && httpRespVerify.StatusCode == http.StatusTooManyRequests {
+				return reconcileRetry, fmt.Errorf("server returned 429 Too Many Requests on verify GET"), parseRetryAfter(httpRespVerify)
+			}
 			if httpRespVerify != nil && httpRespVerify.StatusCode == 404 {
 				response.Diagnostics.AddError(
 					"OAuth security role not found.",

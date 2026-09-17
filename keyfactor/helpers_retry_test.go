@@ -219,3 +219,14 @@ func TestUnitParseRetryAfterFromHTTPRecorder(t *testing.T) {
 		t.Errorf("parseRetryAfter(live 429): got %s, want %s", got, want)
 	}
 }
+
+// TestUnitMaxRetryDelayMatchesProviderTimeout verifies that the clamp ceiling
+// derived from MaxClientTimeoutSeconds equals one hour, keeping it in sync with
+// the provider's global HTTP client timeout ceiling.
+func TestUnitMaxRetryDelayMatchesProviderTimeout(t *testing.T) {
+	got := time.Duration(MaxClientTimeoutSeconds) * time.Second
+	want := 1 * time.Hour
+	if got != want {
+		t.Errorf("MaxClientTimeoutSeconds clamp: got %s, want %s; update the clamp if the provider timeout ceiling changed", got, want)
+	}
+}

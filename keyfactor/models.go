@@ -298,6 +298,7 @@ type CommandCertificateDeployment struct {
 	Overwrite        types.Bool   `tfsdk:"overwrite"`            // Overwrite specifies whether an existing certificate should be overwritten during deployment.
 	Redeploy         types.Bool   `tfsdk:"redeploy"`             // Redeploy specifies whether a certificate should be redeployed to the store during the deployment process.
 	SkipRemoval      types.Bool   `tfsdk:"skip_removal"`         // SkipRemoval specifies whether the removal of the certificate from the store should be skipped during undeployment.
+	MaxInventoryWait types.Int64  `tfsdk:"max_inventory_wait"`   // MaxInventoryWait controls how long (in seconds) to wait for inventory confirmation. Null = indefinite; 0 = skip verification; >0 = timeout in seconds.
 }
 
 // CSRCertificate represents a certificate provisioned via a CSR in Keyfactor.

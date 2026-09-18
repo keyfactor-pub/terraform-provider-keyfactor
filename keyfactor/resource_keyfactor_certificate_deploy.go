@@ -157,6 +157,14 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 				Optional:    true,
 				Description: "If set to `true`, deleting the resource will not remove the certificate from the store. Defaults to `false`.",
 			},
+			"max_inventory_wait": {
+				Type:     types.Int64Type,
+				Optional: true,
+				Description: "Maximum seconds to wait for inventory confirmation after deployment. " +
+					"Null (default) waits indefinitely (current behavior). " +
+					"0 skips inventory verification entirely (fire-and-forget). " +
+					"Values greater than 0 wait up to that many seconds, then proceed with a warning if not confirmed.",
+			},
 		},
 		Description: "Used to schedule a certificate deployment(" +
 			"/management) job on Keyfactor Command using the `/OrchestratorJobs/Custom` API to deploy certificates to" +
@@ -234,6 +242,7 @@ func (r resourceCommandCertificateDeployment) Create(
 		Redeploy:         plan.Redeploy,
 		Overwrite:        plan.Overwrite,
 		SkipRemoval:      plan.SkipRemoval,
+		MaxInventoryWait: plan.MaxInventoryWait,
 	}
 
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
@@ -265,15 +274,28 @@ func (r resourceCommandCertificateDeployment) Create(
 	//sans := plan.SANs
 	//metadata := plan.Metadata.Elems
 	//vErr := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 1) // Initial check to see if the cert is already deployed
-	vErr := validateDeployment(
+	alreadyDeployed, preCheckErr := validateDeployment(
 		ctx,
 		kfClient,
 		storeId,
 		certificateAlias,
 		certificateData,
 		1,
-	) // Initial check to see if the cert is already deployed
-	if vErr == nil {
+		nil, // single-shot pre-check, no deadline
+	)
+	if preCheckErr != nil {
+		response.Diagnostics.AddError(
+			"Deployment pre-check error.",
+			fmt.Sprintf(
+				"Error checking existing deployment of certificate '%v' to store '%s (%s)': ",
+				certificateId,
+				storeId,
+				certificateAlias,
+			)+preCheckErr.Error(),
+		)
+		return
+	}
+	if alreadyDeployed {
 		response.Diagnostics.AddWarning(
 			"Duplicate deployment.",
 			fmt.Sprintf("Certificate '%v' is already deployed to '%s (%s)'", certificateId, storeId, certificateAlias),
@@ -300,51 +322,82 @@ func (r resourceCommandCertificateDeployment) Create(
 			return
 		}
 
-		// Check whether the store has an inventory schedule. If not, warn and skip the
-		// validation poll: the orchestrator cannot confirm deployment without running inventory,
-		// and we cannot reliably schedule inventory after the add job without a race condition
-		// (the Immediate flag may be consumed before the management job completes). The
-		// deployment job has been submitted; configure an inventory schedule on the store in
-		// Command to enable future validation.
-		hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
-		if storeReadErr != nil {
-			tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
-		}
-
-		if !hasInventorySchedule {
+		// Compute the inventory-wait deadline from plan.MaxInventoryWait:
+		//   null  → wait indefinitely (pass nil deadline, 1000000 iterations)
+		//   0     → skip verification entirely (fire-and-forget)
+		//   >0    → wait up to that many seconds, then warn
+		maxWait := plan.MaxInventoryWait
+		if !maxWait.Null && !maxWait.Unknown && maxWait.Value == 0 {
+			// Fire-and-forget: skip all inventory validation.
 			response.Diagnostics.AddWarning(
-				"Deployment submitted without inventory schedule.",
+				"Deployment verification skipped.",
 				fmt.Sprintf(
-					"Certificate '%v' has been submitted for deployment to store '%s' (alias: '%s'), but the store "+
-						"has no inventory schedule configured. Deployment cannot be validated until the orchestrator "+
-						"runs inventory. Configure a daily or immediate inventory schedule on the store in Keyfactor "+
-						"Command to enable deployment validation on future applies.",
-					certificateId, storeId, certificateAlias,
+					"Certificate %d was submitted for deployment to store %s but inventory verification was skipped (max_inventory_wait = 0).",
+					certificateId, storeId,
 				),
 			)
 		} else {
-			//vErr2 := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 100000)
-			vErr2 := validateDeployment(
-				ctx,
-				kfClient,
-				storeId,
-				certificateAlias,
-				certificateData,
-				1000000,
-			)
-			if vErr2 != nil {
-				response.Diagnostics.AddError(
-					"Deployment validation error.",
-					fmt.Sprintf(
-						"Unknown error during validation of deploy of certificate '%v' to store '%s (%s)': ",
-						certificateId,
-						storeId,
-						certificateAlias,
-					)+vErr2.Error(),
-				)
+			// Check whether the store has an inventory schedule. If not, warn and skip the
+			// validation poll: the orchestrator cannot confirm deployment without running inventory,
+			// and we cannot reliably schedule inventory after the add job without a race condition
+			// (the Immediate flag may be consumed before the management job completes). The
+			// deployment job has been submitted; configure an inventory schedule on the store in
+			// Command to enable future validation.
+			hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
+			if storeReadErr != nil {
+				tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
 			}
-			if response.Diagnostics.HasError() {
-				return
+
+			if !hasInventorySchedule {
+				response.Diagnostics.AddWarning(
+					"Deployment submitted without inventory schedule.",
+					fmt.Sprintf(
+						"Certificate '%v' has been submitted for deployment to store '%s' (alias: '%s'), but the store "+
+							"has no inventory schedule configured. Deployment cannot be validated until the orchestrator "+
+							"runs inventory. Configure a daily or immediate inventory schedule on the store in Keyfactor "+
+							"Command to enable deployment validation on future applies.",
+						certificateId, storeId, certificateAlias,
+					),
+				)
+			} else {
+				var deadline *time.Time
+				if !maxWait.Null && !maxWait.Unknown && maxWait.Value > 0 {
+					t := time.Now().Add(time.Duration(maxWait.Value) * time.Second)
+					deadline = &t
+				}
+				//vErr2 := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 100000)
+				confirmed, vErr2 := validateDeployment(
+					ctx,
+					kfClient,
+					storeId,
+					certificateAlias,
+					certificateData,
+					1000000,
+					deadline,
+				)
+				if vErr2 != nil {
+					response.Diagnostics.AddError(
+						"Deployment validation error.",
+						fmt.Sprintf(
+							"Unknown error during validation of deploy of certificate '%v' to store '%s (%s)': ",
+							certificateId,
+							storeId,
+							certificateAlias,
+						)+vErr2.Error(),
+					)
+				} else if !confirmed {
+					waitSec := maxWait.Value
+					response.Diagnostics.AddWarning(
+						"Deployment verification timed out.",
+						fmt.Sprintf(
+							"Certificate %d was submitted for deployment to store %s but inventory confirmation was not received within %d seconds. The deployment may still complete — run `terraform plan` to check.",
+							certificateId, storeId, waitSec,
+						),
+					)
+				}
+				if response.Diagnostics.HasError() {
+					return
+				}
 			}
 		}
 	}
@@ -483,16 +536,29 @@ func (r resourceCommandCertificateDeployment) Update(
 		)
 	}
 
-	vErr := validateDeployment(
+	alreadyDeployed, preCheckErr := validateDeployment(
 		ctx,
 		kfClient,
 		storeId,
 		certificateAlias,
 		certificateData,
 		1,
-	) // Initial check to see if the cert is already deployed
+		nil, // single-shot pre-check, no deadline
+	)
+	if preCheckErr != nil {
+		response.Diagnostics.AddError(
+			"Deployment pre-check error.",
+			fmt.Sprintf(
+				"Error checking existing deployment of certificate '%d' to store '%s (%s)': ",
+				certificateId,
+				storeId,
+				certificateAlias,
+			)+preCheckErr.Error(),
+		)
+		return
+	}
 
-	if vErr != nil {
+	if !alreadyDeployed {
 		addErr := addCertificateToStore(
 			ctx,
 			kfClient,
@@ -515,24 +581,52 @@ func (r resourceCommandCertificateDeployment) Update(
 			return
 		}
 
-		vErr2 := validateDeployment(
-			ctx,
-			kfClient,
-			storeId,
-			certificateAlias,
-			certificateData,
-			1000000,
-		) // Check if the cert is deployed
-		if vErr2 != nil {
-			response.Diagnostics.AddError(
-				"Deployment validation error.",
+		// Compute the inventory-wait deadline from plan.MaxInventoryWait.
+		maxWait := plan.MaxInventoryWait
+		if !maxWait.Null && !maxWait.Unknown && maxWait.Value == 0 {
+			// Fire-and-forget: skip inventory validation.
+			response.Diagnostics.AddWarning(
+				"Deployment verification skipped.",
 				fmt.Sprintf(
-					"Unknown error during validation of deploy of certificate '%d' to store '%s (%s)': ",
-					certificateId,
-					storeId,
-					certificateAlias,
-				)+vErr2.Error(),
+					"Certificate %d was submitted for deployment to store %s but inventory verification was skipped (max_inventory_wait = 0).",
+					certificateId, storeId,
+				),
 			)
+		} else {
+			var deadline *time.Time
+			if !maxWait.Null && !maxWait.Unknown && maxWait.Value > 0 {
+				t := time.Now().Add(time.Duration(maxWait.Value) * time.Second)
+				deadline = &t
+			}
+			confirmed, vErr2 := validateDeployment(
+				ctx,
+				kfClient,
+				storeId,
+				certificateAlias,
+				certificateData,
+				1000000,
+				deadline,
+			)
+			if vErr2 != nil {
+				response.Diagnostics.AddError(
+					"Deployment validation error.",
+					fmt.Sprintf(
+						"Unknown error during validation of deploy of certificate '%d' to store '%s (%s)': ",
+						certificateId,
+						storeId,
+						certificateAlias,
+					)+vErr2.Error(),
+				)
+			} else if !confirmed {
+				waitSec := maxWait.Value
+				response.Diagnostics.AddWarning(
+					"Deployment verification timed out.",
+					fmt.Sprintf(
+						"Certificate %d was submitted for deployment to store %s but inventory confirmation was not received within %d seconds. The deployment may still complete — run `terraform plan` to check.",
+						certificateId, storeId, waitSec,
+					),
+				)
+			}
 		}
 	}
 
@@ -551,6 +645,7 @@ func (r resourceCommandCertificateDeployment) Update(
 		Redeploy:         plan.Redeploy,
 		Overwrite:        plan.Overwrite,
 		SkipRemoval:      plan.SkipRemoval,
+		MaxInventoryWait: plan.MaxInventoryWait,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -690,27 +785,58 @@ func (r resourceCommandCertificateDeployment) Delete(
 		return
 	}
 
-	for _, store := range diff {
-		validateErr := validateUndeployment(
-			ctx,
-			kfClient,
-			store.CertificateStoreId,
-			certId,
-			certificateAlias,
-			certificateData,
-			100000,
+	// Compute the inventory-wait deadline from state.MaxInventoryWait.
+	maxWait := state.MaxInventoryWait
+	skipVerify := !maxWait.Null && !maxWait.Unknown && maxWait.Value == 0
+	var undeployDeadline *time.Time
+	if !maxWait.Null && !maxWait.Unknown && maxWait.Value > 0 {
+		t := time.Now().Add(time.Duration(maxWait.Value) * time.Second)
+		undeployDeadline = &t
+	}
+
+	if skipVerify {
+		response.Diagnostics.AddWarning(
+			"Removal verification skipped.",
+			fmt.Sprintf(
+				"Certificate %d was submitted for removal from store %s but inventory verification was skipped (max_inventory_wait = 0).",
+				certificateId, storeId,
+			),
 		)
-		if validateErr != nil {
-			response.Diagnostics.AddError(
-				"Certificate deployment error",
-				fmt.Sprintf(
-					"Unknown error during removal of certificate '%d' from store '%s (%s)': ",
-					certificateId,
-					storeId,
-					certificateAlias,
-				)+validateErr.Error(),
+	} else {
+		for _, store := range diff {
+			removed, validateErr := validateUndeployment(
+				ctx,
+				kfClient,
+				store.CertificateStoreId,
+				certId,
+				certificateAlias,
+				certificateData,
+				100000,
+				undeployDeadline,
 			)
-			break
+			if validateErr != nil {
+				response.Diagnostics.AddError(
+					"Certificate deployment error",
+					fmt.Sprintf(
+						"Unknown error during removal of certificate '%d' from store '%s (%s)': ",
+						certificateId,
+						storeId,
+						certificateAlias,
+					)+validateErr.Error(),
+				)
+				break
+			}
+			if !removed {
+				waitSec := maxWait.Value
+				response.Diagnostics.AddWarning(
+					"Removal verification timed out.",
+					fmt.Sprintf(
+						"Certificate %d was submitted for removal from store %s but inventory confirmation was not received within %d seconds. The removal may still complete — run `terraform plan` to check.",
+						certificateId, storeId, waitSec,
+					),
+				)
+				break
+			}
 		}
 	}
 
@@ -881,6 +1007,13 @@ func undeploymentStillPresent(
 	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, false)
 }
 
+// validateUndeployment polls the store inventory until the certificate is no longer present
+// or the deadline/maxIterations is reached.
+//
+// Returns (true, nil) if the certificate was successfully removed from inventory.
+// Returns (false, nil) if the deadline was reached or all iterations were exhausted without
+// the certificate disappearing — callers should treat this as a timeout and emit a warning.
+// Returns (false, err) if an inventory read error occurred.
 func validateUndeployment(
 	ctx context.Context,
 	conn *api.Client,
@@ -889,46 +1022,39 @@ func validateUndeployment(
 	certAlias string,
 	certObj *api.GetCertificateResponse,
 	maxIterations int,
-) error {
-	deployed := false
+	deadline *time.Time,
+) (bool, error) {
 	tflog.Debug(ctx, fmt.Sprintf("Validating Keyfactor Command store %v inventory has removed %s", storeId, certAlias))
 	retryDelay := 2
 	for i := 0; i < maxIterations; i++ {
+		if deadline != nil && time.Now().After(*deadline) {
+			return false, nil // deadline reached
+		}
 		stillPresent, invErr := undeploymentStillPresent(ctx, conn, storeId, certAlias, certObj)
 		if invErr != nil {
-			return invErr
+			return false, invErr
 		}
-		deployed = stillPresent
-		if deployed {
-			tflog.Debug(
-				ctx,
-				fmt.Sprintf(
-					"Certificate '%s'(%v) found in Keyfactor Command store '%s'(%v). Retrying in %v seconds",
-					certObj.Thumbprint,
-					certObj.Id,
-					certAlias,
-					storeId,
-					retryDelay,
-				),
-			)
-			time.Sleep(time.Duration(retryDelay) * time.Second)
-			retryDelay *= 2
-			if retryDelay > MAX_WAIT_SECONDS {
-				retryDelay = MAX_WAIT_SECONDS
-			}
-		} else {
-			break
+		if !stillPresent {
+			return true, nil // certificate gone from inventory — success
 		}
-	}
-	if deployed {
-		return fmt.Errorf(
-			"unable to remove certificate '%s'(%s) from Keyfactor Command store %v",
-			certObj.Thumbprint,
-			certAlias,
-			storeId,
+		tflog.Debug(
+			ctx,
+			fmt.Sprintf(
+				"Certificate '%s'(%v) found in Keyfactor Command store '%s'(%v). Retrying in %v seconds",
+				certObj.Thumbprint,
+				certObj.Id,
+				certAlias,
+				storeId,
+				retryDelay,
+			),
 		)
+		time.Sleep(time.Duration(retryDelay) * time.Second)
+		retryDelay *= 2
+		if retryDelay > MAX_WAIT_SECONDS {
+			retryDelay = MAX_WAIT_SECONDS
+		}
 	}
-	return nil
+	return false, nil // all iterations exhausted
 }
 
 // deploymentPresentInInventory performs a single inventory read and reports whether the
@@ -944,6 +1070,13 @@ func deploymentPresentInInventory(
 	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, true)
 }
 
+// validateDeployment polls the store inventory until the certificate appears or the
+// deadline/maxIterations is reached.
+//
+// Returns (true, nil) if the certificate was found in inventory — deployment confirmed.
+// Returns (false, nil) if the deadline was reached or all iterations were exhausted without
+// the certificate appearing — callers should treat this as a timeout and emit a warning.
+// Returns (false, err) if an inventory read error occurred.
 func validateDeployment(
 	ctx context.Context,
 	conn *api.Client,
@@ -951,42 +1084,40 @@ func validateDeployment(
 	certAlias string,
 	certObj *api.GetCertificateResponse,
 	maxIterations int,
-) error {
-	valid := false
+	deadline *time.Time,
+) (bool, error) {
 	tflog.Debug(
 		ctx,
 		fmt.Sprintf("Validating Keyfactor Command store %v inventory has been updated with %s", storeId, certAlias),
 	)
 	retryDelay := 2
 	for i := 0; i < maxIterations; i++ {
+		if deadline != nil && time.Now().After(*deadline) {
+			return false, nil // deadline reached
+		}
 		present, invErr := deploymentPresentInInventory(ctx, conn, storeId, certAlias, certObj)
 		if invErr != nil {
-			return invErr
+			return false, invErr
 		}
-		valid = present
-		if !valid {
-			tflog.Debug(
-				ctx,
-				fmt.Sprintf(
-					"Certificate %s not found in Keyfactor store %v. Retrying in %v seconds",
-					certAlias,
-					storeId,
-					retryDelay,
-				),
-			)
-			time.Sleep(time.Duration(retryDelay) * time.Second)
-			retryDelay = retryDelay * 2
-			if retryDelay > 60 {
-				retryDelay = 60
-			}
-		} else {
-			break
+		if present {
+			return true, nil // certificate found in inventory — success
+		}
+		tflog.Debug(
+			ctx,
+			fmt.Sprintf(
+				"Certificate %s not found in Keyfactor store %v. Retrying in %v seconds",
+				certAlias,
+				storeId,
+				retryDelay,
+			),
+		)
+		time.Sleep(time.Duration(retryDelay) * time.Second)
+		retryDelay = retryDelay * 2
+		if retryDelay > 60 {
+			retryDelay = 60
 		}
 	}
-	if !valid {
-		return fmt.Errorf("certificate %s not found in Keyfactor store %v", certAlias, storeId)
-	}
-	return nil
+	return false, nil // all iterations exhausted
 }
 
 func validateCertificatesInStore(

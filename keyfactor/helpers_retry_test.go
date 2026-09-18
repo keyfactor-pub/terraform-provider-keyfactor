@@ -173,15 +173,21 @@ func TestUnitReconcileWithRetryFallsBackToBackoff(t *testing.T) {
 	}
 }
 
-// TestUnitReconcileWithRetryExhausted verifies that the loop gives up after
-// reconcileMaxAttempts and returns the last error.
-func TestUnitReconcileWithRetryExhausted(t *testing.T) {
+// TestUnitReconcileWithRetryRaceExhausted verifies that the race-condition path
+// (serverDelay == 0) gives up after exactly reconcileMaxAttempts calls and
+// returns the last error.
+//
+// NOTE: This test sleeps through real backoff (up to ~19s total) because
+// the race-condition path uses reconcileBackoff. t.Parallel() is set so it
+// does not delay other unit tests.
+func TestUnitReconcileWithRetryRaceExhausted(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	wantErr := fmt.Errorf("persistent race")
 	step := func(attempt int) (reconcileOutcome, error, time.Duration) {
 		callCount++
-		// Return a tiny non-zero delay so the test doesn't sleep 34s.
-		return reconcileRetry, wantErr, 1 * time.Millisecond
+		// serverDelay == 0 → race-condition path, capped at reconcileMaxAttempts.
+		return reconcileRetry, wantErr, 0
 	}
 
 	ok, gotErr := reconcileWithRetry(context.Background(), step)
@@ -194,6 +200,28 @@ func TestUnitReconcileWithRetryExhausted(t *testing.T) {
 	}
 	if callCount != reconcileMaxAttempts {
 		t.Errorf("reconcileWithRetry: called step %d times, want %d", callCount, reconcileMaxAttempts)
+	}
+}
+
+// TestUnitReconcileWithRetry429ContextCancel verifies that a 429 retry loop
+// respects context cancellation and returns ctx.Err() promptly.
+func TestUnitReconcileWithRetry429ContextCancel(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	wantErr := fmt.Errorf("rate limited")
+	step := func(attempt int) (reconcileOutcome, error, time.Duration) {
+		// Tiny server delay so the 429 path is exercised without long sleep.
+		return reconcileRetry, wantErr, 10 * time.Millisecond
+	}
+
+	ok, gotErr := reconcileWithRetry(ctx, step)
+
+	if ok {
+		t.Error("reconcileWithRetry: expected failure on ctx cancel, got ok=true")
+	}
+	if gotErr == nil {
+		t.Error("reconcileWithRetry: expected non-nil error on ctx cancel")
 	}
 }
 
@@ -220,13 +248,15 @@ func TestUnitParseRetryAfterFromHTTPRecorder(t *testing.T) {
 	}
 }
 
-// TestUnitMaxRetryDelayMatchesProviderTimeout verifies that the clamp ceiling
-// derived from MaxClientTimeoutSeconds equals one hour, keeping it in sync with
-// the provider's global HTTP client timeout ceiling.
-func TestUnitMaxRetryDelayMatchesProviderTimeout(t *testing.T) {
+// TestUnitMaxClientTimeoutSecondsIsOneHour verifies that MaxClientTimeoutSeconds
+// equals one hour, keeping it in sync with the provider's global HTTP client
+// timeout ceiling. reconcileWithRetry uses this value as the overall 429 retry
+// deadline — update the constant (and re-evaluate the retry budget) if the
+// provider timeout ceiling changes.
+func TestUnitMaxClientTimeoutSecondsIsOneHour(t *testing.T) {
 	got := time.Duration(MaxClientTimeoutSeconds) * time.Second
 	want := 1 * time.Hour
 	if got != want {
-		t.Errorf("MaxClientTimeoutSeconds clamp: got %s, want %s; update the clamp if the provider timeout ceiling changed", got, want)
+		t.Errorf("MaxClientTimeoutSeconds: got %s, want %s; update the constant if the provider timeout ceiling changed", got, want)
 	}
 }

@@ -544,23 +544,30 @@ const (
 	reconcileRetry
 )
 
-// reconcileWithRetry runs step up to reconcileMaxAttempts times with jittered
-// exponential backoff between reconcileRetry results. It centralises the
-// retry skeleton that is common across keyfactor_oauth_security_role_claim_association
-// and keyfactor_enrollment_pattern_role_binding, removing the boilerplate from
-// each call site while leaving resource-specific GET/mutate/PUT/verify logic in
-// the step closure.
+// reconcileWithRetry runs step with jittered exponential backoff between
+// reconcileRetry results. It centralises the retry skeleton that is common
+// across keyfactor_oauth_security_role_claim_association and
+// keyfactor_enrollment_pattern_role_binding, removing the boilerplate from
+// each call site while leaving resource-specific GET/mutate/PUT/verify logic
+// in the step closure.
 //
 //   - On reconcileDone  → returns (true, nil) immediately.
 //   - On reconcileFatal → returns (false, nil); caller must handle its own diagnostics.
 //   - On reconcileRetry → logs err at Warn, sleeps, then retries.
-//   - After reconcileMaxAttempts exhausted → returns (false, lastRaceErr).
+//
+// Two distinct retry limits apply:
+//   - Race-condition retries (serverDelay == 0): capped at reconcileMaxAttempts (8).
+//   - 429 rate-limit retries (serverDelay > 0): capped by a deadline of
+//     MaxClientTimeoutSeconds from the start of the call. Per-sleep delay is
+//     clamped to 60 s regardless of the server's Retry-After value.
 func reconcileWithRetry(
 	ctx context.Context,
 	step func(attempt int) (reconcileOutcome, error, time.Duration),
 ) (bool, error) {
+	deadline := time.Now().Add(time.Duration(MaxClientTimeoutSeconds) * time.Second)
 	var lastErr error
-	for attempt := 1; attempt <= reconcileMaxAttempts; attempt++ {
+	raceAttempts := 0
+	for attempt := 1; ; attempt++ {
 		outcome, err, serverDelay := step(attempt)
 		switch outcome {
 		case reconcileDone:
@@ -573,9 +580,11 @@ func reconcileWithRetry(
 				tflog.Warn(ctx, "retrying after transient error: "+err.Error())
 			}
 			if serverDelay > 0 {
-				maxRetryDelay := 120 * time.Second
+				// 429 path: clamp per-sleep to 60 s, but keep retrying until
+				// the overall deadline derived from MaxClientTimeoutSeconds.
+				maxRetryDelay := 60 * time.Second
 				if serverDelay > maxRetryDelay {
-					tflog.Warn(ctx, fmt.Sprintf("server requested retry delay %s exceeds 120s ceiling; clamping", serverDelay))
+					tflog.Warn(ctx, fmt.Sprintf("server requested retry delay %s exceeds 60s ceiling; clamping", serverDelay))
 					serverDelay = maxRetryDelay
 				}
 				tflog.Info(ctx, fmt.Sprintf("server requested retry delay: %s", serverDelay))
@@ -584,7 +593,15 @@ func reconcileWithRetry(
 				case <-ctx.Done():
 					return false, ctx.Err()
 				}
+				if time.Now().After(deadline) {
+					return false, fmt.Errorf("429 retry deadline (%s) exceeded: %w", time.Duration(MaxClientTimeoutSeconds)*time.Second, lastErr)
+				}
 			} else {
+				// Race-condition path: cap at reconcileMaxAttempts.
+				raceAttempts++
+				if raceAttempts >= reconcileMaxAttempts {
+					return false, lastErr
+				}
 				select {
 				case <-time.After(reconcileBackoff(attempt)):
 				case <-ctx.Done():
@@ -593,7 +610,6 @@ func reconcileWithRetry(
 			}
 		}
 	}
-	return false, lastErr
 }
 
 // oauthRoleHasClaim reports whether claimId is present in role's Claims.

@@ -164,6 +164,9 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 					"Null (default) waits indefinitely (current behavior). " +
 					"0 skips inventory verification entirely (fire-and-forget). " +
 					"Values greater than 0 wait up to that many seconds, then proceed with a warning if not confirmed.",
+				Validators: []tfsdk.AttributeValidator{
+					int64AtLeastValidator{min: 0},
+				},
 			},
 		},
 		Description: "Used to schedule a certificate deployment(" +
@@ -272,17 +275,15 @@ func (r resourceCommandCertificateDeployment) Create(
 		return
 	}
 
-	//sans := plan.SANs
-	//metadata := plan.Metadata.Elems
-	//vErr := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 1) // Initial check to see if the cert is already deployed
-	alreadyDeployed, preCheckErr := validateDeployment(
+	alreadyDeployed, preCheckErr := pollInventory(
 		ctx,
 		kfClient,
 		storeId,
 		certificateAlias,
 		certificateData,
-		1,
-		nil, // single-shot pre-check, no deadline
+		true, // wantPresent: looking for the cert
+		1,    // single-shot pre-check
+		nil,  // no deadline
 	)
 	if preCheckErr != nil {
 		response.Diagnostics.AddError(
@@ -464,14 +465,15 @@ func (r resourceCommandCertificateDeployment) Update(
 		return
 	}
 
-	alreadyDeployed, preCheckErr := validateDeployment(
+	alreadyDeployed, preCheckErr := pollInventory(
 		ctx,
 		kfClient,
 		storeId,
 		certificateAlias,
 		certificateData,
-		1,
-		nil, // single-shot pre-check, no deadline
+		true, // wantPresent: looking for the cert
+		1,    // single-shot pre-check
+		nil,  // no deadline
 	)
 	if preCheckErr != nil {
 		response.Diagnostics.AddError(
@@ -692,11 +694,11 @@ func (r resourceCommandCertificateDeployment) ImportState(
 
 // waitForInventory waits for inventory confirmation after a deployment or removal job has
 // been submitted. It encapsulates the fire-and-forget check, inventory-schedule check,
-// deadline computation, and the validate poll, writing diagnostics directly into diags.
+// deadline computation, and the pollInventory poll, writing diagnostics directly into diags.
 //
-// isRemoval controls message wording and which validate function is called
-// (validateUndeployment vs validateDeployment). certId is the integer Keyfactor
-// certificate ID; it is passed to validateUndeployment and used in diagnostic messages.
+// isRemoval controls message wording and the direction of the pollInventory call
+// (wantPresent=false for removal, wantPresent=true for deployment). certId is the integer
+// Keyfactor certificate ID used in diagnostic messages.
 func (r resourceCommandCertificateDeployment) waitForInventory(
 	ctx context.Context,
 	diags *diag.Diagnostics,
@@ -743,6 +745,16 @@ func (r resourceCommandCertificateDeployment) waitForInventory(
 	hasInventorySchedule, storeReadErr := storeHasInventorySchedule(conn, storeId)
 	if storeReadErr != nil {
 		tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
+		diags.AddWarning(
+			fmt.Sprintf("Certificate %s submitted — could not verify inventory schedule.", action),
+			fmt.Sprintf(
+				"Certificate %d has been submitted for %s to store '%s' (alias: '%s'), but the store's "+
+					"inventory schedule could not be verified due to an API error: %s. "+
+					"The provider will skip inventory validation for this apply.",
+				certId, action, storeId, certAlias, storeReadErr.Error(),
+			),
+		)
+		return
 	}
 	if !hasInventorySchedule {
 		diags.AddWarning(
@@ -766,13 +778,7 @@ func (r resourceCommandCertificateDeployment) waitForInventory(
 	}
 
 	// Poll until confirmed, deadline reached, or error.
-	var confirmed bool
-	var vErr error
-	if isRemoval {
-		confirmed, vErr = validateUndeployment(ctx, conn, storeId, certId, certAlias, certData, 1000000, deadline)
-	} else {
-		confirmed, vErr = validateDeployment(ctx, conn, storeId, certAlias, certData, 1000000, deadline)
-	}
+	confirmed, vErr := pollInventory(ctx, conn, storeId, certAlias, certData, !isRemoval, 1000000, deadline)
 
 	if vErr != nil {
 		diags.AddError(
@@ -963,7 +969,7 @@ func certificateInInventory(
 
 // undeploymentStillPresent performs a single inventory read and reports whether the
 // certificate is still present in the store under the given alias. Matching semantics
-// are shared with validateUndeployment.
+// are shared with pollInventory (wantPresent=false path).
 func undeploymentStillPresent(
 	ctx context.Context,
 	conn *api.Client,
@@ -974,47 +980,75 @@ func undeploymentStillPresent(
 	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, false)
 }
 
-// validateUndeployment polls the store inventory until the certificate is no longer present
-// or the deadline/maxIterations is reached.
-//
-// Returns (true, nil) if the certificate was successfully removed from inventory.
-// Returns (false, nil) if the deadline was reached or all iterations were exhausted without
-// the certificate disappearing — callers should treat this as a timeout and emit a warning.
-// Returns (false, err) if an inventory read error occurred.
-func validateUndeployment(
+// deploymentPresentInInventory performs a single inventory read and reports whether the
+// certificate is present in the store: matched by alias, or by leaf certificate ID when
+// no alias is set. Matching semantics are shared with pollInventory.
+func deploymentPresentInInventory(
 	ctx context.Context,
 	conn *api.Client,
 	storeId string,
-	certificateId int,
 	certAlias string,
 	certObj *api.GetCertificateResponse,
+) (bool, error) {
+	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, true)
+}
+
+// pollInventory polls the store inventory until the desired state is reached or the
+// deadline/maxIterations is exhausted.
+//
+// When wantPresent is true (deploy path): polls until the certificate appears in inventory.
+// When wantPresent is false (undeploy path): polls until the certificate is gone from inventory.
+//
+// Returns (true, nil) when the desired state is confirmed.
+// Returns (false, nil) when the deadline or all iterations are exhausted without confirmation —
+// callers should treat this as a timeout and emit a warning.
+// Returns (false, err) if a context cancellation or inventory read error occurred.
+func pollInventory(
+	ctx context.Context,
+	conn *api.Client,
+	storeId string,
+	certAlias string,
+	certObj *api.GetCertificateResponse,
+	wantPresent bool,
 	maxIterations int,
 	deadline *time.Time,
 ) (bool, error) {
-	tflog.Debug(ctx, fmt.Sprintf("Validating Keyfactor Command store %v inventory has removed %s", storeId, certAlias))
+	if wantPresent {
+		tflog.Debug(ctx, fmt.Sprintf("Validating Keyfactor Command store %v inventory has been updated with %s", storeId, certAlias))
+	} else {
+		tflog.Debug(ctx, fmt.Sprintf("Validating Keyfactor Command store %v inventory has removed %s", storeId, certAlias))
+	}
 	retryDelay := 2
 	for i := 0; i < maxIterations; i++ {
 		if deadline != nil && time.Now().After(*deadline) {
 			return false, nil // deadline reached
 		}
-		stillPresent, invErr := undeploymentStillPresent(ctx, conn, storeId, certAlias, certObj)
+		var present bool
+		var invErr error
+		if wantPresent {
+			present, invErr = deploymentPresentInInventory(ctx, conn, storeId, certAlias, certObj)
+		} else {
+			present, invErr = undeploymentStillPresent(ctx, conn, storeId, certAlias, certObj)
+		}
 		if invErr != nil {
 			return false, invErr
 		}
-		if !stillPresent {
-			return true, nil // certificate gone from inventory — success
+		// Success condition: present matches wantPresent (deploy) or absent (!present) matches !wantPresent (undeploy).
+		if present == wantPresent {
+			return true, nil
 		}
-		tflog.Debug(
-			ctx,
-			fmt.Sprintf(
+		// Skip sleep on the last iteration — there is no subsequent poll.
+		if i == maxIterations-1 {
+			break
+		}
+		if wantPresent {
+			tflog.Debug(ctx, fmt.Sprintf("Certificate %s not found in Keyfactor store %v. Retrying in %v seconds", certAlias, storeId, retryDelay))
+		} else {
+			tflog.Debug(ctx, fmt.Sprintf(
 				"Certificate '%s'(%v) found in Keyfactor Command store '%s'(%v). Retrying in %v seconds",
-				certObj.Thumbprint,
-				certObj.Id,
-				certAlias,
-				storeId,
-				retryDelay,
-			),
-		)
+				certObj.Thumbprint, certObj.Id, certAlias, storeId, retryDelay,
+			))
+		}
 		select {
 		case <-time.After(time.Duration(retryDelay) * time.Second):
 			// continue polling
@@ -1027,130 +1061,6 @@ func validateUndeployment(
 		}
 	}
 	return false, nil // all iterations exhausted
-}
-
-// deploymentPresentInInventory performs a single inventory read and reports whether the
-// certificate is present in the store : matched by alias, or by leaf certificate ID when
-// no alias is set. Matching semantics are shared with validateDeployment.
-func deploymentPresentInInventory(
-	ctx context.Context,
-	conn *api.Client,
-	storeId string,
-	certAlias string,
-	certObj *api.GetCertificateResponse,
-) (bool, error) {
-	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, true)
-}
-
-// validateDeployment polls the store inventory until the certificate appears or the
-// deadline/maxIterations is reached.
-//
-// Returns (true, nil) if the certificate was found in inventory — deployment confirmed.
-// Returns (false, nil) if the deadline was reached or all iterations were exhausted without
-// the certificate appearing — callers should treat this as a timeout and emit a warning.
-// Returns (false, err) if an inventory read error occurred.
-func validateDeployment(
-	ctx context.Context,
-	conn *api.Client,
-	storeId string,
-	certAlias string,
-	certObj *api.GetCertificateResponse,
-	maxIterations int,
-	deadline *time.Time,
-) (bool, error) {
-	tflog.Debug(
-		ctx,
-		fmt.Sprintf("Validating Keyfactor Command store %v inventory has been updated with %s", storeId, certAlias),
-	)
-	retryDelay := 2
-	for i := 0; i < maxIterations; i++ {
-		if deadline != nil && time.Now().After(*deadline) {
-			return false, nil // deadline reached
-		}
-		present, invErr := deploymentPresentInInventory(ctx, conn, storeId, certAlias, certObj)
-		if invErr != nil {
-			return false, invErr
-		}
-		if present {
-			return true, nil // certificate found in inventory — success
-		}
-		tflog.Debug(
-			ctx,
-			fmt.Sprintf(
-				"Certificate %s not found in Keyfactor store %v. Retrying in %v seconds",
-				certAlias,
-				storeId,
-				retryDelay,
-			),
-		)
-		select {
-		case <-time.After(time.Duration(retryDelay) * time.Second):
-			// continue polling
-		case <-ctx.Done():
-			return false, ctx.Err()
-		}
-		retryDelay = retryDelay * 2
-		if retryDelay > 60 {
-			retryDelay = 60
-		}
-	}
-	return false, nil // all iterations exhausted
-}
-
-func validateCertificatesInStore(
-	ctx context.Context,
-	conn *api.Client,
-	certificateId int,
-	storeId string,
-	maxIterations int,
-) error {
-	valid := false
-	tflog.Debug(ctx, fmt.Sprintf("Validating certificate %v is in Keyfactor store %v", certificateId, storeId))
-	retryDelay := 2
-	for i := 0; i < maxIterations; i++ {
-		args := &api.GetCertificateContextArgs{
-			IncludeLocations: boolToPointer(true),
-			Id:               certificateId,
-		}
-		certificateData, err := conn.GetCertificateContext(args)
-		if err != nil {
-			return err
-		}
-
-		certLocs := certificateData.Locations
-		for _, loc := range certLocs {
-			if loc.CertStoreId == storeId {
-				valid = true
-				i = maxIterations + 1 //break outer loop
-				break
-			}
-		}
-
-		//if len(findStringDifference(certificateStores, storeList)) == 0 && len(findStringDifference(storeList, certificateStores)) == 0 {
-		//	valid = true
-		//	break
-		//}
-		if !valid && i+1 < maxIterations {
-			retryDelay = retryDelay * (i + 1)
-			if retryDelay > 30 {
-				retryDelay = 30
-			}
-			tflog.Debug(
-				ctx,
-				fmt.Sprintf(
-					"Certificate %v not found in Keyfactor store %v. Retrying in %v seconds",
-					certificateId,
-					storeId,
-					retryDelay,
-				),
-			)
-			time.Sleep(time.Duration(retryDelay) * time.Second)
-		}
-	}
-	if !valid {
-		return fmt.Errorf("validateCertificatesInStore timed out. certificate could deploy eventually, but terraform change operation will fail. run terraform plan later to verify that the certificate was deployed successfully")
-	}
-	return nil
 }
 
 // removeCertificateAliasFromStore schedules a job to remove certId from each of the given

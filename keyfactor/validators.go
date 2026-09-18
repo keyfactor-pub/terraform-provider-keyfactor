@@ -82,6 +82,39 @@ func (v conflictsWithAttrValidator) Validate(
 	}
 }
 
+// int64AtLeastValidator rejects values less than min. Null and unknown values
+// are allowed (the attribute is optional). This avoids adding an external
+// dependency for a simple numeric bound check.
+type int64AtLeastValidator struct {
+	min int64
+}
+
+func (v int64AtLeastValidator) Description(_ context.Context) string {
+	return fmt.Sprintf("Value must be at least %d", v.min)
+}
+
+func (v int64AtLeastValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v int64AtLeastValidator) Validate(
+	_ context.Context,
+	req tfsdk.ValidateAttributeRequest,
+	resp *tfsdk.ValidateAttributeResponse,
+) {
+	val, ok := req.AttributeConfig.(types.Int64)
+	if !ok || val.IsNull() || val.IsUnknown() {
+		return
+	}
+	if val.Value < v.min {
+		resp.Diagnostics.AddAttributeError(
+			req.AttributePath,
+			"Value Out of Range",
+			fmt.Sprintf("Value must be at least %d, got %d.", v.min, val.Value),
+		)
+	}
+}
+
 // atLeastOneOfValidator validates that at least one of this attribute or
 // the other named attribute is set. Both being set is allowed : the API
 // handles precedence (enrollment pattern takes precedence over template).

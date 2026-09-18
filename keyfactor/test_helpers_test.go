@@ -2752,6 +2752,18 @@ resource "keyfactor_certificate_deployment" "test" {
 `, certResourceRef, storeResourceRef)
 }
 
+// testAccCertDeployConfigFireAndForget generates HCL for deploying a certificate with
+// max_inventory_wait = 0 (fire-and-forget: no inventory polling).
+func testAccCertDeployConfigFireAndForget(certResourceRef, storeResourceRef string) string {
+	return fmt.Sprintf(`
+resource "keyfactor_certificate_deployment" "test" {
+  certificate_id       = %s.identifier
+  certificate_store_id = %s.id
+  max_inventory_wait   = 0
+}
+`, certResourceRef, storeResourceRef)
+}
+
 // testAccCertDeployConfigWithAlias generates HCL for deploying a certificate to a store with an explicit alias.
 // Required for store types like K8SPKCS12 where Command mandates an alias.
 func testAccCertDeployConfigWithAlias(certResourceRef, storeResourceRef, alias string) string {

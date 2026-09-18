@@ -269,6 +269,7 @@ func (r resourceCommandCertificateDeployment) Create(
 				certificateAlias,
 			)+err.Error(),
 		)
+		return
 	}
 
 	//sans := plan.SANs
@@ -322,83 +323,9 @@ func (r resourceCommandCertificateDeployment) Create(
 			return
 		}
 
-		// Compute the inventory-wait deadline from plan.MaxInventoryWait:
-		//   null  → wait indefinitely (pass nil deadline, 1000000 iterations)
-		//   0     → skip verification entirely (fire-and-forget)
-		//   >0    → wait up to that many seconds, then warn
-		maxWait := plan.MaxInventoryWait
-		if !maxWait.Null && !maxWait.Unknown && maxWait.Value == 0 {
-			// Fire-and-forget: skip all inventory validation.
-			response.Diagnostics.AddWarning(
-				"Deployment verification skipped.",
-				fmt.Sprintf(
-					"Certificate %d was submitted for deployment to store %s but inventory verification was skipped (max_inventory_wait = 0).",
-					certificateId, storeId,
-				),
-			)
-		} else {
-			// Check whether the store has an inventory schedule. If not, warn and skip the
-			// validation poll: the orchestrator cannot confirm deployment without running inventory,
-			// and we cannot reliably schedule inventory after the add job without a race condition
-			// (the Immediate flag may be consumed before the management job completes). The
-			// deployment job has been submitted; configure an inventory schedule on the store in
-			// Command to enable future validation.
-			hasInventorySchedule, storeReadErr := storeHasInventorySchedule(kfClient, storeId)
-			if storeReadErr != nil {
-				tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
-			}
-
-			if !hasInventorySchedule {
-				response.Diagnostics.AddWarning(
-					"Deployment submitted without inventory schedule.",
-					fmt.Sprintf(
-						"Certificate '%v' has been submitted for deployment to store '%s' (alias: '%s'), but the store "+
-							"has no inventory schedule configured. Deployment cannot be validated until the orchestrator "+
-							"runs inventory. Configure a daily or immediate inventory schedule on the store in Keyfactor "+
-							"Command to enable deployment validation on future applies.",
-						certificateId, storeId, certificateAlias,
-					),
-				)
-			} else {
-				var deadline *time.Time
-				if !maxWait.Null && !maxWait.Unknown && maxWait.Value > 0 {
-					t := time.Now().Add(time.Duration(maxWait.Value) * time.Second)
-					deadline = &t
-				}
-				//vErr2 := validateCertificatesInStore(ctx, kfClient, certificateIdInt, storeId, 100000)
-				confirmed, vErr2 := validateDeployment(
-					ctx,
-					kfClient,
-					storeId,
-					certificateAlias,
-					certificateData,
-					1000000,
-					deadline,
-				)
-				if vErr2 != nil {
-					response.Diagnostics.AddError(
-						"Deployment validation error.",
-						fmt.Sprintf(
-							"Unknown error during validation of deploy of certificate '%v' to store '%s (%s)': ",
-							certificateId,
-							storeId,
-							certificateAlias,
-						)+vErr2.Error(),
-					)
-				} else if !confirmed {
-					waitSec := maxWait.Value
-					response.Diagnostics.AddWarning(
-						"Deployment verification timed out.",
-						fmt.Sprintf(
-							"Certificate %d was submitted for deployment to store %s but inventory confirmation was not received within %d seconds. The deployment may still complete — run `terraform plan` to check.",
-							certificateId, storeId, waitSec,
-						),
-					)
-				}
-				if response.Diagnostics.HasError() {
-					return
-				}
-			}
+		r.waitForInventory(ctx, &response.Diagnostics, kfClient, plan.MaxInventoryWait, storeId, certificateAlias, certificateData, certificateIdInt, false)
+		if response.Diagnostics.HasError() {
+			return
 		}
 	}
 
@@ -534,6 +461,7 @@ func (r resourceCommandCertificateDeployment) Update(
 				certificateAlias,
 			)+err.Error(),
 		)
+		return
 	}
 
 	alreadyDeployed, preCheckErr := validateDeployment(
@@ -581,53 +509,7 @@ func (r resourceCommandCertificateDeployment) Update(
 			return
 		}
 
-		// Compute the inventory-wait deadline from plan.MaxInventoryWait.
-		maxWait := plan.MaxInventoryWait
-		if !maxWait.Null && !maxWait.Unknown && maxWait.Value == 0 {
-			// Fire-and-forget: skip inventory validation.
-			response.Diagnostics.AddWarning(
-				"Deployment verification skipped.",
-				fmt.Sprintf(
-					"Certificate %d was submitted for deployment to store %s but inventory verification was skipped (max_inventory_wait = 0).",
-					certificateId, storeId,
-				),
-			)
-		} else {
-			var deadline *time.Time
-			if !maxWait.Null && !maxWait.Unknown && maxWait.Value > 0 {
-				t := time.Now().Add(time.Duration(maxWait.Value) * time.Second)
-				deadline = &t
-			}
-			confirmed, vErr2 := validateDeployment(
-				ctx,
-				kfClient,
-				storeId,
-				certificateAlias,
-				certificateData,
-				1000000,
-				deadline,
-			)
-			if vErr2 != nil {
-				response.Diagnostics.AddError(
-					"Deployment validation error.",
-					fmt.Sprintf(
-						"Unknown error during validation of deploy of certificate '%d' to store '%s (%s)': ",
-						certificateId,
-						storeId,
-						certificateAlias,
-					)+vErr2.Error(),
-				)
-			} else if !confirmed {
-				waitSec := maxWait.Value
-				response.Diagnostics.AddWarning(
-					"Deployment verification timed out.",
-					fmt.Sprintf(
-						"Certificate %d was submitted for deployment to store %s but inventory confirmation was not received within %d seconds. The deployment may still complete — run `terraform plan` to check.",
-						certificateId, storeId, waitSec,
-					),
-				)
-			}
-		}
+		r.waitForInventory(ctx, &response.Diagnostics, kfClient, plan.MaxInventoryWait, storeId, certificateAlias, certificateData, certificateIdInt, false)
 	}
 
 	if response.Diagnostics.HasError() {
@@ -785,60 +667,7 @@ func (r resourceCommandCertificateDeployment) Delete(
 		return
 	}
 
-	// Compute the inventory-wait deadline from state.MaxInventoryWait.
-	maxWait := state.MaxInventoryWait
-	skipVerify := !maxWait.Null && !maxWait.Unknown && maxWait.Value == 0
-	var undeployDeadline *time.Time
-	if !maxWait.Null && !maxWait.Unknown && maxWait.Value > 0 {
-		t := time.Now().Add(time.Duration(maxWait.Value) * time.Second)
-		undeployDeadline = &t
-	}
-
-	if skipVerify {
-		response.Diagnostics.AddWarning(
-			"Removal verification skipped.",
-			fmt.Sprintf(
-				"Certificate %d was submitted for removal from store %s but inventory verification was skipped (max_inventory_wait = 0).",
-				certificateId, storeId,
-			),
-		)
-	} else {
-		for _, store := range diff {
-			removed, validateErr := validateUndeployment(
-				ctx,
-				kfClient,
-				store.CertificateStoreId,
-				certId,
-				certificateAlias,
-				certificateData,
-				100000,
-				undeployDeadline,
-			)
-			if validateErr != nil {
-				response.Diagnostics.AddError(
-					"Certificate deployment error",
-					fmt.Sprintf(
-						"Unknown error during removal of certificate '%d' from store '%s (%s)': ",
-						certificateId,
-						storeId,
-						certificateAlias,
-					)+validateErr.Error(),
-				)
-				break
-			}
-			if !removed {
-				waitSec := maxWait.Value
-				response.Diagnostics.AddWarning(
-					"Removal verification timed out.",
-					fmt.Sprintf(
-						"Certificate %d was submitted for removal from store %s but inventory confirmation was not received within %d seconds. The removal may still complete — run `terraform plan` to check.",
-						certificateId, storeId, waitSec,
-					),
-				)
-				break
-			}
-		}
-	}
+	r.waitForInventory(ctx, &response.Diagnostics, kfClient, state.MaxInventoryWait, storeId, certificateAlias, certificateData, certId, true)
 
 	if response.Diagnostics.HasError() {
 		return
@@ -858,6 +687,144 @@ func (r resourceCommandCertificateDeployment) ImportState(
 	)
 	if response.Diagnostics.HasError() {
 		return
+	}
+}
+
+// waitForInventory waits for inventory confirmation after a deployment or removal job has
+// been submitted. It encapsulates the fire-and-forget check, inventory-schedule check,
+// deadline computation, and the validate poll, writing diagnostics directly into diags.
+//
+// isRemoval controls message wording and which validate function is called
+// (validateUndeployment vs validateDeployment). certId is the integer Keyfactor
+// certificate ID; it is passed to validateUndeployment and used in diagnostic messages.
+func (r resourceCommandCertificateDeployment) waitForInventory(
+	ctx context.Context,
+	diags *diag.Diagnostics,
+	conn *api.Client,
+	maxWait types.Int64,
+	storeId string,
+	certAlias string,
+	certData *api.GetCertificateResponse,
+	certId int,
+	isRemoval bool,
+) {
+	action := "deployment"
+	if isRemoval {
+		action = "removal"
+	}
+
+	// Fire-and-forget: max_inventory_wait = 0 → skip all validation.
+	if !maxWait.Null && !maxWait.Unknown && maxWait.Value == 0 {
+		if isRemoval {
+			diags.AddWarning(
+				"Removal verification skipped.",
+				fmt.Sprintf(
+					"Certificate %d was submitted for removal from store %s but inventory verification was skipped (max_inventory_wait = 0).",
+					certId, storeId,
+				),
+			)
+		} else {
+			diags.AddWarning(
+				"Deployment verification skipped.",
+				fmt.Sprintf(
+					"Certificate %d was submitted for deployment to store %s but inventory verification was skipped (max_inventory_wait = 0).",
+					certId, storeId,
+				),
+			)
+		}
+		return
+	}
+
+	// Check whether the store has an inventory schedule. If not, warn and skip the
+	// validation poll: the orchestrator cannot confirm the operation without running
+	// inventory, and we cannot reliably trigger inventory after the management job
+	// without a race. Configure an inventory schedule on the store to enable future
+	// validation.
+	hasInventorySchedule, storeReadErr := storeHasInventorySchedule(conn, storeId)
+	if storeReadErr != nil {
+		tflog.Warn(ctx, fmt.Sprintf("Could not read store %s to check inventory schedule: %s", storeId, storeReadErr.Error()))
+	}
+	if !hasInventorySchedule {
+		diags.AddWarning(
+			fmt.Sprintf("Certificate %s submitted without inventory schedule.", action),
+			fmt.Sprintf(
+				"Certificate %d has been submitted for %s to store '%s' (alias: '%s'), but the store "+
+					"has no inventory schedule configured. The %s cannot be validated until the orchestrator "+
+					"runs inventory. Configure a daily or immediate inventory schedule on the store in Keyfactor "+
+					"Command to enable validation on future applies.",
+				certId, action, storeId, certAlias, action,
+			),
+		)
+		return
+	}
+
+	// Compute deadline: null/unknown → indefinite (nil), >0 → bounded.
+	var deadline *time.Time
+	if !maxWait.Null && !maxWait.Unknown && maxWait.Value > 0 {
+		t := time.Now().Add(time.Duration(maxWait.Value) * time.Second)
+		deadline = &t
+	}
+
+	// Poll until confirmed, deadline reached, or error.
+	var confirmed bool
+	var vErr error
+	if isRemoval {
+		confirmed, vErr = validateUndeployment(ctx, conn, storeId, certId, certAlias, certData, 1000000, deadline)
+	} else {
+		confirmed, vErr = validateDeployment(ctx, conn, storeId, certAlias, certData, 1000000, deadline)
+	}
+
+	if vErr != nil {
+		diags.AddError(
+			fmt.Sprintf("Certificate %s validation error.", action),
+			fmt.Sprintf(
+				"Unknown error during validation of %s of certificate %d to store '%s (%s)': ",
+				action, certId, storeId, certAlias,
+			)+vErr.Error(),
+		)
+		return
+	}
+
+	if !confirmed {
+		if maxWait.Null || maxWait.Unknown {
+			// Indefinite wait exhausted all iterations — hard failure (preserves old behavior).
+			if isRemoval {
+				diags.AddError(
+					"Removal validation failed.",
+					fmt.Sprintf(
+						"Certificate %d was not removed from store %s inventory after exhausting all retry attempts.",
+						certId, storeId,
+					),
+				)
+			} else {
+				diags.AddError(
+					"Deployment validation failed.",
+					fmt.Sprintf(
+						"Certificate %d was not found in store %s inventory after exhausting all retry attempts.",
+						certId, storeId,
+					),
+				)
+			}
+		} else {
+			// User-defined timeout — warn, don't fail (user opted into this behavior).
+			if isRemoval {
+				diags.AddWarning(
+					"Removal verification timed out.",
+					fmt.Sprintf(
+						"Certificate %d was submitted for removal from store %s but inventory confirmation was not received within %d seconds. The removal may still complete — run `terraform plan` to check.",
+						certId, storeId, maxWait.Value,
+					),
+				)
+			} else {
+				diags.AddWarning(
+					"Deployment verification timed out.",
+					fmt.Sprintf(
+						"Certificate %d was submitted for deployment to store %s but inventory confirmation was not received within %d seconds. The deployment may still complete — run `terraform plan` to check.",
+						certId, storeId, maxWait.Value,
+					),
+				)
+			}
+		}
 	}
 }
 
@@ -1048,10 +1015,15 @@ func validateUndeployment(
 				retryDelay,
 			),
 		)
-		time.Sleep(time.Duration(retryDelay) * time.Second)
+		select {
+		case <-time.After(time.Duration(retryDelay) * time.Second):
+			// continue polling
+		case <-ctx.Done():
+			return false, ctx.Err()
+		}
 		retryDelay *= 2
-		if retryDelay > MAX_WAIT_SECONDS {
-			retryDelay = MAX_WAIT_SECONDS
+		if retryDelay > 60 {
+			retryDelay = 60
 		}
 	}
 	return false, nil // all iterations exhausted
@@ -1111,7 +1083,12 @@ func validateDeployment(
 				retryDelay,
 			),
 		)
-		time.Sleep(time.Duration(retryDelay) * time.Second)
+		select {
+		case <-time.After(time.Duration(retryDelay) * time.Second):
+			// continue polling
+		case <-ctx.Done():
+			return false, ctx.Err()
+		}
 		retryDelay = retryDelay * 2
 		if retryDelay > 60 {
 			retryDelay = 60

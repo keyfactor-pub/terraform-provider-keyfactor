@@ -103,10 +103,16 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 				Description: "A unique identifier for this certificate deployment.",
 			},
 			"certificate_id": {
-				Type:          types.Int64Type,
-				Required:      true,
-				Description:   "Keyfactor certificate ID",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
+				Type:        types.Int64Type,
+				Required:    true,
+				Description: "Keyfactor certificate ID",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					// deploymentOverwriteOnCertIDChange replaces the bare
+					// tfsdk.RequiresReplace(): it still forces replacement when
+					// overwrite is not true, but allows the Update path when the
+					// operator has explicitly set overwrite = true.
+					deploymentOverwriteOnCertIDChange{},
+				},
 			},
 			"certificate_store_id": {
 				Type:          types.StringType,
@@ -324,7 +330,7 @@ func (r resourceCommandCertificateDeployment) Create(
 			return
 		}
 
-		r.waitForInventory(ctx, &response.Diagnostics, kfClient, plan.MaxInventoryWait, storeId, certificateAlias, certificateData, certificateIdInt, false)
+		waitForInventory(ctx, &response.Diagnostics, kfClient, plan.MaxInventoryWait, storeId, certificateAlias, certificateData, certificateIdInt, false)
 		if response.Diagnostics.HasError() {
 			return
 		}
@@ -511,7 +517,7 @@ func (r resourceCommandCertificateDeployment) Update(
 			return
 		}
 
-		r.waitForInventory(ctx, &response.Diagnostics, kfClient, plan.MaxInventoryWait, storeId, certificateAlias, certificateData, certificateIdInt, false)
+		waitForInventory(ctx, &response.Diagnostics, kfClient, plan.MaxInventoryWait, storeId, certificateAlias, certificateData, certificateIdInt, false)
 	}
 
 	if response.Diagnostics.HasError() {
@@ -669,7 +675,7 @@ func (r resourceCommandCertificateDeployment) Delete(
 		return
 	}
 
-	r.waitForInventory(ctx, &response.Diagnostics, kfClient, state.MaxInventoryWait, storeId, certificateAlias, certificateData, certId, true)
+	waitForInventory(ctx, &response.Diagnostics, kfClient, state.MaxInventoryWait, storeId, certificateAlias, certificateData, certId, true)
 
 	if response.Diagnostics.HasError() {
 		return
@@ -699,7 +705,7 @@ func (r resourceCommandCertificateDeployment) ImportState(
 // isRemoval controls message wording and the direction of the pollInventory call
 // (wantPresent=false for removal, wantPresent=true for deployment). certId is the integer
 // Keyfactor certificate ID used in diagnostic messages.
-func (r resourceCommandCertificateDeployment) waitForInventory(
+func waitForInventory(
 	ctx context.Context,
 	diags *diag.Diagnostics,
 	conn *api.Client,
@@ -711,29 +717,23 @@ func (r resourceCommandCertificateDeployment) waitForInventory(
 	isRemoval bool,
 ) {
 	action := "deployment"
+	actionTitle := "Deployment"
+	preposition := "to"
 	if isRemoval {
 		action = "removal"
+		actionTitle = "Removal"
+		preposition = "from"
 	}
 
 	// Fire-and-forget: max_inventory_wait = 0 → skip all validation.
 	if !maxWait.Null && !maxWait.Unknown && maxWait.Value == 0 {
-		if isRemoval {
-			diags.AddWarning(
-				"Removal verification skipped.",
-				fmt.Sprintf(
-					"Certificate %d was submitted for removal from store %s but inventory verification was skipped (max_inventory_wait = 0).",
-					certId, storeId,
-				),
-			)
-		} else {
-			diags.AddWarning(
-				"Deployment verification skipped.",
-				fmt.Sprintf(
-					"Certificate %d was submitted for deployment to store %s but inventory verification was skipped (max_inventory_wait = 0).",
-					certId, storeId,
-				),
-			)
-		}
+		diags.AddWarning(
+			fmt.Sprintf("%s verification skipped.", actionTitle),
+			fmt.Sprintf(
+				"Certificate %d was submitted for %s %s store %s but inventory verification was skipped (max_inventory_wait = 0).",
+				certId, action, preposition, storeId,
+			),
+		)
 		return
 	}
 
@@ -813,23 +813,13 @@ func (r resourceCommandCertificateDeployment) waitForInventory(
 			}
 		} else {
 			// User-defined timeout — warn, don't fail (user opted into this behavior).
-			if isRemoval {
-				diags.AddWarning(
-					"Removal verification timed out.",
-					fmt.Sprintf(
-						"Certificate %d was submitted for removal from store %s but inventory confirmation was not received within %d seconds. The removal may still complete — run `terraform plan` to check.",
-						certId, storeId, maxWait.Value,
-					),
-				)
-			} else {
-				diags.AddWarning(
-					"Deployment verification timed out.",
-					fmt.Sprintf(
-						"Certificate %d was submitted for deployment to store %s but inventory confirmation was not received within %d seconds. The deployment may still complete — run `terraform plan` to check.",
-						certId, storeId, maxWait.Value,
-					),
-				)
-			}
+			diags.AddWarning(
+				fmt.Sprintf("%s verification timed out.", actionTitle),
+				fmt.Sprintf(
+					"Certificate %d was submitted for %s %s store %s but inventory confirmation was not received within %d seconds. The %s may still complete — run `terraform plan` to check.",
+					certId, action, preposition, storeId, maxWait.Value, action,
+				),
+			)
 		}
 	}
 }

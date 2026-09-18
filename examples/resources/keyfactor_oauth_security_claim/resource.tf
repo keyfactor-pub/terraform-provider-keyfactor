@@ -39,3 +39,21 @@ resource "keyfactor_oauth_security_claim" "ad_group_claim" {
   description                    = "Example Security Claim for Active Directory Group"
   provider_authentication_scheme = "Active Directory"
 }
+
+# OAuthRole and OAuthSubject claims bound to a third-party OIDC provider
+# (e.g. Entra ID). claim_type takes the string form, not the numeric
+# CSSCMSCoreEnumsClaimType value Command's API uses internally (4 and 5
+# respectively) -- see the claim_type attribute description above.
+resource "keyfactor_oauth_security_claim" "team_role_claim" {
+  description                    = "Entra group - team access"
+  claim_type                     = "OAuthRole" # was numeric 4
+  claim_value                    = "Keyfactor : Internal : Access : <app>"
+  provider_authentication_scheme = "entra_ent_prod"
+}
+
+resource "keyfactor_oauth_security_claim" "api_role_claim" {
+  description                    = "Entra service principal - API access"
+  claim_type                     = "OAuthSubject" # was numeric 5
+  claim_value                    = "<service-principal-object-id>"
+  provider_authentication_scheme = "entra_ent_prod"
+}

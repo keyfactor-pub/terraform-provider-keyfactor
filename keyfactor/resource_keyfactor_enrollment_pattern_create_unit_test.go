@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -73,18 +72,12 @@ func newEnrollmentPatternCreateTestServer(t *testing.T, capturedPOSTBody *[]byte
 		}
 		*capturedPOSTBody = body
 
-		// Canned Create response. All fields besides Id/Name/AssociatedRoles
-		// are optional pointers/slices on the SDK model, and
-		// enrollmentPatternResponseToState is nil-safe for every one of them
-		// (nullableStringToTfString, boolPtrToTfBool, etc.) -- a minimal
-		// response is otherwise sufficient to exercise the Create() code
-		// path under test. AssociatedRoles echoes back the "InstanceAdmin"
-		// role the test declares in config, matching real Command behavior
-		// (the create response's AssociatedRoles expansion is what
-		// associated_role_names is now derived from -- see
-		// enrollmentPatternResponseToState's doc comment).
+		// Canned Create response. All fields besides Id/Name are optional
+		// pointers/slices on the SDK model, and enrollmentPatternResponseToState
+		// is nil-safe for every one of them -- a minimal response is sufficient
+		// to exercise the Create() code path under test.
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"Id": 42, "Name": "Demo Pattern_TF", "AssociatedRoles": [{"Id": 1, "Name": "InstanceAdmin"}]}`))
+		_, _ = w.Write([]byte(`{"Id": 42, "Name": "Demo Pattern_TF"}`))
 	}))
 }
 
@@ -96,8 +89,8 @@ func blankEnrollmentPatternState() KeyfactorEnrollmentPatternState {
 	nullStr := types.String{Null: true}
 	nullBool := types.Bool{Null: true}
 	nullInt := types.Int64{Null: true}
-	nullStrSet := types.Set{Null: true, ElemType: types.StringType}
 	nullIntSet := types.Set{Null: true, ElemType: types.Int64Type}
+	nullStrSet := types.Set{Null: true, ElemType: types.StringType}
 	return KeyfactorEnrollmentPatternState{
 		ID:                      nullInt,
 		Name:                    nullStr,
@@ -156,10 +149,6 @@ func TestUnitEnrollmentPatternCreateResolvesUndeclaredComputedFieldsFromConfig(t
 	config.AllowedEnrollmentTypes = types.Int64{Value: 3}
 	config.TemplateDefault = types.Bool{Value: false}
 	config.RestrictCAs = types.Bool{Value: false}
-	config.AssociatedRoleNames = types.Set{
-		ElemType: types.StringType,
-		Elems:    []attr.Value{types.String{Value: "InstanceAdmin"}},
-	}
 	// certificate_authority_ids left at its blank-state Null default.
 
 	// tfsdk.Config has no Set method (only Get/GetAttribute) -- build the
@@ -242,22 +231,6 @@ func TestUnitEnrollmentPatternCreateResolvesUndeclaredComputedFieldsFromConfig(t
 		t.Fatalf("failed to read final state: %+v", d)
 	}
 
-	// AssociatedRoleNames is now derived directly from the Create response's
-	// AssociatedRoles expansion (enrollmentPatternResponseToState), not
-	// carried forward from plan/config -- so the final state must reflect
-	// exactly what the canned response echoed back ("InstanceAdmin"), not
-	// merely "not Unknown."
-	if finalState.AssociatedRoleNames.Unknown {
-		t.Error("final state associated_role_names is Unknown, want a resolved value")
-	}
-	var gotRoles []string
-	finalState.AssociatedRoleNames.ElementsAs(ctx, &gotRoles, false)
-	if len(gotRoles) != 1 || gotRoles[0] != "InstanceAdmin" {
-		t.Errorf(
-			"final state associated_role_names = %v, want [InstanceAdmin] (derived from the Create response)",
-			gotRoles,
-		)
-	}
 	// certificate_authority_ids was left undeclared in config, and the
 	// canned response has no CertificateAuthorities -- derives to Null.
 	if finalState.CertificateAuthorityIds.Unknown {
@@ -274,23 +247,21 @@ func TestUnitEnrollmentPatternCreateResolvesUndeclaredComputedFieldsFromConfig(t
 //
 // Originally reproduced live against kfclab via terraform/enrollment_pattern_
 // demo's `terraform import`: GetById's response never carries a flat
-// AssociatedRoleNames/CertificateAuthorityIds field (Command only ever
-// returns the expanded AssociatedRoles/CertificateAuthorities objects -- see
-// KeyfactorEnrollmentPatternState's doc comment), and at the time this test
-// was written enrollmentPatternResponseToState never derived either field
-// from that expansion, so ImportState's newState left them at Go's zero
-// value for types.List -- {Null: false, Unknown: false, ElemType: nil}. That
-// is not a valid "Null" value: response.State.Set's encoder requires
-// ElemType to be set even for a null value, and errors accordingly before
-// the import can complete.
+// CertificateAuthorityIds field (Command only ever returns the expanded
+// CertificateAuthorities objects -- see KeyfactorEnrollmentPatternState's
+// doc comment), and at the time this test was written
+// enrollmentPatternResponseToState never derived certificate_authority_ids
+// from that expansion, so ImportState's newState left it at Go's zero value
+// for types.Set -- {Null: false, Unknown: false, ElemType: nil}. That is
+// not a valid "Null" value: response.State.Set's encoder requires ElemType
+// to be set even for a null value, and errors accordingly before the import
+// can complete.
 //
-// enrollmentPatternResponseToState now derives associated_role_names/
-// certificate_authority_ids directly from the same AssociatedRoles/
-// CertificateAuthorities expansion on every Create/Read/Update/Import (see
-// its doc comment) -- including a properly-typed Null Set, with ElemType
-// set, when the response has no roles/CAs at all (the case this test
-// exercises). This test now guards that derivation path specifically,
-// rather than an ImportState-only hardcoded assignment.
+// enrollmentPatternResponseToState now derives certificate_authority_ids
+// directly from the CertificateAuthorities expansion on every
+// Create/Read/Update/Import -- including a properly-typed Null Set, with
+// ElemType set, when the response has no CAs at all (the case this test
+// exercises).
 // ---------------------------------------------------------------------------
 
 // newEnrollmentPatternImportTestServer serves a canned GetById response for
@@ -309,11 +280,10 @@ func newEnrollmentPatternImportTestServer(t *testing.T) *httptest.Server {
 
 // TestUnitEnrollmentPatternImportStateSetsValidNullForWriteOnlyLists is the
 // direct end-to-end regression test: ImportState against a minimal GetById
-// response (no AssociatedRoles/CertificateAuthorities in the response --
-// the common case for a pattern with no roles/CAs configured) must succeed,
-// and must leave associated_role_names/certificate_authority_ids as a
-// proper Null (not the zero-value/malformed list that used to reach
-// State.Set).
+// response (no CertificateAuthorities in the response -- the common case
+// for a pattern with no restricted CAs) must succeed, and must leave
+// certificate_authority_ids as a proper Null (not the zero-value/malformed
+// set that used to reach State.Set).
 func TestUnitEnrollmentPatternImportStateSetsValidNullForWriteOnlyLists(t *testing.T) {
 	ctx := context.Background()
 
@@ -347,12 +317,6 @@ func TestUnitEnrollmentPatternImportStateSetsValidNullForWriteOnlyLists(t *testi
 		t.Fatalf("failed to read final state: %+v", d)
 	}
 
-	if !finalState.AssociatedRoleNames.Null {
-		t.Errorf("associated_role_names = %+v, want Null", finalState.AssociatedRoleNames)
-	}
-	if finalState.AssociatedRoleNames.ElemType != types.StringType {
-		t.Errorf("associated_role_names.ElemType = %v, want %v", finalState.AssociatedRoleNames.ElemType, types.StringType)
-	}
 	if !finalState.CertificateAuthorityIds.Null {
 		t.Errorf("certificate_authority_ids = %+v, want Null", finalState.CertificateAuthorityIds)
 	}
@@ -373,14 +337,13 @@ func TestUnitEnrollmentPatternImportStateSetsValidNullForWriteOnlyLists(t *testi
 // but now cty.ObjectVal(...)" (same for .associated_roles).
 //
 // Reproduced live against kfclab via terraform/enrollment_pattern_demo's
-// first `lab-apply`: before this fix, "template" and "associated_roles"
-// were Computed-only (no Optional) and hit exactly this error immediately
-// after the server-side create succeeded. "certificate_authorities" has the
-// identical shape but happened not to error in that specific run only
-// because this lab's demo pattern has zero restricted CAs (RestrictCAs =
-// false), so its real value was an empty/nil list indistinguishable from
-// the wrongly-planned Null -- it would fail the same way for any pattern
-// that actually restricts CAs.
+// first `lab-apply`: before this fix, "template" was Computed-only (no
+// Optional) and hit exactly this error immediately after the server-side
+// create succeeded. "certificate_authorities" has the identical shape but
+// happened not to error in that specific run only because this lab's demo
+// pattern has zero restricted CAs (RestrictCAs = false), so its real value
+// was an empty/nil list indistinguishable from the wrongly-planned Null --
+// it would fail the same way for any pattern that actually restricts CAs.
 //
 // Every other nested attribute in this schema (policies, regexes,
 // metadata_fields, defaults, enrollment_fields) already declared Optional

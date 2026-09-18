@@ -229,7 +229,6 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_ForceTemplateDefaultCont
 			ForceTemplateDefault: types.Bool{Value: true},
 			TemplateDefault:      types.Bool{Value: false},
 			UseADPermissions:     types.Bool{Null: true},
-			AssociatedRoleNames:  types.Set{Null: true, ElemType: types.StringType},
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if !hasAttributeError(diags, "Contradictory force_template_default and template_default") {
@@ -243,7 +242,6 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_ForceTemplateDefaultCont
 			ForceTemplateDefault: types.Bool{Value: true},
 			TemplateDefault:      types.Bool{Null: true},
 			UseADPermissions:     types.Bool{Null: true},
-			AssociatedRoleNames:  types.Set{Null: true, ElemType: types.StringType},
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if hasAttributeError(diags, "Contradictory force_template_default and template_default") {
@@ -257,7 +255,6 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_ForceTemplateDefaultCont
 			ForceTemplateDefault: types.Bool{Value: true},
 			TemplateDefault:      types.Bool{Value: true},
 			UseADPermissions:     types.Bool{Null: true},
-			AssociatedRoleNames:  types.Set{Null: true, ElemType: types.StringType},
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if hasAttributeError(diags, "Contradictory force_template_default and template_default") {
@@ -271,7 +268,6 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_ForceTemplateDefaultCont
 			ForceTemplateDefault: types.Bool{Null: true},
 			TemplateDefault:      types.Bool{Value: false},
 			UseADPermissions:     types.Bool{Null: true},
-			AssociatedRoleNames:  types.Set{Null: true, ElemType: types.StringType},
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if hasAttributeError(diags, "Contradictory force_template_default and template_default") {
@@ -285,7 +281,6 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_ForceTemplateDefaultCont
 			ForceTemplateDefault: types.Bool{Unknown: true},
 			TemplateDefault:      types.Bool{Value: false},
 			UseADPermissions:     types.Bool{Null: true},
-			AssociatedRoleNames:  types.Set{Null: true, ElemType: types.StringType},
 		}
 		diags := validateEnrollmentPatternConfigConstraints(cfg)
 		if hasAttributeError(diags, "Contradictory force_template_default and template_default") {

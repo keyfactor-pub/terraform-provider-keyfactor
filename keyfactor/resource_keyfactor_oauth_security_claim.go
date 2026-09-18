@@ -31,9 +31,11 @@ func (r resourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sche
 				Description: "A string containing the description of the OAuth security claim in Keyfactor",
 			},
 			"claim_type": {
-				Type:          types.StringType,
-				Required:      true,
-				Description:   "A string containing the claim type of the OAuth security claim in Keyfactor. Changing this value forces a new resource.",
+				Type:        types.StringType,
+				Required:    true,
+				Description: "A string containing the claim type of the OAuth security claim in Keyfactor. This is Command's own enum (CSSCMSCoreEnumsClaimType in the SDK), not provider-derived: 0=User, 1=Group, 2=Computer, 3=OAuthOid, 4=OAuthRole, 5=OAuthSubject, 6=OAuthClientId. Changing this value forces a new resource.",
+				MarkdownDescription: "A string containing the claim type of the OAuth security claim in Keyfactor. This is Command's own enum (`CSSCMSCoreEnumsClaimType` in the SDK), not provider-derived: " +
+					"`0=User, 1=Group, 2=Computer, 3=OAuthOid, 4=OAuthRole, 5=OAuthSubject, 6=OAuthClientId`. Changing this value forces a new resource.",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"claim_value": {
@@ -64,7 +66,10 @@ func (r resourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sche
 }
 
 // New resource instance
-func (r resourceOAuthSecurityClaimType) NewResource(_ context.Context, p tfsdk.Provider) (tfsdk.Resource, diag.Diagnostics) {
+func (r resourceOAuthSecurityClaimType) NewResource(_ context.Context, p tfsdk.Provider) (
+	tfsdk.Resource,
+	diag.Diagnostics,
+) {
 	return resourceOAuthSecurityClaim{
 		p: *(p.(*provider)),
 	}, nil
@@ -91,7 +96,15 @@ func (r resourceOAuthSecurityClaim) Read(
 	claimId := int32(state.ID.Value)
 
 	tflog.Debug(ctx, fmt.Sprintf("Parsed claim ID: %d...", claimId))
-	tflog.Debug(ctx, fmt.Sprintf("Claim values in state: Claim Type: %s, Claim Value: %s, Provider Authentication Scheme: %s...", state.ClaimType.Value, state.ClaimValue.Value, state.ProviderAuthenticationScheme.Value))
+	tflog.Debug(
+		ctx,
+		fmt.Sprintf(
+			"Claim values in state: Claim Type: %s, Claim Value: %s, Provider Authentication Scheme: %s...",
+			state.ClaimType.Value,
+			state.ClaimValue.Value,
+			state.ProviderAuthenticationScheme.Value,
+		),
+	)
 
 	tflog.SetField(ctx, "claim_id", claimId)
 
@@ -104,7 +117,10 @@ func (r resourceOAuthSecurityClaim) Read(
 
 	if err != nil {
 		if httpReq != nil && httpReq.StatusCode == 404 {
-			tflog.Info(ctx, fmt.Sprintf("OAuth Security Claim %d not found in remote system. Removing from state", claimId))
+			tflog.Info(
+				ctx,
+				fmt.Sprintf("OAuth Security Claim %d not found in remote system. Removing from state", claimId),
+			)
 			response.State.RemoveResource(ctx)
 			return
 		}
@@ -117,7 +133,12 @@ func (r resourceOAuthSecurityClaim) Read(
 
 		response.Diagnostics.AddError(
 			"Error reading security claim",
-			fmt.Sprintf("Could not read OAuth security claim ID %d, unexpected error: %s. Details %s ", claimId, err.Error(), string(body)),
+			fmt.Sprintf(
+				"Could not read OAuth security claim ID %d, unexpected error: %s. Details %s ",
+				claimId,
+				err.Error(),
+				string(body),
+			),
 		)
 		return
 	}
@@ -155,11 +176,15 @@ func (r resourceOAuthSecurityClaim) Update(
 		return
 	}
 
-	tflog.Debug(ctx, fmt.Sprintf("ClaimType: %s, ClaimValue: %s, ProviderAuthenticationScheme: %s, Claim ID: %d",
-		plan.ClaimType.Value,
-		plan.ClaimValue.Value,
-		plan.ProviderAuthenticationScheme.Value,
-		state.ID.Value))
+	tflog.Debug(
+		ctx, fmt.Sprintf(
+			"ClaimType: %s, ClaimValue: %s, ProviderAuthenticationScheme: %s, Claim ID: %d",
+			plan.ClaimType.Value,
+			plan.ClaimValue.Value,
+			plan.ProviderAuthenticationScheme.Value,
+			state.ID.Value,
+		),
+	)
 
 	claimIdValue := state.ID.Value
 	claimId := int32(claimIdValue)
@@ -167,10 +192,12 @@ func (r resourceOAuthSecurityClaim) Update(
 
 	// Generate API request
 	api := r.p.sdkClient.V1.SecurityClaimsApi
-	req := api.NewUpdateSecurityClaimsRequest(ctx).SecurityRoleClaimDefinitionsRoleClaimDefinitionUpdateRequest(v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionUpdateRequest{
-		Id:          claimId,
-		Description: plan.Description.Value,
-	})
+	req := api.NewUpdateSecurityClaimsRequest(ctx).SecurityRoleClaimDefinitionsRoleClaimDefinitionUpdateRequest(
+		v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionUpdateRequest{
+			Id:          claimId,
+			Description: plan.Description.Value,
+		},
+	)
 
 	tflog.Debug(ctx, fmt.Sprintf("Calling remote source to update OAuth security claim id %d...", claimId))
 
@@ -185,7 +212,12 @@ func (r resourceOAuthSecurityClaim) Update(
 
 		response.Diagnostics.AddError(
 			"Error updating security claim",
-			fmt.Sprintf("Could not update OAuth security claim ID %d, unexpected error: %s. Details %s ", claimId, err.Error(), string(body)),
+			fmt.Sprintf(
+				"Could not update OAuth security claim ID %d, unexpected error: %s. Details %s ",
+				claimId,
+				err.Error(),
+				string(body),
+			),
 		)
 		return
 	}
@@ -243,7 +275,12 @@ func (r resourceOAuthSecurityClaim) Delete(
 
 		response.Diagnostics.AddError(
 			"Error deleting security claim",
-			fmt.Sprintf("Could not delete OAuth security claim ID %d , unexpected error: %s. Details %s ", claimId, err.Error(), string(body)),
+			fmt.Sprintf(
+				"Could not delete OAuth security claim ID %d , unexpected error: %s. Details %s ",
+				claimId,
+				err.Error(),
+				string(body),
+			),
 		)
 		return
 	}
@@ -277,7 +314,15 @@ func (r resourceOAuthSecurityClaim) Create(
 	claimValue := plan.ClaimValue.Value
 	authenticationScheme := plan.ProviderAuthenticationScheme.Value
 
-	tflog.Debug(ctx, fmt.Sprintf("OAuth security claim fields retrieved:\n\tClaimType: %s\n\tClaimValue: %s\n\tAuthentication Scheme: %s\n", claimType, claimValue, authenticationScheme))
+	tflog.Debug(
+		ctx,
+		fmt.Sprintf(
+			"OAuth security claim fields retrieved:\n\tClaimType: %s\n\tClaimValue: %s\n\tAuthentication Scheme: %s\n",
+			claimType,
+			claimValue,
+			authenticationScheme,
+		),
+	)
 
 	ctx = tflog.SetField(ctx, "claim_value", claimValue)
 	tflog.Debug(ctx, "Creating Keyfactor OAuth security claim resource")
@@ -293,12 +338,14 @@ func (r resourceOAuthSecurityClaim) Create(
 	}
 
 	req := api.NewCreateSecurityClaimsRequest(ctx).
-		SecurityRoleClaimDefinitionsRoleClaimDefinitionCreationRequest(v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionCreationRequest{
-			ClaimType:                    *claimTypeEnum,
-			ClaimValue:                   claimValue,
-			Description:                  plan.Description.Value,
-			ProviderAuthenticationScheme: authenticationScheme,
-		})
+		SecurityRoleClaimDefinitionsRoleClaimDefinitionCreationRequest(
+			v1.SecurityRoleClaimDefinitionsRoleClaimDefinitionCreationRequest{
+				ClaimType:                    *claimTypeEnum,
+				ClaimValue:                   claimValue,
+				Description:                  plan.Description.Value,
+				ProviderAuthenticationScheme: authenticationScheme,
+			},
+		)
 
 	createResponse, httpReq, err := req.Execute()
 	if err != nil {
@@ -310,7 +357,13 @@ func (r resourceOAuthSecurityClaim) Create(
 
 		response.Diagnostics.AddError(
 			"Error creating security claim",
-			fmt.Sprintf("Could not create OAuth security claim %s with claim type %s , unexpected error: %s. Details %s ", claimValue, claimType, err.Error(), string(body)),
+			fmt.Sprintf(
+				"Could not create OAuth security claim %s with claim type %s , unexpected error: %s. Details %s ",
+				claimValue,
+				claimType,
+				err.Error(),
+				string(body),
+			),
 		)
 		return
 	}
@@ -318,7 +371,11 @@ func (r resourceOAuthSecurityClaim) Create(
 	if createResponse.Id == nil {
 		response.Diagnostics.AddError(
 			"Error creating security claim",
-			fmt.Sprintf("API response for OAuth security claim %s (type %s) returned a nil ID; the claim may have been created on the remote but cannot be tracked in state.", claimValue, claimType),
+			fmt.Sprintf(
+				"API response for OAuth security claim %s (type %s) returned a nil ID; the claim may have been created on the remote but cannot be tracked in state.",
+				claimValue,
+				claimType,
+			),
 		)
 		return
 	}
@@ -377,7 +434,12 @@ func (r resourceOAuthSecurityClaim) ImportState(
 
 		response.Diagnostics.AddError(
 			"Error importing security claim",
-			fmt.Sprintf("Could not import OAuth security claim ID %d , unexpected error: %s. Details %s ", claimId, err.Error(), string(body)),
+			fmt.Sprintf(
+				"Could not import OAuth security claim ID %d , unexpected error: %s. Details %s ",
+				claimId,
+				err.Error(),
+				string(body),
+			),
 		)
 		return
 	}

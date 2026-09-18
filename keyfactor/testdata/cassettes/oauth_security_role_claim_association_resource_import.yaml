@@ -7,7 +7,7 @@ interactions:
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         form:
             PageReturned:
                 - "1"
@@ -22,7 +22,7 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        url: https://command.lab.local/KeyfactorAPI/PermissionSets?PageReturned=1&ReturnLimit=50
         method: GET
       response:
         proto: HTTP/1.1
@@ -33,32 +33,32 @@ interactions:
         headers:
             Api-Supported-Versions:
                 - "1.0"
+            Connection:
+                - keep-alive
             Content-Length:
                 - "83"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:19 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "34"
+                - Wed, 09 Sep 2026 23:29:58 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 4ec00d26-0761-492a-baf5-747aada1a1f8
+                - b8968bcd-d658-4072-a34f-9549e651f77a
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 1.429301034s
+        duration: 5.037119021s
     - id: 1
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         form:
             PageReturned:
                 - "1"
@@ -73,7 +73,7 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        url: https://command.lab.local/KeyfactorAPI/PermissionSets?PageReturned=1&ReturnLimit=50
         method: GET
       response:
         proto: HTTP/1.1
@@ -84,34 +84,34 @@ interactions:
         headers:
             Api-Supported-Versions:
                 - "1.0"
+            Connection:
+                - keep-alive
             Content-Length:
                 - "83"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:21 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "45"
+                - Wed, 09 Sep 2026 23:30:04 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 0e86922b-3028-4c1c-843e-5b18eac22f25
+                - 2ff92666-75d3-44c4-84dc-b978934d492e
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 151.840492ms
+        duration: 20.741059ms
     - id: 2
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 144
-        host: int25-4-1.kftestlab.com:443
+        content_length: 154
+        host: command.lab.local
         body: |
-            {"ClaimType":5,"ClaimValue":"tf-unit-claim-assoc-imp-376696000","Description":"A Terraform test claim","ProviderAuthenticationScheme":"System"}
+            {"ClaimType":5,"ClaimValue":"tf-unit-claim-assoc-imp-112174000","Description":"A Terraform test claim","ProviderAuthenticationScheme":"Active Directory"}
         headers:
             Accept:
                 - application/json
@@ -123,43 +123,43 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims
+        url: https://command.lab.local/KeyfactorAPI/Security/Claims
         method: POST
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 237
-        body: '{"Id":233,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-376696000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        content_length: 258
+        body: '{"Id":1005,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-112174000","Provider":{"Id":"3c38565c-d3c2-4a9a-aaa5-b2d4c877dbcc","AuthenticationScheme":"Active Directory","DisplayName":"Active Directory"}}'
         headers:
             Api-Supported-Versions:
                 - "1.0"
+            Connection:
+                - keep-alive
             Content-Length:
-                - "237"
+                - "258"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:21 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "60"
+                - Wed, 09 Sep 2026 23:30:04 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - aba7d67a-a828-4472-9815-b8754a8b8c24
+                - b68bd5e7-1df1-42f3-8537-72879178370a
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 176.459547ms
+        duration: 33.755737ms
     - id: 3
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 190
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         body: |
-            {"Description":"A Terraform test role","EmailAddress":"foo@example.com","Name":"tf-unit-role-assoc-imp1-376696000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
+            {"Description":"A Terraform test role","EmailAddress":"foo@example.com","Name":"tf-unit-role-assoc-imp1-112174000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
         headers:
             Accept:
                 - application/json
@@ -171,131 +171,131 @@ interactions:
                 - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles
         method: POST
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 228
-        body: '{"Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[]}'
+        content_length: 229
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
+            Connection:
+                - keep-alive
             Content-Length:
-                - "228"
+                - "229"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:22 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "115"
+                - Wed, 09 Sep 2026 23:30:04 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 28393f37-accb-4154-943c-e56be8237747
+                - 4e1968cb-d3d7-4b52-b51a-eb18460dfcee
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 397.236245ms
+        duration: 126.691902ms
     - id: 4
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         headers:
             Accept:
                 - application/json
             User-Agent:
                 - OpenAPI-Generator/1.0.0/go
             x-keyfactor-api-version:
-                - "2"
+                - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/362
+        url: https://command.lab.local/KeyfactorAPI/Security/Claims/1005
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 228
-        body: '{"Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[]}'
+        content_length: 258
+        body: '{"Id":1005,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-112174000","Provider":{"Id":"3c38565c-d3c2-4a9a-aaa5-b2d4c877dbcc","AuthenticationScheme":"Active Directory","DisplayName":"Active Directory"}}'
         headers:
             Api-Supported-Versions:
-                - 1.0, 2
+                - "1.0"
+            Connection:
+                - keep-alive
             Content-Length:
-                - "228"
+                - "258"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:22 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "43"
+                - Wed, 09 Sep 2026 23:30:04 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 8a64ce6f-2337-4726-befd-cbca3fdcf25b
+                - 4641349b-fe7b-4019-be21-a1ab53fdf66e
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 154.603255ms
+        duration: 19.86208ms
     - id: 5
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         headers:
             Accept:
                 - application/json
             User-Agent:
                 - OpenAPI-Generator/1.0.0/go
             x-keyfactor-api-version:
-                - "1"
+                - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/233
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/1007
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 237
-        body: '{"Id":233,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-376696000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        content_length: 229
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[]}'
         headers:
             Api-Supported-Versions:
-                - "1.0"
+                - 1.0, 2
+            Connection:
+                - keep-alive
             Content-Length:
-                - "237"
+                - "229"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:22 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "31"
+                - Wed, 09 Sep 2026 23:30:04 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - eaf47528-5d74-4862-9dbf-3c658247a1df
+                - 1c53d2fb-e6cb-4616-83f7-c2bfcfd2cd5a
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 133.739262ms
+        duration: 65.222788ms
     - id: 6
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 354
-        host: int25-4-1.kftestlab.com:443
+        content_length: 365
+        host: command.lab.local
         body: |
-            {"Claims":[{"ClaimType":5,"ClaimValue":"tf-unit-claim-assoc-imp-376696000","Description":"A Terraform test claim","ProviderAuthenticationScheme":"System"}],"Description":"A Terraform test role","EmailAddress":"foo@example.com","Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
+            {"Claims":[{"ClaimType":5,"ClaimValue":"tf-unit-claim-assoc-imp-112174000","Description":"A Terraform test claim","ProviderAuthenticationScheme":"Active Directory"}],"Description":"A Terraform test role","EmailAddress":"foo@example.com","Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
         headers:
             Accept:
                 - application/json
@@ -307,92 +307,85 @@ interactions:
                 - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles
         method: PUT
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 465
-        body: '{"Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":233,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-376696000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        content_length: 487
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":1005,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-112174000","Provider":{"Id":"3c38565c-d3c2-4a9a-aaa5-b2d4c877dbcc","AuthenticationScheme":"Active Directory","DisplayName":"Active Directory"}}]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
+            Connection:
+                - keep-alive
             Content-Length:
-                - "465"
+                - "487"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:23 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "153"
+                - Wed, 09 Sep 2026 23:30:04 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - e5ebc69b-fb8e-43c1-8062-a7f5b34be6a6
+                - a61825c1-1bce-48b4-974e-14db1cc26694
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 259.148276ms
+        duration: 74.265806ms
     - id: 7
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
-        form:
-            PageReturned:
-                - "1"
-            ReturnLimit:
-                - "50"
+        host: command.lab.local
         headers:
             Accept:
                 - application/json
             User-Agent:
                 - OpenAPI-Generator/1.0.0/go
             x-keyfactor-api-version:
-                - "1"
+                - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/1007
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 83
-        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        content_length: 487
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":1005,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-112174000","Provider":{"Id":"3c38565c-d3c2-4a9a-aaa5-b2d4c877dbcc","AuthenticationScheme":"Active Directory","DisplayName":"Active Directory"}}]}'
         headers:
             Api-Supported-Versions:
-                - "1.0"
+                - 1.0, 2
+            Connection:
+                - keep-alive
             Content-Length:
-                - "83"
+                - "487"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:24 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "36"
+                - Wed, 09 Sep 2026 23:30:04 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 1d097fbf-ecf7-45db-a764-e61ab11c795e
+                - c86fd8d9-9d8f-46e9-b802-71991c2c76b2
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
-            X-Total-Count:
-                - "1"
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 146.2483ms
+        duration: 24.473536ms
     - id: 8
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         form:
             PageReturned:
                 - "1"
@@ -407,7 +400,7 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        url: https://command.lab.local/KeyfactorAPI/PermissionSets?PageReturned=1&ReturnLimit=50
         method: GET
       response:
         proto: HTTP/1.1
@@ -418,32 +411,37 @@ interactions:
         headers:
             Api-Supported-Versions:
                 - "1.0"
+            Connection:
+                - keep-alive
             Content-Length:
                 - "83"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:24 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "29"
+                - Wed, 09 Sep 2026 23:30:05 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 0eac2955-3636-4633-a383-454ffdbbbaee
+                - 7acdeb62-d509-41ba-b965-5f94c9fbb640
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 137.724022ms
+        duration: 24.740311ms
     - id: 9
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
         headers:
             Accept:
                 - application/json
@@ -453,85 +451,87 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/233
+        url: https://command.lab.local/KeyfactorAPI/PermissionSets?PageReturned=1&ReturnLimit=50
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 237
-        body: '{"Id":233,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-376696000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}'
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
         headers:
             Api-Supported-Versions:
                 - "1.0"
+            Connection:
+                - keep-alive
             Content-Length:
-                - "237"
+                - "83"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:24 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "39"
+                - Wed, 09 Sep 2026 23:30:05 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 35aff7c2-fba2-430e-8905-a7c583a7e16b
+                - 81d8c55f-9dea-40b2-934c-66ced6aa7c5f
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
+            X-Total-Count:
+                - "1"
         status: 200 OK
         code: 200
-        duration: 147.928752ms
+        duration: 22.062526ms
     - id: 10
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         headers:
             Accept:
                 - application/json
             User-Agent:
                 - OpenAPI-Generator/1.0.0/go
             x-keyfactor-api-version:
-                - "2"
+                - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/362
+        url: https://command.lab.local/KeyfactorAPI/Security/Claims/1005
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 465
-        body: '{"Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":233,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-376696000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        content_length: 258
+        body: '{"Id":1005,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-112174000","Provider":{"Id":"3c38565c-d3c2-4a9a-aaa5-b2d4c877dbcc","AuthenticationScheme":"Active Directory","DisplayName":"Active Directory"}}'
         headers:
             Api-Supported-Versions:
-                - 1.0, 2
+                - "1.0"
+            Connection:
+                - keep-alive
             Content-Length:
-                - "465"
+                - "258"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:25 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "36"
+                - Wed, 09 Sep 2026 23:30:05 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 91a6c5b8-1d71-4314-b1ee-c4bf51b6a28c
+                - e030de92-4b90-46b3-aab1-c1d4074a7a03
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 139.323442ms
+        duration: 82.959405ms
     - id: 11
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         headers:
             Accept:
                 - application/json
@@ -541,92 +541,85 @@ interactions:
                 - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/362
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/1007
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 465
-        body: '{"Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":233,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-376696000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        content_length: 487
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":1005,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-112174000","Provider":{"Id":"3c38565c-d3c2-4a9a-aaa5-b2d4c877dbcc","AuthenticationScheme":"Active Directory","DisplayName":"Active Directory"}}]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
+            Connection:
+                - keep-alive
             Content-Length:
-                - "465"
+                - "487"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:25 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "59"
+                - Wed, 09 Sep 2026 23:30:05 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 1e6500dd-0901-4b09-a776-4925ba9b2f1b
+                - a8a9ff50-08b7-4053-86db-806e3dea978e
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 186.557522ms
+        duration: 78.476417ms
     - id: 12
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
-        form:
-            PageReturned:
-                - "1"
-            ReturnLimit:
-                - "50"
+        host: command.lab.local
         headers:
             Accept:
                 - application/json
             User-Agent:
                 - OpenAPI-Generator/1.0.0/go
             x-keyfactor-api-version:
-                - "1"
+                - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/1007
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 83
-        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
+        content_length: 487
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":1005,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-112174000","Provider":{"Id":"3c38565c-d3c2-4a9a-aaa5-b2d4c877dbcc","AuthenticationScheme":"Active Directory","DisplayName":"Active Directory"}}]}'
         headers:
             Api-Supported-Versions:
-                - "1.0"
+                - 1.0, 2
+            Connection:
+                - keep-alive
             Content-Length:
-                - "83"
+                - "487"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:25 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "47"
+                - Wed, 09 Sep 2026 23:30:05 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 51f19b87-f55a-4ce5-887c-76a0ffa9a5cc
+                - e7219a22-b8a2-4122-bf4d-ca8ec55f596d
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
-            X-Total-Count:
-                - "1"
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 156.64884ms
+        duration: 23.793562ms
     - id: 13
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         form:
             PageReturned:
                 - "1"
@@ -641,7 +634,7 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/PermissionSets?PageReturned=1&ReturnLimit=50
+        url: https://command.lab.local/KeyfactorAPI/PermissionSets?PageReturned=1&ReturnLimit=50
         method: GET
       response:
         proto: HTTP/1.1
@@ -652,76 +645,83 @@ interactions:
         headers:
             Api-Supported-Versions:
                 - "1.0"
+            Connection:
+                - keep-alive
             Content-Length:
                 - "83"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:26 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "38"
+                - Wed, 09 Sep 2026 23:30:05 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - f8b422e5-8dc7-45fd-a8dc-66d019d6753d
+                - b4096fcb-cdb2-48bb-822f-97dc850f7ed6
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
             X-Total-Count:
                 - "1"
         status: 200 OK
         code: 200
-        duration: 173.379274ms
+        duration: 21.738329ms
     - id: 14
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
+        form:
+            PageReturned:
+                - "1"
+            ReturnLimit:
+                - "50"
         headers:
             Accept:
                 - application/json
             User-Agent:
                 - OpenAPI-Generator/1.0.0/go
             x-keyfactor-api-version:
-                - "2"
+                - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/362
+        url: https://command.lab.local/KeyfactorAPI/PermissionSets?PageReturned=1&ReturnLimit=50
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 465
-        body: '{"Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":233,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-376696000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        content_length: 83
+        body: '[{"Id":"099c05f0-deba-4562-a5b1-f491e19c0749","Name":"Global","Permissions":["/"]}]'
         headers:
             Api-Supported-Versions:
-                - 1.0, 2
+                - "1.0"
+            Connection:
+                - keep-alive
             Content-Length:
-                - "465"
+                - "83"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:26 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "36"
+                - Wed, 09 Sep 2026 23:30:06 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 58ca5fad-9616-4752-94f7-c4529c187d8e
+                - 2872793e-627d-486d-96d5-beb12a525256
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
+            X-Total-Count:
+                - "1"
         status: 200 OK
         code: 200
-        duration: 134.090091ms
+        duration: 19.862568ms
     - id: 15
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         headers:
             Accept:
                 - application/json
@@ -731,41 +731,41 @@ interactions:
                 - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/362
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/1007
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 465
-        body: '{"Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":233,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-376696000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        content_length: 487
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":1005,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-112174000","Provider":{"Id":"3c38565c-d3c2-4a9a-aaa5-b2d4c877dbcc","AuthenticationScheme":"Active Directory","DisplayName":"Active Directory"}}]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
+            Connection:
+                - keep-alive
             Content-Length:
-                - "465"
+                - "487"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:27 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "46"
+                - Wed, 09 Sep 2026 23:30:06 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 464c7586-320f-4a76-8451-62e6c89acc47
+                - 72ac6c9e-171a-4fa7-b6ea-3ec1f0eee0f5
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 158.195146ms
+        duration: 48.001621ms
     - id: 16
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         headers:
             Accept:
                 - application/json
@@ -775,43 +775,87 @@ interactions:
                 - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/362
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/1007
         method: GET
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 465
-        body: '{"Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":233,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-376696000","Provider":{"Id":"c70e8641-a543-45b1-a47f-8b7d253fbf14","AuthenticationScheme":"System","DisplayName":"System"}}]}'
+        content_length: 487
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":1005,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-112174000","Provider":{"Id":"3c38565c-d3c2-4a9a-aaa5-b2d4c877dbcc","AuthenticationScheme":"Active Directory","DisplayName":"Active Directory"}}]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
+            Connection:
+                - keep-alive
             Content-Length:
-                - "465"
+                - "487"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:27 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "32"
+                - Wed, 09 Sep 2026 23:30:06 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 6b01925a-57cb-43d6-8be9-c48b1d3211bc
+                - 5b09a84d-f1b6-488b-9b6f-025bab808871
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 130.736672ms
+        duration: 19.816242ms
     - id: 17
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 211
-        host: int25-4-1.kftestlab.com:443
+        content_length: 0
+        host: command.lab.local
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/1007
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 487
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[{"Id":1005,"Description":"A Terraform test claim","ClaimType":"OAuthSubject","ClaimValue":"tf-unit-claim-assoc-imp-112174000","Provider":{"Id":"3c38565c-d3c2-4a9a-aaa5-b2d4c877dbcc","AuthenticationScheme":"Active Directory","DisplayName":"Active Directory"}}]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "487"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 09 Sep 2026 23:30:06 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - 668d3779-c872-4910-83b8-b898e55b7197
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 25.216443ms
+    - id: 18
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 212
+        host: command.lab.local
         body: |
-            {"Claims":[],"Description":"A Terraform test role","EmailAddress":"foo@example.com","Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
+            {"Claims":[],"Description":"A Terraform test role","EmailAddress":"foo@example.com","Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[]}
         headers:
             Accept:
                 - application/json
@@ -823,41 +867,85 @@ interactions:
                 - "2"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles
         method: PUT
       response:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
-        content_length: 228
-        body: '{"Id":362,"Name":"tf-unit-role-assoc-imp1-376696000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[]}'
+        content_length: 229
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[]}'
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
+            Connection:
+                - keep-alive
             Content-Length:
-                - "228"
+                - "229"
             Content-Type:
                 - application/json; charset=utf-8
             Date:
-                - Wed, 22 Apr 2026 17:37:28 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "138"
+                - Wed, 09 Sep 2026 23:30:06 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - b9a8b6a3-8a0b-42e0-a62f-4fc7b229a4c4
+                - be5dfa76-21ce-423a-a0fa-5a2120563173
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 200 OK
         code: 200
-        duration: 235.924082ms
-    - id: 18
+        duration: 117.759126ms
+    - id: 19
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
+        headers:
+            Accept:
+                - application/json
+            User-Agent:
+                - OpenAPI-Generator/1.0.0/go
+            x-keyfactor-api-version:
+                - "2"
+            x-keyfactor-requested-with:
+                - APIClient
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/1007
+        method: GET
+      response:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 229
+        body: '{"Id":1007,"Name":"tf-unit-role-assoc-imp1-112174000","Description":"A Terraform test role","EmailAddress":"foo@example.com","Immutable":false,"PermissionSetId":"099c05f0-deba-4562-a5b1-f491e19c0749","Permissions":[],"Claims":[]}'
+        headers:
+            Api-Supported-Versions:
+                - 1.0, 2
+            Connection:
+                - keep-alive
+            Content-Length:
+                - "229"
+            Content-Type:
+                - application/json; charset=utf-8
+            Date:
+                - Wed, 09 Sep 2026 23:30:06 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
+            X-Keyfactor-Correlation-Id:
+                - f0e8dd52-75ca-48fd-a261-059ab641483d
+            X-Keyfactor-Product-Version:
+                - 25.5.1
+        status: 200 OK
+        code: 200
+        duration: 22.040399ms
+    - id: 20
+      request:
+        proto: HTTP/1.1
+        proto_major: 1
+        proto_minor: 1
+        content_length: 0
+        host: command.lab.local
         headers:
             User-Agent:
                 - OpenAPI-Generator/1.0.0/go
@@ -865,7 +953,7 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Claims/233
+        url: https://command.lab.local/KeyfactorAPI/Security/Claims/1005
         method: DELETE
       response:
         proto: HTTP/1.1
@@ -876,26 +964,26 @@ interactions:
         headers:
             Api-Supported-Versions:
                 - "1.0"
+            Connection:
+                - keep-alive
             Date:
-                - Wed, 22 Apr 2026 17:37:28 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "46"
+                - Wed, 09 Sep 2026 23:30:07 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - f1aa604a-cf2b-46c5-9269-4a8000be56d6
+                - 1daa3d47-8fce-422f-90da-3605185157bc
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 204 No Content
         code: 204
-        duration: 152.96695ms
-    - id: 19
+        duration: 106.260219ms
+    - id: 21
       request:
         proto: HTTP/1.1
         proto_major: 1
         proto_minor: 1
         content_length: 0
-        host: int25-4-1.kftestlab.com:443
+        host: command.lab.local
         headers:
             User-Agent:
                 - OpenAPI-Generator/1.0.0/go
@@ -903,7 +991,7 @@ interactions:
                 - "1"
             x-keyfactor-requested-with:
                 - APIClient
-        url: https://int25-4-1.kftestlab.com:443/Keyfactor/API/Security/Roles/362
+        url: https://command.lab.local/KeyfactorAPI/Security/Roles/1007
         method: DELETE
       response:
         proto: HTTP/1.1
@@ -914,16 +1002,16 @@ interactions:
         headers:
             Api-Supported-Versions:
                 - 1.0, 2
+            Connection:
+                - keep-alive
             Date:
-                - Wed, 22 Apr 2026 17:37:28 GMT
-            Server:
-                - istio-envoy
-            X-Envoy-Upstream-Service-Time:
-                - "104"
+                - Wed, 09 Sep 2026 23:30:07 GMT
+            Strict-Transport-Security:
+                - max-age=31536000; includeSubDomains
             X-Keyfactor-Correlation-Id:
-                - 7c1ee74f-37bf-4ce3-a3d1-9bcdb9686d7f
+                - bbd44869-33bb-4052-b37c-6c1b51fea8b7
             X-Keyfactor-Product-Version:
-                - 25.4.1+dc0db2c8af1baf68b4c0043ec0f0f41a77aee11e
+                - 25.5.1
         status: 204 No Content
         code: 204
-        duration: 208.491025ms
+        duration: 135.60612ms

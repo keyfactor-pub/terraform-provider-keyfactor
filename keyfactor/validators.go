@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 // RequiresReplaceIfPreviouslySet returns an AttributePlanModifier that only
@@ -35,8 +36,13 @@ func RequiresReplaceIfPreviouslySet() tfsdk.AttributePlanModifier {
 // attribute is also set. Used to prevent meaningless combinations such as
 // specifying key_type/key_size/curve alongside a CSR (the key is already
 // embedded in the CSR and these fields would be silently ignored).
+//
+// The optional message field provides extra context appended to the error
+// description. When empty, a default CSR-specific message is used to preserve
+// backward compatibility for existing callers.
 type conflictsWithAttrValidator struct {
 	otherAttr string
+	message   string // optional; defaults to CSR key-type context when empty
 }
 
 func (v conflictsWithAttrValidator) Description(ctx context.Context) string {
@@ -59,13 +65,18 @@ func (v conflictsWithAttrValidator) Validate(
 	diags := req.Config.GetAttribute(ctx, path.Root(v.otherAttr), &otherVal)
 	resp.Diagnostics.Append(diags...)
 	if otherVal != nil && !otherVal.IsNull() && !otherVal.IsUnknown() {
+		extra := "The key type is determined by the CSR."
+		if v.message != "" {
+			extra = v.message
+		}
 		resp.Diagnostics.AddAttributeError(
 			req.AttributePath,
 			"Conflicting Attributes",
 			fmt.Sprintf(
-				"`%s` cannot be set when `%s` is also set. The key type is determined by the CSR.",
+				"`%s` cannot be set when `%s` is also set. %s",
 				req.AttributePath.String(),
 				v.otherAttr,
+				extra,
 			),
 		)
 	}
@@ -91,12 +102,19 @@ func (v atLeastOneOfValidator) Validate(
 	req tfsdk.ValidateAttributeRequest,
 	resp *tfsdk.ValidateAttributeResponse,
 ) {
-	attrVal := !req.AttributeConfig.IsNull()
+	// An attribute is considered "set" only if it is non-null AND, for string
+	// attributes, non-empty. Unknown values (e.g. locals derived from variables
+	// during `terraform validate`) are treated as "set" because we cannot know
+	// their final value yet — rejecting them here would produce false positives
+	// during validate when the actual apply value will be non-empty.
+	strVal, ok := req.AttributeConfig.(types.String)
+	attrVal := !req.AttributeConfig.IsNull() && (req.AttributeConfig.IsUnknown() || !ok || strVal.Value != "")
 
 	var otherAttrValue attr.Value
 	diags := req.Config.GetAttribute(ctx, path.Root(v.otherAttr), &otherAttrValue)
 	resp.Diagnostics.Append(diags...)
-	otherVal := otherAttrValue != nil && !otherAttrValue.IsNull()
+	otherStr, otherIsStr := otherAttrValue.(types.String)
+	otherVal := otherAttrValue != nil && !otherAttrValue.IsNull() && (otherAttrValue.IsUnknown() || !otherIsStr || otherStr.Value != "")
 
 	if !attrVal && !otherVal {
 		resp.Diagnostics.AddAttributeError(

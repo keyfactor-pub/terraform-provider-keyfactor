@@ -60,7 +60,7 @@ func (r resourceCertificateCollectionType) GetSchema(_ context.Context) (tfsdk.S
 				// required value -- expected, and no different from any
 				// other Required attribute's import behavior.
 				Required:    true,
-				Description: "The query expression that defines which certificates belong to this collection. This attribute must always be declared and must never be removed from configuration once set. Not returned by the server on read; the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form. Note: a certificate collection can only be imported and managed by Terraform if it has a non-empty query.",
+				Description: "The query expression that defines which certificates belong to this collection. This attribute must always be declared and must never be removed from configuration once set. Not returned by the server on read (a Keyfactor Command API limitation); the provider preserves the last-known value from state instead. Use `content` to see the server-normalized form. Changes to `query` made outside of Terraform (e.g. in the Command UI) will not be detected by the provider. Note: a certificate collection can only be imported and managed by Terraform if it has a non-empty query.",
 			},
 			"content": {
 				Type:        types.StringType,
@@ -391,6 +391,13 @@ func (r resourceCertificateCollection) Create(
 	}
 
 	newState := collectionResponseToState(resp)
+	// Command normalizes query strings by inserting spaces inside parentheses
+	// (e.g. "(X)" becomes "( X )"). Preserving the plan value here prevents
+	// "provider produced inconsistent result after apply": the Create response
+	// carries the server-normalized form, which would differ from the plan value
+	// and trigger the framework's post-apply consistency check. Read() already
+	// preserves state.Query for the same reason (GetById has no Query field).
+	newState.Query = plan.Query
 	tflog.Debug(ctx, fmt.Sprintf("Created certificate collection ID %d", newState.ID.Value))
 	// Field-level audit logging for the collection's defining (and only
 	// access-control-relevant) field on this initial create -- mirrors the
@@ -627,16 +634,14 @@ func (r resourceCertificateCollection) Update(
 
 	newState := collectionResponseToState(resp)
 
-	// The update response DOES carry Query, but fall back to whatever we
-	// just decided to send (plan/state-derived) in case the server ever
-	// omits it in the response body.
-	if newState.Query.Null {
-		if !plan.Query.Null {
-			newState.Query = plan.Query
-		} else {
-			newState.Query = state.Query
-		}
-	}
+	// The update response carries Query, but Command normalizes it by inserting
+	// spaces inside parentheses (e.g. "(X)" becomes "( X )"). Always preserving
+	// the plan value -- rather than conditionally falling back only when the
+	// server returns null -- prevents "provider produced inconsistent result after
+	// apply": the server-normalized form would differ from the plan value and
+	// trigger the framework's post-apply consistency check. query is Required, so
+	// plan.Query is always a concrete non-null value here.
+	newState.Query = plan.Query
 
 	diags = response.State.Set(ctx, &newState)
 	response.Diagnostics.Append(diags...)
@@ -690,13 +695,23 @@ func (r resourceCertificateCollection) ImportState(
 ) {
 	tflog.Info(ctx, fmt.Sprintf("ImportState called on certificate collection with ID %q", request.ID))
 
-	id, err := strconv.Atoi(request.ID)
-	if err != nil {
-		response.Diagnostics.AddError(
-			"Invalid certificate collection ID.",
-			fmt.Sprintf("Import ID must be an integer, got %q: %s", request.ID, err.Error()),
-		)
-		return
+	var id int
+	if numericID, parseErr := strconv.Atoi(request.ID); parseErr == nil {
+		// Numeric ID path — preserved unchanged.
+		id = numericID
+	} else {
+		// Non-numeric: treat as a collection name and resolve to an ID.
+		tflog.Debug(ctx, fmt.Sprintf("Import ID %q is not numeric; querying by name", request.ID))
+		found, err := getCertificateCollectionByName(ctx, r.p.sdkClient, request.ID)
+		if err != nil {
+			response.Diagnostics.AddError(
+				"Error importing certificate collection by name.",
+				fmt.Sprintf("Could not find certificate collection %q by name: %s", request.ID, err.Error()),
+			)
+			return
+		}
+		id = int(found.GetId())
+		tflog.Debug(ctx, fmt.Sprintf("Resolved collection name %q to ID %d", request.ID, id))
 	}
 
 	collectionApi := r.p.sdkClient.V1.CertificateCollectionApi

@@ -65,6 +65,7 @@ resource "keyfactor_certificate_deployment" "jks_buddy" {
   certificate_id       = keyfactor_certificate.demo.certificate_id
   certificate_store_id = keyfactor_certificate_store.k8s_jks_buddy.id
   certificate_alias    = "jks/tf-k8s-demo"
+  max_inventory_wait   = 300 # 5-minute timeout — exercises the deadline path
 }
 
 resource "keyfactor_certificate_deployment" "pkcs12" {
@@ -77,4 +78,5 @@ resource "keyfactor_certificate_deployment" "pkcs12_buddy" {
   certificate_id       = keyfactor_certificate.demo.certificate_id
   certificate_store_id = keyfactor_certificate_store.k8s_pkcs12_buddy.id
   certificate_alias    = ".p12/tf-k8s-demo"
+  max_inventory_wait   = 0 # fire-and-forget — exercises the skip-polling path
 }

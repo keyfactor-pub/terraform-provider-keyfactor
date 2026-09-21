@@ -176,6 +176,59 @@ func TestUnitKeyfactorCertificateDeployResource_NoInvSchedule(t *testing.T) {
 	})
 }
 
+// TestUnitKeyfactorCertificateDeployResource_FireAndForget verifies that deploying
+// with max_inventory_wait = 0 completes immediately without any inventory polling,
+// emits a warning, and sets state correctly.
+//
+// This test reuses the certificate_deploy_resource_no_inv_schedule cassette: the
+// fire-and-forget path makes a strict subset of those requests (it skips the
+// GetCertificateStoreByID inventory-schedule check and all polling), so the unused
+// cassette interaction is harmless.
+//
+// To record: use make testunit-record-cert-deploy-no-inv (same cassette).
+func TestUnitKeyfactorCertificateDeployResource_FireAndForget(t *testing.T) {
+	cassetteName := "certificate_deploy_resource_no_inv_schedule"
+	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
+
+	params := readDeployTestParams(cassettePath)
+	if params.CN == "" {
+		t.Skip("No no-inv-schedule deploy cassette recorded. Run: make testunit-record-cert-deploy-no-inv")
+	}
+
+	factories, cleanup := newVCRProviderFactories(t, cassetteName)
+	defer cleanup()
+
+	var certConfig string
+	if params.EnrollmentPattern != "" {
+		certConfig = testAccCertPFXConfigEnrollmentPattern(params.EnrollmentPattern, params.CAName, params.CN)
+	} else {
+		certConfig = testAccCertPFXConfig(params.TemplateName, params.CAName, params.CN)
+	}
+	// Store config without inventory_schedule — cassette was recorded for this store type.
+	storeConfig := testAccCertStoreConfig(params.StoreType, params.ClientMachine, params.AgentID, params.StorePath)
+	// fire-and-forget: max_inventory_wait = 0 skips all inventory polling.
+	deployConfig := testAccCertDeployConfigFireAndForget("keyfactor_certificate.test", "keyfactor_certificate_store.test")
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: factories,
+		Steps: []resource.TestStep{
+			{
+				// Apply must succeed without error even though polling is skipped.
+				// A non-fatal warning is emitted instead of polling inventory.
+				Config: certConfig + "\n" + storeConfig + "\n" + deployConfig,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttrSet("keyfactor_certificate.test", "serial_number"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_store.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_id"),
+					resource.TestCheckResourceAttrSet("keyfactor_certificate_deployment.test", "certificate_store_id"),
+					resource.TestCheckResourceAttr("keyfactor_certificate_deployment.test", "max_inventory_wait", "0"),
+				),
+			},
+		},
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Integration tests (auto-discovery)
 // ---------------------------------------------------------------------------

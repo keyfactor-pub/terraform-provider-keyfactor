@@ -27,7 +27,7 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 			"name": {
 				Type:        types.StringType,
 				Required:    true,
-				Description: "Description of the OAuth security role",
+				Description: "Name of the OAuth security role",
 			},
 			"description": {
 				Type:        types.StringType,
@@ -55,8 +55,8 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 			"permissions": {
 				Type:                types.SetType{ElemType: types.StringType},
 				Required:            true,
-				Description:         "A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role.",
-				MarkdownDescription: "A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role. For more information about allowed permission values, please refer to the Keyfactor Command [Version Two Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version2).",
+				Description:         "A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role. Replace semantics, not additive: every apply sends the full declared set to Command, and Command's response fully replaces server-side permissions with it -- there is no merge with permissions granted outside this configuration.",
+				MarkdownDescription: "A list of permissions associated with the OAuth security role. This will return a list of permissions that are associated with the OAuth security role. This is used to identify the permissions associated with the role. For more information about allowed permission values, please refer to the Keyfactor Command [Version Two Permission Model documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/SecurityRolePermissions.htm#Version2).\n\n~> **Replace semantics, not additive:** every `terraform apply` sends the full declared `permissions` set to Command, and Command's update response fully replaces server-side permissions with it. There is no merge with permissions granted outside this configuration (e.g. via the Command portal) -- whatever isn't declared here is removed on the next apply.",
 			},
 		},
 		Description:         "Used to manage Keyfactor Command Security Roles using the V2 `/Security/Roles` API. This resource is compatible with Keyfactor Command versions 11+. For more information about this construct, please refer to the API documentation for Security Roles: https://software.keyfactor.com/Core-OnPrem/Current/Content/WebAPI/KeyfactorAPI/SecurityRolesandIdentities.htm",

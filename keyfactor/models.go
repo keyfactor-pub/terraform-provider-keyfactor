@@ -102,6 +102,16 @@ type OAuthSecurityRoleClaimAssociation struct {
 	ClaimID types.Int64  `tfsdk:"claim_id"` // ID of the OAuth security claim to be associated with the OAuth security role.
 }
 
+// EnrollmentPatternRoleBinding is the Terraform state model for
+// keyfactor_enrollment_pattern_role_binding. ID is the composite key
+// "<enrollment_pattern_name>//<role_name>", a stable import handle that
+// practitioners hold without needing internal server IDs.
+type EnrollmentPatternRoleBinding struct {
+	ID                    types.String `tfsdk:"id"`
+	EnrollmentPatternName types.String `tfsdk:"enrollment_pattern_name"`
+	RoleName              types.String `tfsdk:"role_name"`
+}
+
 // CommandCertificate represents a certificate entity in Keyfactor.
 //
 // NOTE: This struct has two ID-related fields due to a Terraform testing framework requirement:
@@ -288,6 +298,7 @@ type CommandCertificateDeployment struct {
 	Overwrite        types.Bool   `tfsdk:"overwrite"`            // Overwrite specifies whether an existing certificate should be overwritten during deployment.
 	Redeploy         types.Bool   `tfsdk:"redeploy"`             // Redeploy specifies whether a certificate should be redeployed to the store during the deployment process.
 	SkipRemoval      types.Bool   `tfsdk:"skip_removal"`         // SkipRemoval specifies whether the removal of the certificate from the store should be skipped during undeployment.
+	MaxInventoryWait types.Int64  `tfsdk:"max_inventory_wait"`   // MaxInventoryWait controls how long (in seconds) to wait for inventory confirmation. Null = indefinite; 0 = skip verification; >0 = timeout in seconds.
 }
 
 // CSRCertificate represents a certificate provisioned via a CSR in Keyfactor.
@@ -404,6 +415,7 @@ type CertificateTemplateRoleBinding struct {
 
 type CertificateEnrollmentPattern struct {
 	Identifier             types.String                       `tfsdk:"identifier"`
+	TemplateShortName      types.String                       `tfsdk:"template_short_name"`
 	ID                     types.Int64                        `tfsdk:"id"`
 	Name                   types.String                       `tfsdk:"name"`
 	Description            types.String                       `tfsdk:"description"`

@@ -271,20 +271,6 @@ func TestUnitAlgorithmDataResponseToResourceEntryPreservesEmptyBitLengthsAndCurv
 func TestUnitEnrollmentPatternOuterListConversionsPreserveEmptyVsNil(t *testing.T) {
 	t.Parallel()
 
-	t.Run("enrollmentPatternAssociatedRolesToState", func(t *testing.T) {
-		t.Parallel()
-		if got := enrollmentPatternAssociatedRolesToState(nil); got != nil {
-			t.Errorf("nil input: got %+v, want nil (server omitted the field)", got)
-		}
-		got := enrollmentPatternAssociatedRolesToState([]v1.EnrollmentPatternsEnrollmentPatternAssociatedRoleResponse{})
-		if got == nil {
-			t.Error("non-nil empty input: got nil, want a non-nil empty slice (server returned an explicit `[]`)")
-		}
-		if len(got) != 0 {
-			t.Errorf("non-nil empty input: got %+v, want length 0", got)
-		}
-	})
-
 	t.Run("enrollmentPatternCAsToState", func(t *testing.T) {
 		t.Parallel()
 		if got := enrollmentPatternCAsToState(nil); got != nil {

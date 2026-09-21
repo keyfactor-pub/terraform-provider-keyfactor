@@ -11,7 +11,8 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Regression tests: restrict_cas/use_ad_permissions config-time enforcement.
+// Regression tests: restrict_cas and use_ad_permissions config-time
+// enforcement.
 //
 // restrict_cas's schema description states "If true, at least one CA must
 // be configured" and use_ad_permissions's schema description states "If
@@ -21,8 +22,7 @@ import (
 // enforced either constraint. A config declaring restrict_cas = true with no
 // certificate_authority_ids (or use_ad_permissions = false with no
 // associated_role_names) would silently apply -- Command may or may not
-// reject it, but the provider itself gave no config-time feedback despite
-// documenting the requirement.
+// reject it, but the provider gave no config-time feedback.
 //
 // The ORIGINAL version of this check treated a Null (undeclared)
 // certificate_authority_ids/associated_role_names identically to a KNOWN,
@@ -33,10 +33,9 @@ import (
 // pattern's certificate_authority_ids/associated_role_names always starts
 // Null in state, and a config that re-declares restrict_cas=true/
 // use_ad_permissions=false while leaving the corresponding list undeclared
-// -- exactly the path Update()'s prior-state fallback exists to support --
-// hard-errored even though CAs/roles genuinely exist server-side. Several
-// sub-tests below were themselves updated to assert the corrected (fixed)
-// behavior; see each one's comment for what it asserted before the fix.
+// -- relying on Update()'s prior-state fallback -- hard-errored.
+// Several sub-tests below were updated to assert the corrected behavior; see
+// each one's comment for what it asserted before the fix.
 // ---------------------------------------------------------------------------
 
 func hasAttributeError(diags diag.Diagnostics, summary string) bool {
@@ -62,10 +61,11 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 
 	// UseADPermissions is left Null (Unknown: false, Null: true) in every
 	// case below via this shared default -- otherwise its Go zero value
-	// (Null: false, Value: false) would spuriously trip the unrelated
-	// use_ad_permissions=false check these RestrictCAs-focused cases don't
-	// intend to exercise.
+	// (Null: false, Value: false) is a known false which differs from the
+	// undeclared case these RestrictCAs-focused tests don't intend to probe.
 	noUseADPermissionsCheck := types.Bool{Null: true}
+	// AssociatedRoleNames is left Null in every case below -- the
+	// use_ad_permissions check is skipped when UseADPermissions is Null.
 	noAssociatedRoleNamesCheck := types.Set{Null: true, ElemType: types.StringType}
 
 	// A Null (undeclared) certificate_authority_ids
@@ -184,16 +184,13 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_RestrictCAs(t *testing.T
 func TestUnitValidateEnrollmentPatternConfigConstraints_UseADPermissions(t *testing.T) {
 	t.Parallel()
 
-	// A Null (undeclared) associated_role_names
-	// must NOT be a config error -- see the identical
-	// certificate_authority_ids/restrict_cas rationale above. This is the
-	// import-then-manage flow: an imported pattern's associated_role_names
-	// starts Null in state, and re-declaring use_ad_permissions = false
-	// while leaving associated_role_names undeclared -- relying on
-	// Update()'s prior-state fallback to preserve existing membership --
-	// must NOT hard-error just because it's undeclared. Before the fix,
-	// this sub-test asserted the OPPOSITE (an error) -- i.e. it encoded
-	// the bug itself.
+	// A Null (undeclared) associated_role_names must NOT be a config error --
+	// see the identical certificate_authority_ids/restrict_cas rationale
+	// above. This is the import-then-manage flow: an imported pattern's
+	// associated_role_names starts Null in state, and re-declaring
+	// use_ad_permissions = false while leaving associated_role_names
+	// undeclared -- relying on Update()'s prior-state fallback to preserve
+	// existing membership -- must NOT hard-error just because it's undeclared.
 	t.Run("use_ad_permissions=false with no associated_role_names (undeclared/null) is not an error", func(t *testing.T) {
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
@@ -211,8 +208,7 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_UseADPermissions(t *test
 	})
 
 	// Unlike the Null case above, a KNOWN, explicitly-empty list genuinely
-	// means "zero roles configured" -- this is the real error case the fix
-	// preserves.
+	// means "zero roles configured" -- this is the real error case.
 	t.Run("use_ad_permissions=false with an explicitly empty associated_role_names is an error", func(t *testing.T) {
 		t.Parallel()
 		cfg := KeyfactorEnrollmentPatternState{
@@ -268,17 +264,16 @@ func TestUnitValidateEnrollmentPatternConfigConstraints_UseADPermissions(t *test
 }
 
 // TestUnitEnrollmentPatternValidateConfig_ImportThenManageDoesNotError is the
-// End-to-end regression test: drives the actual
+// end-to-end regression test: drives the actual
 // resourceEnrollmentPattern.ValidateConfig method (not just the factored-out
 // validateEnrollmentPatternConfigConstraints helper) against a Config shape
 // matching exactly what a user would write immediately after `terraform
 // import` -- restrict_cas=true and use_ad_permissions=false re-declared
 // (matching the server's current settings), but certificate_authority_ids
 // and associated_role_names left undeclared, because GetById/ImportState
-// never echo either field back (see KeyfactorEnrollmentPatternState's doc
-// comment) and the user has no other way to learn their current values from
-// Terraform's own state to re-declare them. Before the fix, this exact,
-// ordinary post-import config hard-errored on both fields simultaneously.
+// never echoes either field back (see KeyfactorEnrollmentPatternState's
+// doc comment). Before the fix, this exact ordinary post-import config
+// hard-errored on both fields simultaneously.
 func TestUnitEnrollmentPatternValidateConfig_ImportThenManageDoesNotError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

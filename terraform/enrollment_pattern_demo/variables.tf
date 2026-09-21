@@ -18,7 +18,7 @@ variable "description_override" {
 
 # ---------------------------------------------------------------------------
 # Driver-attribute variables (full-review Phase 1 required tests, item 3):
-# lab-update exercises these to actually CHANGE associated_role_names,
+# lab-update exercises these to actually CHANGE the role binding,
 # certificate_authority_ids, and policies.default_certificate_owner_role_id
 # in place -- the exact update paths findings F2/F4 fixed. Both roles and
 # both CAs referenced below already exist in kfclab by default.
@@ -42,7 +42,13 @@ variable "description_override" {
 variable "associated_role_name" {
   type        = string
   default     = "InstanceAdmin"
-  description = "Security role name for associated_role_names. Changed during lab-update to exercise the associated_roles mirror follow-the-driver fix (full-review finding F2)."
+  description = "Security role name set as the bootstrap entry in associated_role_names on the keyfactor_enrollment_pattern resource (lifecycle.ignore_changes means this is only applied on create). Must be a role that already exists in Keyfactor Command."
+}
+
+variable "binding_role_name" {
+  type        = string
+  default     = "Administrator"
+  description = "Security role name for keyfactor_enrollment_pattern_role_binding. This is the second role, managed additively via the binding resource. Changed during lab-update to exercise role membership management through the binding resource."
 }
 
 variable "owner_role_name" {

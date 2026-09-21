@@ -4,11 +4,14 @@ page_title: "keyfactor_oauth_security_role_claim_association Resource - terrafor
 subcategory: ""
 description: |-
   Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 /Security/Claims/ and V2 /Security/Roles APIs. This resource is compatible with Keyfactor Command versions 11+
+  ~> Where role_id/claim_id come from: both are the computed id output of their respective resources -- role_id from keyfactor_oauth_security_role https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role, claim_id from keyfactor_oauth_security_claim https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_claim (see that resource's id attribute under Read-Only). Reference them directly, e.g. role_id = keyfactor_oauth_security_role.example.id and claim_id = keyfactor_oauth_security_claim.example.id, rather than looking the IDs up out of band.
 ---
 
 # keyfactor_oauth_security_role_claim_association (Resource)
 
 Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+
+
+~> **Where `role_id`/`claim_id` come from:** both are the computed `id` output of their respective resources -- `role_id` from [`keyfactor_oauth_security_role`](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_role), `claim_id` from [`keyfactor_oauth_security_claim`](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest/docs/resources/oauth_security_claim) (see that resource's `id` attribute under **Read-Only**). Reference them directly, e.g. `role_id = keyfactor_oauth_security_role.example.id` and `claim_id = keyfactor_oauth_security_claim.example.id`, rather than looking the IDs up out of band.
 
 ## Example Usage
 
@@ -45,8 +48,8 @@ resource "keyfactor_oauth_security_role_claim_association" "subject_system_claim
 
 ### Required
 
-- `claim_id` (Number) Internal ID of the OAuth security claim. Changing this value forces a new resource.
-- `role_id` (Number) Internal ID of the OAuth security role. Changing this value forces a new resource.
+- `claim_id` (Number) Internal ID of the OAuth security claim. This is the computed `id` output of a keyfactor_oauth_security_claim resource. Changing this value forces a new resource.
+- `role_id` (Number) Internal ID of the OAuth security role. This is the computed `id` output of a keyfactor_oauth_security_role resource or data source. Changing this value forces a new resource.
 
 ### Read-Only
 

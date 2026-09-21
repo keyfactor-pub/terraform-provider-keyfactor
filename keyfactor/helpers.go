@@ -27,6 +27,7 @@ import (
 	mathRand "math/rand"
 
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"reflect"
@@ -429,6 +430,196 @@ func addOAuthSecurityClaimToRole(
 	}
 	result = append(result, newClaim)
 	return result
+}
+
+// ---------------------------------------------------------------------------
+// OAuth security role <-> claim association: concurrent-write reconciliation
+// ---------------------------------------------------------------------------
+//
+// Keyfactor Command's V2 Security Roles API has no optimistic-concurrency
+// primitive: neither SecuritySecurityRolesSecurityRoleUpdateRequest nor
+// SecuritySecurityRolesSecurityRoleResponse carries an ETag, If-Match header
+// support, or a revision/version field (confirmed by inspection of the
+// vendored SDK models). Every write is GET current role -> mutate the
+// in-memory Claims slice by exactly one entry -> PUT the entire role. Two
+// callers racing on the SAME role with DIFFERENT claims can both GET before
+// either PUTs; the second PUT to land wins outright and silently drops
+// whatever the first call wrote. Command returns 200 OK for both PUTs --
+// there is no conflict response to detect and retry on.
+//
+// reconcileMaxAttempts bounds the number of GET-modify-PUT-verify cycles
+// Create/Delete will attempt before giving up and surfacing an error to the
+// practitioner (better than looping forever, and consistent with the
+// customer's own out-of-band retry workaround for this exact problem).
+// Shared by keyfactor_oauth_security_role_claim_association and
+// keyfactor_enrollment_pattern_role_binding — both resources face the same
+// Command API concurrency profile.
+const reconcileMaxAttempts = 8
+
+// reconcileBaseDelay is the base for the jittered exponential backoff between
+// reconcile attempts.
+const reconcileBaseDelay = 150 * time.Millisecond
+
+// reconcileBackoff returns a jittered, exponentially increasing delay for
+// retry attempt N (1-indexed), capped at 15 seconds.
+//
+// Backoff sequence (no jitter, worst case):
+//
+//	attempt 1: 150ms, 2: 300ms, 3: 600ms, 4: 1.2s, 5: 2.4s,
+//	6: 4.8s, 7: 9.6s, 8+: 15s (cap)
+//
+// Total max sleep across 8 attempts ≈ 34s.
+func reconcileBackoff(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	d := reconcileBaseDelay * time.Duration(int64(1)<<uint(attempt-1))
+	maxDelay := 15 * time.Second
+	if d > maxDelay {
+		d = maxDelay
+	}
+	// Half fixed, half jitter, to avoid two racing callers retrying in lockstep.
+	jitter := time.Duration(mathRand.Int63n(int64(d)/2 + 1))
+	return d/2 + jitter
+}
+
+// parseRetryAfter parses the Retry-After response header per RFC 9110 §10.2.3.
+// It handles both the delay-seconds form ("Retry-After: 30") and the HTTP-date
+// form ("Retry-After: Thu, 17 Sep 2026 12:00:00 GMT"). Returns 0 if the header
+// is absent, empty, or unparseable — callers should fall back to their own
+// backoff strategy when 0 is returned.
+func parseRetryAfter(resp *http.Response) time.Duration {
+	if resp == nil {
+		return 0
+	}
+	raw := resp.Header.Get("Retry-After")
+	if raw == "" {
+		return 0
+	}
+	// Try delay-seconds first (most common for REST APIs).
+	if secs, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil && secs > 0 {
+		return time.Duration(secs * float64(time.Second))
+	}
+	// Try HTTP-date form.
+	if t, err := http.ParseTime(raw); err == nil {
+		d := time.Until(t)
+		if d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
+// escapePQLValue escapes a string for safe embedding inside a PQL quoted value.
+// Backslashes must be escaped first so the quote-escape backslashes are not
+// double-escaped.
+func escapePQLValue(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return s
+}
+
+// check429 returns (true, retryDelay) when httpResp indicates HTTP 429.
+// label is used only for call-site documentation; callers construct the error
+// message themselves so the label does not appear in the error text here.
+func check429(httpResp *http.Response, _ string) (bool, time.Duration) {
+	if httpResp != nil && httpResp.StatusCode == http.StatusTooManyRequests {
+		return true, parseRetryAfter(httpResp)
+	}
+	return false, 0
+}
+
+// reconcileOutcome is the signal returned by a reconcileWithRetry step function.
+type reconcileOutcome int
+
+const (
+	// reconcileDone signals that the operation converged (success or idempotent
+	// no-op). reconcileWithRetry returns (true, nil).
+	reconcileDone reconcileOutcome = iota
+	// reconcileFatal signals that a non-retryable error occurred; the step
+	// must have already added diagnostics. reconcileWithRetry returns (false, nil).
+	reconcileFatal
+	// reconcileRetry signals that a concurrent-write race was detected. The
+	// error value is logged at Warn level and the loop retries after backoff.
+	reconcileRetry
+)
+
+// reconcileWithRetry runs step with jittered exponential backoff between
+// reconcileRetry results. It centralises the retry skeleton that is common
+// across keyfactor_oauth_security_role_claim_association and
+// keyfactor_enrollment_pattern_role_binding, removing the boilerplate from
+// each call site while leaving resource-specific GET/mutate/PUT/verify logic
+// in the step closure.
+//
+//   - On reconcileDone  → returns (true, nil) immediately.
+//   - On reconcileFatal → returns (false, nil); caller must handle its own diagnostics.
+//   - On reconcileRetry → logs err at Warn, sleeps, then retries.
+//
+// Two distinct retry limits apply:
+//   - Race-condition retries (serverDelay == 0): capped at reconcileMaxAttempts (8).
+//   - 429 rate-limit retries (serverDelay > 0): capped by a deadline of
+//     MaxClientTimeoutSeconds from the start of the call. Per-sleep delay is
+//     clamped to 60 s regardless of the server's Retry-After value.
+func reconcileWithRetry(
+	ctx context.Context,
+	step func(attempt int) (reconcileOutcome, error, time.Duration),
+) (bool, error) {
+	deadline := time.Now().Add(time.Duration(MaxClientTimeoutSeconds) * time.Second)
+	var lastErr error
+	raceAttempts := 0
+	for attempt := 1; ; attempt++ {
+		outcome, err, serverDelay := step(attempt)
+		switch outcome {
+		case reconcileDone:
+			return true, nil
+		case reconcileFatal:
+			return false, nil
+		case reconcileRetry:
+			lastErr = err
+			if err != nil {
+				tflog.Warn(ctx, "retrying after transient error: "+err.Error())
+			}
+			if serverDelay > 0 {
+				// 429 path: clamp per-sleep to 60 s, but keep retrying until
+				// the overall deadline derived from MaxClientTimeoutSeconds.
+				maxRetryDelay := 60 * time.Second
+				if serverDelay > maxRetryDelay {
+					tflog.Warn(ctx, fmt.Sprintf("server requested retry delay %s exceeds 60s ceiling; clamping", serverDelay))
+					serverDelay = maxRetryDelay
+				}
+				tflog.Info(ctx, fmt.Sprintf("server requested retry delay: %s", serverDelay))
+				select {
+				case <-time.After(serverDelay):
+				case <-ctx.Done():
+					return false, ctx.Err()
+				}
+				if time.Now().After(deadline) {
+					return false, fmt.Errorf("429 retry deadline (%s) exceeded: %w", time.Duration(MaxClientTimeoutSeconds)*time.Second, lastErr)
+				}
+			} else {
+				// Race-condition path: cap at reconcileMaxAttempts.
+				raceAttempts++
+				if raceAttempts >= reconcileMaxAttempts {
+					return false, lastErr
+				}
+				select {
+				case <-time.After(reconcileBackoff(attempt)):
+				case <-ctx.Done():
+					return false, ctx.Err()
+				}
+			}
+		}
+	}
+}
+
+// oauthRoleHasClaim reports whether claimId is present in role's Claims.
+func oauthRoleHasClaim(role *kfv2.SecuritySecurityRolesSecurityRoleResponse, claimId int32) bool {
+	for _, claim := range role.Claims {
+		if claim.Id != nil && *claim.Id == claimId {
+			return true
+		}
+	}
+	return false
 }
 
 // DNSSANStoTerraform converts a slice of DNS SANs (Subject Alternative Names) into a Terraform-compatible
@@ -985,21 +1176,6 @@ func flattenTemplateRegexes(regexes []api.TemplateRegex) types.List {
 	for _, regex := range regexes {
 		result.Elems = append(result.Elems, types.String{Value: regex.RegEx})
 	}
-	return result
-}
-
-func flattenAllowedRequesters(requesters []string) types.List {
-	result := types.List{
-		ElemType: types.StringType,
-		Elems:    []attr.Value{},
-	}
-
-	if len(requesters) > 0 {
-		for _, requester := range requesters {
-			result.Elems = append(result.Elems, types.String{Value: requester})
-		}
-	}
-
 	return result
 }
 
@@ -3037,7 +3213,7 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	api := apiClient.V1.SecurityClaimsApi
 	req := api.
 		NewGetSecurityClaimsRequest(ctx).
-		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\" and ClaimType -eq %d))", claimValue, *claimTypeEnum))
+		QueryString(fmt.Sprintf("((ClaimValue -eq \"%s\" and ClaimType -eq %d))", escapePQLValue(claimValue), *claimTypeEnum))
 
 	response, _, err := api.GetSecurityClaimsExecute(req)
 
@@ -3081,7 +3257,7 @@ func getSecurityRoleByName(
 	api := apiClient.V2.SecurityRolesApi
 	req := api.
 		NewGetSecurityRolesRequest(ctx).
-		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", roleName))
+		QueryString(fmt.Sprintf("((Name -eq \"%s\"))", escapePQLValue(roleName)))
 
 	response, _, err := req.Execute()
 
@@ -3096,6 +3272,99 @@ func getSecurityRoleByName(
 	// Command should not allow multiple security roles with the same name. Not going to code logic around multiple results.
 
 	return &response[0], nil
+}
+
+// getCertificateCollectionByName queries certificate collections by name and
+// returns the first matching collection, or an error if none is found.
+// Uses the same QueryString filter pattern as getSecurityRoleByName.
+func getCertificateCollectionByName(
+	ctx context.Context,
+	apiClient *keyfactor.APIClient,
+	collectionName string,
+) (*kfv1.CSSCMSDataModelModelsCertificateQuery, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting certificate collection from remote source. Collection Name: %s", collectionName))
+
+	api := apiClient.V1.CertificateCollectionApi
+	req := api.
+		NewGetCertificateCollectionsRequest(ctx).
+		QueryString(fmt.Sprintf(`((Name -eq "%s"))`, escapePQLValue(collectionName)))
+
+	response, _, err := req.Execute()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 {
+		return nil, fmt.Errorf("no certificate collection found with name %q", collectionName)
+	}
+
+	return &response[0], nil
+}
+
+// getEnrollmentPatternByName queries enrollment patterns by name and returns
+// the first matching pattern, or an error if none is found.
+// Uses the same QueryString filter pattern as getSecurityRoleByName.
+func getEnrollmentPatternByName(
+	ctx context.Context,
+	apiClient *keyfactor.APIClient,
+	patternName string,
+) (*kfv1.EnrollmentPatternsEnrollmentPatternResponse, error) {
+	tflog.Debug(ctx, fmt.Sprintf("Getting enrollment pattern from remote source. Pattern Name: %s", patternName))
+
+	api := apiClient.V1.EnrollmentPatternApi
+	req := api.
+		NewGetEnrollmentPatternsRequest(ctx).
+		QueryString(fmt.Sprintf(`((Name -eq "%s"))`, escapePQLValue(patternName)))
+
+	response, _, err := req.Execute()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(response) == 0 {
+		return nil, fmt.Errorf("no enrollment pattern found with name %q", patternName)
+	}
+
+	return &response[0], nil
+}
+
+// ---------------------------------------------------------------------------
+// Enrollment pattern role binding helpers
+// ---------------------------------------------------------------------------
+
+// enrollmentPatternHasRole reports whether roleName is present in the
+// pattern's AssociatedRoles. Used by the GET-modify-PUT-verify reconcile
+// loop in keyfactor_enrollment_pattern_role_binding's Create/Delete.
+func enrollmentPatternHasRole(resp *kfv1.EnrollmentPatternsEnrollmentPatternResponse, roleName string) bool {
+	for _, role := range resp.AssociatedRoles {
+		// Case-insensitive comparison: Command may normalize role name casing
+		// (e.g. store "Admin" when the practitioner wrote "admin"), so an
+		// exact-string match would fail to detect the role as present.
+		if name := role.Name.Get(); name != nil && strings.EqualFold(*name, roleName) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractEnrollmentPatternRoleNames returns the role names from the pattern's
+// AssociatedRoles as a plain []string. When AssociatedRoles is nil (server
+// omitted the field), returns nil; when non-nil but empty, returns a non-nil
+// empty slice. The nil-vs-empty distinction matters: buildEnrollmentPattern-
+// UpdateRequest only calls SetAssociatedRoles when preservedRoleNames is
+// non-nil, so a nil here means "omit from PUT body" while an empty non-nil
+// means "explicitly clear to []".
+func extractEnrollmentPatternRoleNames(resp *kfv1.EnrollmentPatternsEnrollmentPatternResponse) []string {
+	if resp.AssociatedRoles == nil {
+		return nil
+	}
+	result := make([]string, 0, len(resp.AssociatedRoles))
+	for _, role := range resp.AssociatedRoles {
+		if name := role.Name.Get(); name != nil {
+			result = append(result, *name)
+		}
+	}
+	return result
 }
 
 // Queries security permissions by name and returns the first matching permission set.
@@ -3247,6 +3516,27 @@ func convertStringArrayToTerraform(options []string) []attr.Value {
 		output = append(output, types.String{Value: option})
 	}
 	return output
+}
+
+// enumPtrToTfInt64 converts any int32-backed enum pointer (e.g.
+// *CSSCMSCoreEnumsMetadataTypeEnrollment, *CSSCMSCoreEnumsTemplateEnrollment-
+// FieldType, *CSSCMSCoreEnumsTemplateCertificateOwnerRole) to types.Int64,
+// mapping nil (server field omitted) to Null so a subsequent write does not
+// silently send the zero value of the enum.
+func enumPtrToTfInt64[T ~int32](v *T) types.Int64 {
+	if v == nil {
+		return types.Int64{Null: true}
+	}
+	return types.Int64{Value: int64(*v)}
+}
+
+// stringSliceToTfList converts a slice of strings to a types.List with
+// StringType elements.
+func stringSliceToTfList(vals []string) types.List {
+	return types.List{
+		ElemType: types.StringType,
+		Elems:    convertStringArrayToTerraform(vals),
+	}
 }
 
 // convertIntArrayToTerraform converts a slice of integers (int, int32, int64) to a slice of Terraform attr.Value objects.

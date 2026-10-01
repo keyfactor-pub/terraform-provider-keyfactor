@@ -150,7 +150,7 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 		epState.AssociatedRoleNames = types.Set{Elems: roleElems, ElemType: types.StringType}
 		updateBody := buildEnrollmentPatternUpdateRequest(ctx, epState)
 
-		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to add role %q to enrollment pattern %q (attempt %d/%d)...", roleName, patternName, attempt, reconcileMaxAttempts))
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to add role %q to enrollment pattern %q (attempt %d)...", roleName, patternName, attempt))
 
 		_, httpResp2, err := patternApi.NewUpdateEnrollmentPatternsByIdRequest(ctx, patternID).
 			XKeyfactorRequestedWith("APIClient").
@@ -208,7 +208,7 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 			return reconcileDone, nil, 0
 		}
 
-		return reconcileRetry, fmt.Errorf("role %q was not present on enrollment pattern %q after PUT+verify (attempt %d/%d) -- a concurrent writer likely overwrote it", roleName, patternName, attempt, reconcileMaxAttempts), 0
+		return reconcileRetry, fmt.Errorf("role %q was not present on enrollment pattern %q after PUT+verify (attempt %d) -- a concurrent writer likely overwrote it", roleName, patternName, attempt), 0
 	})
 
 	if !created && !response.Diagnostics.HasError() {
@@ -413,7 +413,7 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 		epState.AssociatedRoleNames = types.Set{Elems: roleElems, ElemType: types.StringType}
 		updateBody := buildEnrollmentPatternUpdateRequest(ctx, epState)
 
-		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to remove role %q from enrollment pattern %q (attempt %d/%d)...", roleName, patternName, attempt, reconcileMaxAttempts))
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to remove role %q from enrollment pattern %q (attempt %d)...", roleName, patternName, attempt))
 
 		_, httpResp2, err := patternApi.NewUpdateEnrollmentPatternsByIdRequest(ctx, patternID).
 			XKeyfactorRequestedWith("APIClient").
@@ -465,7 +465,7 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 			return reconcileDone, nil, 0
 		}
 
-		return reconcileRetry, fmt.Errorf("role %q was still present on enrollment pattern %q after PUT+verify (attempt %d/%d) -- a concurrent writer likely reverted this change", roleName, patternName, attempt, reconcileMaxAttempts), 0
+		return reconcileRetry, fmt.Errorf("role %q was still present on enrollment pattern %q after PUT+verify (attempt %d) -- a concurrent writer likely reverted this change", roleName, patternName, attempt), 0
 	})
 
 	if !deleted && !response.Diagnostics.HasError() {

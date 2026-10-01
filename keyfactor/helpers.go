@@ -588,6 +588,14 @@ func reconcileWithRetry(
 					serverDelay = maxRetryDelay
 				}
 				tflog.Info(ctx, fmt.Sprintf("server requested retry delay: %s", serverDelay))
+				// Clamp sleep to remaining deadline time.
+				remaining := time.Until(deadline)
+				if remaining <= 0 {
+					return false, fmt.Errorf("429 retry deadline (%s) exceeded: %w", time.Duration(MaxClientTimeoutSeconds)*time.Second, lastErr)
+				}
+				if serverDelay > remaining {
+					serverDelay = remaining
+				}
 				select {
 				case <-time.After(serverDelay):
 				case <-ctx.Done():

@@ -204,7 +204,7 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 			Claims:          claims,
 		})
 
-		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to remove claim ID %d (attempt %d/%d)...", roleId, claimId, attempt, reconcileMaxAttempts))
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to remove claim ID %d (attempt %d)...", roleId, claimId, attempt))
 
 		_, httpResp, err := updateReq.Execute()
 		if err != nil {
@@ -250,7 +250,7 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 			return reconcileDone, nil, 0
 		}
 
-		return reconcileRetry, fmt.Errorf("claim ID %d was still present on role ID %d after PUT+verify (attempt %d/%d) -- a concurrent writer likely reverted this change", claimId, roleId, attempt, reconcileMaxAttempts), 0
+		return reconcileRetry, fmt.Errorf("claim ID %d was still present on role ID %d after PUT+verify (attempt %d) -- a concurrent writer likely reverted this change", claimId, roleId, attempt), 0
 	})
 
 	if deleted {
@@ -389,7 +389,7 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 			Claims:          updatedClaims,
 		})
 
-		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to add security claim id %d (attempt %d/%d)...", roleId, claimId, attempt, reconcileMaxAttempts))
+		tflog.Debug(ctx, fmt.Sprintf("Calling remote server to update OAuth security role ID %d to add security claim id %d (attempt %d)...", roleId, claimId, attempt))
 
 		_, httpResp2, err := updateReq.Execute()
 		if err != nil {
@@ -433,7 +433,7 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 			return reconcileDone, nil, 0
 		}
 
-		return reconcileRetry, fmt.Errorf("claim ID %d was not present on role ID %d after PUT+verify (attempt %d/%d) -- a concurrent writer likely overwrote it", claimId, roleId, attempt, reconcileMaxAttempts), 0
+		return reconcileRetry, fmt.Errorf("claim ID %d was not present on role ID %d after PUT+verify (attempt %d) -- a concurrent writer likely overwrote it", claimId, roleId, attempt), 0
 	})
 
 	if !created && !response.Diagnostics.HasError() {

@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -227,17 +226,6 @@ func permissionSetsEqual(a, b []string) bool {
 	return slices.Equal(aSorted, bSorted)
 }
 
-// permissionsToTfList builds a types.List of permission strings, for writing
-// server-reported permissions into state when they genuinely differ from the
-// plan.
-func permissionsToTfList(permissions []string) types.List {
-	result := types.List{ElemType: types.StringType, Elems: []attr.Value{}}
-	for _, p := range permissions {
-		result.Elems = append(result.Elems, types.String{Value: p})
-	}
-	return result
-}
-
 // permissionsResultForUpdate decides what to write into state's Permissions
 // after a successful Update: it must preserve planPermissions verbatim
 // (declared order intact) when the server's response reports the same set of
@@ -270,14 +258,14 @@ func permissionsResultForUpdate(ctx context.Context, planPermissions types.List,
 	}
 
 	if planPermissions.Null || planPermissions.Unknown {
-		return permissionsToTfList(remote)
+		return stringSliceToTfList(remote)
 	}
 
 	var planValues []string
 	planPermissions.ElementsAs(ctx, &planValues, false)
 
 	if !permissionSetsEqual(planValues, remote) {
-		return permissionsToTfList(remote)
+		return stringSliceToTfList(remote)
 	}
 
 	return planPermissions
@@ -368,7 +356,7 @@ func (r resourceSecurityRole) Update(
 	// that only touches an unrelated field (e.g. description) -- the same
 	// staleness trap the fresh GetSecurityRole call above was added to avoid
 	// for Identities.
-	updateArg, diags2 := buildSecurityRoleUpdateArg(ctx, plan, config.Permissions, permissionsToTfList(remoteRole.Permissions), int(roleId))
+	updateArg, diags2 := buildSecurityRoleUpdateArg(ctx, plan, config.Permissions, stringSliceToTfList(remoteRole.Permissions), int(roleId))
 	response.Diagnostics.Append(diags2...)
 	if response.Diagnostics.HasError() {
 		return
@@ -517,7 +505,7 @@ func (r resourceSecurityRole) Create(
 	// value into state, which Terraform Core would reject.
 	resultPermissions := plan.Permissions
 	if resultPermissions.Unknown {
-		resultPermissions = permissionsToTfList(nil)
+		resultPermissions = stringSliceToTfList(nil)
 	}
 
 	var result = SecurityRole{
@@ -573,7 +561,7 @@ func (r resourceSecurityRole) ImportState(
 		ID:          types.Int64{Value: int64(remoteState.Id)},
 		Name:        types.String{Value: remoteState.Name},
 		Description: types.String{Value: remoteState.Description},
-		Permissions: permissionsToTfList(remoteState.Permissions),
+		Permissions: stringSliceToTfList(remoteState.Permissions),
 	}
 
 	diags := response.State.Set(ctx, result)

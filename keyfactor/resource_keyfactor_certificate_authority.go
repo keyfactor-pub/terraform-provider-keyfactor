@@ -573,7 +573,7 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 		// Use nil-safe helpers for all pointer fields. GetXxx() returns the Go zero
 		// value (false/0/"") when the server omits a field; that zero value would then
 		// be sent on subsequent PUTs, silently overwriting server settings. Using
-		// boolPtrToTfBool / enrollmentTypePtrToTfInt64 / nullableStringToTfString
+		// boolPtrToTfBool / enumPtrToTfInt64 / nullableStringToTfString
 		// returns Null instead, so setBoolIfKnown/setStringIfKnown skips those fields.
 		Delegate:            boolPtrToTfBool(resp.Delegate),
 		DelegateEnrollment:  boolPtrToTfBool(resp.DelegateEnrollment),
@@ -591,7 +591,7 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 
 		RFCEnforcement:                boolPtrToTfBool(resp.RFCEnforcement),
 		Properties:                    nullableStringToTfString(resp.Properties),
-		AllowedEnrollmentTypes:        enrollmentTypePtrToTfInt64(resp.AllowedEnrollmentTypes),
+		AllowedEnrollmentTypes:        enumPtrToTfInt64(resp.AllowedEnrollmentTypes),
 		KeyRetention:                  keyRetentionIntToTfString(resp.KeyRetention),
 		KeyRetentionDays:              nullableInt32ToTfInt64(resp.KeyRetentionDays),
 		EnforceUniqueDN:               boolPtrToTfBool(resp.EnforceUniqueDN),
@@ -603,7 +603,7 @@ func caResponseToState(resp *v1.CertificateAuthoritiesCertificateAuthorityRespon
 		CertificateCleanupEnabled: nullableBoolToTfBool(resp.CertificateCleanupEnabled),
 		DeleteWithArchivedKey:     nullableBoolToTfBool(resp.DeleteWithArchivedKey),
 		TimeAfterExpiration:       nullableInt32ToTfInt64(resp.TimeAfterExpiration),
-		TimeAfterExpirationUnits:  cleanupTimeUnitsPtrToTfInt64(resp.TimeAfterExpirationUnits),
+		TimeAfterExpirationUnits:  enumPtrToTfInt64(resp.TimeAfterExpirationUnits),
 
 		UseAllowedRequesters: boolPtrToTfBool(resp.UseAllowedRequesters),
 
@@ -718,24 +718,6 @@ func boolPtrToTfBool(v *bool) types.Bool {
 	return types.Bool{Value: *v}
 }
 
-// enrollmentTypePtrToTfInt64 converts a *CSSCMSCoreEnumsEnrollmentType pointer to types.Int64.
-// Nil (server field absent) becomes Null so the value is not sent on PUT.
-func enrollmentTypePtrToTfInt64(v *v1.CSSCMSCoreEnumsEnrollmentType) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
-}
-
-// keyRetentionPtrToTfInt64 converts a *CSSCMSCoreEnumsKeyRetentionPolicy pointer to types.Int64.
-// Nil (server field absent) becomes Null so the value is not sent on PUT.
-func keyRetentionPtrToTfInt64(v *v1.CSSCMSCoreEnumsKeyRetentionPolicy) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
-}
-
 // nullableBoolToTfBool converts a NullableBool from the SDK response to a types.Bool.
 // When the server omits the field (not set / nil), returns Null.
 func nullableBoolToTfBool(v v1.NullableBool) types.Bool {
@@ -743,22 +725,6 @@ func nullableBoolToTfBool(v v1.NullableBool) types.Bool {
 		return types.Bool{Null: true}
 	}
 	return types.Bool{Value: *v.Get()}
-}
-
-// cleanupTimeUnitsPtrToTfInt64 converts a *CSSCMSDataModelEnumsCertificateCleanupTimeUnits pointer to types.Int64.
-// Nil (server field absent) becomes Null so the value is not sent on PUT.
-func cleanupTimeUnitsPtrToTfInt64(v *v1.CSSCMSDataModelEnumsCertificateCleanupTimeUnits) types.Int64 {
-	if v == nil {
-		return types.Int64{Null: true}
-	}
-	return types.Int64{Value: int64(*v)}
-}
-
-func stringSliceToTfList(vals []string) types.List {
-	return types.List{
-		ElemType: types.StringType,
-		Elems:    convertStringArrayToTerraform(vals),
-	}
 }
 
 func buildCARequest(ctx context.Context, plan KeyfactorCertificateAuthority) (v1.CertificateAuthoritiesCertificateAuthorityRequest, diag.Diagnostics) {

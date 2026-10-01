@@ -76,19 +76,22 @@ func TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 	cassetteName := "oauth_security_role_claim_association_resource"
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
 
-	var roleName1, claimValue string
+	var roleName1, claimValue, authScheme string
 	if os.Getenv("RECORD_CASSETTES") == "1" {
 		ts := time.Now().UnixNano() % 1000000000
 		roleName1 = fmt.Sprintf("tf-unit-role-assoc1-%d", ts)
 		claimValue = fmt.Sprintf("tf-unit-claim-assoc-%d", ts)
+		authScheme = discoverOAuthAuthScheme(t, newTestClient(t))
 		writeOAuthRoleClaimAssocTestParams(cassettePath, oauthRoleClaimAssocTestParams{
 			RoleName1:  roleName1,
 			ClaimValue: claimValue,
+			AuthScheme: authScheme,
 		})
 	} else {
 		params := readOAuthRoleClaimAssocTestParams(cassettePath)
 		roleName1 = params.RoleName1
 		claimValue = params.ClaimValue
+		authScheme = params.AuthScheme
 	}
 
 	factories, cleanup := newVCRProviderFactories(t, cassetteName)
@@ -100,7 +103,7 @@ func TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(roleName1, claimValue),
+				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(roleName1, claimValue, authScheme),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(resourcePath, "id"),
 					resource.TestCheckResourceAttrSet(resourcePath, "role_id"),
@@ -120,7 +123,7 @@ data "keyfactor_permission_set" "global_permission_set" {
 resource "keyfactor_oauth_security_claim" "test_claim" {
 	claim_type = "OAuthSubject"
 	claim_value = "%s"
-	provider_authentication_scheme = "System"
+	provider_authentication_scheme = "%s"
 	description = "A Terraform test claim"
 }
 
@@ -145,14 +148,14 @@ resource "%s" "%s" {
 	claim_id = resource.keyfactor_oauth_security_claim.test_claim.id
 }
 `,
-		t.claimValue, t.role1Name, t.role2Name, t.resourceType, t.resourceName, t.associatedRoleResource)
+		t.claimValue, t.claimProviderScheme, t.role1Name, t.role2Name, t.resourceType, t.resourceName, t.associatedRoleResource)
 	return output
 }
 
 // testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle is a
 // single-role variant used by the unit test to avoid non-deterministic VCR
 // replay when two identical-URL POSTs cannot be distinguished by the matcher.
-func testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(roleName, claimValue string) string {
+func testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(roleName, claimValue, authScheme string) string {
 	return fmt.Sprintf(`
 data "keyfactor_permission_set" "global_permission_set" {
      name = "Global"
@@ -161,7 +164,7 @@ data "keyfactor_permission_set" "global_permission_set" {
 resource "keyfactor_oauth_security_claim" "test_claim" {
 	claim_type = "OAuthSubject"
 	claim_value = "%s"
-	provider_authentication_scheme = "System"
+	provider_authentication_scheme = "%s"
 	description = "A Terraform test claim"
 }
 
@@ -177,7 +180,7 @@ resource "keyfactor_oauth_security_role_claim_association" "test_role_claim_asso
 	role_id  = resource.keyfactor_oauth_security_role.test_role_1.id
 	claim_id = resource.keyfactor_oauth_security_claim.test_claim.id
 }
-`, claimValue, roleName)
+`, claimValue, authScheme, roleName)
 }
 
 // TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource_Import tests the
@@ -191,19 +194,22 @@ func TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testin
 	cassetteName := "oauth_security_role_claim_association_resource_import"
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
 
-	var roleName1, claimValue string
+	var roleName1, claimValue, authScheme string
 	if os.Getenv("RECORD_CASSETTES") == "1" {
 		ts := time.Now().UnixNano() % 1000000000
 		roleName1 = fmt.Sprintf("tf-unit-role-assoc-imp1-%d", ts)
 		claimValue = fmt.Sprintf("tf-unit-claim-assoc-imp-%d", ts)
+		authScheme = discoverOAuthAuthScheme(t, newTestClient(t))
 		writeOAuthRoleClaimAssocTestParams(cassettePath, oauthRoleClaimAssocTestParams{
 			RoleName1:  roleName1,
 			ClaimValue: claimValue,
+			AuthScheme: authScheme,
 		})
 	} else {
 		params := readOAuthRoleClaimAssocTestParams(cassettePath)
 		roleName1 = params.RoleName1
 		claimValue = params.ClaimValue
+		authScheme = params.AuthScheme
 	}
 
 	factories, cleanup := newVCRProviderFactories(t, cassetteName)
@@ -216,7 +222,7 @@ func TestUnitKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testin
 		Steps: []resource.TestStep{
 			{
 				// Step 1: Create the association.
-				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(roleName1, claimValue),
+				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(roleName1, claimValue, authScheme),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(resourcePath, "id"),
 					resource.TestCheckResourceAttrSet(resourcePath, "role_id"),
@@ -241,7 +247,6 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource(t *testing.T) {
 	client := testAccIntegrationPreCheck(t)
 
 	authScheme := discoverOAuthAuthScheme(t, client)
-	_ = authScheme // The existing HCL config hardcodes "System"; integration test reuses that config
 
 	r := oauthSecurityRoleClaimAssociationTestCase{
 		role1Name:              acctest.RandomWithPrefix("tf-int-role"),
@@ -289,7 +294,6 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testing
 	client := testAccIntegrationPreCheck(t)
 
 	authScheme := discoverOAuthAuthScheme(t, client)
-	_ = authScheme
 
 	r := oauthSecurityRoleClaimAssociationTestCase{
 		role1Name:           acctest.RandomWithPrefix("tf-int-role-imp"),
@@ -305,7 +309,7 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testing
 		Steps: []resource.TestStep{
 			{
 				// Step 1: Create the association.
-				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(r.role1Name, r.claimValue),
+				Config: testAccKeyfactorOAuthSecurityRoleClaimAssociationResourceSingle(r.role1Name, r.claimValue, r.claimProviderScheme),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(r.resourcePath, "id"),
 					resource.TestCheckResourceAttrSet(r.resourcePath, "role_id"),
@@ -329,7 +333,7 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociationResource_Import(t *testing
 
 // testAccOAuthRoleClaimAssocMultiConfig creates 1 role + 2 claims + 2 associations.
 // Used for both create and update steps; description changes between steps.
-func testAccOAuthRoleClaimAssocMultiConfig(roleName, roleDesc, claimValue1, claimValue2 string) string {
+func testAccOAuthRoleClaimAssocMultiConfig(roleName, roleDesc, claimValue1, claimValue2, authScheme string) string {
 	return fmt.Sprintf(`
 data "keyfactor_permission_set" "global_permission_set" {
 	name = "Global"
@@ -346,14 +350,14 @@ resource "keyfactor_oauth_security_role" "multi_test_role" {
 resource "keyfactor_oauth_security_claim" "multi_test_claim_1" {
 	claim_type                     = "OAuthClientId"
 	claim_value                    = "%s"
-	provider_authentication_scheme = "System"
+	provider_authentication_scheme = "%s"
 	description                    = "Multi-claim test claim 1"
 }
 
 resource "keyfactor_oauth_security_claim" "multi_test_claim_2" {
 	claim_type                     = "OAuthClientId"
 	claim_value                    = "%s"
-	provider_authentication_scheme = "System"
+	provider_authentication_scheme = "%s"
 	description                    = "Multi-claim test claim 2"
 
 	depends_on = [keyfactor_oauth_security_claim.multi_test_claim_1]
@@ -370,7 +374,7 @@ resource "keyfactor_oauth_security_role_claim_association" "multi_assoc_2" {
 
 	depends_on = [keyfactor_oauth_security_role_claim_association.multi_assoc_1]
 }
-`, roleName, roleDesc, claimValue1, claimValue2)
+`, roleName, roleDesc, claimValue1, authScheme, claimValue2, authScheme)
 }
 
 // TestUnitKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim verifies that
@@ -385,22 +389,25 @@ func TestUnitKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T)
 	cassetteName := "oauth_security_role_claim_assoc_multi"
 	cassettePath := filepath.Join("testdata", "cassettes", cassetteName)
 
-	var roleName, claimValue1, claimValue2 string
+	var roleName, claimValue1, claimValue2, authScheme string
 	if os.Getenv("RECORD_CASSETTES") == "1" {
 		ts := time.Now().UnixNano() % 1000000000
 		roleName = fmt.Sprintf("tf-unit-multi-assoc-%d", ts)
 		claimValue1 = uuid.New().String()
 		claimValue2 = uuid.New().String()
+		authScheme = discoverOAuthAuthScheme(t, newTestClient(t))
 		writeOAuthMultiAssocTestParams(cassettePath, oauthMultiAssocTestParams{
 			RoleName:    roleName,
 			ClaimValue1: claimValue1,
 			ClaimValue2: claimValue2,
+			AuthScheme:  authScheme,
 		})
 	} else {
 		params := readOAuthMultiAssocTestParams(cassettePath)
 		roleName = params.RoleName
 		claimValue1 = params.ClaimValue1
 		claimValue2 = params.ClaimValue2
+		authScheme = params.AuthScheme
 	}
 
 	factories, cleanup := newVCRProviderFactories(t, cassetteName)
@@ -414,7 +421,7 @@ func TestUnitKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T)
 		Steps: []resource.TestStep{
 			{
 				// Step 1: Create role + 2 claims + 2 associations
-				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Initial description", claimValue1, claimValue2),
+				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Initial description", claimValue1, claimValue2, authScheme),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(assoc1Path, "id"),
 					resource.TestCheckResourceAttrSet(assoc1Path, "role_id"),
@@ -426,7 +433,7 @@ func TestUnitKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T)
 			},
 			{
 				// Step 2: Update role description : both associations must survive
-				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Updated description", claimValue1, claimValue2),
+				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Updated description", claimValue1, claimValue2, authScheme),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(assoc1Path, "id"),
 					resource.TestCheckResourceAttrSet(assoc1Path, "role_id"),
@@ -447,7 +454,6 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T) 
 	client := testAccIntegrationPreCheck(t)
 
 	authScheme := discoverOAuthAuthScheme(t, client)
-	_ = authScheme // HCL config hardcodes "System"; kept for documentation
 
 	roleName := acctest.RandomWithPrefix("tf-int-multi-assoc")
 	claimValue1 := uuid.New().String()
@@ -461,7 +467,7 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T) 
 		Steps: []resource.TestStep{
 			{
 				// Step 1: Create role + 2 claims + 2 associations
-				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Initial description", claimValue1, claimValue2),
+				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Initial description", claimValue1, claimValue2, authScheme),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(assoc1Path, "id"),
 					resource.TestCheckResourceAttrSet(assoc1Path, "role_id"),
@@ -473,7 +479,7 @@ func TestIntKeyfactorOAuthSecurityRoleClaimAssociation_MultiClaim(t *testing.T) 
 			},
 			{
 				// Step 2: Update role description : both associations must survive
-				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Updated description", claimValue1, claimValue2),
+				Config: testAccOAuthRoleClaimAssocMultiConfig(roleName, "Updated description", claimValue1, claimValue2, authScheme),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(assoc1Path, "id"),
 					resource.TestCheckResourceAttrSet(assoc1Path, "role_id"),

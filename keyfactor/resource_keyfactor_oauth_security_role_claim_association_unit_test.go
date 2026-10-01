@@ -40,6 +40,28 @@ func nullFieldsRoleResponseBody(roleId int32) string {
 	}`, roleId)
 }
 
+// nullFieldsRoleResponseBodyWithClaim is nullFieldsRoleResponseBody with a
+// single claim entry present in Claims, used to simulate the role state
+// after a PUT has associated claimId with the role.
+func nullFieldsRoleResponseBodyWithClaim(roleId int32, claimId int32) string {
+	return fmt.Sprintf(`{
+		"Id": %d,
+		"Name": null,
+		"Description": null,
+		"EmailAddress": null,
+		"Immutable": false,
+		"PermissionSetId": null,
+		"Permissions": [],
+		"Claims": [{
+			"Id": %d,
+			"Description": "a test claim",
+			"ClaimType": "OAuthSubject",
+			"ClaimValue": "test-subject",
+			"Provider": {"Id": "1", "AuthenticationScheme": "System", "DisplayName": "System"}
+		}]
+	}`, roleId, claimId)
+}
+
 // validClaimResponseBody builds a /Security/Claims/{id} GET response body with
 // all fields the Create() path dereferences (ClaimType, ClaimValue, Provider,
 // Description) populated, so the claim-side code (a separate, out-of-scope
@@ -70,10 +92,21 @@ func TestUnitOAuthSecurityRoleClaimAssociation_CreateNullRoleFieldsDoesNotPanic(
 		claimId int32 = 7
 	)
 
+	// claimAssociated tracks whether the PUT has landed yet, so the mock GET
+	// handler reflects it -- Create's GET-modify-PUT-verify retry loop
+	// (added for the Tier 0 concurrent-write fix) issues a second GET after
+	// the PUT to verify the claim actually stuck, and a static/stateless
+	// mock would make that verification always look like it failed.
+	var claimAssociated bool
+
 	mux := http.NewServeMux()
 	mux.HandleFunc(fmt.Sprintf("/KeyfactorAPI/Security/Roles/%d", roleId), func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		if claimAssociated {
+			_, _ = w.Write([]byte(nullFieldsRoleResponseBodyWithClaim(roleId, claimId)))
+			return
+		}
 		_, _ = w.Write([]byte(nullFieldsRoleResponseBody(roleId)))
 	})
 	mux.HandleFunc(fmt.Sprintf("/KeyfactorAPI/Security/Claims/%d", claimId), func(w http.ResponseWriter, r *http.Request) {
@@ -84,9 +117,10 @@ func TestUnitOAuthSecurityRoleClaimAssociation_CreateNullRoleFieldsDoesNotPanic(
 	mux.HandleFunc("/KeyfactorAPI/Security/Roles", func(w http.ResponseWriter, r *http.Request) {
 		// PUT to update the role. Only reached once the nil-deref is fixed;
 		// return a well-formed response so the fixed Create() completes cleanly.
+		claimAssociated = true
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(nullFieldsRoleResponseBody(roleId)))
+		_, _ = w.Write([]byte(nullFieldsRoleResponseBodyWithClaim(roleId, claimId)))
 	})
 	server := httptest.NewTLSServer(mux)
 	defer server.Close()

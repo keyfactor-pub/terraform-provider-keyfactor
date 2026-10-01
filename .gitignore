@@ -172,3 +172,8 @@ sandbox/
 /build/
 /docspreview
 mistakes.md
+HANDOFF_*.md
+KICKOFF_*.md
+PLAN_*.md
+RESPONSE_*.md
+CUSTOMER_RESPONSE_*.md

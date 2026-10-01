@@ -66,11 +66,10 @@ resource "keyfactor_role" "test" {
 }
 
 resource "keyfactor_enrollment_pattern" "test" {
-  name                  = "TFEPOptFix%s"
-  template_id           = %d
-  description           = %q
-  use_ad_permissions     = false
-  associated_role_names = [keyfactor_role.test.name]
+  name               = "TFEPOptFix%s"
+  template_id        = %d
+  description        = %q
+  use_ad_permissions = false
 
   enrollment_fields = [
     {

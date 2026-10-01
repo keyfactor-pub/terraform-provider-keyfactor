@@ -17,7 +17,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Core-level regression test covering four related bugs.
+// Core-level regression test covering three related bugs.
 //
 // Every existing unit test for these bugs calls Create()/Read()/
 // Update() directly, bypassing Terraform Core's own plan-validity
@@ -31,14 +31,11 @@ import (
 //     PLAN successfully at all (before the fix, Core rejected the plan
 //     outright with "planned value cty.UnknownVal(cty.Bool) does not
 //     match config value cty.True").
-//   - associated_roles mirror consistency: changing associated_role_names from one role to another must
-//     APPLY successfully (before the fix, the stale associated_roles
-//     mirror pinned by useStateOrNullModifier disagreed with Update()'s
-//     genuinely-new membership, hard-erroring with "Provider produced
-//     inconsistent result after apply").
 //   - owner-role-name mirror consistency: changing policies.default_certificate_owner_role_id from one
-//     role to another must APPLY successfully (identical shape, for the
-//     policies.default_certificate_owner_role_name mirror).
+//     role to another must APPLY successfully (the policies.default_certificate_owner_role_name
+//     mirror pinned by useStateOrNullModifier disagreed with Update()'s
+//     genuinely-new name, hard-erroring with "Provider produced
+//     inconsistent result after apply").
 //   - force_template_default actually taking effect: force_template_default = true must actually take effect (become
 //     the template's default, stealing that status from whichever pattern
 //     held it before) AND must settle to a stable plan (no perpetual
@@ -119,9 +116,9 @@ resource "keyfactor_role" "role_b" {
 	if !step2 {
 		return roles + fmt.Sprintf(`
 resource "keyfactor_enrollment_pattern" "test" {
-  name                  = "TFEPFix%s"
-  template_id           = %d
-  use_ad_permissions    = false
+  name                 = "TFEPFix%s"
+  template_id          = %d
+  use_ad_permissions   = false
   associated_role_names = [keyfactor_role.role_a.name]
 
   policies = {
@@ -133,16 +130,15 @@ resource "keyfactor_enrollment_pattern" "test" {
 `, suffix, templateID)
 	}
 
-	// Step 2: change BOTH driver attributes (associated_role_names and
-	// policies.default_certificate_owner_role_id) and declare
-	// force_template_default = true in the same apply.
+	// Step 2: change associated_role_names and policies.default_certificate_owner_role_id
+	// and declare force_template_default = true in the same apply.
 	return roles + fmt.Sprintf(`
 resource "keyfactor_enrollment_pattern" "test" {
-  name                    = "TFEPFix%s"
-  template_id             = %d
-  use_ad_permissions      = false
-  associated_role_names   = [keyfactor_role.role_b.name]
-  force_template_default  = true
+  name                  = "TFEPFix%s"
+  template_id           = %d
+  use_ad_permissions    = false
+  force_template_default = true
+  associated_role_names = [keyfactor_role.role_b.name]
 
   policies = {
     certificate_owner_role             = 2
@@ -285,33 +281,26 @@ func TestUnitKeyfactorEnrollmentPatternResource_MirrorFieldsFollowDriverOnUpdate
 		ProtoV6ProviderFactories: factories,
 		Steps: []resource.TestStep{
 			{
-				// Step 1: baseline -- associated_role_names = [role_a],
-				// policies.default_certificate_owner_role_id = role_a.id,
+				// Step 1: baseline -- policies.default_certificate_owner_role_id = role_a.id,
 				// force_template_default undeclared.
 				Config: testAccEnrollmentPatternMirrorFixConfig(templateID, suffix, false),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(resourceName, "id"),
-					resource.TestCheckResourceAttr(resourceName, "associated_role_names.#", "1"),
-					resource.TestCheckResourceAttrPair(resourceName, "associated_role_names.0", "keyfactor_role.role_a", "name"),
 					resource.TestCheckResourceAttrPair(
 						resourceName, "policies.default_certificate_owner_role_id", "keyfactor_role.role_a", "id",
 					),
 				),
 			},
 			{
-				// Step 2: associated_role_names changes to [role_b].
-				// policies.default_certificate_owner_role_id changes
-				// to role_b.id. force_template_default = true is
-				// declared for the first time. Before any of the three
-				// fixes, this step either fails to PLAN or fails to
-				// APPLY with "Provider produced inconsistent result after
-				// apply" -- this step succeeding at all is the
-				// regression proof for all three bugs.
+				// Step 2: policies.default_certificate_owner_role_id changes
+				// to role_b.id. force_template_default = true is declared for
+				// the first time. Before the fixes, this step either failed to
+				// PLAN or failed to APPLY with "Provider produced inconsistent
+				// result after apply" -- this step succeeding at all is the
+				// regression proof.
 				Config: testAccEnrollmentPatternMirrorFixConfig(templateID, suffix, true),
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet(resourceName, "id"),
-					resource.TestCheckResourceAttr(resourceName, "associated_role_names.#", "1"),
-					resource.TestCheckResourceAttrPair(resourceName, "associated_role_names.0", "keyfactor_role.role_b", "name"),
 					resource.TestCheckResourceAttrPair(
 						resourceName, "policies.default_certificate_owner_role_id", "keyfactor_role.role_b", "id",
 					),

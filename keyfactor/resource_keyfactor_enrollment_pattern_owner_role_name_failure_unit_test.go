@@ -124,11 +124,6 @@ func TestUnitEnrollmentPatternUpdateLogsOwnerRoleNameAttemptOnFailedPUT(t *testi
 	state.ID = types.Int64{Value: 42}
 	state.Name = types.String{Value: "Demo Pattern_TF"}
 	state.TemplateId = types.Int64{Value: 6}
-	// blankEnrollmentPatternState's AssociatedRoleNames placeholder uses an
-	// Int64 ElemType -- every other test in this package overwrites it with
-	// the real String ElemType before calling state.Set (see e.g.
-	// resource_keyfactor_enrollment_pattern_update_unit_test.go).
-	state.AssociatedRoleNames = types.Set{Null: true, ElemType: types.StringType}
 	state.Policies = &EnrollmentPatternResourcePolicy{
 		DefaultCertificateOwnerRoleId:   types.Int64{Value: 5},
 		DefaultCertificateOwnerRoleName: types.String{Value: "Role A"},

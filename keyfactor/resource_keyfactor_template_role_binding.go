@@ -36,7 +36,7 @@ func (r resourceCertificateTemplateRoleBindingType) GetSchema(_ context.Context)
 				Description: "A list of certificate template short name in Keyfactor that the role will be attached to.",
 			},
 		},
-		Description: "Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the `/Templates` PUT API. On Command v25+, AllowedRequesters is deprecated at the template level and only affects the template's default enrollment pattern; for per-pattern role management use `keyfactor_enrollment_pattern` (provider v2.10.0+).",
+		Description: "Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the `/Templates` PUT API. On Command v25+, AllowedRequesters is deprecated at the template level and only affects the template's default enrollment pattern; for per-pattern role management use `keyfactor_enrollment_pattern` (provider v2.10.0+). See PUT /Templates docs: https://software.keyfactor.com/Core-OnPrem/v25.5/Content/WebAPI/KeyfactorAPI/TemplatesPUT.htm",
 		MarkdownDescription: `
 Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the "/Templates" PUT API. On Keyfactor Command v25.0+, enrollment patterns provide an additional enrollment-configuration layer alongside certificate templates.
 

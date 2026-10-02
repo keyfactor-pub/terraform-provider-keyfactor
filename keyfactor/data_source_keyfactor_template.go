@@ -89,12 +89,14 @@ func (d dataSourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.S
 				Description: "Bitmask: 0=none, 1=PFX, 2=CSR, 3=both.",
 			},
 			"use_allowed_requesters": {
-				Type:     types.BoolType,
-				Computed: true,
+				Type:        types.BoolType,
+				Computed:    true,
+				Description: "Whether enrollment is restricted to specific requesters. Deprecated in Command v25+: only reflects the template's default enrollment pattern. See PUT /Templates docs: https://software.keyfactor.com/Core-OnPrem/v25.5/Content/WebAPI/KeyfactorAPI/TemplatesPUT.htm",
 			},
 			"allowed_requesters": {
-				Type:     types.ListType{ElemType: types.StringType},
-				Computed: true,
+				Type:        types.ListType{ElemType: types.StringType},
+				Computed:    true,
+				Description: "Security roles allowed to enroll. Deprecated in Command v25+: only reflects the template's default enrollment pattern (use keyfactor_enrollment_pattern, provider v2.10.0+, for per-pattern roles). See PUT /Templates docs: https://software.keyfactor.com/Core-OnPrem/v25.5/Content/WebAPI/KeyfactorAPI/TemplatesPUT.htm",
 			},
 			"requires_approval": {
 				Type:     types.BoolType,

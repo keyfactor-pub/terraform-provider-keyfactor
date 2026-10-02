@@ -388,14 +388,14 @@ func (r resourceCertificateTemplateType) GetSchema(_ context.Context) (tfsdk.Sch
 				Type:          types.BoolType,
 				Optional:      true,
 				Computed:      true,
-				Description:   "Whether to restrict enrollment to specific requesters. Deprecated in Command v25+ (use keyfactor_template_role_binding instead).",
+				Description:   "Whether to restrict enrollment to specific requesters. Deprecated in Command v25+: only affects the template's default enrollment pattern (use keyfactor_enrollment_pattern, provider v2.10.0+, for per-pattern roles). See PUT /Templates docs: https://software.keyfactor.com/Core-OnPrem/v25.5/Content/WebAPI/KeyfactorAPI/TemplatesPUT.htm",
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown()},
 			},
 			"allowed_requesters": {
 				Type:          types.ListType{ElemType: types.StringType},
 				Optional:      true,
 				Computed:      true,
-				Description:   "List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead). Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null.",
+				Description:   "List of security roles allowed to enroll. Deprecated in Command v25+: only affects the template's default enrollment pattern (use keyfactor_enrollment_pattern, provider v2.10.0+, for per-pattern roles). Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null. See PUT /Templates docs: https://software.keyfactor.com/Core-OnPrem/v25.5/Content/WebAPI/KeyfactorAPI/TemplatesPUT.htm",
 				PlanModifiers: []tfsdk.AttributePlanModifier{useStateOrNullModifier{}},
 			},
 			"requires_approval": {

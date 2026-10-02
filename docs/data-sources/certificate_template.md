@@ -35,7 +35,7 @@ data "keyfactor_certificate_template" "by_id" {
 
 - `allow_one_click_renewals` (Boolean)
 - `allowed_enrollment_types` (Number) Bitmask: 0=none, 1=PFX, 2=CSR, 3=both.
-- `allowed_requesters` (List of String)
+- `allowed_requesters` (List of String) Security roles allowed to enroll. Deprecated in Command v25+: only reflects the template's default enrollment pattern (use keyfactor_enrollment_pattern, provider v2.10.0+, for per-pattern roles).
 - `certificate_cleanup_enabled` (Boolean)
 - `common_name` (String) Short name (common name) of the template.
 - `configuration_tenant` (String)
@@ -64,7 +64,7 @@ data "keyfactor_certificate_template" "by_id" {
 - `template_regexes` (Attributes List) (see [below for nested schema](#nestedatt--template_regexes))
 - `time_after_expiration` (Number)
 - `time_after_expiration_units` (Number)
-- `use_allowed_requesters` (Boolean)
+- `use_allowed_requesters` (Boolean) Whether enrollment is restricted to specific requesters. Deprecated in Command v25+: only reflects the template's default enrollment pattern.
 
 <a id="nestedatt--enrollment_fields"></a>
 ### Nested Schema for `enrollment_fields`

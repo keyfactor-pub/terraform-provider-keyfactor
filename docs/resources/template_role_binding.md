@@ -4,11 +4,14 @@ page_title: "keyfactor_template_role_binding Resource - terraform-provider-keyfa
 subcategory: ""
 description: |-
   Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the "/Templates" PUT API. On Keyfactor Command v25.0+, enrollment patterns provide an additional enrollment-configuration layer alongside certificate templates.
+  Deprecation (Command v25+): AllowedRequesters is deprecated at the template level and only affects the template's default enrollment pattern; non-default enrollment patterns sharing the template are not updated. For per-pattern role management, use "keyfactorenrollmentpattern" (provider v2.10.0+).
 ---
 
 # keyfactor_template_role_binding (Resource)
 
 Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the "/Templates" PUT API. On Keyfactor Command v25.0+, enrollment patterns provide an additional enrollment-configuration layer alongside certificate templates.
+
+**Deprecation (Command v25+):** AllowedRequesters is deprecated at the template level and only affects the template's default enrollment pattern; non-default enrollment patterns sharing the template are not updated. For per-pattern role management, use "keyfactor_enrollment_pattern" (provider v2.10.0+).
 
 ## Example Usage
 

@@ -67,7 +67,7 @@ resource "keyfactor_certificate_template" "webserver_with_cleanup" {
 
 - `allow_one_click_renewals` (Boolean) Whether one-click renewals are allowed.
 - `allowed_enrollment_types` (Number) Bitmask of allowed enrollment types: 0=none (disabled), 1=PFX, 2=CSR, 3=both. Setting to 0 effectively disables the template. Deprecated in Command v25+ (use enrollment patterns).
-- `allowed_requesters` (List of String) List of security roles allowed to enroll. Deprecated in Command v25+ (use keyfactor_template_role_binding instead). Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null.
+- `allowed_requesters` (List of String) List of security roles allowed to enroll. Deprecated in Command v25+: only affects the template's default enrollment pattern (use keyfactor_enrollment_pattern, provider v2.10.0+, for per-pattern roles). Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null.
 - `certificate_cleanup_enabled` (Boolean) Whether expired certificate cleanup is enabled (Command v25+).
 - `delete_with_archived_key` (Boolean) Whether to delete certificates with archived keys during cleanup (Command v25+).
 - `enrollment_fields` (Attributes List) Custom enrollment fields for CSR/PFX enrollment. Deprecated in Command v25+. Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null. (see [below for nested schema](#nestedatt--enrollment_fields))
@@ -82,7 +82,7 @@ resource "keyfactor_certificate_template" "webserver_with_cleanup" {
 - `template_regexes` (Attributes List) Subject field regex validation rules. Deprecated in Command v25+. Computed because Update() preserves the server's current value when this attribute is left undeclared (see preserveUndeclaredTemplateFields) -- an undeclared value is not necessarily null. (see [below for nested schema](#nestedatt--template_regexes))
 - `time_after_expiration` (Number) Time after expiration before cleanup eligibility (Command v25+).
 - `time_after_expiration_units` (Number) Units for time_after_expiration: 0=Days, 1=Weeks, 2=Months (Command v25+).
-- `use_allowed_requesters` (Boolean) Whether to restrict enrollment to specific requesters. Deprecated in Command v25+ (use keyfactor_template_role_binding instead).
+- `use_allowed_requesters` (Boolean) Whether to restrict enrollment to specific requesters. Deprecated in Command v25+: only affects the template's default enrollment pattern (use keyfactor_enrollment_pattern, provider v2.10.0+, for per-pattern roles).
 
 ### Read-Only
 

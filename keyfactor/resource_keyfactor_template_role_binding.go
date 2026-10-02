@@ -36,9 +36,11 @@ func (r resourceCertificateTemplateRoleBindingType) GetSchema(_ context.Context)
 				Description: "A list of certificate template short name in Keyfactor that the role will be attached to.",
 			},
 		},
-		Description: "Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the `/Templates` PUT API.",
+		Description: "Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the `/Templates` PUT API. On Command v25+, AllowedRequesters is deprecated at the template level and only affects the template's default enrollment pattern; for per-pattern role management use `keyfactor_enrollment_pattern` (provider v2.10.0+).",
 		MarkdownDescription: `
 Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the "/Templates" PUT API. On Keyfactor Command v25.0+, enrollment patterns provide an additional enrollment-configuration layer alongside certificate templates.
+
+**Deprecation (Command v25+):** AllowedRequesters is deprecated at the template level and only affects the template's default enrollment pattern; non-default enrollment patterns sharing the template are not updated. For per-pattern role management, use "keyfactor_enrollment_pattern" (provider v2.10.0+).
 `,
 	}, nil
 }
@@ -117,6 +119,7 @@ func (r resourceCertificateTemplateRoleBinding) Create(
 	if response.Diagnostics.HasError() {
 		return
 	}
+	addAllowedRequestersDeprecationWarning(&response.Diagnostics)
 
 	// Set state
 	result := CertificateTemplateRoleBinding{
@@ -233,6 +236,7 @@ func (r resourceCertificateTemplateRoleBinding) Update(
 	if response.Diagnostics.HasError() {
 		return
 	}
+	addAllowedRequestersDeprecationWarning(&response.Diagnostics)
 
 	// Set state
 	result := CertificateTemplateRoleBinding{
@@ -290,6 +294,7 @@ func (r resourceCertificateTemplateRoleBinding) Delete(
 	if response.Diagnostics.HasError() {
 		return
 	}
+	addAllowedRequestersDeprecationWarning(&response.Diagnostics)
 
 	// Remove resource from state
 	response.State.RemoveResource(ctx)
@@ -878,4 +883,16 @@ func findTemplateRoleAttachments(ctx context.Context, kfClient *api.Client, role
 	}
 
 	return diags, templateRoleAttachmentList
+}
+
+const allowedRequestersDeprecationDetail = "The AllowedRequesters field on PUT /Templates is deprecated in Keyfactor Command v25+ " +
+	"and only applies to the template's default enrollment pattern. Non-default enrollment " +
+	"patterns referencing the same template are not updated by this resource. " +
+	"For per-pattern role management on Command v25+, use the keyfactor_enrollment_pattern " +
+	"resource (available in provider v2.10.0+). " +
+	"See: https://software.keyfactor.com/Core-OnPrem/v25.5/Content/WebAPI/KeyfactorAPI/TemplatesPUT.htm"
+
+// addAllowedRequestersDeprecationWarning adds the Command v25+ deprecation warning.
+func addAllowedRequestersDeprecationWarning(d *diag.Diagnostics) {
+	d.AddWarning("AllowedRequesters is deprecated on Command v25+", allowedRequestersDeprecationDetail)
 }

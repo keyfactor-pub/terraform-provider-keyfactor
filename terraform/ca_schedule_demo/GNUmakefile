@@ -50,6 +50,7 @@ authcert:
 	 openssl pkcs12 -export -out authcert.pfx \
 	   -inkey "$$SCRATCHDIR/authcert_key.pem" -in "$$SCRATCHDIR/authcert_cert.pem" \
 	   -passout pass:fakepassword && \
+	 chmod 600 authcert.pfx && \
 	 rm -rf "$$SCRATCHDIR"
 	@echo "==> Generated authcert.pfx (throwaway, password: fakepassword -- matches var.auth_certificate_password default)"
 

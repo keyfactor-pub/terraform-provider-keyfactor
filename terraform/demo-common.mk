@@ -25,17 +25,29 @@
 ## byte-identical across the 19 demos, unlike everything below.
 
 PROVIDER_ROOT  := $(abspath ../..)
-PROVIDER_BIN   := $(HOME)/go/bin
+# Dev-mode provider binary dir is PER-WORKTREE (terraform/.provider-bin, gitignored),
+# not the shared $(HOME)/go/bin: every worktree used to `go install` into the same
+# dir and point its .terraformrc there, so a run could silently exercise another
+# worktree's build. The dev_overrides CLI config (TF_DEV_RC) is GENERATED from it
+# below, so no hand-copied .terraformrc files are needed.
+PROVIDER_BIN   := $(PROVIDER_ROOT)/terraform/.provider-bin
+TF_DEV_RC      := $(PROVIDER_ROOT)/terraform/.terraformrc.dev
+HARNESS_DIR    := $(PROVIDER_ROOT)/terraform/harness
 SUFFIX         ?= _TF
 
 PROVIDER_MODE ?= registry
 
 ifeq ($(PROVIDER_MODE),dev)
-TF            := TF_CLI_CONFIG_FILE=.terraformrc terraform
+# (re)generate the dev_overrides config at parse time so even a bare `make plan
+# PROVIDER_MODE=dev` or a demo that overrides init works; prints nothing.
+HARNESS_DEV_RC_GEN := $(shell $(HARNESS_DIR)/gen-terraformrc.sh "$(PROVIDER_BIN)" "$(TF_DEV_RC)")
+TF            := TF_CLI_CONFIG_FILE=$(TF_DEV_RC) terraform
 else
 TF            := TF_CLI_CONFIG_FILE=$(PROVIDER_ROOT)/terraform/.terraformrc.registry terraform
 endif
-UNSET_BASIC   := unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN;
+# umask 077: terraform state, tf_state.json (`show -json`, plaintext sensitive values),
+# plan files etc. are created owner-only (they were 0644 before).
+UNSET_BASIC   := unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN; umask 077;
 
 # ---------------------------------------------------------------------------
 # Lab environment helpers
@@ -58,7 +70,7 @@ LAB_ENV_EXTRA_EXPORTS ?=
 # at include time, matching a `make KEYFACTOR_ENV_FILE=... lifecycle`
 # command-line override.
 LAB_ENV = set -a && source $(KEYFACTOR_ENV_FILE) && set +a && \
-          unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN && \
+          unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN && umask 077 && \
           export KEYFACTOR_CLIENT_TIMEOUT=$(LAB_TIMEOUT)$(if $(LAB_ENV_EXTRA_EXPORTS), $(LAB_ENV_EXTRA_EXPORTS)) &&
 
 # ---------------------------------------------------------------------------
@@ -76,11 +88,12 @@ include ../kf-curl-auth.mk
 # Provider build
 # ---------------------------------------------------------------------------
 
-## build: Compile and install the provider binary to ~/go/bin
+## build: Compile and install the provider binary into THIS worktree's terraform/.provider-bin
+## (never ~/go/bin); prints the exact binary path + sha256 the dev-mode run will use
 build:
 	@echo "==> Building provider..."
-	cd $(PROVIDER_ROOT) && go install .
-	@echo "==> Provider installed to $(PROVIDER_BIN)/terraform-provider-keyfactor"
+	cd $(PROVIDER_ROOT) && GOBIN=$(PROVIDER_BIN) go install .
+	@echo "==> Provider binary: $(PROVIDER_BIN)/terraform-provider-keyfactor (sha256 $$(shasum -a 256 $(PROVIDER_BIN)/terraform-provider-keyfactor | cut -c1-12))"
 
 # ---------------------------------------------------------------------------
 # Terraform lifecycle (init/validate only -- plan/apply/destroy/etc. differ
@@ -95,4 +108,12 @@ init:
 validate:
 	$(UNSET_BASIC) $(TF) validate
 
-.PHONY: build init validate
+## state-count: Print the number of resources in this demo's local Terraform state
+## (used by the failure-cleanup logic in terraform/GNUmakefile; 0 when there is no state
+## file, "unknown" if terraform could not read it)
+state-count:
+	@$(UNSET_BASIC) out=$$($(TF) state list 2>&1); rc=$$?; \
+	 if [ $$rc -eq 0 ]; then printf '%s\n' "$$out" | grep -c . || true; \
+	 elif printf '%s' "$$out" | grep -q "No state file"; then echo 0; else echo unknown; fi
+
+.PHONY: build init validate state-count

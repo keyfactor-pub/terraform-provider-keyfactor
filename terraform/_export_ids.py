@@ -27,6 +27,8 @@ have a genuinely different output shape their Makefiles' `import-all`
 targets rely on and are NOT consolidated here -- see advisory C's review
 notes; they keep their own _export_ids.py.
 """
+import os
+os.umask(0o077)  # _import_pairs.txt: owner-only like the rest of the run artifacts
 import json
 import sys
 

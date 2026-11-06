@@ -104,7 +104,7 @@ make lifecycle SUFFIX=_STAGING
 ## Individual targets
 
 ```
-make build          Compile and install provider to ~/go/bin
+make build          Compile and install provider to this worktree's terraform/.provider-bin (not ~/go/bin)
 make init           terraform init
 make validate       terraform validate
 make plan           terraform plan

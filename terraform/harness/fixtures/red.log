@@ -1,0 +1,458 @@
+==> k8s_orchestrator_demo (PROVIDER_MODE=dev)
+==============================================================
+==============================================================
+==> k8s_orchestrator_demo (PROVIDER_MODE=dev)
+==============================================================
+==> Building provider...
+cd /home/user/GolandProjects/terraform-provider-keyfactor-pr219 && go install .
+==> Provider installed to /home/user/go/bin/terraform-provider-keyfactor
+/Library/Developer/CommandLineTools/usr/bin/make -C k8s_orchestrator_demo init PROVIDER_MODE=dev
+unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN; TF_CLI_CONFIG_FILE=.terraformrc terraform init
+[0m[1mInitializing the backend...[0m
+
+[0m[1mInitializing provider plugins...[0m
+- Finding hashicorp/kubernetes versions matching "~> 2.0"...
+- Installing hashicorp/kubernetes v2.38.0...
+- Installed hashicorp/kubernetes v2.38.0 (signed by HashiCorp)
+
+Terraform has created a lock file [1m.terraform.lock.hcl[0m to record the provider
+selections it made above. Include this file in your version control repository
+so that Terraform can guarantee to make the same selections by default when
+you run "terraform init" in the future.[0m
+
+[33m╷[0m[0m
+[33m│[0m [0m[1m[33mWarning: [0m[0m[1mProvider development overrides are in effect[0m
+[33m│[0m [0m
+[33m│[0m [0m[0mThe following provider development overrides are set in the CLI
+[33m│[0m [0mconfiguration:
+[33m│[0m [0m - keyfactor-pub/keyfactor in /home/user/go/bin
+[33m│[0m [0m
+[33m│[0m [0mThese providers are not installed as part of init since they were
+[33m│[0m [0moverwritten. If this is unintentional please re-run without the development
+[33m│[0m [0moverrides set.
+[33m╵[0m[0m
+[0m[1m[32mTerraform has been successfully initialized![0m[32m[0m
+[0m[32m
+You may now begin working with Terraform. Try running "terraform plan" to see
+any changes that are required for your infrastructure. All Terraform commands
+should now work.
+
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.[0m
+/Library/Developer/CommandLineTools/usr/bin/make -C k8s_orchestrator_demo lifecycle PROVIDER_MODE=dev
+set -a && source /home/user/.env_kfclab && set +a && unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN && export KEYFACTOR_CLIENT_TIMEOUT=600 TF_VAR_certificate_authority="OpenBao PKI" TF_VAR_certificate_enrollment_pattern="Lab - AnyCA (lab-role)" && TF_VAR_inventory_schedule="Daily at 12:00:00" \
+	           TF_VAR_create_if_missing=true \
+	           /Library/Developer/CommandLineTools/usr/bin/make apply
+unset KEYFACTOR_USERNAME KEYFACTOR_PASSWORD KEYFACTOR_DOMAIN; TF_CLI_CONFIG_FILE=.terraformrc terraform apply -auto-approve
+[33m╷[0m[0m
+[33m│[0m [0m[1m[33mWarning: [0m[0m[1mProvider development overrides are in effect[0m
+[33m│[0m [0m
+[33m│[0m [0m[0mThe following provider development overrides are set in the CLI
+[33m│[0m [0mconfiguration:
+[33m│[0m [0m - keyfactor-pub/keyfactor in /home/user/go/bin
+[33m│[0m [0m
+[33m│[0m [0mThe behavior may therefore not match any released version of the provider
+[33m│[0m [0mand applying changes may cause the state to become incompatible with
+[33m│[0m [0mpublished releases.
+[33m╵[0m[0m
+[0m[1mdata.keyfactor_agents.k8s: Reading...[0m[0m
+[0m[1mdata.keyfactor_agents.k8s: Read complete after 11s [id=agents][0m
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  [32m+[0m create[0m
+
+Terraform will perform the following actions:
+
+[1m  # keyfactor_certificate.demo[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate" "demo" {
+      [32m+[0m[0m ca_certificate                 = (known after apply)
+      [32m+[0m[0m certificate_authority          = "OpenBao PKI"
+      [32m+[0m[0m certificate_chain              = (known after apply)
+      [32m+[0m[0m certificate_enrollment_pattern = "Lab - AnyCA (lab-role)"
+      [32m+[0m[0m certificate_id                 = (known after apply)
+      [32m+[0m[0m certificate_pem                = (known after apply)
+      [32m+[0m[0m command_request_id             = (known after apply)
+      [32m+[0m[0m common_name                    = "tf-k8s-demo.example.com"
+      [32m+[0m[0m curve                          = (known after apply)
+      [32m+[0m[0m dns_sans                       = (known after apply)
+      [32m+[0m[0m enrollment_password            = (sensitive value)
+      [32m+[0m[0m id                             = (known after apply)
+      [32m+[0m[0m identifier                     = (known after apply)
+      [32m+[0m[0m ip_sans                        = (known after apply)
+      [32m+[0m[0m is_expired                     = (known after apply)
+      [32m+[0m[0m is_pending_revocation          = (known after apply)
+      [32m+[0m[0m is_revoked                     = (known after apply)
+      [32m+[0m[0m issuer_dn                      = (known after apply)
+      [32m+[0m[0m jks                            = (sensitive value)
+      [32m+[0m[0m key_password                   = (sensitive value)
+      [32m+[0m[0m key_size                       = (known after apply)
+      [32m+[0m[0m key_type                       = (known after apply)
+      [32m+[0m[0m metadata                       = (known after apply)
+      [32m+[0m[0m not_after                      = (known after apply)
+      [32m+[0m[0m not_before                     = (known after apply)
+      [32m+[0m[0m pfx                            = (sensitive value)
+      [32m+[0m[0m private_key                    = (sensitive value)
+      [32m+[0m[0m revocation_effective_date      = (known after apply)
+      [32m+[0m[0m serial_number                  = (known after apply)
+      [32m+[0m[0m thumbprint                     = (known after apply)
+      [32m+[0m[0m uri_sans                       = (known after apply)
+      [32m+[0m[0m use_cn_as_friendly_name        = false
+      [32m+[0m[0m zip                            = (sensitive value)
+    }
+
+[1m  # keyfactor_certificate_deployment.jks[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_deployment" "jks" {
+      [32m+[0m[0m certificate_alias    = "jks/tf-k8s-demo"
+      [32m+[0m[0m certificate_id       = (known after apply)
+      [32m+[0m[0m certificate_store_id = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+    }
+
+[1m  # keyfactor_certificate_deployment.jks_buddy[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_deployment" "jks_buddy" {
+      [32m+[0m[0m certificate_alias    = "jks/tf-k8s-demo"
+      [32m+[0m[0m certificate_id       = (known after apply)
+      [32m+[0m[0m certificate_store_id = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+      [32m+[0m[0m max_inventory_wait   = 300
+    }
+
+[1m  # keyfactor_certificate_deployment.opaque_secret[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_deployment" "opaque_secret" {
+      [32m+[0m[0m certificate_id       = (known after apply)
+      [32m+[0m[0m certificate_store_id = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+    }
+
+[1m  # keyfactor_certificate_deployment.pkcs12[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_deployment" "pkcs12" {
+      [32m+[0m[0m certificate_alias    = ".p12/tf-k8s-demo"
+      [32m+[0m[0m certificate_id       = (known after apply)
+      [32m+[0m[0m certificate_store_id = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+    }
+
+[1m  # keyfactor_certificate_deployment.pkcs12_buddy[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_deployment" "pkcs12_buddy" {
+      [32m+[0m[0m certificate_alias    = ".p12/tf-k8s-demo"
+      [32m+[0m[0m certificate_id       = (known after apply)
+      [32m+[0m[0m certificate_store_id = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+      [32m+[0m[0m max_inventory_wait   = 0
+    }
+
+[1m  # keyfactor_certificate_deployment.tls_secret[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_deployment" "tls_secret" {
+      [32m+[0m[0m certificate_id       = (known after apply)
+      [32m+[0m[0m certificate_store_id = (known after apply)
+      [32m+[0m[0m id                   = (known after apply)
+    }
+
+[1m  # keyfactor_certificate_store.k8s_cert[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_store" "k8s_cert" {
+      [32m+[0m[0m agent_assigned           = (known after apply)
+      [32m+[0m[0m agent_id                 = (known after apply)
+      [32m+[0m[0m agent_identifier         = "9879534a-8671-4421-8816-663786da9dd0"
+      [32m+[0m[0m application_name         = (known after apply)
+      [32m+[0m[0m approved                 = (known after apply)
+      [32m+[0m[0m client_machine           = "k8s-orchestrator-tf-demo"
+      [32m+[0m[0m container_id             = (known after apply)
+      [32m+[0m[0m container_name           = (known after apply)
+      [32m+[0m[0m create_if_missing        = false
+      [32m+[0m[0m display_name             = (known after apply)
+      [32m+[0m[0m id                       = (known after apply)
+      [32m+[0m[0m inventory_schedule       = "Daily at 12:00:00"
+      [32m+[0m[0m server_use_ssl           = true
+      [32m+[0m[0m server_username          = "kubeconfig"
+      [32m+[0m[0m set_new_password_allowed = (known after apply)
+      [32m+[0m[0m store_path               = "default/tf-demo-cert"
+      [32m+[0m[0m store_type               = "K8SCert"
+    }
+
+[1m  # keyfactor_certificate_store.k8s_cluster[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_store" "k8s_cluster" {
+      [32m+[0m[0m agent_assigned           = (known after apply)
+      [32m+[0m[0m agent_id                 = (known after apply)
+      [32m+[0m[0m agent_identifier         = "9879534a-8671-4421-8816-663786da9dd0"
+      [32m+[0m[0m application_name         = (known after apply)
+      [32m+[0m[0m approved                 = (known after apply)
+      [32m+[0m[0m client_machine           = "k8s-orchestrator-tf-demo"
+      [32m+[0m[0m container_id             = (known after apply)
+      [32m+[0m[0m container_name           = (known after apply)
+      [32m+[0m[0m create_if_missing        = true
+      [32m+[0m[0m display_name             = (known after apply)
+      [32m+[0m[0m id                       = (known after apply)
+      [32m+[0m[0m inventory_schedule       = "Daily at 12:00:00"
+      [32m+[0m[0m server_use_ssl           = true
+      [32m+[0m[0m server_username          = "kubeconfig"
+      [32m+[0m[0m set_new_password_allowed = (known after apply)
+      [32m+[0m[0m store_path               = "/"
+      [32m+[0m[0m store_type               = "K8SCluster"
+    }
+
+[1m  # keyfactor_certificate_store.k8s_jks[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_store" "k8s_jks" {
+      [32m+[0m[0m agent_assigned           = (known after apply)
+      [32m+[0m[0m agent_id                 = (known after apply)
+      [32m+[0m[0m agent_identifier         = "9879534a-8671-4421-8816-663786da9dd0"
+      [32m+[0m[0m application_name         = (known after apply)
+      [32m+[0m[0m approved                 = (known after apply)
+      [32m+[0m[0m client_machine           = "k8s-orchestrator-tf-demo"
+      [32m+[0m[0m container_id             = (known after apply)
+      [32m+[0m[0m container_name           = (known after apply)
+      [32m+[0m[0m create_if_missing        = true
+      [32m+[0m[0m display_name             = (known after apply)
+      [32m+[0m[0m id                       = (known after apply)
+      [32m+[0m[0m inventory_schedule       = "Daily at 12:00:00"
+      [32m+[0m[0m properties               = {
+          [32m+[0m[0m "CertificateDataFieldName" = "jks"
+          [32m+[0m[0m "KubeSecretType"           = "jks"
+        }
+      [32m+[0m[0m server_use_ssl           = true
+      [32m+[0m[0m server_username          = "kubeconfig"
+      [32m+[0m[0m set_new_password_allowed = (known after apply)
+      [32m+[0m[0m store_password           = (sensitive value)
+      [32m+[0m[0m store_path               = "default/tf-demo-jks"
+      [32m+[0m[0m store_type               = "K8SJKS"
+    }
+
+[1m  # keyfactor_certificate_store.k8s_jks_buddy[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_store" "k8s_jks_buddy" {
+      [32m+[0m[0m agent_assigned           = (known after apply)
+      [32m+[0m[0m agent_id                 = (known after apply)
+      [32m+[0m[0m agent_identifier         = "9879534a-8671-4421-8816-663786da9dd0"
+      [32m+[0m[0m application_name         = (known after apply)
+      [32m+[0m[0m approved                 = (known after apply)
+      [32m+[0m[0m client_machine           = "k8s-orchestrator-tf-demo"
+      [32m+[0m[0m container_id             = (known after apply)
+      [32m+[0m[0m container_name           = (known after apply)
+      [32m+[0m[0m create_if_missing        = true
+      [32m+[0m[0m display_name             = (known after apply)
+      [32m+[0m[0m id                       = (known after apply)
+      [32m+[0m[0m inventory_schedule       = "Daily at 12:00:00"
+      [32m+[0m[0m properties               = {
+          [32m+[0m[0m "CertificateDataFieldName" = "jks"
+          [32m+[0m[0m "KubeSecretType"           = "jks"
+        }
+      [32m+[0m[0m server_use_ssl           = true
+      [32m+[0m[0m server_username          = "kubeconfig"
+      [32m+[0m[0m set_new_password_allowed = (known after apply)
+      [32m+[0m[0m store_password           = (sensitive value)
+      [32m+[0m[0m store_path               = "default/tf-demo-jks-buddy"
+      [32m+[0m[0m store_type               = "K8SJKS"
+    }
+
+[1m  # keyfactor_certificate_store.k8s_ns[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_store" "k8s_ns" {
+      [32m+[0m[0m agent_assigned           = (known after apply)
+      [32m+[0m[0m agent_id                 = (known after apply)
+      [32m+[0m[0m agent_identifier         = "9879534a-8671-4421-8816-663786da9dd0"
+      [32m+[0m[0m application_name         = (known after apply)
+      [32m+[0m[0m approved                 = (known after apply)
+      [32m+[0m[0m client_machine           = "k8s-orchestrator-tf-demo"
+      [32m+[0m[0m container_id             = (known after apply)
+      [32m+[0m[0m container_name           = (known after apply)
+      [32m+[0m[0m create_if_missing        = true
+      [32m+[0m[0m display_name             = (known after apply)
+      [32m+[0m[0m id                       = (known after apply)
+      [32m+[0m[0m inventory_schedule       = "Daily at 12:00:00"
+      [32m+[0m[0m server_use_ssl           = true
+      [32m+[0m[0m server_username          = "kubeconfig"
+      [32m+[0m[0m set_new_password_allowed = (known after apply)
+      [32m+[0m[0m store_path               = "default"
+      [32m+[0m[0m store_type               = "K8SNS"
+    }
+
+[1m  # keyfactor_certificate_store.k8s_opaque_secret[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_store" "k8s_opaque_secret" {
+      [32m+[0m[0m agent_assigned           = (known after apply)
+      [32m+[0m[0m agent_id                 = (known after apply)
+      [32m+[0m[0m agent_identifier         = "9879534a-8671-4421-8816-663786da9dd0"
+      [32m+[0m[0m application_name         = (known after apply)
+      [32m+[0m[0m approved                 = (known after apply)
+      [32m+[0m[0m client_machine           = "k8s-orchestrator-tf-demo"
+      [32m+[0m[0m container_id             = (known after apply)
+      [32m+[0m[0m container_name           = (known after apply)
+      [32m+[0m[0m create_if_missing        = true
+      [32m+[0m[0m display_name             = (known after apply)
+      [32m+[0m[0m id                       = (known after apply)
+      [32m+[0m[0m inventory_schedule       = "Daily at 12:00:00"
+      [32m+[0m[0m properties               = {
+          [32m+[0m[0m "KubeSecretType" = "opaque"
+        }
+      [32m+[0m[0m server_use_ssl           = true
+      [32m+[0m[0m server_username          = "kubeconfig"
+      [32m+[0m[0m set_new_password_allowed = (known after apply)
+      [32m+[0m[0m store_path               = "default/tf-demo-opaque-secret"
+      [32m+[0m[0m store_type               = "K8SSecret"
+    }
+
+[1m  # keyfactor_certificate_store.k8s_pkcs12[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_store" "k8s_pkcs12" {
+      [32m+[0m[0m agent_assigned           = (known after apply)
+      [32m+[0m[0m agent_id                 = (known after apply)
+      [32m+[0m[0m agent_identifier         = "9879534a-8671-4421-8816-663786da9dd0"
+      [32m+[0m[0m application_name         = (known after apply)
+      [32m+[0m[0m approved                 = (known after apply)
+      [32m+[0m[0m client_machine           = "k8s-orchestrator-tf-demo"
+      [32m+[0m[0m container_id             = (known after apply)
+      [32m+[0m[0m container_name           = (known after apply)
+      [32m+[0m[0m create_if_missing        = true
+      [32m+[0m[0m display_name             = (known after apply)
+      [32m+[0m[0m id                       = (known after apply)
+      [32m+[0m[0m inventory_schedule       = "Daily at 12:00:00"
+      [32m+[0m[0m properties               = {
+          [32m+[0m[0m "CertificateDataFieldName" = ".p12"
+          [32m+[0m[0m "KubeSecretType"           = "pkcs12"
+        }
+      [32m+[0m[0m server_use_ssl           = true
+      [32m+[0m[0m server_username          = "kubeconfig"
+      [32m+[0m[0m set_new_password_allowed = (known after apply)
+      [32m+[0m[0m store_password           = (sensitive value)
+      [32m+[0m[0m store_path               = "default/tf-demo-pkcs12"
+      [32m+[0m[0m store_type               = "K8SPKCS12"
+    }
+
+[1m  # keyfactor_certificate_store.k8s_pkcs12_buddy[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_store" "k8s_pkcs12_buddy" {
+      [32m+[0m[0m agent_assigned           = (known after apply)
+      [32m+[0m[0m agent_id                 = (known after apply)
+      [32m+[0m[0m agent_identifier         = "9879534a-8671-4421-8816-663786da9dd0"
+      [32m+[0m[0m application_name         = (known after apply)
+      [32m+[0m[0m approved                 = (known after apply)
+      [32m+[0m[0m client_machine           = "k8s-orchestrator-tf-demo"
+      [32m+[0m[0m container_id             = (known after apply)
+      [32m+[0m[0m container_name           = (known after apply)
+      [32m+[0m[0m create_if_missing        = true
+      [32m+[0m[0m display_name             = (known after apply)
+      [32m+[0m[0m id                       = (known after apply)
+      [32m+[0m[0m inventory_schedule       = "Daily at 12:00:00"
+      [32m+[0m[0m properties               = {
+          [32m+[0m[0m "CertificateDataFieldName" = ".p12"
+          [32m+[0m[0m "KubeSecretType"           = "pkcs12"
+        }
+      [32m+[0m[0m server_use_ssl           = true
+      [32m+[0m[0m server_username          = "kubeconfig"
+      [32m+[0m[0m set_new_password_allowed = (known after apply)
+      [32m+[0m[0m store_password           = (sensitive value)
+      [32m+[0m[0m store_path               = "default/tf-demo-pkcs12-buddy"
+      [32m+[0m[0m store_type               = "K8SPKCS12"
+    }
+
+[1m  # keyfactor_certificate_store.k8s_tls_secret[0m will be created
+[0m  [32m+[0m[0m resource "keyfactor_certificate_store" "k8s_tls_secret" {
+      [32m+[0m[0m agent_assigned           = (known after apply)
+      [32m+[0m[0m agent_id                 = (known after apply)
+      [32m+[0m[0m agent_identifier         = "9879534a-8671-4421-8816-663786da9dd0"
+      [32m+[0m[0m application_name         = (known after apply)
+      [32m+[0m[0m approved                 = (known after apply)
+      [32m+[0m[0m client_machine           = "k8s-orchestrator-tf-demo"
+      [32m+[0m[0m container_id             = (known after apply)
+      [32m+[0m[0m container_name           = (known after apply)
+      [32m+[0m[0m create_if_missing        = true
+      [32m+[0m[0m display_name             = (known after apply)
+      [32m+[0m[0m id                       = (known after apply)
+      [32m+[0m[0m inventory_schedule       = "Daily at 12:00:00"
+      [32m+[0m[0m properties               = {
+          [32m+[0m[0m "KubeSecretType" = "tls"
+        }
+      [32m+[0m[0m server_use_ssl           = true
+      [32m+[0m[0m server_username          = "kubeconfig"
+      [32m+[0m[0m set_new_password_allowed = (known after apply)
+      [32m+[0m[0m store_path               = "default/tf-demo-tls-secret"
+      [32m+[0m[0m store_type               = "K8STLSSecr"
+    }
+
+[1m  # kubernetes_secret.jks_buddy_pwd[0m will be created
+[0m  [32m+[0m[0m resource "kubernetes_secret" "jks_buddy_pwd" {
+      [32m+[0m[0m binary_data_wo                 = (write-only attribute)
+      [32m+[0m[0m data                           = (sensitive value)
+      [32m+[0m[0m data_wo                        = (write-only attribute)
+      [32m+[0m[0m id                             = (known after apply)
+      [32m+[0m[0m type                           = "Opaque"
+      [32m+[0m[0m wait_for_service_account_token = true
+
+      [32m+[0m[0m metadata {
+          [32m+[0m[0m generation       = (known after apply)
+          [32m+[0m[0m name             = "tf-demo-jks-buddy-pwd"
+          [32m+[0m[0m namespace        = "default"
+          [32m+[0m[0m resource_version = (known after apply)
+          [32m+[0m[0m uid              = (known after apply)
+        }
+    }
+
+[1m  # kubernetes_secret.pkcs12_buddy_pwd[0m will be created
+[0m  [32m+[0m[0m resource "kubernetes_secret" "pkcs12_buddy_pwd" {
+      [32m+[0m[0m binary_data_wo                 = (write-only attribute)
+      [32m+[0m[0m data                           = (sensitive value)
+      [32m+[0m[0m data_wo                        = (write-only attribute)
+      [32m+[0m[0m id                             = (known after apply)
+      [32m+[0m[0m type                           = "Opaque"
+      [32m+[0m[0m wait_for_service_account_token = true
+
+      [32m+[0m[0m metadata {
+          [32m+[0m[0m generation       = (known after apply)
+          [32m+[0m[0m name             = "tf-demo-pkcs12-buddy-pwd"
+          [32m+[0m[0m namespace        = "default"
+          [32m+[0m[0m resource_version = (known after apply)
+          [32m+[0m[0m uid              = (known after apply)
+        }
+    }
+
+[1mPlan:[0m [0m18 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  [32m+[0m[0m agent_id  = "9879534a-8671-4421-8816-663786da9dd0"
+  [32m+[0m[0m store_ids = {
+      [32m+[0m[0m k8s_cert          = (known after apply)
+      [32m+[0m[0m k8s_cluster       = (known after apply)
+      [32m+[0m[0m k8s_jks           = (known after apply)
+      [32m+[0m[0m k8s_jks_buddy     = (known after apply)
+      [32m+[0m[0m k8s_ns            = (known after apply)
+      [32m+[0m[0m k8s_opaque_secret = (known after apply)
+      [32m+[0m[0m k8s_pkcs12        = (known after apply)
+      [32m+[0m[0m k8s_pkcs12_buddy  = (known after apply)
+      [32m+[0m[0m k8s_tls_secret    = (known after apply)
+    }
+[0m[1mkubernetes_secret.jks_buddy_pwd: Creating...[0m[0m
+[0m[1mkubernetes_secret.pkcs12_buddy_pwd: Creating...[0m[0m
+[0m[1mkubernetes_secret.jks_buddy_pwd: Creation complete after 0s [id=default/tf-demo-jks-buddy-pwd][0m
+[0m[1mkubernetes_secret.pkcs12_buddy_pwd: Creation complete after 0s [id=default/tf-demo-pkcs12-buddy-pwd][0m
+[0m[1mkeyfactor_certificate_store.k8s_ns: Creating...[0m[0m
+[0m[1mkeyfactor_certificate_store.k8s_tls_secret: Creating...[0m[0m
+[0m[1mkeyfactor_certificate_store.k8s_pkcs12_buddy: Creating...[0m[0m
+[0m[1mkeyfactor_certificate_store.k8s_pkcs12: Creating...[0m[0m
+[0m[1mkeyfactor_certificate_store.k8s_jks_buddy: Creating...[0m[0m
+[0m[1mkeyfactor_certificate_store.k8s_jks: Creating...[0m[0m
+[0m[1mkeyfactor_certificate_store.k8s_opaque_secret: Creating...[0m[0m
+[0m[1mkeyfactor_certificate_store.k8s_cluster: Creating...[0m[0m
+[0m[1mkeyfactor_certificate_store.k8s_cert: Creating...[0m[0m
+[0m[1mkeyfactor_certificate.demo: Creating...[0m[0m
+[0m[1mkeyfactor_certificate_store.k8s_tls_secret: Creation complete after 17s [id=241da313-4d4e-4e28-8857-26a67c76ae1a][0m
+[0m[1mkeyfactor_certificate_store.k8s_jks: Creation complete after 17s [id=bb8ad0ec-c554-40dd-bd8f-62e5bda42467][0m
+[0m[1mkeyfactor_certificate_store.k8s_cert: Creation complete after 17s [id=f20f9703-6f8a-42c4-a9de-19be8ddb9419][0m
+[0m[1mkeyfactor_certificate_store.k8s_cluster: Creation complete after 17s [id=fe84915c-3b86-4f96-96a3-5a1fab597ec4][0m
+[0m[1mkeyfactor_certificate_store.k8s_pkcs12_buddy: Creation complete after 17s [id=df32a8ac-f845-48ef-a129-532418b58701][0m
+[0m[1mkeyfactor_certificate_store.k8s_ns: Creation complete after 17s [id=a91234a1-48a7-44f7-80b5-e3eba1c9d0f1][0m
+[0m[1mkeyfactor_certificate_store.k8s_pkcs12: Creation complete after 17s [id=4f2ed653-b412-411b-9e71-747cdba2aa20][0m
+[0m[1mkeyfactor_certificate_store.k8s_opaque_secret: Creation complete after 17s [id=742ea955-8c7b-45a6-af94-023c97f21440][0m
+[0m[1mkeyfactor_certificate_store.k8s_jks_buddy: Creation complete after 17s [id=e448d470-9c68-45ad-b612-36f1bd5144f5][0m
+[31m╷[0m[0m
+[31m│[0m [0m[1m[31mError: [0m[0m[1mUnable to create Keyfactor Command certificate.[0m
+[31m│[0m [0m
+[31m│[0m [0m[0m  with keyfactor_certificate.demo,
+[31m│[0m [0m  on deployments.tf line 9, in resource "keyfactor_certificate" "demo":
+[31m│[0m [0m   9: resource "keyfactor_certificate" "demo" [4m{[0m[0m
+[31m│[0m [0m
+[31m│[0m [0mCould not create certificate tf-k8s-demo.example.com on Keyfactor: Unable
+[31m│[0m [0mto enroll for certificate. Step 'Keyfactor-Enroll' failed: The certificate
+[31m│[0m [0mrequest failed with the reason 'An error occurred while performing the
+[31m│[0m [0moperation. This may be due to invalid custom extension or certificate
+[31m│[0m [0mpolicy OIDs. Please see CA logs for more information.'.
+[31m╵[0m[0m
+make[3]: *** [apply] Error 1
+make[2]: *** [lab-apply] Error 2
+make[1]: *** [k8s_orchestrator_demo-lifecycle] Error 2
+>>> k8s_orchestrator_demo: FAIL (exit 2)

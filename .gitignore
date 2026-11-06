@@ -29,6 +29,19 @@ terraform/**/_import_pairs.txt
 terraform/**/store_types.tf
 terraform/_state_archive_*/
 
+# terraform/ harness: per-worktree provider build, generated dev CLI config, run logs
+# (full terraform output; owner-only), per-run result lines, plan files and key material
+terraform/.provider-bin/
+terraform/.terraformrc.dev
+terraform/.harness-logs/
+terraform/harness-results*.jsonl
+terraform/**/*.tfplan
+terraform/**/tfplan*
+terraform/**/*.p12
+terraform/**/*.jks
+terraform/**/*.pem
+terraform/**/*.key
+
 ### JetBrains template
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
 # Reference: https://intellij-support.jetbrains.com/hc/en-us/articles/206544839

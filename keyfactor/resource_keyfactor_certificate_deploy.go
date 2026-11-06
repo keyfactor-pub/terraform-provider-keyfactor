@@ -53,10 +53,11 @@ func (m deploymentOverwriteOnCertIDChange) MarkdownDescription(ctx context.Conte
 // Modify examines the plan and state for the target attribute and the top-level
 // `overwrite` attribute. If both the old and new certificate_id are known and
 // different, and `overwrite` is not set to true in the plan, this method marks
-// the attribute as requiring replacement by setting resp.RequiresReplace.
+// the attribute as requiring replacement by setting resp.RequiresReplace. A
+// planned certificate_id that is still unknown is treated as different.
 //
-// The method is a no-op when either plan or state is missing, or when the
-// relevant values are unknown or null.
+// The method is a no-op when either plan or state is missing (create/destroy),
+// or when the prior state value is unknown or either value is null.
 func (m deploymentOverwriteOnCertIDChange) Modify(
 	ctx context.Context,
 	req tfsdk.ModifyAttributePlanRequest,
@@ -78,12 +79,17 @@ func (m deploymentOverwriteOnCertIDChange) Modify(
 	_ = req.State.GetAttribute(ctx, req.AttributePath, &oldID)
 	_ = req.Plan.GetAttribute(ctx, req.AttributePath, &newID)
 
-	// If either is unknown/null, bail
-	if oldID.Unknown || newID.Unknown || oldID.Null || newID.Null {
+	// A null on either side, or an unknown prior value, is not comparable; bail.
+	if oldID.Unknown || oldID.Null || newID.Null {
 		return
 	}
 
-	changed := oldID.Value != newID.Value
+	// An unknown planned certificate_id (e.g. a renewed certificate whose ID is
+	// another resource's not-yet-known output) is never Equal to the prior
+	// state, so the stock RequiresReplace() would replace here. Preserve that:
+	// treat unknown as "changed" so the deployment is still replaced unless the
+	// operator opted in to overwrite = true.
+	changed := newID.Unknown || oldID.Value != newID.Value
 	allowed := !allow.Unknown && !allow.Null && allow.Value
 
 	if changed && !allowed {
@@ -983,6 +989,25 @@ func deploymentPresentInInventory(
 	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, true)
 }
 
+// pollSleepDuration returns how long pollInventory should sleep before its next
+// poll: retryDelaySeconds, clamped so the sleep never extends past deadline
+// (when one is set). Without the clamp a poll that starts just before the
+// deadline would sleep a full retry delay (up to 60 s) beyond max_inventory_wait.
+// Returns 0 when the deadline has already passed.
+func pollSleepDuration(retryDelaySeconds int, deadline *time.Time) time.Duration {
+	d := time.Duration(retryDelaySeconds) * time.Second
+	if deadline == nil {
+		return d
+	}
+	if remaining := time.Until(*deadline); remaining < d {
+		d = remaining
+	}
+	if d < 0 {
+		d = 0
+	}
+	return d
+}
+
 // pollInventory polls the store inventory until the desired state is reached or the
 // deadline/maxIterations is exhausted.
 //
@@ -1040,7 +1065,7 @@ func pollInventory(
 			))
 		}
 		select {
-		case <-time.After(time.Duration(retryDelay) * time.Second):
+		case <-time.After(pollSleepDuration(retryDelay, deadline)):
 			// continue polling
 		case <-ctx.Done():
 			return false, ctx.Err()

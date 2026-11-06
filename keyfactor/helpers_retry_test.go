@@ -418,3 +418,33 @@ func TestUnitRoleBindingSchemaAttemptCountMatchesConstant(t *testing.T) {
 		t.Fatalf("schema description does not contain %q", want)
 	}
 }
+
+// TestUnitPollSleepDurationClampsToDeadline (#6): the inventory poll's sleep
+// must never extend past max_inventory_wait.
+func TestUnitPollSleepDurationClampsToDeadline(t *testing.T) {
+	t.Parallel()
+	t.Run("no deadline: full delay", func(t *testing.T) {
+		if got := pollSleepDuration(60, nil); got != 60*time.Second {
+			t.Fatalf("got %s, want 60s", got)
+		}
+	})
+	t.Run("deadline far away: full delay", func(t *testing.T) {
+		dl := time.Now().Add(time.Hour)
+		if got := pollSleepDuration(8, &dl); got != 8*time.Second {
+			t.Fatalf("got %s, want 8s", got)
+		}
+	})
+	t.Run("deadline sooner than delay: clamped", func(t *testing.T) {
+		dl := time.Now().Add(300 * time.Millisecond)
+		got := pollSleepDuration(60, &dl)
+		if got <= 0 || got > 300*time.Millisecond {
+			t.Fatalf("got %s, want (0, 300ms]", got)
+		}
+	})
+	t.Run("deadline already passed: zero", func(t *testing.T) {
+		dl := time.Now().Add(-time.Second)
+		if got := pollSleepDuration(60, &dl); got != 0 {
+			t.Fatalf("got %s, want 0", got)
+		}
+	})
+}

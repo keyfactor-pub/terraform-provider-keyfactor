@@ -7,6 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 )
 
 // ---------------------------------------------------------------------------
@@ -268,4 +269,110 @@ func TestUnitDeployBareRequiresReplaceIgnoresOverwrite(t *testing.T) {
 				"that deploymentOverwriteOnCertIDChange is required to allow the Update path",
 		)
 	}
+}
+
+// TestUnitDeployOverwriteModifierUnknownNewCertID covers the renewed-certificate
+// case: certificate_id is another resource's output, so it is unknown at plan
+// time. The stock RequiresReplace() replaces in that case (an unknown value is
+// never Equal to the prior state), so the custom modifier must too unless
+// overwrite is explicitly true.
+func TestUnitDeployOverwriteModifierUnknownNewCertID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	schema := deploySchema(t, ctx)
+
+	cases := []struct {
+		name        string
+		overwrite   types.Bool
+		wantReplace bool
+	}{
+		{"overwrite_null_replaces", types.Bool{Null: true}, true},
+		{"overwrite_false_replaces", types.Bool{Value: false}, true},
+		{"overwrite_unknown_replaces", types.Bool{Unknown: true}, true},
+		{"overwrite_true_updates_in_place", types.Bool{Value: true}, false},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			stateVal := blankDeployState()
+			stateVal.CertificateId = types.Int64{Value: 100}
+			stateVal.Overwrite = c.overwrite
+			if c.overwrite.Unknown {
+				stateVal.Overwrite = types.Bool{Null: true} // state is never unknown
+			}
+
+			planVal := blankDeployState()
+			planVal.CertificateId = types.Int64{Unknown: true}
+			planVal.Overwrite = c.overwrite
+
+			st := asDeployTFState(t, ctx, schema, stateVal)
+			pl := asDeployTFPlan(t, ctx, schema, planVal)
+
+			req := tfsdk.ModifyAttributePlanRequest{
+				AttributePath:   path.Root("certificate_id"),
+				AttributeState:  types.Int64{Value: 100},
+				AttributePlan:   types.Int64{Unknown: true},
+				AttributeConfig: types.Int64{Unknown: true},
+				State:           st,
+				Plan:            pl,
+			}
+			resp := &tfsdk.ModifyAttributePlanResponse{AttributePlan: types.Int64{Unknown: true}}
+
+			deploymentOverwriteOnCertIDChange{}.Modify(ctx, req, resp)
+
+			if resp.RequiresReplace != c.wantReplace {
+				t.Fatalf("RequiresReplace=%v, want %v (unknown new certificate_id, overwrite=%v)",
+					resp.RequiresReplace, c.wantReplace, c.overwrite)
+			}
+		})
+	}
+}
+
+// TestUnitDeployOverwriteModifierCreateDestroyNoop verifies the early return for
+// null state (create) and null plan (destroy) is preserved even when the
+// planned certificate_id is unknown.
+func TestUnitDeployOverwriteModifierCreateDestroyNoop(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	schema := deploySchema(t, ctx)
+
+	planVal := blankDeployState()
+	planVal.CertificateId = types.Int64{Unknown: true}
+	pl := asDeployTFPlan(t, ctx, schema, planVal)
+	stateVal := blankDeployState()
+	st := asDeployTFState(t, ctx, schema, stateVal)
+
+	// create: state is null
+	{
+		req := tfsdk.ModifyAttributePlanRequest{
+			AttributePath: path.Root("certificate_id"),
+			State:         tfsdk.State{Schema: schema, Raw: tftypesNullFor(schema)},
+			Plan:          pl,
+		}
+		resp := &tfsdk.ModifyAttributePlanResponse{}
+		deploymentOverwriteOnCertIDChange{}.Modify(ctx, req, resp)
+		if resp.RequiresReplace {
+			t.Fatal("create (null state) must not require replace")
+		}
+	}
+	// destroy: plan is null
+	{
+		req := tfsdk.ModifyAttributePlanRequest{
+			AttributePath: path.Root("certificate_id"),
+			State:         st,
+			Plan:          tfsdk.Plan{Schema: schema, Raw: tftypesNullFor(schema)},
+		}
+		resp := &tfsdk.ModifyAttributePlanResponse{}
+		deploymentOverwriteOnCertIDChange{}.Modify(ctx, req, resp)
+		if resp.RequiresReplace {
+			t.Fatal("destroy (null plan) must not require replace")
+		}
+	}
+}
+
+func tftypesNullFor(schema tfsdk.Schema) tftypes.Value {
+	return tftypes.NewValue(schema.AttributeType().TerraformType(context.Background()), nil)
 }

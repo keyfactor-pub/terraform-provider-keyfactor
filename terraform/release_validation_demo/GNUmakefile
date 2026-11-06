@@ -40,7 +40,12 @@ import-all:
 	  fi; \
 	done < _import_pairs.txt
 
-## drift-check: Plan after import (only write-only fields should appear as "to change"
+## reconcile: Apply after import to reconcile fields not returned by the API
+## (write-only/secret fields). Should produce no replacements.
+reconcile:
+	$(UNSET_BASIC) $(TF) apply -auto-approve -var="suffix=$(SUFFIX)"
+
+## drift-check: Plan after reconcile (should show "No changes")
 drift-check:
 	$(UNSET_BASIC) $(TF) plan -var="suffix=$(SUFFIX)"
 
@@ -52,10 +57,10 @@ destroy:
 clean:
 	rm -f tf_state.json _import_pairs.txt terraform.tfstate terraform.tfstate.backup
 
-## all: Full workflow: build, init, validate, plan, apply, import-all, drift-check, destroy
-all: build init validate plan apply import-all drift-check destroy
+## all: Full workflow: build, init, validate, plan, apply, import-all, reconcile, drift-check, destroy
+all: build init validate plan apply import-all reconcile drift-check destroy
 
-## lab-plan / lab-apply / lab-import-all / lab-drift-check / lab-destroy:
+## lab-plan / lab-apply / lab-import-all / lab-reconcile / lab-drift-check / lab-destroy:
 lab-plan:
 	$(LAB_ENV) $(MAKE) plan SUFFIX=$(SUFFIX)
 
@@ -65,14 +70,17 @@ lab-apply:
 lab-import-all:
 	$(LAB_ENV) $(MAKE) import-all SUFFIX=$(SUFFIX)
 
+lab-reconcile:
+	$(LAB_ENV) $(MAKE) reconcile SUFFIX=$(SUFFIX)
+
 lab-drift-check:
 	$(LAB_ENV) $(MAKE) drift-check SUFFIX=$(SUFFIX)
 
 lab-destroy:
 	$(LAB_ENV) $(MAKE) destroy SUFFIX=$(SUFFIX)
 
-## lifecycle: Full lifecycle: apply → import-all → drift-check → destroy
-lifecycle: lab-apply lab-import-all lab-drift-check lab-destroy
+## lifecycle: Full lifecycle: apply → import-all → reconcile → drift-check → destroy
+lifecycle: lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy
 
-.PHONY: build init validate plan apply import-all drift-check destroy clean all \
-        lab-plan lab-apply lab-import-all lab-drift-check lab-destroy lifecycle
+.PHONY: build init validate plan apply import-all reconcile drift-check destroy clean all \
+        lab-plan lab-apply lab-import-all lab-reconcile lab-drift-check lab-destroy lifecycle

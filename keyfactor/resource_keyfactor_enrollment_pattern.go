@@ -160,7 +160,7 @@ Enrollment patterns provide a flexible way to streamline certificate enrollment 
 
 ~> **Note:** ` + "`associated_role_names`/`certificate_authority_ids`" + ` are modeled as Terraform sets, not lists: Keyfactor Command expands them server-side into ` + "`associated_roles`/`certificate_authorities`" + ` rather than echoing back the flat name/ID list that was submitted, and does not guarantee that expansion preserves submission order. A set's equality is membership-based, not order-based, so the provider safely re-derives both attributes from that expansion on every refresh -- meaning changes made directly in Command (e.g. via the UI, outside Terraform) are detected as drift on the next ` + "`terraform plan`" + ` -- without risking a spurious reordering diff.
 
-~> **Role management:** ` + "`associated_role_names`" + ` is **authoritative** — it replaces the entire role list on every apply. Use it when Terraform owns this pattern's role membership. For shared patterns where other teams also manage roles, use ` + "`keyfactor_enrollment_pattern_role_binding`" + ` (non-authoritative, additive). Never mix both on the same pattern; see the [RBAC guide](../guides/rbac_collection_scoped_access.md) for the full pattern.
+~> **Role management:** ` + "`associated_role_names`" + ` is **authoritative** — when you declare and change it, the new value replaces the entire role list. When it is undeclared, unchanged, or listed in ` + "`lifecycle { ignore_changes }`" + `, an update re-reads the pattern's current roles from Command immediately before the update and sends those unchanged, so role changes made by ` + "`keyfactor_enrollment_pattern_role_binding`" + ` resources in the same apply are not undone (a very narrow window between that read and the update remains). Use it when Terraform owns this pattern's role membership. For shared patterns where other teams also manage roles, use ` + "`keyfactor_enrollment_pattern_role_binding`" + ` (non-authoritative, additive). Never mix both on the same pattern; see the [RBAC guide](../guides/rbac_collection_scoped_access.md) for the full pattern.
 
 For full information on enrollment patterns view the [product documentation](https://software.keyfactor.com/Core-OnPrem/v25.3/Content/ReferenceGuide/Enrollment-Pattern-Operations.htm?Highlight=enrollment%20pattern)
 `,
@@ -2018,6 +2018,29 @@ func buildEnrollmentPatternUpdateRequest(ctx context.Context, plan KeyfactorEnro
 	return req
 }
 
+// enrollmentPatternRoleNamesAuthoritative reports whether Update() should send
+// the PLAN's associated_role_names verbatim in the PUT, as opposed to the
+// roles from the fresh pre-PUT GET.
+//
+// Only an explicitly declared AND changed value is authoritative:
+//   - config null (undeclared): the plan merely carries prior state forward
+//     (useStateOrNullModifier), so it is a stale snapshot -> not authoritative.
+//   - config declared but plan == prior state (value unchanged, or pinned to
+//     state by lifecycle { ignore_changes = [associated_role_names] }, which
+//     Terraform Core implements by substituting prior state into the plan) ->
+//     not authoritative.
+//   - config declared and plan != prior state (including a config that is still
+//     unknown at plan time) -> authoritative.
+//
+// This exists so keyfactor_enrollment_pattern_role_binding changes made after
+// the refresh (same apply or concurrent) are not clobbered by a stale PUT.
+func enrollmentPatternRoleNamesAuthoritative(config, plan, state types.Set) bool {
+	if config.Null {
+		return false
+	}
+	return !plan.Equal(state)
+}
+
 // preserveUndeclaredEnrollmentPatternFields extends the same read-modify-
 // write pattern used by preserveUndeclaredTemplateFields (resource_keyfactor_
 // certificate_template.go) to this resource: PUT /EnrollmentPatterns/
@@ -2517,9 +2540,15 @@ func (r resourceEnrollmentPattern) Update(
 	// Using Config here would send only the config-declared roles (missing any
 	// roles previously added by role_binding resources), producing an
 	// "inconsistent result after apply" error on every update.
+	//
+	// plan was decoded from Config above, so plan.AssociatedRoleNames is still
+	// the CONFIG value here: capture it before the Plan value overwrites it.
+	configRoleNames := plan.AssociatedRoleNames
 	var planRoleNames types.Set
 	if planDiags := request.Plan.GetAttribute(ctx, path.Root("associated_role_names"), &planRoleNames); !planDiags.HasError() {
 		plan.AssociatedRoleNames = planRoleNames
+	} else {
+		planRoleNames = plan.AssociatedRoleNames
 	}
 
 	var state KeyfactorEnrollmentPatternState
@@ -2527,6 +2556,26 @@ func (r resourceEnrollmentPattern) Update(
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
+	}
+
+	// The plan's role list is the refresh-time snapshot. Unless the practitioner
+	// explicitly declared a CHANGED associated_role_names, it must not be sent
+	// verbatim: keyfactor_enrollment_pattern_role_binding resources add/remove
+	// roles on the same pattern independently (often in the same apply), and
+	// PUT /EnrollmentPatterns/{id} replaces the whole role list, so a stale
+	// snapshot would silently undo those changes. In that case drop the plan
+	// value so preserveUndeclaredEnrollmentPatternFields substitutes the roles
+	// from the fresh pre-PUT GET below.
+	//
+	// This narrows, but does not close, the race: a role_binding write that
+	// lands between that GET and this PUT is still overwritten (Command offers
+	// no ETag/If-Match or per-role endpoint to make the pair atomic). The
+	// binding resource's own verify-and-retry loop repairs the case where the
+	// binding write is the one that loses, but not this one; avoid applying
+	// bindings and pattern changes to the same pattern concurrently.
+	rolesAuthoritative := enrollmentPatternRoleNamesAuthoritative(configRoleNames, planRoleNames, state.AssociatedRoleNames)
+	if !rolesAuthoritative {
+		plan.AssociatedRoleNames = types.Set{Null: true, ElemType: types.StringType}
 	}
 
 	// Config never populates id -- it's computed-only, never written by a
@@ -2645,6 +2694,18 @@ func (r resourceEnrollmentPattern) Update(
 	}
 
 	newState := enrollmentPatternResponseToState(resp)
+	// When the roles were NOT authoritative this apply (see rolesAuthoritative
+	// above), the PUT sent the server's current roles, which can legitimately
+	// differ from the planned (refresh-time) value -- that is the whole point.
+	// Terraform Core requires the post-apply value of an attribute whose plan
+	// was known to equal that plan, so report the planned values here rather
+	// than the response's; the next refresh re-derives both from the server.
+	if !rolesAuthoritative {
+		if !planRoleNames.Unknown {
+			newState.AssociatedRoleNames = planRoleNames
+		}
+		newState.AssociatedRoles = state.AssociatedRoles
+	}
 	// associated_role_names/certificate_authority_ids need no special
 	// handling here: enrollmentPatternResponseToState above already derived
 	// both directly from this PUT response's AssociatedRoles/

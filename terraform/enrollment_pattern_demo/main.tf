@@ -146,6 +146,18 @@ resource "keyfactor_enrollment_pattern_role_binding" "demo" {
   role_name               = data.keyfactor_role.binding.name
 }
 
+# Optional second binding for the lab-ignore-changes-race scenario (PR #219
+# finding #4): with lifecycle.ignore_changes on the pattern's
+# associated_role_names, destroying this binding in the same apply that updates
+# the pattern must leave the role removed (the pattern's PUT must not resurrect
+# it from the refresh-time plan).
+resource "keyfactor_enrollment_pattern_role_binding" "second" {
+  count = var.second_binding_role_name != "" ? 1 : 0
+
+  enrollment_pattern_name = keyfactor_enrollment_pattern.demo.name
+  role_name               = var.second_binding_role_name
+}
+
 # ---------------------------------------------------------------------------
 # Data source gap fill: read the pattern back by name and assert it agrees
 # with the resource's own state.

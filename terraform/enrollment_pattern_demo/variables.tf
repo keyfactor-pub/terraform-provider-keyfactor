@@ -62,3 +62,15 @@ variable "ca_name" {
   default     = "OpenBao PKI"
   description = "Certificate authority logical name for certificate_authority_ids. Changed during lab-update to exercise the certificate_authorities mirror follow-the-driver fix (full-review finding F2)."
 }
+
+# ---------------------------------------------------------------------------
+# PR #219 finding #4 scenario (see GNUmakefile's lab-ignore-changes-race).
+# When non-empty, a SECOND role_binding is created for this role. Default ""
+# (no second binding) leaves the rest of the lifecycle unchanged. The make
+# target discovers an unused role through the Command API and passes it in.
+# ---------------------------------------------------------------------------
+variable "second_binding_role_name" {
+  type        = string
+  default     = ""
+  description = "Optional name of a second security role to bind to the pattern via a second keyfactor_enrollment_pattern_role_binding. Empty disables the second binding."
+}

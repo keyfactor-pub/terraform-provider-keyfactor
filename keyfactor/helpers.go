@@ -544,6 +544,19 @@ const (
 	reconcileRetry
 )
 
+// Sentinel errors returned (wrapped) by reconcileWithRetry so callers can tell
+// WHY the loop gave up and report an accurate diagnostic instead of calling
+// every failure "concurrent write contention". Context cancellation / deadline
+// is returned as ctx.Err() (context.Canceled / context.DeadlineExceeded).
+var (
+	// errReconcileRateLimitDeadline: the server kept returning 429 until the
+	// overall MaxClientTimeoutSeconds budget ran out.
+	errReconcileRateLimitDeadline = errors.New("rate-limit retry deadline exceeded")
+	// errReconcileRaceExhausted: reconcileMaxAttempts GET-modify-PUT-verify
+	// cycles each lost the race against a concurrent writer.
+	errReconcileRaceExhausted = errors.New("concurrent-write retry attempts exhausted")
+)
+
 // reconcileWithRetry runs step with jittered exponential backoff between
 // reconcileRetry results. It centralises the retry skeleton that is common
 // across keyfactor_oauth_security_role_claim_association and
@@ -560,11 +573,29 @@ const (
 //   - 429 rate-limit retries (serverDelay > 0): capped by a deadline of
 //     MaxClientTimeoutSeconds from the start of the call. Per-sleep delay is
 //     clamped to 60 s regardless of the server's Retry-After value.
+//
+// When it gives up (false, non-nil error) the error identifies the cause:
+// errors.Is(err, errReconcileRaceExhausted), errors.Is(err,
+// errReconcileRateLimitDeadline), or ctx.Err() on cancellation. The last step
+// error is wrapped inside the first two. Use reconcileFailureDiagnostic to turn
+// it into a practitioner-facing diagnostic.
 func reconcileWithRetry(
 	ctx context.Context,
 	step func(attempt int) (reconcileOutcome, error, time.Duration),
 ) (bool, error) {
-	deadline := time.Now().Add(time.Duration(MaxClientTimeoutSeconds) * time.Second)
+	return reconcileWithRetryOpts(ctx, step, reconcileBackoff, time.Duration(MaxClientTimeoutSeconds)*time.Second)
+}
+
+// reconcileWithRetryOpts is reconcileWithRetry with the backoff function and
+// the overall 429 deadline injectable (production passes reconcileBackoff and
+// MaxClientTimeoutSeconds; tests pass fakes).
+func reconcileWithRetryOpts(
+	ctx context.Context,
+	step func(attempt int) (reconcileOutcome, error, time.Duration),
+	backoff func(attempt int) time.Duration,
+	rateLimitBudget time.Duration,
+) (bool, error) {
+	deadline := time.Now().Add(rateLimitBudget)
 	var lastErr error
 	raceAttempts := 0
 	for attempt := 1; ; attempt++ {
@@ -591,7 +622,7 @@ func reconcileWithRetry(
 				// Clamp sleep to remaining deadline time.
 				remaining := time.Until(deadline)
 				if remaining <= 0 {
-					return false, fmt.Errorf("429 retry deadline (%s) exceeded: %w", time.Duration(MaxClientTimeoutSeconds)*time.Second, lastErr)
+					return false, fmt.Errorf("%w (%s): %w", errReconcileRateLimitDeadline, rateLimitBudget, lastErr)
 				}
 				if serverDelay > remaining {
 					serverDelay = remaining
@@ -602,21 +633,48 @@ func reconcileWithRetry(
 					return false, ctx.Err()
 				}
 				if time.Now().After(deadline) {
-					return false, fmt.Errorf("429 retry deadline (%s) exceeded: %w", time.Duration(MaxClientTimeoutSeconds)*time.Second, lastErr)
+					return false, fmt.Errorf("%w (%s): %w", errReconcileRateLimitDeadline, rateLimitBudget, lastErr)
 				}
 			} else {
-				// Race-condition path: cap at reconcileMaxAttempts.
+				// Race-condition path: cap at reconcileMaxAttempts. The backoff
+				// grows with the number of race retries, not the total attempt
+				// count, so interleaved 429 retries do not inflate it.
 				raceAttempts++
 				if raceAttempts >= reconcileMaxAttempts {
-					return false, lastErr
+					return false, fmt.Errorf("%w (%d attempts): %w", errReconcileRaceExhausted, reconcileMaxAttempts, lastErr)
 				}
 				select {
-				case <-time.After(reconcileBackoff(attempt)):
+				case <-time.After(backoff(raceAttempts)):
 				case <-ctx.Done():
 					return false, ctx.Err()
 				}
 			}
 		}
+	}
+}
+
+// reconcileFailureDiagnostic builds the (summary, detail) pair for a
+// reconcileWithRetry failure, choosing the wording from the cause so that a
+// cancelled context or an exhausted 429 budget is not misreported as
+// "concurrent write contention".
+//
+// action is the gerund phrase for the summary ("creating enrollment pattern
+// role binding"); target is the verb phrase for the detail ("add role X to
+// enrollment pattern Y"); what is the noun for the contended object
+// ("pattern's roles", "role's claims").
+func reconcileFailureDiagnostic(action, target, what string, err error) (summary, detail string) {
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return fmt.Sprintf("Error %s (operation cancelled or timed out).", action),
+			fmt.Sprintf("Could not %s: %s. The operation was interrupted before it completed; re-run terraform apply.", target, err)
+	case errors.Is(err, errReconcileRateLimitDeadline):
+		return fmt.Sprintf("Error %s (rate limited).", action),
+			fmt.Sprintf("Could not %s: %s. Command kept returning 429 Too Many Requests; retry once the rate limit subsides.", target, err)
+	case errors.Is(err, errReconcileRaceExhausted):
+		return fmt.Sprintf("Error %s (concurrent write contention).", action),
+			fmt.Sprintf("Could not %s: %s. Another writer is repeatedly modifying this %s at the same time; retry once contention subsides.", target, err, what)
+	default:
+		return fmt.Sprintf("Error %s.", action), fmt.Sprintf("Could not %s: %v.", target, err)
 	}
 }
 

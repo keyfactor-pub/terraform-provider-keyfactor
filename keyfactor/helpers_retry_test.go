@@ -2,9 +2,11 @@ package keyfactor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -195,8 +197,11 @@ func TestUnitReconcileWithRetryRaceExhausted(t *testing.T) {
 	if ok {
 		t.Error("reconcileWithRetry: expected failure, got ok=true")
 	}
-	if gotErr != wantErr {
-		t.Errorf("reconcileWithRetry: got err %v, want %v", gotErr, wantErr)
+	if !errors.Is(gotErr, wantErr) {
+		t.Errorf("reconcileWithRetry: got err %v, want it to wrap %v", gotErr, wantErr)
+	}
+	if !errors.Is(gotErr, errReconcileRaceExhausted) {
+		t.Errorf("reconcileWithRetry: got err %v, want errReconcileRaceExhausted", gotErr)
 	}
 	if callCount != reconcileMaxAttempts {
 		t.Errorf("reconcileWithRetry: called step %d times, want %d", callCount, reconcileMaxAttempts)
@@ -258,5 +263,158 @@ func TestUnitMaxClientTimeoutSecondsIsOneHour(t *testing.T) {
 	want := 1 * time.Hour
 	if got != want {
 		t.Errorf("MaxClientTimeoutSeconds: got %s, want %s; update the constant if the provider timeout ceiling changed", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PR #219 review: #7 (backoff argument), #5 (distinct failure causes).
+// ---------------------------------------------------------------------------
+
+// TestUnitReconcileWithRetryBackoffUsesRaceAttempts verifies the backoff is
+// driven by the number of race retries, not the total attempt count. With 429
+// retries interleaved, attempt runs ahead of raceAttempts; passing attempt
+// (the old behavior) would inflate the backoff to its 15s cap far too early.
+func TestUnitReconcileWithRetryBackoffUsesRaceAttempts(t *testing.T) {
+	t.Parallel()
+	var got []int
+	backoff := func(n int) time.Duration {
+		got = append(got, n)
+		return 0
+	}
+	step := func(attempt int) (reconcileOutcome, error, time.Duration) {
+		// Attempts 1-3: 429 with a tiny server delay (does not count as a race).
+		if attempt <= 3 {
+			return reconcileRetry, fmt.Errorf("429"), time.Millisecond
+		}
+		return reconcileRetry, fmt.Errorf("race"), 0
+	}
+	ok, err := reconcileWithRetryOpts(context.Background(), step, backoff, time.Minute)
+	if ok || !errors.Is(err, errReconcileRaceExhausted) {
+		t.Fatalf("got ok=%v err=%v, want race exhaustion", ok, err)
+	}
+	var want []int
+	for i := 1; i < reconcileMaxAttempts; i++ {
+		want = append(want, i)
+	}
+	if !equalInts(got, want) {
+		t.Fatalf("backoff called with %v, want %v (raceAttempts, not attempt)", got, want)
+	}
+}
+
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestUnitReconcileWithRetryRateLimitDeadline verifies a 429 loop that outlives
+// its budget reports errReconcileRateLimitDeadline (not race exhaustion).
+func TestUnitReconcileWithRetryRateLimitDeadline(t *testing.T) {
+	t.Parallel()
+	step := func(attempt int) (reconcileOutcome, error, time.Duration) {
+		return reconcileRetry, fmt.Errorf("server returned 429"), 5 * time.Millisecond
+	}
+	ok, err := reconcileWithRetryOpts(context.Background(), step, func(int) time.Duration { return 0 }, 30*time.Millisecond)
+	if ok {
+		t.Fatal("expected failure")
+	}
+	if !errors.Is(err, errReconcileRateLimitDeadline) || errors.Is(err, errReconcileRaceExhausted) {
+		t.Fatalf("err = %v, want errReconcileRateLimitDeadline only", err)
+	}
+}
+
+// TestUnitReconcileWithRetryContextCancelIsNotContention verifies cancellation
+// is surfaced as ctx.Err(), distinct from both exhaustion errors.
+func TestUnitReconcileWithRetryContextCancelIsNotContention(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	step := func(attempt int) (reconcileOutcome, error, time.Duration) {
+		return reconcileRetry, fmt.Errorf("race"), 0
+	}
+	ok, err := reconcileWithRetryOpts(ctx, step, func(int) time.Duration { return time.Hour }, time.Minute)
+	if ok || !errors.Is(err, context.Canceled) {
+		t.Fatalf("got ok=%v err=%v, want context.Canceled", ok, err)
+	}
+	if errors.Is(err, errReconcileRaceExhausted) || errors.Is(err, errReconcileRateLimitDeadline) {
+		t.Fatalf("cancellation misclassified as exhaustion: %v", err)
+	}
+}
+
+// TestUnitReconcileFailureDiagnostic verifies the diagnostic wording follows
+// the cause: only genuine race exhaustion is called "contention", and no
+// message hard-codes an attempt count that disagrees with reconcileMaxAttempts.
+func TestUnitReconcileFailureDiagnostic(t *testing.T) {
+	t.Parallel()
+	last := fmt.Errorf("last step error")
+	cases := []struct {
+		name            string
+		err             error
+		wantSummary     string
+		wantDetail      string
+		wantNotContains string
+	}{
+		{
+			name:        "race exhausted",
+			err:         fmt.Errorf("%w (%d attempts): %w", errReconcileRaceExhausted, reconcileMaxAttempts, last),
+			wantSummary: "(concurrent write contention)",
+			wantDetail:  fmt.Sprintf("(%d attempts)", reconcileMaxAttempts),
+		},
+		{
+			name:            "rate limit deadline",
+			err:             fmt.Errorf("%w (1h0m0s): %w", errReconcileRateLimitDeadline, last),
+			wantSummary:     "(rate limited)",
+			wantDetail:      "429",
+			wantNotContains: "contention",
+		},
+		{
+			name:            "context canceled",
+			err:             context.Canceled,
+			wantSummary:     "(operation cancelled or timed out)",
+			wantDetail:      "context canceled",
+			wantNotContains: "contention",
+		},
+		{
+			name:            "context deadline",
+			err:             context.DeadlineExceeded,
+			wantSummary:     "(operation cancelled or timed out)",
+			wantNotContains: "contention",
+		},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			summary, detail := reconcileFailureDiagnostic("adding thing", "add thing", "thing's roles", c.err)
+			if !strings.Contains(summary, c.wantSummary) {
+				t.Errorf("summary %q missing %q", summary, c.wantSummary)
+			}
+			if c.wantDetail != "" && !strings.Contains(detail, c.wantDetail) {
+				t.Errorf("detail %q missing %q", detail, c.wantDetail)
+			}
+			if c.wantNotContains != "" && (strings.Contains(summary, c.wantNotContains) || strings.Contains(detail, c.wantNotContains)) {
+				t.Errorf("diagnostic %q / %q must not mention %q", summary, detail, c.wantNotContains)
+			}
+		})
+	}
+}
+
+// TestUnitRoleBindingSchemaAttemptCountMatchesConstant guards the schema text
+// against drifting from reconcileMaxAttempts again.
+func TestUnitRoleBindingSchemaAttemptCountMatchesConstant(t *testing.T) {
+	t.Parallel()
+	schema, diags := resourceEnrollmentPatternRoleBindingType{}.GetSchema(context.Background())
+	if diags.HasError() {
+		t.Fatalf("GetSchema: %+v", diags)
+	}
+	want := fmt.Sprintf("up to %d attempts", reconcileMaxAttempts)
+	if !strings.Contains(schema.MarkdownDescription, want) {
+		t.Fatalf("schema description does not contain %q", want)
 	}
 }

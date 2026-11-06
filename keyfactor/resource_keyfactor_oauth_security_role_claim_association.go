@@ -258,13 +258,11 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 		return
 	}
 	if !response.Diagnostics.HasError() {
-		response.Diagnostics.AddError(
-			"Error deleting security role claim association (concurrent write contention).",
-			fmt.Sprintf(
-				"Could not remove claim ID %d from OAuth security role ID %d after %d attempts: %s. Another writer is repeatedly modifying this role's claims at the same time; retry once contention subsides.",
-				claimId, roleId, reconcileMaxAttempts, lastErr,
-			),
-		)
+		summary, detail := reconcileFailureDiagnostic(
+			"deleting security role claim association",
+			fmt.Sprintf("remove claim ID %d from OAuth security role ID %d", claimId, roleId),
+			"role's claims", lastErr)
+		response.Diagnostics.AddError(summary, detail)
 	}
 }
 
@@ -437,13 +435,11 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 	})
 
 	if !created && !response.Diagnostics.HasError() {
-		response.Diagnostics.AddError(
-			"Error creating security role claim association (concurrent write contention).",
-			fmt.Sprintf(
-				"Could not add claim ID %d to OAuth security role ID %d after %d attempts: %s. Another writer is repeatedly modifying this role's claims at the same time; retry once contention subsides.",
-				claimId, roleId, reconcileMaxAttempts, lastErr,
-			),
-		)
+		summary, detail := reconcileFailureDiagnostic(
+			"creating security role claim association",
+			fmt.Sprintf("add claim ID %d to OAuth security role ID %d", claimId, roleId),
+			"role's claims", lastErr)
+		response.Diagnostics.AddError(summary, detail)
 	}
 	if !created {
 		return

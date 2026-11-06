@@ -25,7 +25,7 @@ Use one ` + "`keyfactor_enrollment_pattern_role_binding`" + ` resource per (enro
 
 ~> **Important:** Enrollment Patterns and this resource are only available in Keyfactor Command v25.0+
 
-~> **Concurrency note:** Command's enrollment pattern PUT endpoint replaces the full role list atomically at the server; there is no per-role sub-endpoint. This resource uses a GET-modify-PUT-verify retry loop (up to 5 attempts with jittered backoff) to reduce — but not eliminate — the lost-update window when two bindings for the same pattern are applied concurrently. For best results, avoid running more than one ` + "`terraform apply`" + ` concurrently against the same enrollment pattern.
+~> **Concurrency note:** Command's enrollment pattern PUT endpoint replaces the full role list atomically at the server; there is no per-role sub-endpoint. This resource uses a GET-modify-PUT-verify retry loop (up to ` + fmt.Sprint(reconcileMaxAttempts) + ` attempts with jittered backoff) to reduce — but not eliminate — the lost-update window when two bindings for the same pattern are applied concurrently. For best results, avoid running more than one ` + "`terraform apply`" + ` concurrently against the same enrollment pattern.
 `,
 		Attributes: map[string]tfsdk.Attribute{
 			"id": {
@@ -212,14 +212,11 @@ func (r resourceEnrollmentPatternRoleBinding) Create(
 	})
 
 	if !created && !response.Diagnostics.HasError() {
-		response.Diagnostics.AddError(
-			"Error creating enrollment pattern role binding (concurrent write contention).",
-			fmt.Sprintf(
-				"Could not add role %q to enrollment pattern %q after %d attempts: %s. "+
-					"Another writer is repeatedly modifying this pattern's roles at the same time; retry once contention subsides.",
-				roleName, patternName, reconcileMaxAttempts, lastErr,
-			),
-		)
+		summary, detail := reconcileFailureDiagnostic(
+			"creating enrollment pattern role binding",
+			fmt.Sprintf("add role %q to enrollment pattern %q", roleName, patternName),
+			"pattern's roles", lastErr)
+		response.Diagnostics.AddError(summary, detail)
 		return
 	}
 	if !created {
@@ -469,14 +466,11 @@ func (r resourceEnrollmentPatternRoleBinding) Delete(
 	})
 
 	if !deleted && !response.Diagnostics.HasError() {
-		response.Diagnostics.AddError(
-			"Error deleting enrollment pattern role binding (concurrent write contention).",
-			fmt.Sprintf(
-				"Could not remove role %q from enrollment pattern %q after %d attempts: %s. "+
-					"Another writer is repeatedly modifying this pattern's roles at the same time; retry once contention subsides.",
-				roleName, patternName, reconcileMaxAttempts, lastErr,
-			),
-		)
+		summary, detail := reconcileFailureDiagnostic(
+			"deleting enrollment pattern role binding",
+			fmt.Sprintf("remove role %q from enrollment pattern %q", roleName, patternName),
+			"pattern's roles", lastErr)
+		response.Diagnostics.AddError(summary, detail)
 	}
 
 	LogFunctionExit(ctx, "resourceEnrollmentPatternRoleBinding.Delete")

@@ -124,6 +124,7 @@ $(1)-lifecycle-body:
 	@echo "=============================================================="
 	@echo "==> $(1) (PROVIDER_MODE=$(PROVIDER_MODE))"
 	@echo "=============================================================="
+	@$(MAKE) -C $(1) lab-env-check
 	@if [ "$(PROVIDER_MODE)" = "dev" ]; then $(MAKE) -C $(1) build; fi
 	$(MAKE) -C $(1) init PROVIDER_MODE=$(PROVIDER_MODE)
 	@$(MAKE) -C $(1) lifecycle PROVIDER_MODE=$(PROVIDER_MODE); rc=$$$$?; \

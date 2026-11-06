@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 )
 
 // TestUnitParseRetryAfterSeconds verifies that a delay-seconds Retry-After
@@ -445,6 +447,133 @@ func TestUnitPollSleepDurationClampsToDeadline(t *testing.T) {
 		dl := time.Now().Add(-time.Second)
 		if got := pollSleepDuration(60, &dl); got != 0 {
 			t.Fatalf("got %s, want 0", got)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// PR #219 review: #2 (not-found classification) and #3 (exact-name filtering).
+// ---------------------------------------------------------------------------
+
+func epNamed(names ...string) []kfv1.EnrollmentPatternsEnrollmentPatternResponse {
+	out := make([]kfv1.EnrollmentPatternsEnrollmentPatternResponse, 0, len(names))
+	for i, n := range names {
+		p := kfv1.EnrollmentPatternsEnrollmentPatternResponse{}
+		p.SetId(int32(i + 1))
+		p.SetName(n)
+		out = append(out, p)
+	}
+	return out
+}
+
+func epName(p kfv1.EnrollmentPatternsEnrollmentPatternResponse) string { return p.GetName() }
+
+func TestUnitSelectByExactName(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty result is not-found and satisfies isNotFoundError", func(t *testing.T) {
+		got, err := selectByExactName("enrollment pattern", "Gone", epNamed(), epName)
+		if got != nil || err == nil {
+			t.Fatalf("got %v, %v; want nil, error", got, err)
+		}
+		if !isNotFoundError(err) {
+			t.Fatalf("isNotFoundError(%q) = false; Read/Delete would treat a deleted pattern as a hard error", err)
+		}
+	})
+
+	t.Run("server returns only unrelated names: not-found, not response[0]", func(t *testing.T) {
+		got, err := selectByExactName("enrollment pattern", "Wanted", epNamed("Other", "Another"), epName)
+		if got != nil {
+			t.Fatalf("returned %q for a non-matching list (response[0] bug)", got.GetName())
+		}
+		if err == nil || !isNotFoundError(err) {
+			t.Fatalf("err = %v, want a not-found error", err)
+		}
+	})
+
+	t.Run("picks the exact match, not the first element", func(t *testing.T) {
+		got, err := selectByExactName("enrollment pattern", "Wanted", epNamed("Wanted-2", "Wanted", "xWanted"), epName)
+		if err != nil || got == nil || got.GetName() != "Wanted" || got.GetId() != 2 {
+			t.Fatalf("got %v, %v; want Wanted (id 2)", got, err)
+		}
+	})
+
+	t.Run("exact match wins over a case-insensitive near match", func(t *testing.T) {
+		got, err := selectByExactName("enrollment pattern", "wanted", epNamed("WANTED", "wanted"), epName)
+		if err != nil || got.GetName() != "wanted" {
+			t.Fatalf("got %v, %v; want exact-case match", got, err)
+		}
+	})
+
+	t.Run("sole case-insensitive match is accepted as fallback", func(t *testing.T) {
+		got, err := selectByExactName("enrollment pattern", "wanted", epNamed("Other", "Wanted"), epName)
+		if err != nil || got.GetName() != "Wanted" {
+			t.Fatalf("got %v, %v; want Wanted", got, err)
+		}
+	})
+
+	t.Run("duplicates are ambiguous and NOT classified as not-found", func(t *testing.T) {
+		got, err := selectByExactName("enrollment pattern", "Dup", epNamed("Dup", "Dup"), epName)
+		if got != nil || err == nil {
+			t.Fatalf("got %v, %v; want nil, ambiguity error", got, err)
+		}
+		if isNotFoundError(err) {
+			t.Fatalf("ambiguity error %q must not satisfy isNotFoundError (Delete would silently skip the removal)", err)
+		}
+	})
+
+	t.Run("works for certificate collections too", func(t *testing.T) {
+		a, b := kfv1.CSSCMSDataModelModelsCertificateQuery{}, kfv1.CSSCMSDataModelModelsCertificateQuery{}
+		a.SetName("A")
+		b.SetName("B")
+		got, err := selectByExactName("certificate collection", "B", []kfv1.CSSCMSDataModelModelsCertificateQuery{a, b},
+			func(c kfv1.CSSCMSDataModelModelsCertificateQuery) string { return c.GetName() })
+		if err != nil || got.GetName() != "B" {
+			t.Fatalf("got %v, %v", got, err)
+		}
+		_, err = selectByExactName("certificate collection", "Z", []kfv1.CSSCMSDataModelModelsCertificateQuery{a, b},
+			func(c kfv1.CSSCMSDataModelModelsCertificateQuery) string { return c.GetName() })
+		if err == nil || !isNotFoundError(err) {
+			t.Fatalf("err = %v, want not-found", err)
+		}
+	})
+}
+
+// TestUnitGetEnrollmentPatternByNameEndToEnd drives the real helper through the
+// SDK against a fake server: empty list -> not-found (#2); unrelated names ->
+// not-found, never response[0] (#3); exact match among decoys -> that pattern.
+func TestUnitGetEnrollmentPatternByNameEndToEnd(t *testing.T) {
+	t.Parallel()
+	serve := func(body string) *httptest.Server {
+		return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(body))
+		}))
+	}
+	ctx := context.Background()
+
+	t.Run("empty", func(t *testing.T) {
+		s := serve(`[]`)
+		defer s.Close()
+		_, err := getEnrollmentPatternByName(ctx, newTemplateUpdateSDKClient(s), "Gone")
+		if err == nil || !isNotFoundError(err) {
+			t.Fatalf("err = %v, want isNotFoundError", err)
+		}
+	})
+	t.Run("only unrelated names", func(t *testing.T) {
+		s := serve(`[{"Id":1,"Name":"Other"},{"Id":2,"Name":"Another"}]`)
+		defer s.Close()
+		got, err := getEnrollmentPatternByName(ctx, newTemplateUpdateSDKClient(s), "Wanted")
+		if got != nil || err == nil || !isNotFoundError(err) {
+			t.Fatalf("got %v, %v; want nil + not-found", got, err)
+		}
+	})
+	t.Run("exact match among decoys", func(t *testing.T) {
+		s := serve(`[{"Id":1,"Name":"Wanted-old"},{"Id":2,"Name":"Wanted"}]`)
+		defer s.Close()
+		got, err := getEnrollmentPatternByName(ctx, newTemplateUpdateSDKClient(s), "Wanted")
+		if err != nil || got.GetId() != 2 {
+			t.Fatalf("got %v, %v; want id 2", got, err)
 		}
 	})
 }

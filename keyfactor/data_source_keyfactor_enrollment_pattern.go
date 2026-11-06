@@ -3,7 +3,6 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -528,15 +527,9 @@ func (r dataSourceEnrollmentPattern) Read(
 		ctx = tflog.SetField(ctx, "template_short_name", templateShortName)
 		tflog.Debug(ctx, "Searching for enrollment pattern by template short name")
 
-		// F6+F1: escape backslashes first, then double quotes, to prevent
-		// QueryString injection. Backslashes must be escaped first so the
-		// quote-escape backslashes themselves are not double-escaped.
-		//   foo\  → foo\\ (backslash escape)
-		//   foo"  → foo\" (quote escape)
-		//   foo\" → foo\\" (backslash escapes first, then quote)
-		escapedShortName := strings.ReplaceAll(templateShortName, `\`, `\\`)
-		escapedShortName = strings.ReplaceAll(escapedShortName, `"`, `\"`)
-		queryStr := fmt.Sprintf("TemplateShortName -eq \"%s\"", escapedShortName)
+		// Escape backslashes then double quotes (see escapePQLValue) to prevent
+		// QueryString injection.
+		queryStr := fmt.Sprintf("TemplateShortName -eq \"%s\"", escapePQLValue(templateShortName))
 
 		// templateDefaultFilterPtr mirrors the user's template_default config:
 		//   nil    — omitted in config; no TemplateDefault filter applied

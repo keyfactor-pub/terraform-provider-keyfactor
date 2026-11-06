@@ -3341,7 +3341,8 @@ func getSecurityRoleByName(
 }
 
 // getCertificateCollectionByName queries certificate collections by name and
-// returns the first matching collection, or an error if none is found.
+// returns the collection whose name matches exactly (see selectByExactName),
+// or a not-found / ambiguity error.
 // Uses the same QueryString filter pattern as getSecurityRoleByName.
 func getCertificateCollectionByName(
 	ctx context.Context,
@@ -3360,15 +3361,14 @@ func getCertificateCollectionByName(
 		return nil, err
 	}
 
-	if len(response) == 0 {
-		return nil, fmt.Errorf("no certificate collection found with name %q", collectionName)
-	}
-
-	return &response[0], nil
+	// Do not trust the server-side filter to be exact: select by name locally.
+	return selectByExactName("certificate collection", collectionName, response,
+		func(c kfv1.CSSCMSDataModelModelsCertificateQuery) string { return c.GetName() })
 }
 
 // getEnrollmentPatternByName queries enrollment patterns by name and returns
-// the first matching pattern, or an error if none is found.
+// the pattern whose name matches exactly (see selectByExactName), or a
+// not-found / ambiguity error.
 // Uses the same QueryString filter pattern as getSecurityRoleByName.
 func getEnrollmentPatternByName(
 	ctx context.Context,
@@ -3387,11 +3387,47 @@ func getEnrollmentPatternByName(
 		return nil, err
 	}
 
-	if len(response) == 0 {
-		return nil, fmt.Errorf("no enrollment pattern found with name %q", patternName)
-	}
+	// Do not trust the server-side filter to be exact: select by name locally.
+	return selectByExactName("enrollment pattern", patternName, response,
+		func(p kfv1.EnrollmentPatternsEnrollmentPatternResponse) string { return p.GetName() })
+}
 
-	return &response[0], nil
+// selectByExactName picks the single item whose name equals want from the
+// result of a server-side "Name -eq" query. It exists because the callers feed
+// the result into access-control writes (role-list rewrites), so returning
+// response[0] of an unverified list is not acceptable.
+//
+// Matching is by exact (case-sensitive) name, mirroring
+// enrollmentPatternResolveIdentifier. If no item matches exactly, a single
+// case-insensitive match is accepted as a fallback, because Command's PQL "-eq"
+// is not guaranteed to be case-sensitive and a practitioner's config casing
+// should keep resolving to the object the server matched. Zero matches yields
+// an error that satisfies isNotFoundError ("... not found"); more than one
+// match at the winning tier yields an ambiguity error that does NOT, so
+// Read/Delete never mistake an ambiguous lookup for a deleted object.
+func selectByExactName[T any](kind, want string, items []T, nameOf func(T) string) (*T, error) {
+	var exact, folded []int
+	for i, it := range items {
+		n := nameOf(it)
+		switch {
+		case n == want:
+			exact = append(exact, i)
+		case strings.EqualFold(n, want):
+			folded = append(folded, i)
+		}
+	}
+	matches := exact
+	if len(matches) == 0 {
+		matches = folded
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("%s %q not found (server returned %d candidate(s), none with that name)", kind, want, len(items))
+	case 1:
+		return &items[matches[0]], nil
+	default:
+		return nil, fmt.Errorf("ambiguous lookup: %d %ss are named %q; refusing to pick one", len(matches), kind, want)
+	}
 }
 
 // ---------------------------------------------------------------------------

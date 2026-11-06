@@ -5,7 +5,7 @@ description: |-
   Binds a single security role to an enrollment pattern using the "/EnrollmentPatterns" API.
   Use one keyfactor_enrollment_pattern_role_binding resource per (enrollment pattern, role) pair. This resource uses a GET-modify-PUT-verify retry loop to safely manage role membership alongside concurrent bindings on the same pattern.
   ~> Important: Enrollment Patterns and this resource are only available in Keyfactor Command v25.0+
-  ~> Concurrency note: Command's enrollment pattern PUT endpoint replaces the full role list atomically at the server; there is no per-role sub-endpoint. This resource uses a GET-modify-PUT-verify retry loop (up to 5 attempts with jittered backoff) to reduce — but not eliminate — the lost-update window when two bindings for the same pattern are applied concurrently. For best results, avoid running more than one terraform apply concurrently against the same enrollment pattern.
+  ~> Concurrency note: Command's enrollment pattern PUT endpoint replaces the full role list atomically at the server; there is no per-role sub-endpoint. This resource uses a GET-modify-PUT-verify retry loop (up to 8 attempts with jittered backoff) to reduce — but not eliminate — the lost-update window when two bindings for the same pattern are applied concurrently. For best results, avoid running more than one terraform apply concurrently against the same enrollment pattern.
 ---
 
 # Resource keyfactor_enrollment_pattern_role_binding
@@ -16,7 +16,7 @@ Use one `keyfactor_enrollment_pattern_role_binding` resource per (enrollment pat
 
 ~> **Important:** Enrollment Patterns and this resource are only available in Keyfactor Command v25.0+
 
-~> **Concurrency note:** Command's enrollment pattern PUT endpoint replaces the full role list atomically at the server; there is no per-role sub-endpoint. This resource uses a GET-modify-PUT-verify retry loop (up to 5 attempts with jittered backoff) to reduce — but not eliminate — the lost-update window when two bindings for the same pattern are applied concurrently. For best results, avoid running more than one `terraform apply` concurrently against the same enrollment pattern.
+~> **Concurrency note:** Command's enrollment pattern PUT endpoint replaces the full role list atomically at the server; there is no per-role sub-endpoint. This resource uses a GET-modify-PUT-verify retry loop (up to 8 attempts with jittered backoff) to reduce — but not eliminate — the lost-update window when two bindings for the same pattern are applied concurrently. For best results, avoid running more than one `terraform apply` concurrently against the same enrollment pattern.
 
 ## Example Usage
 

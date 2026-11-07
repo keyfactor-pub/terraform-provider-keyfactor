@@ -37,7 +37,7 @@ func (r resourceOAuthSecurityRoleClaimAssociationType) GetSchema(_ context.Conte
 				Description:   "Internal ID of the OAuth security claim. Changing this value forces a new resource.",
 			},
 		},
-		Description: "Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+",
+		Description: "Used to associate an existing OAuth security claim with an existing OAuth security role using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+",
 	}, nil
 }
 

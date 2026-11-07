@@ -337,7 +337,7 @@ func (r resourceCommandCertificateType) GetSchema(_ context.Context) (tfsdk.Sche
 				Optional:      true,
 				Computed:      true,
 				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), tfsdk.RequiresReplace()},
-				Description: "List of DNS names to use as subjects of the certificate. " +
+				Description: "List of IP addresses to use as subject alternative names of the certificate. " +
 					"NOTE: This field **does not work with CSR enrollments**, " +
 					"all SANs should be included in the CSR. " +
 					"Additional SANs added by the CA during enrollment **will" +

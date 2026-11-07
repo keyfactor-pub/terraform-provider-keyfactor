@@ -26,9 +26,10 @@ func (r resourceCertificateTemplateRoleBindingType) GetSchema(_ context.Context)
 				Description: "ID of template role binding.",
 			},
 			"role_name": {
-				Type:        types.StringType,
-				Required:    true,
-				Description: "An string associated with a Keyfactor security role being attached. This is just the name field found on Keyfactor.",
+				Type:          types.StringType,
+				Required:      true,
+				Description:   "An string associated with a Keyfactor security role being attached. This is just the name field found on Keyfactor. Changing this forces the binding to be replaced.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"template_short_names": {
 				Type:        types.ListType{ElemType: types.StringType},
@@ -157,6 +158,10 @@ func (r resourceCertificateTemplateRoleBinding) Read(
 	diags = state.TemplateNames.ElementsAs(ctx, &templateNames, true)
 	kfTemplates, err := kfClient.GetTemplates()
 	if err != nil {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_TEMPLATE_READ,
+			"There was an error getting templates from Keyfactor Command: "+err.Error(),
+		)
 		return
 	}
 	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)
@@ -213,6 +218,10 @@ func (r resourceCertificateTemplateRoleBinding) Update(
 	diags = plan.TemplateNames.ElementsAs(ctx, &planTemplateNames, true)
 	kfTemplates, err := kfClient.GetTemplates()
 	if err != nil {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_TEMPLATE_READ,
+			"There was an error getting templates from Keyfactor Command: "+err.Error(),
+		)
 		return
 	}
 	stateValidTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, stateTemplateNames)

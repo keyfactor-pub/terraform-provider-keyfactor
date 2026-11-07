@@ -3027,6 +3027,10 @@ func getSecurityClaimByTypeAndValueAndScheme(
 		),
 	)
 
+	if strings.Contains(claimValue, "\"") {
+		return nil, fmt.Errorf("claim value %q contains a double quote, which cannot be safely used in a Command query", claimValue)
+	}
+
 	claimTypeEnum, err := kfv1.ParseCSSCMSCoreEnumsClaimType(claimType)
 	if err != nil {
 		return nil, err
@@ -3049,14 +3053,7 @@ func getSecurityClaimByTypeAndValueAndScheme(
 		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s", claimType, claimValue)
 	}
 
-	var result *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse
-
-	for _, claim := range response {
-		if claim.Provider != nil && claim.Provider.AuthenticationScheme.Get() != nil && *claim.Provider.AuthenticationScheme.Get() == authenticationScheme {
-			result = &claim
-			break
-		}
-	}
+	result := selectSecurityClaimByValueAndScheme(response, claimValue, authenticationScheme)
 
 	if result == nil {
 		return nil, fmt.Errorf(
@@ -3070,6 +3067,41 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	return result, nil
 }
 
+// selectSecurityClaimByValueAndScheme returns the first claim whose value matches claimValue
+// (case-insensitive) and whose provider authentication scheme equals authenticationScheme.
+// The server-side query is not trusted to have filtered by value.
+func selectSecurityClaimByValueAndScheme(
+	claims []kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse,
+	claimValue string,
+	authenticationScheme string,
+) *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse {
+	for i := range claims {
+		claim := claims[i]
+		v := claim.ClaimValue.Get()
+		if v == nil || !strings.EqualFold(*v, claimValue) {
+			continue
+		}
+		if claim.Provider != nil && claim.Provider.AuthenticationScheme.Get() != nil && *claim.Provider.AuthenticationScheme.Get() == authenticationScheme {
+			return &claim
+		}
+	}
+	return nil
+}
+
+// selectSecurityRoleByExactName returns the role whose name equals roleName (case-insensitive), or nil.
+func selectSecurityRoleByExactName(
+	roles []kfv2.SecuritySecurityRolesSecurityRoleQueryResponse,
+	roleName string,
+) *kfv2.SecuritySecurityRolesSecurityRoleQueryResponse {
+	for i := range roles {
+		n := roles[i].Name.Get()
+		if n != nil && strings.EqualFold(*n, roleName) {
+			return &roles[i]
+		}
+	}
+	return nil
+}
+
 // The v2 APIClient exposes a method to query a role by name.  This function will query the security roles and filter security roles by name.
 func getSecurityRoleByName(
 	ctx context.Context,
@@ -3077,6 +3109,10 @@ func getSecurityRoleByName(
 	roleName string,
 ) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting security role from remote source. Role Name: %s", roleName))
+
+	if strings.Contains(roleName, "\"") {
+		return nil, fmt.Errorf("security role name %q contains a double quote, which cannot be safely used in a Command query", roleName)
+	}
 
 	api := apiClient.V2.SecurityRolesApi
 	req := api.
@@ -3093,9 +3129,11 @@ func getSecurityRoleByName(
 		return nil, fmt.Errorf("No security role found with name %s", roleName)
 	}
 
-	// Command should not allow multiple security roles with the same name. Not going to code logic around multiple results.
-
-	return &response[0], nil
+	// Do not trust the query to have filtered exactly; require an exact (case-insensitive) name match.
+	if role := selectSecurityRoleByExactName(response, roleName); role != nil {
+		return role, nil
+	}
+	return nil, fmt.Errorf("No security role found with name %s", roleName)
 }
 
 // Queries security permissions by name and returns the first matching permission set.

@@ -27,7 +27,7 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 			"name": {
 				Type:        types.StringType,
 				Required:    true,
-				Description: "Description of the OAuth security role",
+				Description: "Name of the OAuth security role.",
 			},
 			"description": {
 				Type:        types.StringType,

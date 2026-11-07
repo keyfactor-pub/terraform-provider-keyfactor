@@ -18,7 +18,7 @@ func (r dataSourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sc
 			"id": {
 				Type:        types.Int64Type,
 				Computed:    true,
-				Description: "Internal ID of the role.",
+				Description: "Internal ID of the claim.",
 			},
 			"description": {
 				Type:        types.StringType,

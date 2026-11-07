@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -152,6 +153,15 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 					),
 				},
 			},
+			"include_private_key": {
+				Type:     types.BoolType,
+				Optional: true,
+				Computed: true,
+				Description: "If `true` (the default), the private key is deployed to the store along with the certificate. " +
+					"Set to `false` to deploy the certificate without its private key (e.g. for trust stores). " +
+					"Changing this value forces the deployment to be replaced.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), requiresReplaceIfIncludePrivateKeyChanged()},
+			},
 			"skip_removal": {
 				Type:        types.BoolType,
 				Optional:    true,
@@ -225,15 +235,16 @@ func (r resourceCommandCertificateDeployment) Create(
 	// duplicate-deployment branching below, and reused for the end-of-Create
 	// state set (U2).
 	result := CommandCertificateDeployment{
-		ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
-		CertificateId:    plan.CertificateId,
-		StoreId:          plan.StoreId,
-		CertificateAlias: plan.CertificateAlias,
-		KeyPassword:      plan.KeyPassword,
-		JobParameters:    plan.JobParameters,
-		Redeploy:         plan.Redeploy,
-		Overwrite:        plan.Overwrite,
-		SkipRemoval:      plan.SkipRemoval,
+		ID:                types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
+		CertificateId:     plan.CertificateId,
+		StoreId:           plan.StoreId,
+		CertificateAlias:  plan.CertificateAlias,
+		KeyPassword:       plan.KeyPassword,
+		JobParameters:     plan.JobParameters,
+		Redeploy:          plan.Redeploy,
+		Overwrite:         plan.Overwrite,
+		SkipRemoval:       plan.SkipRemoval,
+		IncludePrivateKey: types.Bool{Value: includePrivateKeyOrDefault(plan.IncludePrivateKey)},
 	}
 
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
@@ -542,15 +553,16 @@ func (r resourceCommandCertificateDeployment) Update(
 
 	// Set state
 	var result = CommandCertificateDeployment{
-		ID:               types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
-		CertificateId:    plan.CertificateId,
-		StoreId:          plan.StoreId,
-		CertificateAlias: plan.CertificateAlias,
-		KeyPassword:      plan.KeyPassword,
-		JobParameters:    plan.JobParameters,
-		Redeploy:         plan.Redeploy,
-		Overwrite:        plan.Overwrite,
-		SkipRemoval:      plan.SkipRemoval,
+		ID:                types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
+		CertificateId:     plan.CertificateId,
+		StoreId:           plan.StoreId,
+		CertificateAlias:  plan.CertificateAlias,
+		KeyPassword:       plan.KeyPassword,
+		JobParameters:     plan.JobParameters,
+		Redeploy:          plan.Redeploy,
+		Overwrite:         plan.Overwrite,
+		SkipRemoval:       plan.SkipRemoval,
+		IncludePrivateKey: includePrivateKeyStateValue(plan.IncludePrivateKey),
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -756,7 +768,7 @@ func addCertificateToStore(
 	certificateStoreRequest := &api.CertificateStore{
 		CertificateStoreId: plan.StoreId.Value,
 		Alias:              plan.CertificateAlias.Value,
-		IncludePrivateKey:  true, // TODO: Make this configurable
+		IncludePrivateKey:  includePrivateKeyOrDefault(plan.IncludePrivateKey),
 		Overwrite:          implicitOverwrite,
 		PfxPassword:        plan.KeyPassword.Value,
 		JobParameters:      jobParams,
@@ -1076,4 +1088,51 @@ func removeCertificateAliasFromStore(
 	}
 
 	return certificateData, nil
+}
+
+// includePrivateKeyReplaceNeeded reports whether a change in include_private_key
+// from state to config changes the effective behavior. Null and unknown both
+// mean the default (true), so null->true is not a change (deployments created
+// before the attribute existed have null in state) while null->false is.
+func includePrivateKeyReplaceNeeded(state, config attr.Value) bool {
+	toBool := func(v attr.Value) types.Bool {
+		if b, ok := v.(types.Bool); ok {
+			return b
+		}
+		return types.Bool{Null: true}
+	}
+	return includePrivateKeyOrDefault(toBool(state)) != includePrivateKeyOrDefault(toBool(config))
+}
+
+// requiresReplaceIfIncludePrivateKeyChanged forces replacement only when the
+// effective include_private_key value changes. Create, destroy and
+// null-config (computed) cases are already skipped by RequiresReplaceIf.
+func requiresReplaceIfIncludePrivateKeyChanged() tfsdk.AttributePlanModifier {
+	const desc = "Requires replacement only when the effective include_private_key value changes (null is treated as true)."
+	return tfsdk.RequiresReplaceIf(
+		func(_ context.Context, state, config attr.Value, _ path.Path) (bool, diag.Diagnostics) {
+			return includePrivateKeyReplaceNeeded(state, config), nil
+		},
+		desc, desc,
+	)
+}
+
+// includePrivateKeyStateValue is the value written to state after Update. A
+// null plan (a pre-existing deployment whose state predates the attribute and
+// is not being changed by the user) is preserved as null so the result matches
+// the plan; unknown (computed during another change) resolves to the default.
+func includePrivateKeyStateValue(plan types.Bool) types.Bool {
+	if plan.Null {
+		return types.Bool{Null: true}
+	}
+	return types.Bool{Value: includePrivateKeyOrDefault(plan)}
+}
+
+// includePrivateKeyOrDefault returns the configured include_private_key value,
+// defaulting to true (the historical behavior) when it is null or unknown.
+func includePrivateKeyOrDefault(v types.Bool) bool {
+	if v.Null || v.Unknown {
+		return true
+	}
+	return v.Value
 }

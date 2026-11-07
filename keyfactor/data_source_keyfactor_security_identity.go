@@ -28,7 +28,7 @@ func (r dataSourceSecurityIdentityType) GetSchema(_ context.Context) (tfsdk.Sche
 					ElemType: types.StringType,
 				},
 				Optional:    true,
-				Description: "An array containing the role IDs that the identity is attached to.",
+				Description: "An array containing the names of the roles that the identity is attached to.",
 			},
 			"id": {
 				Type:        types.Int64Type,

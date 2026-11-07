@@ -125,7 +125,7 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "The password to access the contents of the certificate store. In Keyfactor Command this is the 'StorePassword' field. field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
+				Description: "The password to access the contents of the certificate store. In Keyfactor Command this is the 'StorePassword' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"server_username": {
@@ -137,7 +137,7 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "The password to access the host of the certificate store. In Keyfactor Command this is the 'ServerUsername' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
+				Description: "The password to access the host of the certificate store. In Keyfactor Command this is the 'ServerPassword' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
 			},
 			"server_use_ssl": {
 				Type:        types.BoolType,

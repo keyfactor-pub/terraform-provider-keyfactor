@@ -77,13 +77,13 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	tflog.SetField(ctx, "claim_type", claimType)
 
 	remoteState, err := getSecurityClaimByTypeAndValueAndScheme(ctx, r.p.sdkClient, claimType, claimValue, authenticationScheme)
-	if remoteState == nil {
-		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unable to find OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme))
+	if err != nil {
+		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unknown error while trying to import OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme)+err.Error())
 		return
 	}
 
-	if err != nil {
-		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unknown error while trying to import OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme)+err.Error())
+	if remoteState == nil {
+		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unable to find OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme))
 		return
 	}
 

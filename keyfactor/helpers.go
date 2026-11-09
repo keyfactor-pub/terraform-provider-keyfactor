@@ -2181,7 +2181,7 @@ func searchCertificatesForOrphanRecovery(
 		return nil, fmt.Errorf("keyfactor SDK client is not configured")
 	}
 
-	if strings.Contains(commonName, `"`) {
+	if err := validatePQLStringLiteral("common name", commonName); err != nil {
 		return nil, fmt.Errorf("orphan-recovery search cannot safely construct a PQL query for a common name containing double-quote characters; use `terraform import` to adopt the certificate manually if it exists")
 	}
 
@@ -3027,8 +3027,8 @@ func getSecurityClaimByTypeAndValueAndScheme(
 		),
 	)
 
-	if strings.Contains(claimValue, "\"") {
-		return nil, fmt.Errorf("claim value %q contains a double quote, which cannot be safely used in a Command query", claimValue)
+	if err := validatePQLStringLiteral("claim value", claimValue); err != nil {
+		return nil, err
 	}
 
 	claimTypeEnum, err := kfv1.ParseCSSCMSCoreEnumsClaimType(claimType)
@@ -3053,7 +3053,10 @@ func getSecurityClaimByTypeAndValueAndScheme(
 		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s", claimType, claimValue)
 	}
 
-	result := selectSecurityClaimByValueAndScheme(response, claimValue, authenticationScheme)
+	result, err := selectSecurityClaimByValueAndScheme(response, claimValue, authenticationScheme)
+	if err != nil {
+		return nil, err
+	}
 
 	if result == nil {
 		return nil, fmt.Errorf(
@@ -3067,39 +3070,79 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	return result, nil
 }
 
-// selectSecurityClaimByValueAndScheme returns the first claim whose value matches claimValue
-// (case-insensitive) and whose provider authentication scheme equals authenticationScheme.
+// validatePQLStringLiteral rejects values that cannot be safely embedded in a double-quoted
+// Command query (PQL) string literal. Command's escaping rules are unverified, so this is
+// deliberately conservative: it rejects double quotes and a trailing backslash (which could
+// escape the closing quote).
+func validatePQLStringLiteral(field, v string) error {
+	if strings.Contains(v, `"`) {
+		return fmt.Errorf("%s %q contains a double quote, which cannot be safely used in a Command query", field, v)
+	}
+	if strings.HasSuffix(v, `\`) {
+		return fmt.Errorf("%s %q ends with a backslash, which cannot be safely used in a Command query", field, v)
+	}
+	return nil
+}
+
+// selectSecurityClaimByValueAndScheme returns the claim whose provider authentication scheme
+// equals authenticationScheme and whose value matches claimValue. An exact-case value match is
+// preferred; otherwise a single case-insensitive match is accepted. Multiple case-insensitive
+// matches with no exact one are ambiguous and return an error. Returns nil, nil if none match.
 // The server-side query is not trusted to have filtered by value.
 func selectSecurityClaimByValueAndScheme(
 	claims []kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse,
 	claimValue string,
 	authenticationScheme string,
-) *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse {
+) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
+	var folded []*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse
 	for i := range claims {
-		claim := claims[i]
+		claim := &claims[i]
 		v := claim.ClaimValue.Get()
 		if v == nil || !strings.EqualFold(*v, claimValue) {
 			continue
 		}
-		if claim.Provider != nil && claim.Provider.AuthenticationScheme.Get() != nil && *claim.Provider.AuthenticationScheme.Get() == authenticationScheme {
-			return &claim
+		if claim.Provider == nil || claim.Provider.AuthenticationScheme.Get() == nil || *claim.Provider.AuthenticationScheme.Get() != authenticationScheme {
+			continue
 		}
+		if *v == claimValue {
+			return claim, nil
+		}
+		folded = append(folded, claim)
 	}
-	return nil
+	switch len(folded) {
+	case 0:
+		return nil, nil
+	case 1:
+		return folded[0], nil
+	}
+	return nil, fmt.Errorf("claim value %q is ambiguous: %d claims match case-insensitively for scheme %q and none match exactly", claimValue, len(folded), authenticationScheme)
 }
 
-// selectSecurityRoleByExactName returns the role whose name equals roleName (case-insensitive), or nil.
+// selectSecurityRoleByExactName returns the role whose name equals roleName. An exact-case
+// match is preferred; otherwise a single case-insensitive match is accepted. Multiple
+// case-insensitive matches with no exact one return an ambiguity error. Returns nil, nil if none match.
 func selectSecurityRoleByExactName(
 	roles []kfv2.SecuritySecurityRolesSecurityRoleQueryResponse,
 	roleName string,
-) *kfv2.SecuritySecurityRolesSecurityRoleQueryResponse {
+) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
+	var folded []*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse
 	for i := range roles {
 		n := roles[i].Name.Get()
-		if n != nil && strings.EqualFold(*n, roleName) {
-			return &roles[i]
+		if n == nil || !strings.EqualFold(*n, roleName) {
+			continue
 		}
+		if *n == roleName {
+			return &roles[i], nil
+		}
+		folded = append(folded, &roles[i])
 	}
-	return nil
+	switch len(folded) {
+	case 0:
+		return nil, nil
+	case 1:
+		return folded[0], nil
+	}
+	return nil, fmt.Errorf("security role name %q is ambiguous: %d roles match case-insensitively and none match exactly", roleName, len(folded))
 }
 
 // The v2 APIClient exposes a method to query a role by name.  This function will query the security roles and filter security roles by name.
@@ -3110,8 +3153,8 @@ func getSecurityRoleByName(
 ) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting security role from remote source. Role Name: %s", roleName))
 
-	if strings.Contains(roleName, "\"") {
-		return nil, fmt.Errorf("security role name %q contains a double quote, which cannot be safely used in a Command query", roleName)
+	if err := validatePQLStringLiteral("security role name", roleName); err != nil {
+		return nil, err
 	}
 
 	api := apiClient.V2.SecurityRolesApi
@@ -3130,7 +3173,11 @@ func getSecurityRoleByName(
 	}
 
 	// Do not trust the query to have filtered exactly; require an exact (case-insensitive) name match.
-	if role := selectSecurityRoleByExactName(response, roleName); role != nil {
+	role, err := selectSecurityRoleByExactName(response, roleName)
+	if err != nil {
+		return nil, err
+	}
+	if role != nil {
 		return role, nil
 	}
 	return nil, fmt.Errorf("No security role found with name %s", roleName)

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -154,13 +153,14 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 				},
 			},
 			"include_private_key": {
-				Type:     types.BoolType,
-				Optional: true,
-				Computed: true,
+				Type:          types.BoolType,
+				Optional:      true,
+				PlanModifiers: []tfsdk.AttributePlanModifier{includePrivateKeyReplaceModifier{}},
 				Description: "If `true` (the default), the private key is deployed to the store along with the certificate. " +
 					"Set to `false` to deploy the certificate without its private key (e.g. for trust stores). " +
-					"Changing this value forces the deployment to be replaced.",
-				PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.UseStateForUnknown(), requiresReplaceIfIncludePrivateKeyChanged()},
+					"Changing this value replaces the deployment (the existing entry is removed, then re-added), because an " +
+					"in-place overwrite cannot reliably strip an existing private key. It cannot be changed while " +
+					"`skip_removal` is `true`. Removing the attribute reverts to the default of `true`.",
 			},
 			"skip_removal": {
 				Type:        types.BoolType,
@@ -244,7 +244,7 @@ func (r resourceCommandCertificateDeployment) Create(
 		Redeploy:          plan.Redeploy,
 		Overwrite:         plan.Overwrite,
 		SkipRemoval:       plan.SkipRemoval,
-		IncludePrivateKey: types.Bool{Value: includePrivateKeyOrDefault(plan.IncludePrivateKey)},
+		IncludePrivateKey: plan.IncludePrivateKey,
 	}
 
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
@@ -284,18 +284,28 @@ func (r resourceCommandCertificateDeployment) Create(
 		certificateData,
 		1,
 	) // Initial check to see if the cert is already deployed
+	if vErr == nil && !includePrivateKeyOrDefault(plan.IncludePrivateKey) {
+		// The certificate is already in the store and we cannot verify that the existing entry
+		// has no private key. An in-place overwrite does not reliably strip it (e.g. K8S secrets
+		// keep tls.key), so fail loudly instead of reporting a false success.
+		response.Diagnostics.AddError(
+			"Existing deployment may contain the private key.",
+			fmt.Sprintf(
+				"Certificate '%v' is already deployed to '%s (%s)' and include_private_key = false was requested. "+
+					"The existing store entry may contain the private key, and it cannot be stripped in place. "+
+					"Remove the entry from the store first, or set include_private_key = true (or remove the attribute).",
+				certificateId, storeId, certificateAlias,
+			),
+		)
+		return
+	}
 	if vErr == nil {
 		response.Diagnostics.AddWarning(
 			"Duplicate deployment.",
 			fmt.Sprintf("Certificate '%v' is already deployed to '%s (%s)'", certificateId, storeId, certificateAlias),
 		)
 	} else {
-		addErr := addCertificateToStore(
-			ctx,
-			kfClient,
-			jobParams,
-			&plan,
-		)
+		addErr := addCertificateToStore(ctx, kfClient, jobParams, &plan)
 		if addErr != nil {
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
@@ -503,13 +513,10 @@ func (r resourceCommandCertificateDeployment) Update(
 		1,
 	) // Initial check to see if the cert is already deployed
 
+	// include_private_key changes never reach Update with a real change: they force replacement
+	// (see includePrivateKeyReplaceModifier). Update only re-adds a missing entry.
 	if vErr != nil {
-		addErr := addCertificateToStore(
-			ctx,
-			kfClient,
-			jobParams,
-			&plan,
-		)
+		addErr := addCertificateToStore(ctx, kfClient, jobParams, &plan)
 		if addErr != nil {
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
@@ -562,7 +569,7 @@ func (r resourceCommandCertificateDeployment) Update(
 		Redeploy:          plan.Redeploy,
 		Overwrite:         plan.Overwrite,
 		SkipRemoval:       plan.SkipRemoval,
-		IncludePrivateKey: includePrivateKeyStateValue(plan.IncludePrivateKey),
+		IncludePrivateKey: plan.IncludePrivateKey,
 	}
 
 	diags = response.State.Set(ctx, result)
@@ -1090,42 +1097,90 @@ func removeCertificateAliasFromStore(
 	return certificateData, nil
 }
 
-// includePrivateKeyReplaceNeeded reports whether a change in include_private_key
-// from state to config changes the effective behavior. Null and unknown both
-// mean the default (true), so null->true is not a change (deployments created
-// before the attribute existed have null in state) while null->false is.
-func includePrivateKeyReplaceNeeded(state, config attr.Value) bool {
-	toBool := func(v attr.Value) types.Bool {
-		if b, ok := v.(types.Bool); ok {
-			return b
-		}
-		return types.Bool{Null: true}
+// includePrivateKeyChangeRequiresReplace reports whether moving include_private_key from
+// state to plan must replace the deployment. Null means the default (true), so null<->true is
+// not a change. An unknown plan value cannot be proven unchanged (it may resolve to either
+// true or false), so it conservatively requires replacement.
+func includePrivateKeyChangeRequiresReplace(state, plan types.Bool) bool {
+	if plan.Unknown {
+		return true
 	}
-	return includePrivateKeyOrDefault(toBool(state)) != includePrivateKeyOrDefault(toBool(config))
+	return includePrivateKeyOrDefault(state) != includePrivateKeyOrDefault(plan)
 }
 
-// requiresReplaceIfIncludePrivateKeyChanged forces replacement only when the
-// effective include_private_key value changes. Create, destroy and
-// null-config (computed) cases are already skipped by RequiresReplaceIf.
-func requiresReplaceIfIncludePrivateKeyChanged() tfsdk.AttributePlanModifier {
-	const desc = "Requires replacement only when the effective include_private_key value changes (null is treated as true)."
-	return tfsdk.RequiresReplaceIf(
-		func(_ context.Context, state, config attr.Value, _ path.Path) (bool, diag.Diagnostics) {
-			return includePrivateKeyReplaceNeeded(state, config), nil
-		},
-		desc, desc,
-	)
+// includePrivateKeyReplaceBlockedBySkipRemoval reports whether an include_private_key
+// replacement would be unsafe because skip_removal is true in state or plan: the replace's
+// delete step would not remove the existing store entry, so the key change is not guaranteed.
+func includePrivateKeyReplaceBlockedBySkipRemoval(stateStoreSkip, planSkip types.Bool) bool {
+	return (!stateStoreSkip.Null && !stateStoreSkip.Unknown && stateStoreSkip.Value) ||
+		(!planSkip.Null && !planSkip.Unknown && planSkip.Value)
 }
 
-// includePrivateKeyStateValue is the value written to state after Update. A
-// null plan (a pre-existing deployment whose state predates the attribute and
-// is not being changed by the user) is preserved as null so the result matches
-// the plan; unknown (computed during another change) resolves to the default.
-func includePrivateKeyStateValue(plan types.Bool) types.Bool {
-	if plan.Null {
-		return types.Bool{Null: true}
+// includePrivateKeyReplaceModifier forces replacement of an existing deployment when the
+// effective include_private_key value changes. It implements tfsdk.AttributePlanModifier
+// directly rather than wrapping tfsdk.RequiresReplaceIf, which skips null plan values, and
+// null is meaningful here (it means true).
+type includePrivateKeyReplaceModifier struct{}
+
+func (includePrivateKeyReplaceModifier) Description(context.Context) string {
+	return "Requires replacement when the effective include_private_key value changes (null means true)."
+}
+
+func (m includePrivateKeyReplaceModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (includePrivateKeyReplaceModifier) Modify(
+	ctx context.Context,
+	req tfsdk.ModifyAttributePlanRequest,
+	resp *tfsdk.ModifyAttributePlanResponse,
+) {
+	// Create (no prior state) or destroy (no plan): nothing to replace.
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
 	}
-	return types.Bool{Value: includePrivateKeyOrDefault(plan)}
+	var oldV, newV types.Bool
+	if d := req.State.GetAttribute(ctx, req.AttributePath, &oldV); d.HasError() {
+		return
+	}
+	if d := req.Plan.GetAttribute(ctx, req.AttributePath, &newV); d.HasError() {
+		return
+	}
+	if includePrivateKeyChangeRequiresReplace(oldV, newV) {
+		resp.RequiresReplace = true
+	}
+}
+
+// ModifyPlan rejects, at plan time, an include_private_key change that would replace the
+// deployment while skip_removal is true: the replace could not remove the existing entry.
+func (r resourceCommandCertificateDeployment) ModifyPlan(
+	ctx context.Context,
+	req tfsdk.ModifyResourcePlanRequest,
+	resp *tfsdk.ModifyResourcePlanResponse,
+) {
+	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
+		return
+	}
+	var stateObj, planObj CommandCertificateDeployment
+	if d := req.State.Get(ctx, &stateObj); d.HasError() {
+		return
+	}
+	if d := req.Plan.Get(ctx, &planObj); d.HasError() {
+		return
+	}
+	if !includePrivateKeyChangeRequiresReplace(stateObj.IncludePrivateKey, planObj.IncludePrivateKey) {
+		return
+	}
+	if includePrivateKeyReplaceBlockedBySkipRemoval(stateObj.SkipRemoval, planObj.SkipRemoval) {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("include_private_key"),
+			"include_private_key cannot be changed while skip_removal is true",
+			"Changing include_private_key replaces the deployment, but with skip_removal = true the replace "+
+				"cannot remove the existing certificate entry from the store, so the private-key change cannot "+
+				"be guaranteed (the existing entry may keep its private key). Set skip_removal = false "+
+				"(and apply it) before changing include_private_key.",
+		)
+	}
 }
 
 // includePrivateKeyOrDefault returns the configured include_private_key value,

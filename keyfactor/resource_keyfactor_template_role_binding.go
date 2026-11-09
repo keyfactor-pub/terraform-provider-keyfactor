@@ -214,8 +214,8 @@ func (r resourceCertificateTemplateRoleBinding) Update(
 	var planTemplateNames []string
 	var stateValidTemplateIds []int
 	var apiDiags []diag.Diagnostic
-	diags = state.TemplateNames.ElementsAs(ctx, &stateTemplateNames, true)
-	diags = plan.TemplateNames.ElementsAs(ctx, &planTemplateNames, true)
+	response.Diagnostics.Append(state.TemplateNames.ElementsAs(ctx, &stateTemplateNames, true)...)
+	response.Diagnostics.Append(plan.TemplateNames.ElementsAs(ctx, &planTemplateNames, true)...)
 	kfTemplates, err := kfClient.GetTemplates()
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -225,9 +225,10 @@ func (r resourceCertificateTemplateRoleBinding) Update(
 		return
 	}
 	stateValidTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, stateTemplateNames)
-	planValidTemplateIds, apiDiags := verifyTemplateNames(ctx, kfTemplates, planTemplateNames)
-	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", stateValidTemplateIds))
 	response.Diagnostics.Append(apiDiags...)
+	planValidTemplateIds, planApiDiags := verifyTemplateNames(ctx, kfTemplates, planTemplateNames)
+	response.Diagnostics.Append(planApiDiags...)
+	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", stateValidTemplateIds))
 	if response.Diagnostics.HasError() {
 		return
 	}

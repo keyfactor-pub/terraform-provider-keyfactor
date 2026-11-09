@@ -160,7 +160,9 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 					"Set to `false` to deploy the certificate without its private key (e.g. for trust stores). " +
 					"Changing this value replaces the deployment (the existing entry is removed, then re-added), because an " +
 					"in-place overwrite cannot reliably strip an existing private key. It cannot be changed while " +
-					"`skip_removal` is `true`. Removing the attribute reverts to the default of `true`.",
+					"`skip_removal` is `true` in the current state (apply `skip_removal = false` first), and changes are " +
+					"not supported with `lifecycle { create_before_destroy = true }` (the replace must delete the existing " +
+					"deployment first). Removing the attribute reverts to the default of `true`.",
 			},
 			"skip_removal": {
 				Type:        types.BoolType,
@@ -288,15 +290,8 @@ func (r resourceCommandCertificateDeployment) Create(
 		// The certificate is already in the store and we cannot verify that the existing entry
 		// has no private key. An in-place overwrite does not reliably strip it (e.g. K8S secrets
 		// keep tls.key), so fail loudly instead of reporting a false success.
-		response.Diagnostics.AddError(
-			"Existing deployment may contain the private key.",
-			fmt.Sprintf(
-				"Certificate '%v' is already deployed to '%s (%s)' and include_private_key = false was requested. "+
-					"The existing store entry may contain the private key, and it cannot be stripped in place. "+
-					"Remove the entry from the store first, or set include_private_key = true (or remove the attribute).",
-				certificateId, storeId, certificateAlias,
-			),
-		)
+		summary, detail := existingEntryPrivateKeyDiagnostic(certificateId, storeId, certificateAlias)
+		response.Diagnostics.AddError(summary, detail)
 		return
 	}
 	if vErr == nil {
@@ -1109,11 +1104,29 @@ func includePrivateKeyChangeRequiresReplace(state, plan types.Bool) bool {
 }
 
 // includePrivateKeyReplaceBlockedBySkipRemoval reports whether an include_private_key
-// replacement would be unsafe because skip_removal is true in state or plan: the replace's
-// delete step would not remove the existing store entry, so the key change is not guaranteed.
-func includePrivateKeyReplaceBlockedBySkipRemoval(stateStoreSkip, planSkip types.Bool) bool {
-	return (!stateStoreSkip.Null && !stateStoreSkip.Unknown && stateStoreSkip.Value) ||
-		(!planSkip.Null && !planSkip.Unknown && planSkip.Value)
+// replacement would be unsafe because skip_removal is true in the PRIOR STATE. Delete reads
+// skip_removal from prior state, so only a state value of true makes the replace's delete step
+// leave the existing store entry in place (and the key change unguaranteed). Setting
+// skip_removal = true in the same apply as the change is safe (the removal still runs against
+// the prior state), and an unknown or null plan value is irrelevant, so the plan value is not
+// consulted.
+func includePrivateKeyReplaceBlockedBySkipRemoval(stateSkip types.Bool) bool {
+	return !stateSkip.Null && !stateSkip.Unknown && stateSkip.Value
+}
+
+// existingEntryPrivateKeyDiagnostic builds the Create error for include_private_key = false when
+// the certificate is already deployed to the store entry.
+func existingEntryPrivateKeyDiagnostic(certificateId interface{}, storeId, certificateAlias string) (summary, detail string) {
+	return "Existing deployment may contain the private key.",
+		fmt.Sprintf(
+			"Certificate '%v' is already deployed to '%s (%s)' and include_private_key = false was requested. "+
+				"The existing store entry may contain the private key, and it cannot be stripped in place. "+
+				"Remove the entry from the store first, or set include_private_key = true (or remove the attribute). "+
+				"Note: changing include_private_key is not supported with lifecycle { create_before_destroy = true }, "+
+				"because the replacement is created while the old entry still exists; the replace must delete the "+
+				"existing deployment first (the default).",
+			certificateId, storeId, certificateAlias,
+		)
 }
 
 // includePrivateKeyReplaceModifier forces replacement of an existing deployment when the
@@ -1152,7 +1165,8 @@ func (includePrivateKeyReplaceModifier) Modify(
 }
 
 // ModifyPlan rejects, at plan time, an include_private_key change that would replace the
-// deployment while skip_removal is true: the replace could not remove the existing entry.
+// deployment while skip_removal is true in the current state: the replace's delete step reads
+// skip_removal from prior state and so could not remove the existing entry.
 func (r resourceCommandCertificateDeployment) ModifyPlan(
 	ctx context.Context,
 	req tfsdk.ModifyResourcePlanRequest,
@@ -1171,14 +1185,14 @@ func (r resourceCommandCertificateDeployment) ModifyPlan(
 	if !includePrivateKeyChangeRequiresReplace(stateObj.IncludePrivateKey, planObj.IncludePrivateKey) {
 		return
 	}
-	if includePrivateKeyReplaceBlockedBySkipRemoval(stateObj.SkipRemoval, planObj.SkipRemoval) {
+	if includePrivateKeyReplaceBlockedBySkipRemoval(stateObj.SkipRemoval) {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("include_private_key"),
-			"include_private_key cannot be changed while skip_removal is true",
-			"Changing include_private_key replaces the deployment, but with skip_removal = true the replace "+
-				"cannot remove the existing certificate entry from the store, so the private-key change cannot "+
-				"be guaranteed (the existing entry may keep its private key). Set skip_removal = false "+
-				"(and apply it) before changing include_private_key.",
+			"include_private_key cannot be changed while skip_removal is true in the current state",
+			"Changing include_private_key replaces the deployment, but while skip_removal is true in the current "+
+				"state the replace's delete step does not remove the existing certificate entry from the store, so "+
+				"the private-key change cannot be guaranteed (the existing entry may keep its private key). "+
+				"Apply skip_removal = false first, then change include_private_key.",
 		)
 	}
 }

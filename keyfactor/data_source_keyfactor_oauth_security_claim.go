@@ -2,7 +2,6 @@ package keyfactor
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -78,12 +77,15 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 
 	remoteState, err := getSecurityClaimByTypeAndValueAndScheme(ctx, r.p.sdkClient, claimType, claimValue, authenticationScheme)
 	if err != nil {
-		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unknown error while trying to import OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme)+err.Error())
+		summary, detail := securityClaimDataSourceReadError(err, claimType, claimValue, authenticationScheme)
+		response.Diagnostics.AddError(summary, detail)
 		return
 	}
 
+	// Defensive: the lookup returns errSecurityClaimNotFound rather than (nil, nil).
 	if remoteState == nil {
-		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unable to find OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme))
+		summary, detail := securityClaimDataSourceReadError(errSecurityClaimNotFound, claimType, claimValue, authenticationScheme)
+		response.Diagnostics.AddError(summary, detail)
 		return
 	}
 
@@ -92,10 +94,13 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	provider := *remoteState.Provider
 
 	var result = OAuthSecurityClaim{
-		ID:                           types.Int64{Value: int64(*remoteState.Id)},
-		Description:                  types.String{Value: *remoteState.Description.Get()},
-		ClaimType:                    types.String{Value: *remoteState.ClaimType.Get()},
-		ClaimValue:                   types.String{Value: *remoteState.ClaimValue.Get()},
+		ID:          types.Int64{Value: int64(*remoteState.Id)},
+		Description: types.String{Value: *remoteState.Description.Get()},
+		ClaimType:   types.String{Value: *remoteState.ClaimType.Get()},
+		// claim_value is a configured attribute and the lookup is case-insensitive, so keep the
+		// configured value (the remote casing could differ and Terraform rejects a data source
+		// result that changes a configured attribute).
+		ClaimValue:                   data.ClaimValue,
 		ProviderAuthenticationScheme: types.String{Value: *provider.AuthenticationScheme.Get()},
 		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
 	}

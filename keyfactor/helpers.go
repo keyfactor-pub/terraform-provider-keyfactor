@@ -2177,12 +2177,13 @@ func searchCertificatesForOrphanRecovery(
 	sdkClient *keyfactor.APIClient,
 	commonName string,
 ) ([]api.GetCertificateResponse, error) {
-	if sdkClient == nil || sdkClient.V1 == nil {
-		return nil, fmt.Errorf("keyfactor SDK client is not configured")
+	// Input validation first (no client needed), then client configuration.
+	if err := validatePQLStringLiteral("common name", commonName); err != nil {
+		return nil, fmt.Errorf("orphan-recovery search cannot safely construct a PQL query for this common name: %s; use `terraform import` to adopt the certificate manually if it exists", err.Error())
 	}
 
-	if err := validatePQLStringLiteral("common name", commonName); err != nil {
-		return nil, fmt.Errorf("orphan-recovery search cannot safely construct a PQL query for a common name containing double-quote characters; use `terraform import` to adopt the certificate manually if it exists")
+	if sdkClient == nil || sdkClient.V1 == nil {
+		return nil, fmt.Errorf("keyfactor SDK client is not configured")
 	}
 
 	query := fmt.Sprintf(`IssuedCN -eq "%s"`, commonName)
@@ -3050,7 +3051,7 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	}
 
 	if len(response) == 0 {
-		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s", claimType, claimValue)
+		return nil, fmt.Errorf("%w: claimType %s and claimValue %s", errSecurityClaimNotFound, claimType, claimValue)
 	}
 
 	result, err := selectSecurityClaimByValueAndScheme(response, claimValue, authenticationScheme)
@@ -3060,7 +3061,8 @@ func getSecurityClaimByTypeAndValueAndScheme(
 
 	if result == nil {
 		return nil, fmt.Errorf(
-			"No security claim found with claimType %s and claimValue %s and authenticationScheme %s",
+			"%w: claimType %s and claimValue %s and authenticationScheme %s",
+			errSecurityClaimNotFound,
 			claimType,
 			claimValue,
 			authenticationScheme,
@@ -3068,6 +3070,22 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	}
 
 	return result, nil
+}
+
+// errSecurityClaimNotFound is returned (wrapped with %w) by getSecurityClaimByTypeAndValueAndScheme
+// when no claim matches the requested type, value and authentication scheme. Callers use
+// errors.Is to distinguish "not found" from a failed API call.
+var errSecurityClaimNotFound = errors.New("no security claim found")
+
+// securityClaimDataSourceReadError maps an error from getSecurityClaimByTypeAndValueAndScheme to
+// the diagnostic summary/detail shown by the OAuth security claim data source.
+func securityClaimDataSourceReadError(err error, claimType, claimValue, authenticationScheme string) (summary, detail string) {
+	if errors.Is(err, errSecurityClaimNotFound) {
+		return "OAuth security claim not found",
+			fmt.Sprintf("Unable to find OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. %s", claimValue, claimType, authenticationScheme, err.Error())
+	}
+	return "Error reading OAuth security claim",
+		fmt.Sprintf("Error while trying to read OAuth security claim '%s' with claimType '%s' for scheme '%s' from Keyfactor. Read failed. %s", claimValue, claimType, authenticationScheme, err.Error())
 }
 
 // validatePQLStringLiteral rejects values that cannot be safely embedded in a double-quoted
@@ -3086,9 +3104,17 @@ func validatePQLStringLiteral(field, v string) error {
 
 // selectSecurityClaimByValueAndScheme returns the claim whose provider authentication scheme
 // equals authenticationScheme and whose value matches claimValue. An exact-case value match is
-// preferred; otherwise a single case-insensitive match is accepted. Multiple case-insensitive
-// matches with no exact one are ambiguous and return an error. Returns nil, nil if none match.
+// preferred; otherwise a single case-insensitive match is accepted. Returns nil, nil if none match.
 // The server-side query is not trusted to have filtered by value.
+//
+// Verified against Command 25.5 (kfclab, 2026-11-09): the `ClaimValue -eq` query matches
+// case-insensitively, and Command refuses to create a second claim whose value differs only by
+// case for the same claim type and provider (HTTP 400 "Claim definitions must be unique by the
+// combination of claim type, claim value, and provider."). A case-insensitive match within one
+// scheme is therefore always the same claim, so the fallback cannot resolve to a different
+// principal. The multi-match error below is defensive only (unreachable against a Command that
+// enforces that uniqueness); if a Command version ever allows case-variant coexistence, drop the
+// case-insensitive fallback and require an exact-case match.
 func selectSecurityClaimByValueAndScheme(
 	claims []kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse,
 	claimValue string,
@@ -3121,6 +3147,15 @@ func selectSecurityClaimByValueAndScheme(
 // selectSecurityRoleByExactName returns the role whose name equals roleName. An exact-case
 // match is preferred; otherwise a single case-insensitive match is accepted. Multiple
 // case-insensitive matches with no exact one return an ambiguity error. Returns nil, nil if none match.
+//
+// Verified against Command 25.5 (kfclab, 2026-11-09): the v2 `Name -eq` query matches
+// case-insensitively, and Command refuses to create a second role whose name differs only by
+// case (HTTP 400 "The 'Name' field must be unique per 'SecurityRole'."). A case-insensitive match
+// is therefore always the same role, so the fallback cannot resolve to a different role. The
+// multi-match error is defensive only; if a Command version ever allows case-variant coexistence,
+// drop the case-insensitive fallback and require an exact-case match. Because the server-side
+// filter is applied (a non-matching name returns an empty list) and names are unique, the
+// first-page-only query returns at most one role, so no pagination is needed.
 func selectSecurityRoleByExactName(
 	roles []kfv2.SecuritySecurityRolesSecurityRoleQueryResponse,
 	roleName string,

@@ -105,7 +105,7 @@ func (r resourceCertificateTemplateRoleBinding) Create(
 		)
 		return
 	}
-	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)
+	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames, templateNameSidePlan)
 	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", validTemplateIds))
 	response.Diagnostics.Append(apiDiags...)
 	if response.Diagnostics.HasError() {
@@ -164,7 +164,7 @@ func (r resourceCertificateTemplateRoleBinding) Read(
 		)
 		return
 	}
-	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)
+	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames, templateNameSideState)
 	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", validTemplateIds))
 	response.Diagnostics.Append(apiDiags...)
 	if response.Diagnostics.HasError() {
@@ -224,9 +224,9 @@ func (r resourceCertificateTemplateRoleBinding) Update(
 		)
 		return
 	}
-	stateValidTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, stateTemplateNames)
+	stateValidTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, stateTemplateNames, templateNameSideState)
 	response.Diagnostics.Append(apiDiags...)
-	planValidTemplateIds, planApiDiags := verifyTemplateNames(ctx, kfTemplates, planTemplateNames)
+	planValidTemplateIds, planApiDiags := verifyTemplateNames(ctx, kfTemplates, planTemplateNames, templateNameSidePlan)
 	response.Diagnostics.Append(planApiDiags...)
 	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", stateValidTemplateIds))
 	if response.Diagnostics.HasError() {
@@ -287,7 +287,7 @@ func (r resourceCertificateTemplateRoleBinding) Delete(
 		)
 		return
 	}
-	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)
+	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames, templateNameSideState)
 	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", validTemplateIds))
 	response.Diagnostics.Append(apiDiags...)
 	if response.Diagnostics.HasError() {
@@ -372,7 +372,22 @@ func (r resourceCertificateTemplateRoleBinding) ImportState(
 	response.Diagnostics.Append(diags2...)
 }
 
-func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateResponse, templateNames []string) (
+// templateNameSide says where a list of template names passed to verifyTemplateNames came from.
+type templateNameSide int
+
+const (
+	// templateNameSidePlan: names the user configured. A name that matches no template is an error.
+	templateNameSidePlan templateNameSide = iota
+	// templateNameSideState: names recorded in prior state. A name that matches no template means
+	// the template was deleted in Command; there is nothing left to bind or un-bind for it, so it
+	// is skipped with a warning rather than blocking the operation.
+	templateNameSideState
+)
+
+// verifyTemplateNames resolves template names to template IDs. An empty name is an error on
+// either side. A name that matches no template is an error for plan-side names and a warning
+// (the name is skipped) for state-side names.
+func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateResponse, templateNames []string, side templateNameSide) (
 	[]int,
 	[]diag.Diagnostic,
 ) {
@@ -381,6 +396,7 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 	for _, templateName := range templateNames {
 		if templateName == "" {
 			diags.AddError("Error empty template name.", "Template name provided")
+			continue
 		}
 		found := false
 		for _, template := range templates {
@@ -392,7 +408,14 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 			}
 		}
 		if !found {
-			diags.AddError("Error template name not found.", "Template name "+templateName+" not found")
+			if side == templateNameSideState {
+				diags.AddWarning(
+					"Template name not found; skipping.",
+					"Template name "+templateName+" from the existing binding was not found in Keyfactor Command (it may have been deleted); there is nothing to un-bind for it, so it is skipped.",
+				)
+			} else {
+				diags.AddError("Error template name not found.", "Template name "+templateName+" not found")
+			}
 		}
 
 	}

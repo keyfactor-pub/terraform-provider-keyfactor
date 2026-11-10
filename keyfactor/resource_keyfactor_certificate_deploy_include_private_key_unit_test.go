@@ -336,3 +336,59 @@ func TestUnitDeploymentResourceDescriptionMentionsApplyReplaceLimitation(t *test
 		assert.Contains(t, desc, "include_private_key", name)
 	}
 }
+
+// ---- #5: an unknown include_private_key is only rejected when nothing else replaces the deployment. ----
+
+func TestUnitDeploymentModifyPlan_UnknownIncludePrivateKeyWithOtherReplaceIsAllowed(t *testing.T) {
+	tr := types.Bool{Value: true}
+	unk := types.Bool{Unknown: true}
+	null := types.Bool{Null: true}
+
+	// certificate_id changes (RequiresReplace attribute): the deployment is replaced anyway and the
+	// value resolves before Create.
+	plan := deploymentForModifyPlan(unk, null)
+	plan.CertificateId = types.Int64{Value: 2}
+	resp := runDeploymentModifyPlanWithConfig(t, deploymentForModifyPlan(tr, null), plan)
+	assert.False(t, resp.Diagnostics.HasError(), "unknown include_private_key during another replacement must pass: %v", resp.Diagnostics)
+
+	// Nothing else replaces the deployment: still rejected.
+	resp = runDeploymentModifyPlanWithConfig(t, deploymentForModifyPlan(tr, null), deploymentForModifyPlan(unk, null))
+	require.True(t, resp.Diagnostics.HasError())
+	assert.Contains(t, resp.Diagnostics[0].Detail(), "must be known at plan time")
+
+	// A non-replacing change (job_parameters) is not a replacement either.
+	plan = deploymentForModifyPlan(unk, null)
+	plan.JobParameters = types.Map{ElemType: types.StringType, Elems: map[string]attr.Value{"k": types.String{Value: "v"}}}
+	resp = runDeploymentModifyPlanWithConfig(t, deploymentForModifyPlan(tr, null), plan)
+	assert.True(t, resp.Diagnostics.HasError())
+}
+
+// ---- Nit: registry markdown renders code in backticks, not double quotes. ----
+
+func TestUnitDeploymentMarkdownDescriptionUsesBackticksForSnippets(t *testing.T) {
+	schema, d := resourceCommandCertificateDeploymentType{}.GetSchema(context.Background())
+	require.False(t, d.HasError())
+	md := schema.MarkdownDescription
+	for _, snippet := range []string{"/OrchestratorJobs/Custom", "keyfactor_certificate_deployment", "keyfactor_certificate_store", "skip_removal = true", "include_private_key = false", "terraform apply -replace"} {
+		assert.Contains(t, md, "`"+snippet+"`", snippet)
+		assert.NotContains(t, md, `"`+snippet+`"`, snippet)
+	}
+	assert.Contains(t, md, "`lifecycle { create_before_destroy = true }`")
+	assert.NotContains(t, md, `"lifecycle`)
+}
+
+// Class B: deploymentOverwriteOnCertIDChange reports a failure to read certificate_id from the
+// state/plan instead of comparing two zero values.
+func TestUnitDeploymentOverwriteOnCertIDChange_UnreadableAttributeIsReported(t *testing.T) {
+	ctx := context.Background()
+	emptyObj := tftypes.NewValue(tftypes.Object{AttributeTypes: map[string]tftypes.Type{}}, map[string]tftypes.Value{})
+	req := tfsdk.ModifyAttributePlanRequest{
+		AttributePath: path.Root("certificate_id"),
+		State:         tfsdk.State{Schema: tfsdk.Schema{}, Raw: emptyObj},
+		Plan:          tfsdk.Plan{Schema: tfsdk.Schema{}, Raw: emptyObj},
+	}
+	resp := &tfsdk.ModifyAttributePlanResponse{}
+	deploymentOverwriteOnCertIDChange{}.Modify(ctx, req, resp)
+	assert.True(t, resp.Diagnostics.HasError(), "an unreadable certificate_id must be reported")
+	assert.False(t, resp.RequiresReplace)
+}

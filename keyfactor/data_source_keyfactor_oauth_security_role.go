@@ -115,7 +115,13 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 		response.Diagnostics.AddError("Error reading security role", mapErr.Error())
 		return
 	}
-	result.Name = roleDataSourceStateName(data.Name, result.Name)
+	// name is Required, so it is always known here. The lookup is case-insensitive (Command's
+	// `Name -eq` filter ignores case, and Command rejects role names that differ only by case, so a
+	// case-insensitive match is always the same role), which means the remote name can differ in
+	// case from the configured one. Terraform rejects a data source result whose configured
+	// attribute differs from the configuration ("Provider produced invalid object"), so the
+	// configured value is kept.
+	result.Name = data.Name
 
 	tflog.Debug(ctx, "Saving OAuth security role data source information into state...")
 
@@ -125,18 +131,4 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 	}
 
 	tflog.Debug(ctx, "OAuth security role data source read successfully.")
-}
-
-// roleDataSourceStateName returns the value to store in state for the data source's Required
-// "name" attribute. The lookup is case-insensitive (Command's `Name -eq` filter ignores case,
-// and Command rejects role names that differ only by case, so a case-insensitive match is
-// always the same role), which means the remote name can differ in case from the configured
-// one. Terraform rejects a data source result whose configured attribute differs from the
-// configuration ("Provider produced invalid object"), so the configured value is kept; the
-// remote name is used only if no configured value is available.
-func roleDataSourceStateName(configured, remote types.String) types.String {
-	if !configured.Null && !configured.Unknown {
-		return configured
-	}
-	return remote
 }

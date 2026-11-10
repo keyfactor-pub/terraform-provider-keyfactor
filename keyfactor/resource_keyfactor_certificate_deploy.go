@@ -77,8 +77,14 @@ func (m deploymentOverwriteOnCertIDChange) Modify(
 
 	// Read old/new certificate_id
 	var oldID, newID types.Int64
-	_ = req.State.GetAttribute(ctx, req.AttributePath, &oldID)
-	_ = req.Plan.GetAttribute(ctx, req.AttributePath, &newID)
+	if d := req.State.GetAttribute(ctx, req.AttributePath, &oldID); d.HasError() {
+		resp.Diagnostics.Append(d...)
+		return
+	}
+	if d := req.Plan.GetAttribute(ctx, req.AttributePath, &newID); d.HasError() {
+		resp.Diagnostics.Append(d...)
+		return
+	}
 
 	// If either is unknown/null, bail
 	if oldID.Unknown || newID.Unknown || oldID.Null || newID.Null {
@@ -159,13 +165,15 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 				Optional: true,
 				Description: "If `true` (the default), the private key is deployed to the store along with the certificate. " +
 					"Set to `false` to deploy the certificate without its private key (e.g. for trust stores). " +
+					"With `false`, the deployment is refused if an entry already exists under the target `certificate_alias` (for this or any other certificate), because an existing entry may carry a private key that cannot be stripped. " +
 					"Changing this value replaces the deployment (the existing entry is removed, then re-added), because an " +
 					"in-place overwrite cannot reliably strip an existing private key. It cannot be changed while " +
 					"`skip_removal` is `true` in the current state (apply `skip_removal = false` first). Because the " +
 					"replacement keeps the same certificate and alias, changing this value is not supported with " +
 					"`lifecycle { create_before_destroy = true }`: the replace must delete the existing deployment first " +
 					"(the default), see the resource description. The value must be known at plan time (use a literal or an input variable, not a " +
-					"value computed during apply), because it decides whether the deployment is replaced. Removing the " +
+					"value computed during apply), unless the deployment is already being replaced for another reason, because it " +
+					"decides whether the deployment is replaced. Removing the " +
 					"attribute reverts to the default of `true`.",
 			},
 			"skip_removal": {
@@ -188,16 +196,11 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 			"private key. Set `skip_removal = false` and apply it first. Replacements the provider can see in the plan (a change to " +
 			"`certificate_id`, `certificate_store_id`, `certificate_alias`, `key_password`, `redeploy` or `include_private_key`) are " +
 			"rejected at plan time in that situation.",
-		MarkdownDescription: `
-Used to schedule a certificate deployment(/management) job on Keyfactor Command using the "/OrchestratorJobs/Custom"
-API to deploy certificates to "keyfactor_certificate_store" resources.
-
-!> **Warning:** Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules. A "keyfactor_certificate_deployment" *will not finish* successfully until the destination certificate store's certificate inventory has been updated to include the deployed certificate.
-
-~> **Note:** "lifecycle { create_before_destroy = true }" is not supported for any replacement that keeps the same certificate and alias in the same store (for example a change to "include_private_key", "redeploy" or "key_password"). Creating the replacement adopts the existing store entry, and the old instance's delete then removes that entry, leaving the store without the certificate. Use the default replacement order (destroy, then create) for this resource.
-
-~> **Note:** "terraform apply -replace" (or "terraform taint") on a deployment whose state has "skip_removal = true" and "include_private_key = false" is not supported: Terraform plans it without consulting the provider, the delete step does not remove the existing store entry, and the replacement's create step then refuses that entry because it may contain the private key. Set "skip_removal = false" and apply it first. Replacements the provider can see in the plan (a change to "certificate_id", "certificate_store_id", "certificate_alias", "key_password", "redeploy" or "include_private_key") are rejected at plan time in that situation.
-`,
+		MarkdownDescription: "\nUsed to schedule a certificate deployment(/management) job on Keyfactor Command using the `/OrchestratorJobs/Custom`\n" +
+			"API to deploy certificates to `keyfactor_certificate_store` resources.\n\n" +
+			"!> **Warning:** Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules. A `keyfactor_certificate_deployment` *will not finish* successfully until the destination certificate store's certificate inventory has been updated to include the deployed certificate.\n\n" +
+			"~> **Note:** `lifecycle { create_before_destroy = true }` is not supported for any replacement that keeps the same certificate and alias in the same store (for example a change to `include_private_key`, `redeploy` or `key_password`). Creating the replacement adopts the existing store entry, and the old instance's delete then removes that entry, leaving the store without the certificate. Use the default replacement order (destroy, then create) for this resource.\n\n" +
+			"~> **Note:** `terraform apply -replace` (or `terraform taint`) on a deployment whose state has `skip_removal = true` and `include_private_key = false` is not supported: Terraform plans it without consulting the provider, the delete step does not remove the existing store entry, and the replacement's create step then refuses that entry because it may contain the private key. Set `skip_removal = false` and apply it first. Replacements the provider can see in the plan (a change to `certificate_id`, `certificate_store_id`, `certificate_alias`, `key_password`, `redeploy` or `include_private_key`) are rejected at plan time in that situation.\n",
 	}, nil
 }
 
@@ -247,8 +250,11 @@ func (r resourceCommandCertificateDeployment) Create(
 	overwrite := plan.Overwrite.Value
 	forceRedploy := plan.Redeploy.Value
 
-	var jobParams map[string]string
-	_ = plan.JobParameters.ElementsAs(ctx, &jobParams, false)
+	jobParams, jpDiags := jobParametersFromPlan(ctx, plan.JobParameters)
+	response.Diagnostics.Append(jpDiags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	hid := fmt.Sprintf("%v-%s-%s", certificateId, storeId, certificateAlias)
 
 	// Built once here since every input (hid, plan.*) is available before the
@@ -299,7 +305,7 @@ func (r resourceCommandCertificateDeployment) Create(
 	// not validateDeployment: an inventory READ error must not be mistaken for "not deployed",
 	// otherwise we would submit a deployment job (possibly a duplicate or an overwrite) while
 	// Command is unreachable.
-	alreadyDeployed, presenceErr := deploymentPresentInInventory(ctx, kfClient, storeId, certificateAlias, certificateData)
+	presence, presenceErr := deploymentInventoryPresence(kfClient, storeId, certificateAlias, certificateData)
 	if presenceErr != nil {
 		response.Diagnostics.AddError(
 			"Deployment read error.",
@@ -313,11 +319,20 @@ func (r resourceCommandCertificateDeployment) Create(
 		)
 		return
 	}
+	alreadyDeployed := presence.CertificatePresent
 	if alreadyDeployed && !includePrivateKeyOrDefault(plan.IncludePrivateKey) {
 		// The certificate is already in the store and we cannot verify that the existing entry
 		// has no private key. An in-place overwrite does not reliably strip it (e.g. K8S secrets
 		// keep tls.key), so fail loudly instead of reporting a false success.
 		summary, detail := existingEntryPrivateKeyDiagnostic(certificateId, storeId, certificateAlias)
+		response.Diagnostics.AddError(summary, detail)
+		return
+	}
+	if presence.AliasOccupied && !includePrivateKeyOrDefault(plan.IncludePrivateKey) {
+		// The target alias is held by a different certificate. Deploying would overwrite that entry
+		// without a private key, and what is left of its old key material depends on the store type
+		// (lab evidence only covers K8S store types), so refuse rather than overwrite silently.
+		summary, detail := occupiedAliasPrivateKeyDiagnostic(certificateId, storeId, certificateAlias)
 		response.Diagnostics.AddError(summary, detail)
 		return
 	}
@@ -435,6 +450,26 @@ func (r resourceCommandCertificateDeployment) Read(
 	}
 	certificateData, err := kfClient.GetCertificateContext(args)
 	if err != nil {
+		// A certificate that no longer exists in Command cannot be deployed or tracked: drop the
+		// deployment from state so the next plan shows it as missing (Create will then fail loudly
+		// on the missing certificate rather than the resource silently vanishing), exactly as Delete
+		// treats a confirmed-gone object. An agent-shaped "does not exist" is not a missing
+		// certificate (see isAgentMissingNotFoundError), and any other failure (network, auth, 5xx)
+		// says nothing about whether the deployment still exists, so both are reported as errors and
+		// the prior state is left untouched.
+		if isNotFoundError(err) && !isAgentMissingNotFoundError(err) {
+			response.Diagnostics.AddWarning(
+				"Certificate deployment not found.",
+				fmt.Sprintf(
+					"Certificate '%d' deployed to store '%s (%s)' was not found in Keyfactor Command, removing from state: ",
+					certificateId,
+					storeId,
+					certificateAlias,
+				)+err.Error(),
+			)
+			response.State.RemoveResource(ctx)
+			return
+		}
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
@@ -444,9 +479,10 @@ func (r resourceCommandCertificateDeployment) Read(
 				certificateAlias,
 			)+err.Error(),
 		)
+		// certificateData is nil: nothing below can be decided without it.
+		return
 	}
-	locations := certificateData.Locations
-	for _, location := range locations {
+	for _, location := range certificateData.Locations {
 		tflog.Debug(ctx, fmt.Sprintf("Certificate %v stored in location: %v", certificateIdInt, location))
 	}
 
@@ -496,8 +532,11 @@ func (r resourceCommandCertificateDeployment) Update(
 	overwrite := plan.Overwrite.Value
 	forceRedploy := plan.Redeploy.Value
 
-	var jobParams map[string]string
-	_ = plan.JobParameters.ElementsAs(ctx, &jobParams, false)
+	jobParams, jpDiags := jobParametersFromPlan(ctx, plan.JobParameters)
+	response.Diagnostics.Append(jpDiags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	hid := fmt.Sprintf("%v-%s-%s", certificateId, storeId, certificateAlias)
 
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
@@ -879,6 +918,70 @@ func tryAddCertificateToStore(
 	return err
 }
 
+// jobParametersFromPlan converts the job_parameters map attribute to a Go map. A null or unknown
+// map yields nil with no diagnostics; a conversion failure is returned to the caller instead of
+// being dropped.
+func jobParametersFromPlan(ctx context.Context, params types.Map) (map[string]string, diag.Diagnostics) {
+	if params.Null || params.Unknown {
+		return nil, nil
+	}
+	var out map[string]string
+	diags := params.ElementsAs(ctx, &out, false)
+	return out, diags
+}
+
+// inventoryPresence is the result of looking for a certificate (and the entry it would occupy) in
+// a store's inventory.
+type inventoryPresence struct {
+	// CertificatePresent is true when certObj is in the store under the requested alias (or, for
+	// matchEmptyAliasByLeafId lookups with no alias, anywhere in the store by leaf certificate ID).
+	CertificatePresent bool
+	// AliasOccupied is true when an inventory entry named certAlias exists, whichever certificate it
+	// holds. It is only ever set for a non-empty alias: an alias-less deployment has no entry name to
+	// compare, so the only entry that can be identified as the target is the certificate's own
+	// (CertificatePresent).
+	AliasOccupied bool
+}
+
+// inspectInventory performs a single inventory read and reports where certObj is and whether
+// certAlias is already taken. See inventoryPresence.
+func inspectInventory(
+	conn *api.Client,
+	storeId string,
+	certAlias string,
+	certObj *api.GetCertificateResponse,
+	matchEmptyAliasByLeafId bool,
+) (inventoryPresence, error) {
+	var res inventoryPresence
+	inv, invErr := conn.GetCertStoreInventory(storeId)
+	if invErr != nil {
+		return res, invErr
+	}
+	// check if inv is empty or nil
+	if inv == nil || len(*inv) == 0 {
+		return res, nil
+	}
+	for _, cert := range *inv {
+		if cert.Name == certAlias {
+			if certAlias != "" {
+				res.AliasOccupied = true
+			}
+			// Iterate through Certificates in the store and check if the certificate we're looking for is there
+			for _, iCert := range cert.Certificates {
+				if iCert.Id == certObj.Id {
+					res.CertificatePresent = true
+				}
+			}
+		} else if matchEmptyAliasByLeafId && certAlias == "" {
+			// if not alias is provided then just compare cert ID of the leaf node
+			if len(cert.Ids) > 0 && cert.Ids[0] == certObj.Id { //TODO: This may not be the best way to do this as a cert ID can show up multiple times in a store
+				res.CertificatePresent = true
+			}
+		}
+	}
+	return res, nil
+}
+
 // certificateInInventory performs a single inventory read and reports whether certObj is
 // present in the store under certAlias. It backs both undeploymentStillPresent and
 // deploymentPresentInInventory, which differ only in matchEmptyAliasByLeafId: deployment
@@ -892,30 +995,8 @@ func certificateInInventory(
 	certObj *api.GetCertificateResponse,
 	matchEmptyAliasByLeafId bool,
 ) (bool, error) {
-	inv, invErr := conn.GetCertStoreInventory(storeId)
-	if invErr != nil {
-		return false, invErr
-	}
-	// check if inv is empty or nil
-	if inv == nil || len(*inv) == 0 {
-		return false, nil
-	}
-	for _, cert := range *inv {
-		if cert.Name == certAlias {
-			// Iterate through Certificates in the store and check if the certificate we're looking for is there
-			for _, iCert := range cert.Certificates {
-				if iCert.Id == certObj.Id {
-					return true, nil
-				}
-			}
-		} else if matchEmptyAliasByLeafId && certAlias == "" {
-			// if not alias is provided then just compare cert ID of the leaf node
-			if len(cert.Ids) > 0 && cert.Ids[0] == certObj.Id { //TODO: This may not be the best way to do this as a cert ID can show up multiple times in a store
-				return true, nil
-			}
-		}
-	}
-	return false, nil
+	res, err := inspectInventory(conn, storeId, certAlias, certObj, matchEmptyAliasByLeafId)
+	return res.CertificatePresent, err
 }
 
 // undeploymentStillPresent performs a single inventory read and reports whether the
@@ -992,6 +1073,17 @@ func deploymentPresentInInventory(
 	certObj *api.GetCertificateResponse,
 ) (bool, error) {
 	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, true)
+}
+
+// deploymentInventoryPresence is deploymentPresentInInventory plus whether the target alias is
+// occupied by any entry (see inventoryPresence), from the same single inventory read.
+func deploymentInventoryPresence(
+	conn *api.Client,
+	storeId string,
+	certAlias string,
+	certObj *api.GetCertificateResponse,
+) (inventoryPresence, error) {
+	return inspectInventory(conn, storeId, certAlias, certObj, true)
 }
 
 func validateDeployment(
@@ -1174,6 +1266,20 @@ func existingEntryPrivateKeyDiagnostic(certificateId interface{}, storeId, certi
 		)
 }
 
+// occupiedAliasPrivateKeyDiagnostic builds the Create error for include_private_key = false when the
+// target alias is already held by an entry for a different certificate.
+func occupiedAliasPrivateKeyDiagnostic(certificateId interface{}, storeId, certificateAlias string) (summary, detail string) {
+	return "Target alias is occupied by another store entry.",
+		fmt.Sprintf(
+			"The alias '%s' in store '%s' is already occupied by an entry for a different certificate, and "+
+				"include_private_key = false was requested for certificate '%v'. Deploying would overwrite that entry without "+
+				"a private key, and the provider cannot verify that no key material of the existing entry would remain. "+
+				"Remove the entry from the store first, choose a different certificate_alias, or set include_private_key = true "+
+				"(or remove the attribute).",
+			certificateAlias, storeId, certificateId,
+		)
+}
+
 // ModifyPlan owns the include_private_key replace decision (there is deliberately no attribute
 // plan modifier for it, so the decision lives in one place). It is a resource-level hook rather
 // than an attribute modifier because it must (a) read skip_removal from the PRIOR STATE (the
@@ -1184,7 +1290,9 @@ func existingEntryPrivateKeyDiagnostic(certificateId interface{}, storeId, certi
 // with this message, read skip_removal from prior state, or see the other attributes' replacements.)
 //
 // It rejects, at plan time:
-//  1. an include_private_key that is unknown for an existing deployment;
+//  1. an include_private_key that is unknown for an existing deployment, unless the deployment is
+//     already being replaced for another reason (the value then resolves before Create, which has
+//     its own guards on the resolved value);
 //  2. an include_private_key change that would replace the deployment while skip_removal is true
 //     in the current state: the replace's delete step reads skip_removal from prior state and so
 //     could not remove the existing entry;
@@ -1218,6 +1326,15 @@ func (r resourceCommandCertificateDeployment) ModifyPlan(
 	// includePrivateKeyUnknownDiagnostic). Only an existing deployment can be replaced, so a
 	// value that is unknown while creating a new deployment is resolved before Create runs.
 	if planObj.IncludePrivateKey.Unknown {
+		// When the deployment is already being replaced for another reason the value is not what
+		// decides the replace, and it resolves before Create runs (Create has its own guards on the
+		// resolved value), so there is nothing to reject. Only when nothing else replaces the
+		// deployment does the unknown value decide whether it is replaced, and that cannot be known.
+		replaced, d := deploymentSchemaRequiresReplace(ctx, req)
+		resp.Diagnostics.Append(d...)
+		if d.HasError() || replaced {
+			return
+		}
 		summary, detail := includePrivateKeyUnknownDiagnostic()
 		resp.Diagnostics.AddAttributeError(path.Root("include_private_key"), summary, detail)
 		return

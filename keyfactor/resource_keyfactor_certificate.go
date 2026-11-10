@@ -1684,15 +1684,14 @@ func (r resourceCommandCertificate) Update(
 		var uriSANs []string
 		var planMetadata map[string]string
 		var stateMetadata map[string]string
-		diags = state.DNSSANs.ElementsAs(ctx, &dnsSANs, true)
-		diags = state.IPSANs.ElementsAs(ctx, &ipSANs, true)
-		diags = state.URISANs.ElementsAs(ctx, &uriSANs, true)
-		diags = plan.Metadata.ElementsAs(ctx, &planMetadata, false)
-		diags = state.Metadata.ElementsAs(ctx, &stateMetadata, false)
+		response.Diagnostics.Append(state.DNSSANs.ElementsAs(ctx, &dnsSANs, true)...)
+		response.Diagnostics.Append(state.IPSANs.ElementsAs(ctx, &ipSANs, true)...)
+		response.Diagnostics.Append(state.URISANs.ElementsAs(ctx, &uriSANs, true)...)
+		response.Diagnostics.Append(plan.Metadata.ElementsAs(ctx, &planMetadata, false)...)
+		response.Diagnostics.Append(state.Metadata.ElementsAs(ctx, &stateMetadata, false)...)
 
 		//diags = request.Plan.Get(ctx, &metadata)
 
-		response.Diagnostics.Append(diags...)
 		if response.Diagnostics.HasError() {
 			return
 		}
@@ -1820,9 +1819,12 @@ func (r resourceCommandCertificate) Update(
 		var planMetadata map[string]string
 		var stateMetadata map[string]string
 		tflog.Debug(ctx, "Reading metadata from state and plan")
-		diags = plan.Metadata.ElementsAs(ctx, &planMetadata, false)
+		response.Diagnostics.Append(plan.Metadata.ElementsAs(ctx, &planMetadata, false)...)
 		tflog.Debug(ctx, "Reading metadata from state and plan")
-		diags = state.Metadata.ElementsAs(ctx, &stateMetadata, false)
+		response.Diagnostics.Append(state.Metadata.ElementsAs(ctx, &stateMetadata, false)...)
+		if response.Diagnostics.HasError() {
+			return
+		}
 
 		if !plan.Metadata.Equal(state.Metadata) {
 			tflog.Debug(ctx, "Metadata is updated. Attempting to update metadata on Keyfactor.")
@@ -2807,12 +2809,16 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 
 	dnsSANs, ipSANs, uriSANs, dnsSANsDiags := r.parseSans(ctx, plan)
 	if dnsSANsDiags.HasError() {
+		// Do not enroll with SANs that could not be read from the plan: that would issue a
+		// certificate for the wrong identity.
 		diags.Append(dnsSANsDiags...)
+		return nil, diags
 	}
 
 	metadata, metadataErr := r.parseMetadata(ctx, plan)
-	if metadataErr != nil {
+	if metadataErr.HasError() {
 		diags.Append(metadataErr...)
+		return nil, diags
 	}
 
 	certificateFormat := DEFAULT_CERTIFICATE_ENROLLMENT_FORMAT
@@ -3323,7 +3329,7 @@ func (r resourceCommandCertificate) enrollPFXV2(ctx context.Context, plan *Comma
 			} else {
 				tflog.Error(ctx, "Error unpacking PKCS12 blob, attempting to recover private key.")
 				//attempt to recover private key
-				rErr := diag.Diagnostics{}
+				var rErr diag.Diagnostics
 				pKeyPEM, leafPEM, chainPEM, _, rErr = recoverPrivateKeyFromKeyfactorCommand(
 					ctx,
 					enrolledId,
@@ -3434,11 +3440,11 @@ func (r resourceCommandCertificate) parseSans(ctx context.Context, plan *Command
 	diags := diag.Diagnostics{}
 
 	tflog.Debug(ctx, fmt.Sprintf("Parsing DNS SANs: %s", plan.DNSSANs))
-	diags = plan.DNSSANs.ElementsAs(ctx, &dnsSANs, true)
+	diags.Append(plan.DNSSANs.ElementsAs(ctx, &dnsSANs, true)...)
 	tflog.Debug(ctx, fmt.Sprintf("Parsing IP SANs: %s", plan.IPSANs))
-	diags = plan.IPSANs.ElementsAs(ctx, &ipSANs, true)
+	diags.Append(plan.IPSANs.ElementsAs(ctx, &ipSANs, true)...)
 	tflog.Debug(ctx, fmt.Sprintf("Parsing URI SANs: %s", plan.URISANs))
-	diags = plan.URISANs.ElementsAs(ctx, &uriSANs, true)
+	diags.Append(plan.URISANs.ElementsAs(ctx, &uriSANs, true)...)
 
 	return dnsSANs, ipSANs, uriSANs, diags
 }
@@ -3710,12 +3716,16 @@ func (r resourceCommandCertificate) enrollCSR(
 	tflog.Debug(ctx, "Calling parseSans()")
 	dnsSANs, ipSANs, uriSANs, dnsSANsDiags := r.parseSans(ctx, plan)
 	if dnsSANsDiags.HasError() {
+		// Do not enroll with SANs that could not be read from the plan: that would issue a
+		// certificate for the wrong identity.
 		diags.Append(dnsSANsDiags...)
+		return nil, diags
 	}
 
 	metadata, metadataDiags := r.parseMetadata(ctx, plan)
 	if metadataDiags.HasError() {
 		diags.Append(metadataDiags...)
+		return nil, diags
 	}
 
 	certificateFormat := DEFAULT_CERTIFICATE_CSR_ENROLLMENT_FORMAT

@@ -77,6 +77,7 @@ func (r dataSourceSecurityIdentity) Read(ctx context.Context, request tfsdk.Read
 
 	if err != nil {
 		response.Diagnostics.AddError("Error listing identities from Keyfactor.", "Error reading identities: "+err.Error())
+		return
 	}
 
 	for _, identity := range identities {

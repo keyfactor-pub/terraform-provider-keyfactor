@@ -11,7 +11,6 @@ import (
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v2"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -158,16 +157,6 @@ func TestUnitSelectSecurityClaimByValueAndScheme_CaseInsensitiveHitIsSameObject(
 	got, _, err = selectSecurityClaimByValueAndScheme(claims, "alice", "Okta", "OAuthSubject")
 	assert.NoError(t, err)
 	assert.Nil(t, got)
-}
-
-func TestUnitRoleDataSourceStateName_KeepsConfiguredValue(t *testing.T) {
-	// Remote casing differs from config: the configured value must be kept.
-	got := roleDataSourceStateName(types.String{Value: "alice"}, types.String{Value: "Alice"})
-	assert.Equal(t, "alice", got.Value)
-	assert.False(t, got.Null)
-	// No configured value (defensive): fall back to remote.
-	got = roleDataSourceStateName(types.String{Null: true}, types.String{Value: "Alice"})
-	assert.Equal(t, "Alice", got.Value)
 }
 
 func countDiagsBySeverity(diags []diag.Diagnostic, sev diag.Severity) int {

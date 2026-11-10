@@ -3,7 +3,6 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"io"
 	"sort"
 
 	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v2"
@@ -109,14 +108,9 @@ func (r resourceOAuthSecurityRole) Read(
 				response.State.RemoveResource(ctx)
 				return
 			}
-			var body []byte
-			if httpReq != nil {
-				defer httpReq.Body.Close()
-				body, _ = io.ReadAll(httpReq.Body)
-			}
 			response.Diagnostics.AddError(
 				"Error reading security role",
-				fmt.Sprintf("Could not read OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+				fmt.Sprintf("Could not read OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), readErrorResponseBody(httpReq)),
 			)
 		} else {
 			response.Diagnostics.AddError(
@@ -169,7 +163,10 @@ func (r resourceOAuthSecurityRole) Update(
 	roleId := int32(state.ID.Value)
 
 	var permissions []string
-	plan.Permissions.ElementsAs(ctx, &permissions, false)
+	response.Diagnostics.Append(plan.Permissions.ElementsAs(ctx, &permissions, false)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	sort.Strings(permissions)
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
@@ -180,14 +177,9 @@ func (r resourceOAuthSecurityRole) Update(
 	// all claim associations.
 	currentRole, httpGet, errGet := api.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 	if errGet != nil {
-		var body []byte
-		if httpGet != nil {
-			defer httpGet.Body.Close()
-			body, _ = io.ReadAll(httpGet.Body)
-		}
 		response.Diagnostics.AddError(
 			"Error reading security role before update",
-			fmt.Sprintf("Could not read OAuth security role ID %d before update, unexpected error: %s. Details %s", roleId, errGet.Error(), string(body)),
+			fmt.Sprintf("Could not read OAuth security role ID %d before update, unexpected error: %s. Details %s", roleId, errGet.Error(), readErrorResponseBody(httpGet)),
 		)
 		return
 	}
@@ -214,15 +206,9 @@ func (r resourceOAuthSecurityRole) Update(
 
 	updateResponse, http, err := req.Execute()
 	if err != nil {
-		var body []byte
-		if http != nil {
-			defer http.Body.Close()
-			body, _ = io.ReadAll(http.Body)
-		}
-
 		response.Diagnostics.AddError(
 			"Error updating security role",
-			fmt.Sprintf("Could not update OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+			fmt.Sprintf("Could not update OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), readErrorResponseBody(http)),
 		)
 		return
 	}
@@ -264,15 +250,9 @@ func (r resourceOAuthSecurityRole) Delete(
 	http, err := req.Execute()
 
 	if err != nil {
-		var body []byte
-		if http != nil {
-			defer http.Body.Close()
-			body, _ = io.ReadAll(http.Body)
-		}
-
 		response.Diagnostics.AddError(
 			"Error deleting security role",
-			fmt.Sprintf("Could not delete OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+			fmt.Sprintf("Could not delete OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), readErrorResponseBody(http)),
 		)
 		return
 	}
@@ -307,7 +287,10 @@ func (r resourceOAuthSecurityRole) Create(
 	tflog.Debug(ctx, fmt.Sprintf("Creating OAuth security role with name: %s", roleName))
 
 	var permissions []string
-	plan.Permissions.ElementsAs(ctx, &permissions, false)
+	response.Diagnostics.Append(plan.Permissions.ElementsAs(ctx, &permissions, false)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	sort.Strings(permissions)
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
@@ -325,32 +308,21 @@ func (r resourceOAuthSecurityRole) Create(
 
 	createResponse, http, err := req.Execute()
 	if err != nil {
-		var body []byte
-		if http != nil {
-			defer http.Body.Close()
-			body, _ = io.ReadAll(http.Body)
-		}
 		response.Diagnostics.AddError(
 			"Error creating security role",
-			fmt.Sprintf("Could not create OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), string(body)),
+			fmt.Sprintf("Could not create OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), readErrorResponseBody(http)),
 		)
 		return
 	}
 
-	if createResponse.Id == nil {
-		response.Diagnostics.AddError(
-			"Error creating security role",
-			"API response missing Id field : role may have been created remotely but cannot be tracked in state.",
-		)
-		return
-	}
-	tflog.Debug(ctx, fmt.Sprintf("Successfully created OAuth security role. Role ID: %d", *createResponse.Id))
-
+	// mapOAuthSecurityRole rejects a response without an Id (requireSecurityRoleID), so no separate
+	// nil check is needed before it.
 	result, mapErr := mapOAuthSecurityRole(ctx, createResponse)
 	if mapErr != nil {
 		response.Diagnostics.AddError("Error creating security role", mapErr.Error())
 		return
 	}
+	tflog.Debug(ctx, fmt.Sprintf("Successfully created OAuth security role. Role ID: %d", result.ID.Value))
 
 	tflog.Debug(ctx, "Saving OAuth security role resource information into state...")
 

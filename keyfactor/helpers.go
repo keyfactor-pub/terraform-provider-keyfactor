@@ -3004,6 +3004,7 @@ func forceIfTrue(ctx context.Context, state attr.Value, config attr.Value, path 
 			"Value conversion error",
 			"Unable to convert value to bool",
 		)
+		return false, diags
 	}
 
 	var forceRenewal bool

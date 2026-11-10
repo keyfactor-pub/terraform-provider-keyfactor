@@ -285,6 +285,10 @@ func (r resourceCertificateTemplateRoleBinding) Delete(
 ) {
 	var state CertificateTemplateRoleBinding
 	diags := request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 
 	kfClient := r.p.client
 	roleName := state.RoleName.Value
@@ -295,6 +299,10 @@ func (r resourceCertificateTemplateRoleBinding) Delete(
 	var apiDiags []diag.Diagnostic
 
 	diags = state.TemplateNames.ElementsAs(ctx, &templateNames, true)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 
 	hid := fmt.Sprintf("%v%v", roleName, templateNames)
 	ctx = tflog.SetField(ctx, "role_binding_id", hid)
@@ -773,6 +781,7 @@ func addAllowedRequesterToTemplate(
 				},
 			)
 			diags.AddError("Error fetching templates from Keyfactor", err2.Error())
+			return diags
 		}
 		tflog.Debug(ctx, "Finding template in returned templates")
 		for template := range templates {
@@ -816,8 +825,11 @@ func addAllowedRequesterToTemplate(
 		return diags
 	}
 
-	// Check if role is already assigned as an allowed requester for the template, and
-	if allowedRequestersContainRole(template.AllowedRequesters, roleName) {
+	// The role only counts as already attached when it is listed AND Command actually enforces the
+	// list: while UseAllowedRequesters is false the list is ignored, so the role grants nothing and
+	// the template must still be updated to switch enforcement on.
+	roleListed := allowedRequestersContainRole(template.AllowedRequesters, roleName)
+	if roleListed && template.UseAllowedRequesters {
 		tflog.Warn(
 			ctx,
 			"Keyfactor security role is already listed as an allowed requester for template.",
@@ -830,19 +842,21 @@ func addAllowedRequesterToTemplate(
 	}
 	tflog.Debug(
 		ctx, "Adding role to allowed requesters", map[string]interface{}{
-			"role":     roleName,
-			"template": template.CommonName,
+			"role":                   roleName,
+			"template":               template.CommonName,
+			"already_listed":         roleListed,
+			"use_allowed_requesters": template.UseAllowedRequesters,
 		},
 	)
 	newAllowedRequester := append([]string(nil), template.AllowedRequesters...)
 
-	// If it's not already added, create update context to add role to template.
-
-	newAllowedRequester = append(newAllowedRequester, roleName)
-	useAllowedRequesters := false
-	if len(newAllowedRequester) > 0 {
-		useAllowedRequesters = true
+	// Append the role unless it is already listed (listed but not enforced): the existing list is
+	// kept as is, so no duplicate entry is created.
+	if !roleListed {
+		newAllowedRequester = append(newAllowedRequester, roleName)
 	}
+	// The role is now in the list, so enforcement must be on for it to take effect.
+	useAllowedRequesters := true
 	// Fill required fields with information retrieved from the get request above
 	tflog.Debug(ctx, "Creating update context to add role to template")
 	updateContext := buildTemplateRoleBindingUpdateArg(template, newAllowedRequester, useAllowedRequesters)
@@ -888,6 +902,7 @@ func removeRoleFromTemplate(
 			},
 		)
 		diags.AddError("Error fetching template from Keyfactor", err.Error())
+		return diags
 	}
 
 	// Rebuild allowed requester list without roleName

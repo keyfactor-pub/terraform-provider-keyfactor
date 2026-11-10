@@ -259,8 +259,16 @@ func mapAuthenticationProviderType(id string, authScheme string, displayName str
 	}
 }
 
-// Maps an OAuth Security Role from a SecuritySecurityRolesSecurityRoleResponse response model
-func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesSecurityRoleResponse) OAuthSecurityRole {
+// Maps an OAuth Security Role from a SecuritySecurityRolesSecurityRoleResponse response model.
+// The SDK models Id and Immutable as optional pointers. A role without an Id cannot be tracked in
+// state (a zero ID would silently alias a different role), so it is returned as an error, via the
+// same requireSecurityRoleID check the lookups use. A missing Immutable is kept null instead of
+// being flattened to false (a known value Command never sent).
+func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesSecurityRoleResponse) (OAuthSecurityRole, error) {
+	roleId, err := requireSecurityRoleID(data.GetName(), data.Id)
+	if err != nil {
+		return OAuthSecurityRole{}, err
+	}
 	var permissionValues []attr.Value
 	sort.Strings(data.Permissions)
 	for _, perm := range data.Permissions {
@@ -268,16 +276,21 @@ func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesS
 		permissionValues = append(permissionValues, types.String{Value: perm})
 	}
 
+	immutable := types.Bool{Null: true}
+	if data.Immutable != nil {
+		immutable = types.Bool{Value: *data.Immutable}
+	}
+
 	var result = OAuthSecurityRole{
-		ID:              types.Int64{Value: int64(*data.Id)},
+		ID:              types.Int64{Value: int64(roleId)},
 		Name:            getStringType(data.Name.Get()),
 		Description:     getStringType(data.Description.Get()),
 		EmailAddress:    getStringType(data.EmailAddress.Get()),
-		Immutable:       types.Bool{Value: *data.Immutable},
+		Immutable:       immutable,
 		Permissions:     types.Set{ElemType: types.StringType, Elems: permissionValues},
 		PermissionSetId: getStringType(data.PermissionSetId),
 	}
-	return result
+	return result, nil
 }
 
 func mapOAuthSecurityClaim(

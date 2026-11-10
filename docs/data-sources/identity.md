@@ -59,7 +59,7 @@ output "group_metadata" {
 
 ### Optional
 
-- `roles` (List of String) An array containing the role IDs that the identity is attached to.
+- `roles` (List of String) An array containing the names of the roles that the identity is attached to.
 
 ### Read-Only
 

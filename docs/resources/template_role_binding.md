@@ -25,7 +25,7 @@ resource "keyfactor_template_role_binding" "kf_terraform_role_attachment" {
 
 ### Required
 
-- `role_name` (String) An string associated with a Keyfactor security role being attached. This is just the name field found on Keyfactor.
+- `role_name` (String) An string associated with a Keyfactor security role being attached. This is just the name field found on Keyfactor. Changing this to a different role forces the binding to be replaced; a change that only differs in letter case (Command matches role names case-insensitively) is applied in place.
 
 ### Optional
 

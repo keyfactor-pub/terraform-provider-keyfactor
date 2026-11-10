@@ -3,12 +3,12 @@
 page_title: "keyfactor_oauth_security_role_claim_association Resource - terraform-provider-keyfactor"
 subcategory: ""
 description: |-
-  Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 /Security/Claims/ and V2 /Security/Roles APIs. This resource is compatible with Keyfactor Command versions 11+
+  Used to associate an existing OAuth security claim with an existing OAuth security role using the V1 /Security/Claims/ and V2 /Security/Roles APIs. This resource is compatible with Keyfactor Command versions 11+
 ---
 
 # keyfactor_oauth_security_role_claim_association (Resource)
 
-Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+
+Used to associate an existing OAuth security claim with an existing OAuth security role using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+
 
 ## Example Usage
 

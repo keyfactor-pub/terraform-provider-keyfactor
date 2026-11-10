@@ -49,7 +49,7 @@ output "existing_claim" {
 ### Read-Only
 
 - `description` (String) A string containing the description of the OAuth security claim in Keyfactor
-- `id` (Number) Internal ID of the role.
+- `id` (Number) Internal ID of the claim.
 - `provider` (Object) An object containing the provider of the OAuth security claim in Keyfactor (see [below for nested schema](#nestedatt--provider))
 
 <a id="nestedatt--provider"></a>

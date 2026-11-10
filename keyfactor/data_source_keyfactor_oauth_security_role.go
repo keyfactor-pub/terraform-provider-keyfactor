@@ -110,7 +110,11 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 
 	tflog.Debug(ctx, "Data source was able to resource OAuth security role from remote source using ID")
 
-	var result = mapOAuthSecurityRole(ctx, remoteState)
+	result, mapErr := mapOAuthSecurityRole(ctx, remoteState)
+	if mapErr != nil {
+		response.Diagnostics.AddError("Error reading security role", mapErr.Error())
+		return
+	}
 	result.Name = roleDataSourceStateName(data.Name, result.Name)
 
 	tflog.Debug(ctx, "Saving OAuth security role data source information into state...")

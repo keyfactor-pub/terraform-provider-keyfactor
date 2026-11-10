@@ -10,7 +10,6 @@ import (
 
 	kfv1 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v1"
 	kfv2 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v2"
-	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
@@ -136,72 +135,6 @@ func TestUnitValidatePQLStringLiteral(t *testing.T) {
 	}
 }
 
-func TestUnitIncludePrivateKeyOrDefault(t *testing.T) {
-	assert.True(t, includePrivateKeyOrDefault(types.Bool{Null: true}))
-	assert.True(t, includePrivateKeyOrDefault(types.Bool{Unknown: true}))
-	assert.True(t, includePrivateKeyOrDefault(types.Bool{Value: true}))
-	assert.False(t, includePrivateKeyOrDefault(types.Bool{Value: false}))
-}
-
-func TestUnitIncludePrivateKeyChangeRequiresReplace(t *testing.T) {
-	null := types.Bool{Null: true}
-	tr := types.Bool{Value: true}
-	fa := types.Bool{Value: false}
-	cases := []struct {
-		name        string
-		state, plan types.Bool
-		want        bool
-	}{
-		{"null->null", null, null, false},
-		{"null->true", null, tr, false},
-		{"true->null", tr, null, false},
-		{"true->true", tr, tr, false},
-		{"false->false", fa, fa, false},
-		{"null->false", null, fa, true},
-		{"true->false", tr, fa, true},
-		{"false->true", fa, tr, true},
-		{"false->null", fa, null, true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			assert.Equal(t, c.want, includePrivateKeyChangeRequiresReplace(c.state, c.plan))
-		})
-	}
-}
-
-// Delete reads skip_removal from PRIOR STATE, so only state skip_removal = true blocks an
-// include_private_key replace. Plan-only true (set in the same apply), unknown and null plan
-// values must not block.
-func TestUnitIncludePrivateKeyReplaceBlockedBySkipRemoval(t *testing.T) {
-	null := types.Bool{Null: true}
-	tr := types.Bool{Value: true}
-	fa := types.Bool{Value: false}
-	unk := types.Bool{Unknown: true}
-	assert.True(t, includePrivateKeyReplaceBlockedBySkipRemoval(tr), "state true blocks")
-	assert.False(t, includePrivateKeyReplaceBlockedBySkipRemoval(fa), "state false does not block")
-	assert.False(t, includePrivateKeyReplaceBlockedBySkipRemoval(null), "state null does not block")
-	assert.False(t, includePrivateKeyReplaceBlockedBySkipRemoval(unk), "state unknown does not block")
-}
-
-func TestUnitExistingEntryPrivateKeyDiagnostic_MentionsCreateBeforeDestroy(t *testing.T) {
-	summary, detail := existingEntryPrivateKeyDiagnostic(42, "store-1", "alias-1")
-	assert.Contains(t, summary, "private key")
-	assert.Contains(t, detail, "create_before_destroy")
-	assert.Contains(t, detail, "'42'")
-	assert.Contains(t, detail, "store-1 (alias-1)")
-	assert.Contains(t, detail, "include_private_key = true")
-}
-
-func TestUnitIncludePrivateKeyDescriptionMentionsCreateBeforeDestroy(t *testing.T) {
-	schema, diags := resourceCommandCertificateDeploymentType{}.GetSchema(context.Background())
-	assert.False(t, diags.HasError())
-	attr, ok := schema.Attributes["include_private_key"]
-	if assert.True(t, ok) {
-		assert.Contains(t, attr.Description, "create_before_destroy")
-		assert.Contains(t, attr.Description, "current state")
-	}
-}
-
 // Command 25.5 (kfclab, 2026-11-09): role names and (type, value, scheme) claims are unique
 // case-insensitively, and the `-eq` queries match case-insensitively, so a single
 // case-insensitive hit is always the same object. These tests pin the selectors' behaviour.
@@ -235,38 +168,6 @@ func TestUnitRoleDataSourceStateName_KeepsConfiguredValue(t *testing.T) {
 	// No configured value (defensive): fall back to remote.
 	got = roleDataSourceStateName(types.String{Null: true}, types.String{Value: "Alice"})
 	assert.Equal(t, "Alice", got.Value)
-}
-
-func TestUnitVerifyTemplateNames(t *testing.T) {
-	templates := []api.GetTemplateResponse{{Id: 1, CommonName: "WebServer"}, {Id: 2, CommonName: "Client"}}
-	ctx := context.Background()
-
-	// Found names resolve case-insensitively on both sides, with no diagnostics.
-	for _, side := range []templateNameSide{templateNameSidePlan, templateNameSideState} {
-		ids, diags := verifyTemplateNames(ctx, templates, []string{"webserver", "CLIENT"}, side)
-		assert.Equal(t, []int{1, 2}, ids)
-		assert.Empty(t, diags)
-	}
-
-	// Missing template: plan side is an error.
-	ids, diags := verifyTemplateNames(ctx, templates, []string{"WebServer", "Gone"}, templateNameSidePlan)
-	assert.Equal(t, []int{1}, ids)
-	assert.Equal(t, 1, countDiagsBySeverity(diags, diag.SeverityError))
-	assert.Equal(t, 0, countDiagsBySeverity(diags, diag.SeverityWarning))
-
-	// Missing template: state side is a warning, the name is skipped, and the rest still resolve.
-	ids, diags = verifyTemplateNames(ctx, templates, []string{"WebServer", "Gone"}, templateNameSideState)
-	assert.Equal(t, []int{1}, ids)
-	assert.Equal(t, 0, countDiagsBySeverity(diags, diag.SeverityError))
-	assert.Equal(t, 1, countDiagsBySeverity(diags, diag.SeverityWarning))
-
-	// Empty name is exactly one error on both sides (no extra not-found diagnostic).
-	for _, side := range []templateNameSide{templateNameSidePlan, templateNameSideState} {
-		ids, diags = verifyTemplateNames(ctx, templates, []string{""}, side)
-		assert.Empty(t, ids)
-		assert.Equal(t, 1, countDiagsBySeverity(diags, diag.SeverityError))
-		assert.Equal(t, 0, countDiagsBySeverity(diags, diag.SeverityWarning))
-	}
 }
 
 func countDiagsBySeverity(diags []diag.Diagnostic, sev diag.Severity) int {

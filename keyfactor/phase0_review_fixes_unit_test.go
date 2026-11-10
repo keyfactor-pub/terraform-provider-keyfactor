@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // ---------------------------------------------------------------------------
@@ -69,7 +71,7 @@ func templatesServer(t *testing.T, templates []api.GetTemplateResponse, putBody 
 				return
 			}
 			for _, tpl := range templates {
-				if trimmed == itoa(tpl.Id) {
+				if trimmed == strconv.Itoa(tpl.Id) {
 					_ = json.NewEncoder(w).Encode(tpl)
 					return
 				}
@@ -86,11 +88,6 @@ func templatesServer(t *testing.T, templates []api.GetTemplateResponse, putBody 
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}))
-}
-
-func itoa(i int) string {
-	b, _ := json.Marshal(i)
-	return string(b)
 }
 
 // ---------------------------------------------------------------------------
@@ -450,68 +447,24 @@ func TestUnitPickPreferExactCase(t *testing.T) {
 	cand := func(i *item) (string, bool) { return i.key, i.key != "skip" }
 
 	items := []item{{"alice"}, {"Alice"}, {"ALICE"}}
-	got, n := pickPreferExactCase(items, "Alice", cand)
+	got, folded, n := pickPreferExactCase(items, "Alice", cand)
 	require.NotNil(t, got)
 	assert.Equal(t, "Alice", got.key, "exact case wins over earlier case-insensitive hits")
+	assert.False(t, folded, "an exact-case match is not flagged")
 	assert.Equal(t, 0, n)
 
-	got, n = pickPreferExactCase([]item{{"alice"}}, "ALICE", cand)
+	got, folded, n = pickPreferExactCase([]item{{"alice"}}, "ALICE", cand)
 	require.NotNil(t, got)
-	assert.Equal(t, 1, n, "a single case-insensitive hit is accepted")
+	assert.True(t, folded, "a case-insensitive-only match is flagged")
+	assert.Equal(t, 0, n, "a returned item is never ambiguous")
 
-	got, n = pickPreferExactCase([]item{{"alice"}, {"aLiCe"}}, "ALICE", cand)
+	got, folded, n = pickPreferExactCase([]item{{"alice"}, {"aLiCe"}}, "ALICE", cand)
 	assert.Nil(t, got)
+	assert.False(t, folded)
 	assert.Equal(t, 2, n, "multiple case-insensitive hits with no exact match are ambiguous")
 
-	got, n = pickPreferExactCase([]item{{"skip"}, {"bob"}}, "skip", cand)
+	got, folded, n = pickPreferExactCase([]item{{"skip"}, {"bob"}}, "skip", cand)
 	assert.Nil(t, got, "ineligible items are ignored")
+	assert.False(t, folded)
 	assert.Equal(t, 0, n)
-}
-
-// requireShim provides the handful of testify/require helpers these tests use; the require package
-// is not vendored in this repo, so each helper asserts and stops the test on failure.
-type requireShim struct{}
-
-var require requireShim
-
-func (requireShim) False(t *testing.T, v bool, msgAndArgs ...interface{}) {
-	t.Helper()
-	if !assert.False(t, v, msgAndArgs...) {
-		t.FailNow()
-	}
-}
-
-func (requireShim) True(t *testing.T, v bool, msgAndArgs ...interface{}) {
-	t.Helper()
-	if !assert.True(t, v, msgAndArgs...) {
-		t.FailNow()
-	}
-}
-
-func (requireShim) Len(t *testing.T, obj interface{}, n int, msgAndArgs ...interface{}) {
-	t.Helper()
-	if !assert.Len(t, obj, n, msgAndArgs...) {
-		t.FailNow()
-	}
-}
-
-func (requireShim) NoError(t *testing.T, err error, msgAndArgs ...interface{}) {
-	t.Helper()
-	if !assert.NoError(t, err, msgAndArgs...) {
-		t.FailNow()
-	}
-}
-
-func (requireShim) Error(t *testing.T, err error, msgAndArgs ...interface{}) {
-	t.Helper()
-	if !assert.Error(t, err, msgAndArgs...) {
-		t.FailNow()
-	}
-}
-
-func (requireShim) NotNil(t *testing.T, v interface{}, msgAndArgs ...interface{}) {
-	t.Helper()
-	if !assert.NotNil(t, v, msgAndArgs...) {
-		t.FailNow()
-	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -74,13 +75,18 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 	}
 
 	roleName := data.Name.Value
-	role, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
+	role, caseInsensitive, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error reading OAuth security role",
 			"Unable to find OAuth security role with name: "+roleName+". Error: "+err.Error(),
 		)
 		return
+	}
+
+	if caseInsensitive {
+		summary, detail := caseInsensitiveMatchWarning("name", "role", roleName, role.GetName())
+		response.Diagnostics.AddAttributeWarning(path.Root("name"), summary, detail)
 	}
 
 	roleId, err := requireSecurityRoleID(roleName, role.Id)

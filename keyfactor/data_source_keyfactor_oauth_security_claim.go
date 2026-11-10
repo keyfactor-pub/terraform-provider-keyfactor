@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -75,7 +76,7 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	authenticationScheme := data.ProviderAuthenticationScheme.Value
 	tflog.SetField(ctx, "claim_type", claimType)
 
-	remoteState, err := getSecurityClaimByTypeAndValueAndScheme(ctx, r.p.sdkClient, claimType, claimValue, authenticationScheme)
+	remoteState, caseInsensitive, err := getSecurityClaimByTypeAndValueAndScheme(ctx, r.p.sdkClient, claimType, claimValue, authenticationScheme)
 	if err != nil {
 		summary, detail := securityClaimDataSourceReadError(err, claimType, claimValue, authenticationScheme)
 		response.Diagnostics.AddError(summary, detail)
@@ -83,6 +84,11 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	}
 
 	tflog.Debug(ctx, "Data source was able to pull OAuth security claim from remote source")
+
+	if caseInsensitive {
+		summary, detail := caseInsensitiveMatchWarning("claim_value", "claim", claimValue, remoteState.GetClaimValue())
+		response.Diagnostics.AddAttributeWarning(path.Root("claim_value"), summary, detail)
+	}
 
 	var result = mapOAuthSecurityClaimQueryResult(remoteState, *data)
 

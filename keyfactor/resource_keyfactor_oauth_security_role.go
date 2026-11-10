@@ -363,7 +363,7 @@ func (r resourceOAuthSecurityRole) ImportState(
 
 	tflog.SetField(ctx, "role_name", roleName)
 
-	remoteRoleQuery, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
+	remoteRoleQuery, caseInsensitive, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
 
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -371,6 +371,11 @@ func (r resourceOAuthSecurityRole) ImportState(
 			fmt.Sprintf("Could not import OAuth security role name %s , an error occurred querying security role: %s.", roleName, err.Error()),
 		)
 		return
+	}
+
+	if caseInsensitive {
+		summary, detail := caseInsensitiveMatchWarning("import ID", "role", roleName, remoteRoleQuery.GetName())
+		response.Diagnostics.AddWarning(summary, detail)
 	}
 
 	if remoteRoleQuery.Id == nil {

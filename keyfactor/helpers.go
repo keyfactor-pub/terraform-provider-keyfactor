@@ -3019,7 +3019,7 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	claimType string,
 	claimValue string,
 	authenticationScheme string,
-) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
+) (claim *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, caseInsensitive bool, err error) {
 	tflog.Debug(
 		ctx,
 		fmt.Sprintf(
@@ -3031,12 +3031,12 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	)
 
 	if err := validatePQLStringLiteral("claim value", claimValue); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	claimTypeEnum, err := kfv1.ParseCSSCMSCoreEnumsClaimType(claimType)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("Claim type %s has been parsed to %d", claimType, *claimTypeEnum))
@@ -3049,20 +3049,20 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	response, _, err := api.GetSecurityClaimsExecute(req)
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if len(response) == 0 {
-		return nil, fmt.Errorf("%w: claimType %s and claimValue %s", errSecurityClaimNotFound, claimType, claimValue)
+		return nil, false, fmt.Errorf("%w: claimType %s and claimValue %s", errSecurityClaimNotFound, claimType, claimValue)
 	}
 
-	result, err := selectSecurityClaimByValueAndScheme(response, claimValue, authenticationScheme)
+	result, caseInsensitive, err := selectSecurityClaimByValueAndScheme(response, claimValue, authenticationScheme, claimType)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if result == nil {
-		return nil, fmt.Errorf(
+		return nil, false, fmt.Errorf(
 			"%w: claimType %s and claimValue %s and authenticationScheme %s",
 			errSecurityClaimNotFound,
 			claimType,
@@ -3071,7 +3071,7 @@ func getSecurityClaimByTypeAndValueAndScheme(
 		)
 	}
 
-	return result, nil
+	return result, caseInsensitive, nil
 }
 
 // errSecurityClaimNotFound is returned (wrapped with %w) by getSecurityClaimByTypeAndValueAndScheme
@@ -3106,12 +3106,13 @@ func validatePQLStringLiteral(field, v string) error {
 
 // pickPreferExactCase is the matching rule shared by the claim and role selectors. candidate reports
 // an item's key and whether the item is eligible at all (ineligible items are ignored). The first
-// eligible item whose key equals want exactly wins. Otherwise, if exactly one eligible item's key
-// equals want case-insensitively, it is returned. It returns (nil, n) when n > 1 eligible items match
-// only case-insensitively (ambiguous; the caller reports the error) and (nil, 0) when none match.
-// The returned count is the number of case-insensitive-only matches (0 or 1 whenever an item is
-// returned).
-func pickPreferExactCase[T any](items []T, want string, candidate func(*T) (string, bool)) (*T, int) {
+// eligible item whose key equals want exactly wins (caseInsensitive false). Otherwise, if exactly
+// one eligible item's key equals want case-insensitively, it is returned with caseInsensitive true so
+// the caller can warn that the configured value differs in case from the one that matched. It
+// returns (nil, false, n) when n > 1 eligible items match only case-insensitively (ambiguous; the
+// caller reports the error) and (nil, false, 0) when none match. ambiguous is non-zero only when no
+// item is returned.
+func pickPreferExactCase[T any](items []T, want string, candidate func(*T) (string, bool)) (item *T, caseInsensitive bool, ambiguous int) {
 	var folded []*T
 	for i := range items {
 		key, ok := candidate(&items[i])
@@ -3119,20 +3120,53 @@ func pickPreferExactCase[T any](items []T, want string, candidate func(*T) (stri
 			continue
 		}
 		if key == want {
-			return &items[i], 0
+			return &items[i], false, 0
 		}
 		folded = append(folded, &items[i])
 	}
 	if len(folded) == 1 {
-		return folded[0], 1
+		return folded[0], true, 0
 	}
-	return nil, len(folded)
+	return nil, false, len(folded)
 }
 
-// selectSecurityClaimByValueAndScheme returns the claim whose provider authentication scheme
-// equals authenticationScheme and whose value matches claimValue. An exact-case value match is
-// preferred; otherwise a single case-insensitive match is accepted. Returns nil, nil if none match.
-// The server-side query is not trusted to have filtered by value.
+// caseInsensitiveMatchWarning builds the warning diagnostic for a lookup that resolved only through
+// the case-insensitive fallback: field is the configured attribute (or import ID), kind the object
+// type ("claim" or "role"), configured the configured value and matched the value that was found.
+func caseInsensitiveMatchWarning(field, kind, configured, matched string) (summary, detail string) {
+	return fmt.Sprintf("OAuth security %s matched case-insensitively", kind),
+		fmt.Sprintf(
+			"%s %q matched existing %s %q case-insensitively. Use the exact casing %q to avoid this warning.",
+			field, configured, kind, matched, matched,
+		)
+}
+
+// securityClaimTypeMatches reports whether a claim returned by the claims query has the requested
+// claim type. The request encodes the type as its enum integer (ClaimType -eq <n>), and the
+// response's ClaimType is a string that may carry either the enum name ("OAuthSubject", compared
+// case-insensitively) or the enum number as text ("5"); both are accepted. A claim returned without
+// a ClaimType cannot be checked and is accepted, since the server-side query already filtered on the
+// type. wantType must be a name accepted by ParseCSSCMSCoreEnumsClaimType.
+func securityClaimTypeMatches(remote *string, wantType string) bool {
+	if remote == nil {
+		return true
+	}
+	want, err := kfv1.ParseCSSCMSCoreEnumsClaimType(wantType)
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(*remote), wantType) {
+		return true
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(*remote))
+	return err == nil && n == int(*want)
+}
+
+// selectSecurityClaimByValueAndScheme returns the claim whose claim type is claimType (see
+// securityClaimTypeMatches), whose provider authentication scheme equals authenticationScheme and
+// whose value matches claimValue. An exact-case value match is preferred; otherwise a single
+// case-insensitive match is accepted and caseInsensitive is true. Returns nil, false, nil if none
+// match. The server-side query is not trusted to have filtered by value or type.
 //
 // Verified against Command 25.5 (kfclab, 2026-11-09): the `ClaimValue -eq` query matches
 // case-insensitively, and Command refuses to create a second claim whose value differs only by
@@ -3146,10 +3180,14 @@ func selectSecurityClaimByValueAndScheme(
 	claims []kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse,
 	claimValue string,
 	authenticationScheme string,
-) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
-	claim, folded := pickPreferExactCase(claims, claimValue, func(c *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse) (string, bool) {
+	claimType string,
+) (claim *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, caseInsensitive bool, err error) {
+	claim, caseInsensitive, folded := pickPreferExactCase(claims, claimValue, func(c *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse) (string, bool) {
 		v := c.ClaimValue.Get()
 		if v == nil {
+			return "", false
+		}
+		if !securityClaimTypeMatches(c.ClaimType.Get(), claimType) {
 			return "", false
 		}
 		if c.Provider == nil || c.Provider.AuthenticationScheme.Get() == nil || *c.Provider.AuthenticationScheme.Get() != authenticationScheme {
@@ -3158,14 +3196,15 @@ func selectSecurityClaimByValueAndScheme(
 		return *v, true
 	})
 	if folded > 1 {
-		return nil, fmt.Errorf("claim value %q is ambiguous: %d claims match case-insensitively for scheme %q and none match exactly", claimValue, folded, authenticationScheme)
+		return nil, false, fmt.Errorf("claim value %q is ambiguous: %d claims match case-insensitively for scheme %q and none match exactly", claimValue, folded, authenticationScheme)
 	}
-	return claim, nil
+	return claim, caseInsensitive, nil
 }
 
 // selectSecurityRoleByExactName returns the role whose name equals roleName. An exact-case
-// match is preferred; otherwise a single case-insensitive match is accepted. Multiple
-// case-insensitive matches with no exact one return an ambiguity error. Returns nil, nil if none match.
+// match is preferred; otherwise a single case-insensitive match is accepted and caseInsensitive is
+// true. Multiple case-insensitive matches with no exact one return an ambiguity error. Returns
+// nil, false, nil if none match.
 //
 // Verified against Command 25.5 (kfclab, 2026-11-09): the v2 `Name -eq` query matches
 // case-insensitively, and Command refuses to create a second role whose name differs only by
@@ -3178,8 +3217,8 @@ func selectSecurityClaimByValueAndScheme(
 func selectSecurityRoleByExactName(
 	roles []kfv2.SecuritySecurityRolesSecurityRoleQueryResponse,
 	roleName string,
-) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
-	role, folded := pickPreferExactCase(roles, roleName, func(r *kfv2.SecuritySecurityRolesSecurityRoleQueryResponse) (string, bool) {
+) (role *kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, caseInsensitive bool, err error) {
+	role, caseInsensitive, folded := pickPreferExactCase(roles, roleName, func(r *kfv2.SecuritySecurityRolesSecurityRoleQueryResponse) (string, bool) {
 		n := r.Name.Get()
 		if n == nil {
 			return "", false
@@ -3187,9 +3226,9 @@ func selectSecurityRoleByExactName(
 		return *n, true
 	})
 	if folded > 1 {
-		return nil, fmt.Errorf("security role name %q is ambiguous: %d roles match case-insensitively and none match exactly", roleName, folded)
+		return nil, false, fmt.Errorf("security role name %q is ambiguous: %d roles match case-insensitively and none match exactly", roleName, folded)
 	}
-	return role, nil
+	return role, caseInsensitive, nil
 }
 
 // The v2 APIClient exposes a method to query a role by name.  This function will query the security roles and filter security roles by name.
@@ -3197,11 +3236,11 @@ func getSecurityRoleByName(
 	ctx context.Context,
 	apiClient *keyfactor.APIClient,
 	roleName string,
-) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
+) (role *kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, caseInsensitive bool, err error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting security role from remote source. Role Name: %s", roleName))
 
 	if err := validatePQLStringLiteral("security role name", roleName); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	api := apiClient.V2.SecurityRolesApi
@@ -3212,20 +3251,20 @@ func getSecurityRoleByName(
 	response, _, err := req.Execute()
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// Do not trust the query to have filtered exactly: prefer an exact-case name match, otherwise accept
 	// a single case-insensitive match. An empty response and a response with no matching name both
 	// yield a nil role here, so one not-found check covers both.
-	role, err := selectSecurityRoleByExactName(response, roleName)
+	role, caseInsensitive, err = selectSecurityRoleByExactName(response, roleName)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if role == nil {
-		return nil, fmt.Errorf("No security role found with name %s", roleName)
+		return nil, false, fmt.Errorf("No security role found with name %s", roleName)
 	}
-	return role, nil
+	return role, caseInsensitive, nil
 }
 
 // Queries security permissions by name and returns the first matching permission set.
@@ -3276,15 +3315,15 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
-// Converts a pointer to a string to a types.String object.
-// If the pointer is nil, it returns a types.String with Null set to true.
 // mapOAuthSecurityClaimQueryResult maps a claim returned by the claims query to the data source's
 // state. Every field of the SDK response is an optional pointer or nullable, so each is read nil-safely:
-// description and id become null when absent; the Required attributes (claim_type,
-// claim_value, provider_authentication_scheme) fall back to the configured value, which keeps the
-// result consistent with the configuration; absent provider sub-fields become empty strings, matching
-// mapOAuthSecurityClaim. claim_value always keeps the configured casing because the lookup is
-// case-insensitive and Terraform rejects a data source result that changes a configured attribute.
+// description and id become null when absent; absent provider sub-fields become empty strings, matching
+// mapOAuthSecurityClaim. The three Required attributes (claim_type, claim_value,
+// provider_authentication_scheme) always keep the configured values: Terraform rejects a data source
+// result that changes a configured attribute ("Provider produced invalid object"), and the lookup
+// can legitimately return different text for them (claim_value is matched case-insensitively, the
+// remote claim_type may be spelled by name or number, and the scheme is compared against the
+// remote's own spelling). The nested provider object still carries the remote provider details.
 func mapOAuthSecurityClaimQueryResult(
 	remote *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse,
 	configured OAuthSecurityClaim,
@@ -3294,12 +3333,6 @@ func mapOAuthSecurityClaimQueryResult(
 		id = types.Int64{Value: int64(*remote.Id)}
 	}
 
-	claimType := configured.ClaimType
-	if v := remote.ClaimType.Get(); v != nil {
-		claimType = types.String{Value: *v}
-	}
-
-	authScheme := configured.ProviderAuthenticationScheme
 	providerId, providerScheme, providerDisplayName := "", "", ""
 	if remote.Provider != nil {
 		if remote.Provider.Id != nil {
@@ -3307,7 +3340,6 @@ func mapOAuthSecurityClaimQueryResult(
 		}
 		if v := remote.Provider.AuthenticationScheme.Get(); v != nil {
 			providerScheme = *v
-			authScheme = types.String{Value: *v}
 		}
 		if v := remote.Provider.DisplayName.Get(); v != nil {
 			providerDisplayName = *v
@@ -3317,9 +3349,9 @@ func mapOAuthSecurityClaimQueryResult(
 	return OAuthSecurityClaim{
 		ID:                           id,
 		Description:                  getStringType(remote.Description.Get()),
-		ClaimType:                    claimType,
+		ClaimType:                    configured.ClaimType,
 		ClaimValue:                   configured.ClaimValue,
-		ProviderAuthenticationScheme: authScheme,
+		ProviderAuthenticationScheme: configured.ProviderAuthenticationScheme,
 		Provider:                     mapAuthenticationProviderType(providerId, providerScheme, providerDisplayName),
 	}
 }
@@ -3347,6 +3379,8 @@ func readErrorResponseBody(resp *http.Response) string {
 	return string(body)
 }
 
+// Converts a pointer to a string to a types.String object.
+// If the pointer is nil, it returns a types.String with Null set to true.
 func getStringType(value *string) types.String {
 	if value == nil {
 		return types.String{Value: "", Null: true}

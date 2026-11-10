@@ -33,7 +33,7 @@ func testClaim(id int32, value, scheme string) kfv1.SecurityRoleClaimDefinitions
 
 // The quote guards run before any API access, so a nil client proves no query is issued.
 func TestUnitGetSecurityRoleByName_RejectsQuote(t *testing.T) {
-	_, err := getSecurityRoleByName(context.Background(), nil, `x") or (Name -ne "`)
+	_, _, err := getSecurityRoleByName(context.Background(), nil, `x") or (Name -ne "`)
 	if !assert.Error(t, err) {
 		return
 	}
@@ -41,7 +41,7 @@ func TestUnitGetSecurityRoleByName_RejectsQuote(t *testing.T) {
 }
 
 func TestUnitGetSecurityClaimByTypeAndValueAndScheme_RejectsQuote(t *testing.T) {
-	_, err := getSecurityClaimByTypeAndValueAndScheme(context.Background(), nil, "OAuthSubject", `a" or ClaimValue -ne "b`, "System")
+	_, _, err := getSecurityClaimByTypeAndValueAndScheme(context.Background(), nil, "OAuthSubject", `a" or ClaimValue -ne "b`, "System")
 	if !assert.Error(t, err) {
 		return
 	}
@@ -54,30 +54,30 @@ func TestUnitSelectSecurityRoleByExactName(t *testing.T) {
 		testRole(2, "administrators"),
 		testRole(3, "Administrators"),
 	}
-	got, err := selectSecurityRoleByExactName(roles, "Administrators")
+	got, _, err := selectSecurityRoleByExactName(roles, "Administrators")
 	assert.NoError(t, err)
 	if assert.NotNil(t, got) {
 		assert.Equal(t, int32(3), *got.Id, "exact-case match preferred over earlier case-insensitive one")
 	}
 
 	// single case-insensitive match accepted
-	got, err = selectSecurityRoleByExactName(roles[:2], "ADMINISTRATORS")
+	got, _, err = selectSecurityRoleByExactName(roles[:2], "ADMINISTRATORS")
 	assert.NoError(t, err)
 	if assert.NotNil(t, got) {
 		assert.Equal(t, int32(2), *got.Id)
 	}
 
 	// multiple case-insensitive matches, none exact -> ambiguous
-	got, err = selectSecurityRoleByExactName(roles[1:], "ADMINISTRATORS")
+	got, _, err = selectSecurityRoleByExactName(roles[1:], "ADMINISTRATORS")
 	assert.Nil(t, got)
 	if assert.Error(t, err) {
 		assert.Contains(t, err.Error(), "ambiguous")
 	}
 
-	got, err = selectSecurityRoleByExactName(roles, "Admin")
+	got, _, err = selectSecurityRoleByExactName(roles, "Admin")
 	assert.NoError(t, err)
 	assert.Nil(t, got)
-	got, err = selectSecurityRoleByExactName(nil, "Administrators")
+	got, _, err = selectSecurityRoleByExactName(nil, "Administrators")
 	assert.NoError(t, err)
 	assert.Nil(t, got)
 }
@@ -88,18 +88,18 @@ func TestUnitSelectSecurityClaimByValueAndScheme(t *testing.T) {
 		testClaim(2, "Alice", "Okta"),
 		testClaim(3, "alice", "System"),
 	}
-	got, err := selectSecurityClaimByValueAndScheme(claims, "ALICE", "System")
+	got, _, err := selectSecurityClaimByValueAndScheme(claims, "ALICE", "System", "OAuthSubject")
 	assert.NoError(t, err)
 	if assert.NotNil(t, got) {
 		assert.Equal(t, int32(3), *got.Id, "must match both value (case-insensitive) and scheme")
 	}
 
 	for _, c := range []struct{ v, s string }{{"alice", "Missing"}, {"nobody", "System"}} {
-		got, err = selectSecurityClaimByValueAndScheme(claims, c.v, c.s)
+		got, _, err = selectSecurityClaimByValueAndScheme(claims, c.v, c.s, "OAuthSubject")
 		assert.NoError(t, err)
 		assert.Nil(t, got)
 	}
-	got, err = selectSecurityClaimByValueAndScheme(nil, "alice", "System")
+	got, _, err = selectSecurityClaimByValueAndScheme(nil, "alice", "System", "OAuthSubject")
 	assert.NoError(t, err)
 	assert.Nil(t, got)
 
@@ -108,14 +108,14 @@ func TestUnitSelectSecurityClaimByValueAndScheme(t *testing.T) {
 		testClaim(10, "alice", "System"),
 		testClaim(11, "Alice", "System"),
 	}
-	got, err = selectSecurityClaimByValueAndScheme(both, "Alice", "System")
+	got, _, err = selectSecurityClaimByValueAndScheme(both, "Alice", "System", "OAuthSubject")
 	assert.NoError(t, err)
 	if assert.NotNil(t, got) {
 		assert.Equal(t, int32(11), *got.Id)
 	}
 
 	// ambiguous: multiple case-insensitive, none exact
-	got, err = selectSecurityClaimByValueAndScheme(both, "ALICE", "System")
+	got, _, err = selectSecurityClaimByValueAndScheme(both, "ALICE", "System", "OAuthSubject")
 	assert.Nil(t, got)
 	if assert.Error(t, err) {
 		assert.Contains(t, err.Error(), "ambiguous")
@@ -207,7 +207,7 @@ func TestUnitIncludePrivateKeyDescriptionMentionsCreateBeforeDestroy(t *testing.
 // case-insensitive hit is always the same object. These tests pin the selectors' behaviour.
 func TestUnitSelectSecurityRoleByExactName_CaseInsensitiveHitIsSameObject(t *testing.T) {
 	roles := []kfv2.SecuritySecurityRolesSecurityRoleQueryResponse{testRole(7, "Alice")}
-	got, err := selectSecurityRoleByExactName(roles, "alice")
+	got, _, err := selectSecurityRoleByExactName(roles, "alice")
 	assert.NoError(t, err)
 	if assert.NotNil(t, got) {
 		assert.Equal(t, int32(7), *got.Id)
@@ -216,13 +216,13 @@ func TestUnitSelectSecurityRoleByExactName_CaseInsensitiveHitIsSameObject(t *tes
 
 func TestUnitSelectSecurityClaimByValueAndScheme_CaseInsensitiveHitIsSameObject(t *testing.T) {
 	claims := []kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse{testClaim(7, "Alice", "System")}
-	got, err := selectSecurityClaimByValueAndScheme(claims, "alice", "System")
+	got, _, err := selectSecurityClaimByValueAndScheme(claims, "alice", "System", "OAuthSubject")
 	assert.NoError(t, err)
 	if assert.NotNil(t, got) {
 		assert.Equal(t, int32(7), *got.Id)
 	}
 	// A same-cased value under a different scheme is a different principal and must not match.
-	got, err = selectSecurityClaimByValueAndScheme(claims, "alice", "Okta")
+	got, _, err = selectSecurityClaimByValueAndScheme(claims, "alice", "Okta", "OAuthSubject")
 	assert.NoError(t, err)
 	assert.Nil(t, got)
 }
@@ -306,7 +306,7 @@ func TestUnitGetSecurityClaimByTypeAndValueAndScheme_NotFoundIsSentinel(t *testi
 
 	client := newTemplateUpdateSDKClient(srv)
 
-	_, err := getSecurityClaimByTypeAndValueAndScheme(context.Background(), client, "OAuthSubject", "nobody", "System")
+	_, _, err := getSecurityClaimByTypeAndValueAndScheme(context.Background(), client, "OAuthSubject", "nobody", "System")
 	if assert.Error(t, err) {
 		assert.True(t, errors.Is(err, errSecurityClaimNotFound), "got: %v", err)
 	}

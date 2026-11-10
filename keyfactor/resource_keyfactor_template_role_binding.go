@@ -405,6 +405,22 @@ const (
 	templateNameSideState
 )
 
+// findTemplateByName returns the first template whose common name equals name, compared
+// case-insensitively (the way Command resolves template names), or nil when name is empty or
+// matches no template. It is the single matching rule shared by verifyTemplateNames and
+// partitionTemplateNamesByExistence.
+func findTemplateByName(templates []api.GetTemplateResponse, name string) *api.GetTemplateResponse {
+	if name == "" {
+		return nil
+	}
+	for i := range templates {
+		if strings.EqualFold(templates[i].CommonName, name) {
+			return &templates[i]
+		}
+	}
+	return nil
+}
+
 // verifyTemplateNames resolves template names to template IDs. An empty name is an error on
 // either side. A name that matches no template is an error for plan-side names and a warning
 // (the name is skipped) for state-side names.
@@ -419,16 +435,9 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 			diags.AddError("Error empty template name.", "Template name provided")
 			continue
 		}
-		found := false
-		for _, template := range templates {
-			if strings.EqualFold(template.CommonName, templateName) {
-				//result.Elems = append(result.Elems, types.Int64{Value: int64(template.Id)})
-				result = append(result, template.Id)
-				found = true
-				break
-			}
-		}
-		if !found {
+		if template := findTemplateByName(templates, templateName); template != nil {
+			result = append(result, template.Id)
+		} else {
 			if side == templateNameSideState {
 				diags.AddWarning(
 					"Template name not found; skipping.",
@@ -477,16 +486,7 @@ func roleNameChangeRequiresReplace(state, config types.String) bool {
 // Order is preserved and the kept names keep their original (configured) casing.
 func partitionTemplateNamesByExistence(templates []api.GetTemplateResponse, templateNames []string) (kept []string, dropped []string) {
 	for _, name := range templateNames {
-		found := false
-		if name != "" {
-			for _, template := range templates {
-				if strings.EqualFold(template.CommonName, name) {
-					found = true
-					break
-				}
-			}
-		}
-		if found {
+		if findTemplateByName(templates, name) != nil {
 			kept = append(kept, name)
 		} else {
 			dropped = append(dropped, name)

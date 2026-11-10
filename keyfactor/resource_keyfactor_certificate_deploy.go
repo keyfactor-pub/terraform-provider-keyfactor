@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
@@ -142,9 +143,11 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 				Description: "A map of entry parameters to be passed to the deployment job. These will only be used if the orchestrator extension supports them.",
 			},
 			"overwrite": {
-				Type:        types.BoolType,
-				Optional:    true,
-				Description: "If set to `true`, updating the `certificate_id` to a different certificate will overwrite the existing certificate in the store. If set to `false` or not set, updating the `certificate_id` will cause the resource to be replaced, and the existing certificate will be removed from the store before the new certificate is added.",
+				Type:     types.BoolType,
+				Optional: true,
+				Description: "If set to `true`, updating the `certificate_id` to a different certificate will overwrite the existing certificate in the store. If set to `false` or not set, updating the `certificate_id` will cause the resource to be replaced, and the existing certificate will be removed from the store before the new certificate is added. " +
+					"The value is also sent to Command when the certificate is deployed. " +
+					"Command only accepts `overwrite = true` for an entry it already knows by name: for a store without a `certificate_alias` (for example a Kubernetes secret store) it rejects the request, because it looks for an existing entry with an empty alias. To overwrite such an entry, set `certificate_alias` to the entry's name in the store inventory (for a Kubernetes secret store, the secret name).",
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"redeploy": {
@@ -166,6 +169,7 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 				Description: "If `true` (the default), the private key is deployed to the store along with the certificate. " +
 					"Set to `false` to deploy the certificate without its private key (e.g. for trust stores). " +
 					"With `false`, the deployment is refused if an entry already exists under the target `certificate_alias` (for this or any other certificate), because an existing entry may carry a private key that cannot be stripped. " +
+					"Replacing an existing entry without its private key is refused for now; see issue #211. " +
 					"Changing this value replaces the deployment (the existing entry is removed, then re-added), because an " +
 					"in-place overwrite cannot reliably strip an existing private key. It cannot be changed while " +
 					"`skip_removal` is `true` in the current state (apply `skip_removal = false` first). Because the " +
@@ -195,12 +199,17 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 			"not remove the existing store entry, and the replacement's create step then refuses that entry because it may contain the " +
 			"private key. Set `skip_removal = false` and apply it first. Replacements the provider can see in the plan (a change to " +
 			"`certificate_id`, `certificate_store_id`, `certificate_alias`, `key_password`, `redeploy` or `include_private_key`) are " +
-			"rejected at plan time in that situation.",
+			"rejected at plan time in that situation. " +
+			"*NOTE:* If the certificate is removed from the store outside Terraform, the next refresh removes the deployment from state " +
+			"(with a warning) and the next apply redeploys it. This is only detected when the store has an inventory schedule " +
+			"configured in Command, because the store inventory is what shows the removal; for a store without one the provider " +
+			"cannot tell a removed entry from one that has not been inventoried yet, so no drift is reported.",
 		MarkdownDescription: "\nUsed to schedule a certificate deployment(/management) job on Keyfactor Command using the `/OrchestratorJobs/Custom`\n" +
 			"API to deploy certificates to `keyfactor_certificate_store` resources.\n\n" +
 			"!> **Warning:** Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules. A `keyfactor_certificate_deployment` *will not finish* successfully until the destination certificate store's certificate inventory has been updated to include the deployed certificate.\n\n" +
 			"~> **Note:** `lifecycle { create_before_destroy = true }` is not supported for any replacement that keeps the same certificate and alias in the same store (for example a change to `include_private_key`, `redeploy` or `key_password`). Creating the replacement adopts the existing store entry, and the old instance's delete then removes that entry, leaving the store without the certificate. Use the default replacement order (destroy, then create) for this resource.\n\n" +
-			"~> **Note:** `terraform apply -replace` (or `terraform taint`) on a deployment whose state has `skip_removal = true` and `include_private_key = false` is not supported: Terraform plans it without consulting the provider, the delete step does not remove the existing store entry, and the replacement's create step then refuses that entry because it may contain the private key. Set `skip_removal = false` and apply it first. Replacements the provider can see in the plan (a change to `certificate_id`, `certificate_store_id`, `certificate_alias`, `key_password`, `redeploy` or `include_private_key`) are rejected at plan time in that situation.\n",
+			"~> **Note:** `terraform apply -replace` (or `terraform taint`) on a deployment whose state has `skip_removal = true` and `include_private_key = false` is not supported: Terraform plans it without consulting the provider, the delete step does not remove the existing store entry, and the replacement's create step then refuses that entry because it may contain the private key. Set `skip_removal = false` and apply it first. Replacements the provider can see in the plan (a change to `certificate_id`, `certificate_store_id`, `certificate_alias`, `key_password`, `redeploy` or `include_private_key`) are rejected at plan time in that situation.\n\n" +
+			"~> **Note:** If the certificate is removed from the store outside Terraform, the next refresh removes the deployment from state (with a warning) and the next apply redeploys it. This is only detected when the store has an inventory schedule configured in Command, because the store inventory is what shows the removal; for a store without one the provider cannot tell a removed entry from one that has not been inventoried yet, so no drift is reported.\n",
 	}, nil
 }
 
@@ -486,11 +495,41 @@ func (r resourceCommandCertificateDeployment) Read(
 		tflog.Debug(ctx, fmt.Sprintf("Certificate %v stored in location: %v", certificateIdInt, location))
 	}
 
+	// Drift: the certificate exists in Command but is no longer in this store/alias (removed out of
+	// band). Drop the deployment from state so the plan shows a create and the next apply redeploys.
+	gone, goneErr := deploymentRemovedFromStore(ctx, kfClient, storeId, certificateAlias, certificateData)
+	if goneErr != nil {
+		// Transient or unexplained failure: say nothing about the deployment, keep the prior state.
+		response.Diagnostics.AddError(
+			"Deployment read error.",
+			fmt.Sprintf(
+				"Unable to determine whether certificate '%d' is still deployed to store '%s (%s)': ",
+				certificateId,
+				storeId,
+				certificateAlias,
+			)+goneErr.Error(),
+		)
+		return
+	}
+	if gone {
+		response.Diagnostics.AddWarning(
+			"Certificate deployment not found in store.",
+			fmt.Sprintf(
+				"Certificate '%d' is no longer in store '%s' (alias '%s'); it will be redeployed on the next apply.",
+				certificateId,
+				storeId,
+				certificateAlias,
+			),
+		)
+		response.State.RemoveResource(ctx)
+		return
+	}
+
 	// Set state. This deployment resource has no server-refreshable fields of
 	// its own (the certificate/store/alias identity and write-only knobs are
-	// all sourced from state) -- the GetCertificateContext call above exists
-	// to confirm the certificate itself is still reachable, not to refresh
-	// any field, so state is written back as-is.
+	// all sourced from state) -- the lookups above only decide whether the
+	// deployment still exists, not refresh any field, so state is written
+	// back as-is.
 	diags = response.State.Set(ctx, state)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
@@ -1073,6 +1112,80 @@ func deploymentPresentInInventory(
 	certObj *api.GetCertificateResponse,
 ) (bool, error) {
 	return certificateInInventory(ctx, conn, storeId, certAlias, certObj, true)
+}
+
+// certificateLocatedInStore reports whether the certificate's Locations (from GetCertificateContext
+// with IncludeLocations) include the store, under certAlias or, when certAlias is empty, as the leaf
+// (ChainLevel 0) of any entry. Like inspectInventory it matches the alias exactly and an alias-less
+// deployment by certificate ID alone.
+func certificateLocatedInStore(certObj *api.GetCertificateResponse, storeId, certAlias string) bool {
+	for _, loc := range certObj.Locations {
+		if !strings.EqualFold(loc.CertStoreId, storeId) {
+			continue
+		}
+		if certAlias == "" {
+			if loc.ChainLevel == 0 {
+				return true
+			}
+			continue
+		}
+		if loc.Alias == certAlias {
+			return true
+		}
+	}
+	return false
+}
+
+// deploymentRemovedFromStore decides whether Read should treat a deployment whose certificate still
+// exists in Command as removed from its store (drift). It returns true only on positive evidence.
+//
+// Presence source: the certificate's Locations (already fetched by Read, no extra call) are the fast
+// path for "still deployed". Only when Locations do not list the store/alias is anything else
+// consulted, in this order:
+//
+//  1. The store's inventory schedule. Command updates Locations and the store inventory only when the
+//     orchestrator has run an inventory job. Create validates a new deployment against the inventory
+//     only when the store has a schedule (without one it submits the job and returns), and a store
+//     without a schedule is never refreshed on its own. For such a store an empty result cannot tell
+//     "removed out of band" from "not inventoried yet", and treating it as removed would make every
+//     apply redeploy, so drift is not reported (the deployment is assumed present).
+//  2. The store inventory itself, with the same matching Create/Update use to validate a deployment
+//     (deploymentPresentInInventory). Locations are derived data and can lag or differ in alias
+//     normalisation from the inventory Create validated against, so a Locations miss alone is never
+//     enough: a just-created deployment (Create returns only once the inventory shows it) is kept
+//     even if Locations have not caught up.
+//
+// Any read failure is returned as an error and the caller keeps the prior state.
+func deploymentRemovedFromStore(
+	ctx context.Context,
+	conn *api.Client,
+	storeId string,
+	certAlias string,
+	certObj *api.GetCertificateResponse,
+) (bool, error) {
+	if certificateLocatedInStore(certObj, storeId, certAlias) {
+		return false, nil
+	}
+	hasSchedule, schedErr := storeHasInventorySchedule(conn, storeId)
+	if schedErr != nil {
+		return false, schedErr
+	}
+	if !hasSchedule {
+		tflog.Warn(ctx, fmt.Sprintf(
+			"Certificate %v is not listed for store %s, but the store has no inventory schedule, so the absence cannot be "+
+				"told from a store that was never inventoried; not reporting drift", certObj.Id, storeId))
+		return false, nil
+	}
+	present, invErr := deploymentPresentInInventory(ctx, conn, storeId, certAlias, certObj)
+	if invErr != nil {
+		return false, invErr
+	}
+	if present {
+		tflog.Debug(ctx, fmt.Sprintf(
+			"Certificate %v is in the inventory of store %s although its Locations do not list it yet", certObj.Id, storeId))
+		return false, nil
+	}
+	return true, nil
 }
 
 // deploymentInventoryPresence is deploymentPresentInInventory plus whether the target alias is

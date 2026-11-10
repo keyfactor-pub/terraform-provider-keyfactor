@@ -3,7 +3,6 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
@@ -84,20 +83,21 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 		return
 	}
 
-	roleId := int32(*role.Id)
+	roleId, err := requireSecurityRoleID(roleName, role.Id)
+	if err != nil {
+		response.Diagnostics.AddError("Error reading OAuth security role", err.Error())
+		return
+	}
 
 	tflog.Debug(ctx, "Data source was able to identify OAuth security role from remote source")
 	tflog.Debug(ctx, fmt.Sprintf("Querying security role by ID %d", roleId))
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
-	remoteState, httpReq, err := api.NewGetSecurityRolesByIdRequest(ctx, int32(*role.Id)).Execute()
+	remoteState, httpReq, err := api.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
-
 		response.Diagnostics.AddError(
 			"Error reading security role",
-			fmt.Sprintf("Could not read OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), string(body)),
+			fmt.Sprintf("Could not read OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), readErrorResponseBody(httpReq)),
 		)
 		return
 	}

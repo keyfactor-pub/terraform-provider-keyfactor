@@ -162,7 +162,9 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 					"in-place overwrite cannot reliably strip an existing private key. It cannot be changed while " +
 					"`skip_removal` is `true` in the current state (apply `skip_removal = false` first), and changes are " +
 					"not supported with `lifecycle { create_before_destroy = true }` (the replace must delete the existing " +
-					"deployment first). Removing the attribute reverts to the default of `true`.",
+					"deployment first). The value must be known at plan time (use a literal or an input variable, not a " +
+					"value computed during apply), because it decides whether the deployment is replaced. Removing the " +
+					"attribute reverts to the default of `true`.",
 			},
 			"skip_removal": {
 				Type:        types.BoolType,
@@ -1094,13 +1096,22 @@ func removeCertificateAliasFromStore(
 
 // includePrivateKeyChangeRequiresReplace reports whether moving include_private_key from
 // state to plan must replace the deployment. Null means the default (true), so null<->true is
-// not a change. An unknown plan value cannot be proven unchanged (it may resolve to either
-// true or false), so it conservatively requires replacement.
+// not a change. An unknown plan value never reaches this function in a successful plan:
+// ModifyPlan rejects it (see includePrivateKeyUnknownDiagnostic), because it cannot be proven
+// unchanged.
 func includePrivateKeyChangeRequiresReplace(state, plan types.Bool) bool {
-	if plan.Unknown {
-		return true
-	}
 	return includePrivateKeyOrDefault(state) != includePrivateKeyOrDefault(plan)
+}
+
+// includePrivateKeyUnknownDiagnostic returns the plan-time error text for an include_private_key
+// whose planned value is unknown. include_private_key decides whether an existing deployment is
+// replaced (a change in the effective value replaces it), and an unknown value cannot be classified
+// as changed or unchanged during plan.
+func includePrivateKeyUnknownDiagnostic() (summary, detail string) {
+	return "include_private_key must be known at plan time",
+		"include_private_key must be known at plan time (use a literal or input variable); it decides whether the " +
+			"deployment is replaced, and a value that is only known after apply cannot be classified as a change or " +
+			"not."
 }
 
 // includePrivateKeyReplaceBlockedBySkipRemoval reports whether an include_private_key
@@ -1164,9 +1175,10 @@ func (includePrivateKeyReplaceModifier) Modify(
 	}
 }
 
-// ModifyPlan rejects, at plan time, an include_private_key change that would replace the
-// deployment while skip_removal is true in the current state: the replace's delete step reads
-// skip_removal from prior state and so could not remove the existing entry.
+// ModifyPlan rejects, at plan time, (1) an include_private_key that is unknown for an existing
+// deployment, and (2) an include_private_key change that would replace the deployment while
+// skip_removal is true in the current state: the replace's delete step reads skip_removal from
+// prior state and so could not remove the existing entry.
 func (r resourceCommandCertificateDeployment) ModifyPlan(
 	ctx context.Context,
 	req tfsdk.ModifyResourcePlanRequest,
@@ -1180,6 +1192,14 @@ func (r resourceCommandCertificateDeployment) ModifyPlan(
 		return
 	}
 	if d := req.Plan.Get(ctx, &planObj); d.HasError() {
+		return
+	}
+	// An unknown planned value cannot be classified as a change or not (see
+	// includePrivateKeyUnknownDiagnostic). Only an existing deployment can be replaced, so a
+	// value that is unknown while creating a new deployment is resolved before Create runs.
+	if planObj.IncludePrivateKey.Unknown {
+		summary, detail := includePrivateKeyUnknownDiagnostic()
+		resp.Diagnostics.AddAttributeError(path.Root("include_private_key"), summary, detail)
 		return
 	}
 	if !includePrivateKeyChangeRequiresReplace(stateObj.IncludePrivateKey, planObj.IncludePrivateKey) {

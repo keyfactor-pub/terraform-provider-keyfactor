@@ -23,10 +23,12 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	mathRand "math/rand"
 
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"reflect"
@@ -3102,6 +3104,31 @@ func validatePQLStringLiteral(field, v string) error {
 	return nil
 }
 
+// pickPreferExactCase is the matching rule shared by the claim and role selectors. candidate reports
+// an item's key and whether the item is eligible at all (ineligible items are ignored). The first
+// eligible item whose key equals want exactly wins. Otherwise, if exactly one eligible item's key
+// equals want case-insensitively, it is returned. It returns (nil, n) when n > 1 eligible items match
+// only case-insensitively (ambiguous; the caller reports the error) and (nil, 0) when none match.
+// The returned count is the number of case-insensitive-only matches (0 or 1 whenever an item is
+// returned).
+func pickPreferExactCase[T any](items []T, want string, candidate func(*T) (string, bool)) (*T, int) {
+	var folded []*T
+	for i := range items {
+		key, ok := candidate(&items[i])
+		if !ok || !strings.EqualFold(key, want) {
+			continue
+		}
+		if key == want {
+			return &items[i], 0
+		}
+		folded = append(folded, &items[i])
+	}
+	if len(folded) == 1 {
+		return folded[0], 1
+	}
+	return nil, len(folded)
+}
+
 // selectSecurityClaimByValueAndScheme returns the claim whose provider authentication scheme
 // equals authenticationScheme and whose value matches claimValue. An exact-case value match is
 // preferred; otherwise a single case-insensitive match is accepted. Returns nil, nil if none match.
@@ -3120,28 +3147,20 @@ func selectSecurityClaimByValueAndScheme(
 	claimValue string,
 	authenticationScheme string,
 ) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
-	var folded []*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse
-	for i := range claims {
-		claim := &claims[i]
-		v := claim.ClaimValue.Get()
-		if v == nil || !strings.EqualFold(*v, claimValue) {
-			continue
+	claim, folded := pickPreferExactCase(claims, claimValue, func(c *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse) (string, bool) {
+		v := c.ClaimValue.Get()
+		if v == nil {
+			return "", false
 		}
-		if claim.Provider == nil || claim.Provider.AuthenticationScheme.Get() == nil || *claim.Provider.AuthenticationScheme.Get() != authenticationScheme {
-			continue
+		if c.Provider == nil || c.Provider.AuthenticationScheme.Get() == nil || *c.Provider.AuthenticationScheme.Get() != authenticationScheme {
+			return "", false
 		}
-		if *v == claimValue {
-			return claim, nil
-		}
-		folded = append(folded, claim)
+		return *v, true
+	})
+	if folded > 1 {
+		return nil, fmt.Errorf("claim value %q is ambiguous: %d claims match case-insensitively for scheme %q and none match exactly", claimValue, folded, authenticationScheme)
 	}
-	switch len(folded) {
-	case 0:
-		return nil, nil
-	case 1:
-		return folded[0], nil
-	}
-	return nil, fmt.Errorf("claim value %q is ambiguous: %d claims match case-insensitively for scheme %q and none match exactly", claimValue, len(folded), authenticationScheme)
+	return claim, nil
 }
 
 // selectSecurityRoleByExactName returns the role whose name equals roleName. An exact-case
@@ -3160,24 +3179,17 @@ func selectSecurityRoleByExactName(
 	roles []kfv2.SecuritySecurityRolesSecurityRoleQueryResponse,
 	roleName string,
 ) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
-	var folded []*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse
-	for i := range roles {
-		n := roles[i].Name.Get()
-		if n == nil || !strings.EqualFold(*n, roleName) {
-			continue
+	role, folded := pickPreferExactCase(roles, roleName, func(r *kfv2.SecuritySecurityRolesSecurityRoleQueryResponse) (string, bool) {
+		n := r.Name.Get()
+		if n == nil {
+			return "", false
 		}
-		if *n == roleName {
-			return &roles[i], nil
-		}
-		folded = append(folded, &roles[i])
+		return *n, true
+	})
+	if folded > 1 {
+		return nil, fmt.Errorf("security role name %q is ambiguous: %d roles match case-insensitively and none match exactly", roleName, folded)
 	}
-	switch len(folded) {
-	case 0:
-		return nil, nil
-	case 1:
-		return folded[0], nil
-	}
-	return nil, fmt.Errorf("security role name %q is ambiguous: %d roles match case-insensitively and none match exactly", roleName, len(folded))
+	return role, nil
 }
 
 // The v2 APIClient exposes a method to query a role by name.  This function will query the security roles and filter security roles by name.
@@ -3203,19 +3215,17 @@ func getSecurityRoleByName(
 		return nil, err
 	}
 
-	if len(response) == 0 {
-		return nil, fmt.Errorf("No security role found with name %s", roleName)
-	}
-
-	// Do not trust the query to have filtered exactly; require an exact (case-insensitive) name match.
+	// Do not trust the query to have filtered exactly: prefer an exact-case name match, otherwise accept
+	// a single case-insensitive match. An empty response and a response with no matching name both
+	// yield a nil role here, so one not-found check covers both.
 	role, err := selectSecurityRoleByExactName(response, roleName)
 	if err != nil {
 		return nil, err
 	}
-	if role != nil {
-		return role, nil
+	if role == nil {
+		return nil, fmt.Errorf("No security role found with name %s", roleName)
 	}
-	return nil, fmt.Errorf("No security role found with name %s", roleName)
+	return role, nil
 }
 
 // Queries security permissions by name and returns the first matching permission set.
@@ -3268,6 +3278,75 @@ func ptr[T any](v T) *T {
 
 // Converts a pointer to a string to a types.String object.
 // If the pointer is nil, it returns a types.String with Null set to true.
+// mapOAuthSecurityClaimQueryResult maps a claim returned by the claims query to the data source's
+// state. Every field of the SDK response is an optional pointer or nullable, so each is read nil-safely:
+// description and id become null when absent; the Required attributes (claim_type,
+// claim_value, provider_authentication_scheme) fall back to the configured value, which keeps the
+// result consistent with the configuration; absent provider sub-fields become empty strings, matching
+// mapOAuthSecurityClaim. claim_value always keeps the configured casing because the lookup is
+// case-insensitive and Terraform rejects a data source result that changes a configured attribute.
+func mapOAuthSecurityClaimQueryResult(
+	remote *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse,
+	configured OAuthSecurityClaim,
+) OAuthSecurityClaim {
+	id := types.Int64{Null: true}
+	if remote.Id != nil {
+		id = types.Int64{Value: int64(*remote.Id)}
+	}
+
+	claimType := configured.ClaimType
+	if v := remote.ClaimType.Get(); v != nil {
+		claimType = types.String{Value: *v}
+	}
+
+	authScheme := configured.ProviderAuthenticationScheme
+	providerId, providerScheme, providerDisplayName := "", "", ""
+	if remote.Provider != nil {
+		if remote.Provider.Id != nil {
+			providerId = *remote.Provider.Id
+		}
+		if v := remote.Provider.AuthenticationScheme.Get(); v != nil {
+			providerScheme = *v
+			authScheme = types.String{Value: *v}
+		}
+		if v := remote.Provider.DisplayName.Get(); v != nil {
+			providerDisplayName = *v
+		}
+	}
+
+	return OAuthSecurityClaim{
+		ID:                           id,
+		Description:                  getStringType(remote.Description.Get()),
+		ClaimType:                    claimType,
+		ClaimValue:                   configured.ClaimValue,
+		ProviderAuthenticationScheme: authScheme,
+		Provider:                     mapAuthenticationProviderType(providerId, providerScheme, providerDisplayName),
+	}
+}
+
+// requireSecurityRoleID returns the role ID from a security role query result, or an error if Command
+// returned the role without one (the SDK models Id as an optional pointer; dereferencing nil would
+// panic the provider).
+func requireSecurityRoleID(roleName string, id *int32) (int32, error) {
+	if id == nil {
+		return 0, fmt.Errorf("Command returned the security role %q without an ID, so it cannot be read by ID", roleName)
+	}
+	return *id, nil
+}
+
+// readErrorResponseBody returns the body of an SDK error response for inclusion in a diagnostic, and
+// closes it. It is safe to call with a nil response or a nil body: the SDK returns a nil
+// *http.Response when the request fails before any response is received (DNS, TLS, connection
+// refused), and dereferencing it would panic the provider.
+func readErrorResponseBody(resp *http.Response) string {
+	if resp == nil || resp.Body == nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return string(body)
+}
+
 func getStringType(value *string) types.String {
 	if value == nil {
 		return types.String{Value: "", Null: true}

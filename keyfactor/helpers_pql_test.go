@@ -147,7 +147,6 @@ func TestUnitIncludePrivateKeyChangeRequiresReplace(t *testing.T) {
 	null := types.Bool{Null: true}
 	tr := types.Bool{Value: true}
 	fa := types.Bool{Value: false}
-	unk := types.Bool{Unknown: true}
 	cases := []struct {
 		name        string
 		state, plan types.Bool
@@ -162,9 +161,6 @@ func TestUnitIncludePrivateKeyChangeRequiresReplace(t *testing.T) {
 		{"true->false", tr, fa, true},
 		{"false->true", fa, tr, true},
 		{"false->null", fa, null, true},
-		{"true->unknown", tr, unk, true},
-		{"false->unknown", fa, unk, true},
-		{"null->unknown", null, unk, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

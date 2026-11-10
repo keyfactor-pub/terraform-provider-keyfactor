@@ -82,28 +82,9 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 		return
 	}
 
-	// Defensive: the lookup returns errSecurityClaimNotFound rather than (nil, nil).
-	if remoteState == nil {
-		summary, detail := securityClaimDataSourceReadError(errSecurityClaimNotFound, claimType, claimValue, authenticationScheme)
-		response.Diagnostics.AddError(summary, detail)
-		return
-	}
-
 	tflog.Debug(ctx, "Data source was able to pull OAuth security claim from remote source")
 
-	provider := *remoteState.Provider
-
-	var result = OAuthSecurityClaim{
-		ID:          types.Int64{Value: int64(*remoteState.Id)},
-		Description: types.String{Value: *remoteState.Description.Get()},
-		ClaimType:   types.String{Value: *remoteState.ClaimType.Get()},
-		// claim_value is a configured attribute and the lookup is case-insensitive, so keep the
-		// configured value (the remote casing could differ and Terraform rejects a data source
-		// result that changes a configured attribute).
-		ClaimValue:                   data.ClaimValue,
-		ProviderAuthenticationScheme: types.String{Value: *provider.AuthenticationScheme.Get()},
-		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
-	}
+	var result = mapOAuthSecurityClaimQueryResult(remoteState, *data)
 
 	tflog.Debug(ctx, "Saving OAuth security claim to state")
 

@@ -52,6 +52,9 @@ resource "keyfactor_certificate_deployment" "tls_secret" {
 resource "keyfactor_certificate_deployment" "opaque_secret" {
   certificate_id       = keyfactor_certificate.demo.certificate_id
   certificate_store_id = keyfactor_certificate_store.k8s_opaque_secret.id
+  # Opt-in knobs (null = attribute unset); see the lab-ipk-* make targets.
+  include_private_key  = var.opaque_include_private_key
+  skip_removal         = var.opaque_skip_removal
   # K8SSecret: same pattern as tls_secret above.
 }
 

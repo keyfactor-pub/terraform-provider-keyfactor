@@ -83,3 +83,21 @@ variable "use_cn_as_friendly_name" {
   default     = false
   description = "PFX friendly_name behavior. Command 25.5 on kfclab rejects PFX enrollment with \"Friendly Name is not allowed\" when this defaults to true (the provider's own default) -- confirmed 2026-08-07. Defaults to false here so PFX enrollment succeeds on this lab."
 }
+
+# ---------------------------------------------------------------------------
+# Opt-in knobs for the keyfactor_certificate_deployment.opaque_secret resource,
+# used by the `lab-ipk-*` make targets (include_private_key / skip_removal
+# regression checks). Both default to null, which leaves the attribute unset, so
+# the normal lifecycle is unchanged.
+# ---------------------------------------------------------------------------
+variable "opaque_include_private_key" {
+  type        = bool
+  default     = null
+  description = "include_private_key for keyfactor_certificate_deployment.opaque_secret. null (default) leaves the attribute unset (provider default: true)."
+}
+
+variable "opaque_skip_removal" {
+  type        = bool
+  default     = null
+  description = "skip_removal for keyfactor_certificate_deployment.opaque_secret. null (default) leaves the attribute unset."
+}

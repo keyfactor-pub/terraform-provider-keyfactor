@@ -17,3 +17,8 @@ output "store_ids" {
     k8s_cluster       = keyfactor_certificate_store.k8s_cluster.id
   }
 }
+
+output "opaque_certificate_id" {
+  description = "Command certificate ID deployed by keyfactor_certificate_deployment.opaque_secret (used by the lab-ipk-oob-* targets)."
+  value       = keyfactor_certificate.demo.certificate_id
+}

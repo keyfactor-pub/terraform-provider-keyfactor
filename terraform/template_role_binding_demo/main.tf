@@ -48,11 +48,25 @@ resource "keyfactor_role" "demo" {
   permissions = []
 }
 
+# Opt-in second role (only with create_alt_role=true) for the lab-role-replace
+# check that changing role_name forces replacement of the binding.
+resource "keyfactor_role" "alt" {
+  count       = var.create_alt_role ? 1 : 0
+  name        = "TemplateRoleBindingDemoAlt${var.suffix}"
+  description = "Terraform-managed alternate role (template_role_binding role_name replace check)"
+  permissions = []
+}
+
+locals {
+  binding_role_base = var.binding_role == "alt" ? keyfactor_role.alt[0].name : keyfactor_role.demo.name
+  binding_role_name = var.binding_role_upper ? upper(local.binding_role_base) : local.binding_role_base
+}
+
 resource "keyfactor_template_role_binding" "demo" {
-  role_name            = keyfactor_role.demo.name
+  role_name            = local.binding_role_name
   template_short_names = [var.template_short_name]
 
-  depends_on = [keyfactor_role.demo]
+  depends_on = [keyfactor_role.demo, keyfactor_role.alt]
 }
 
 output "role_name" {

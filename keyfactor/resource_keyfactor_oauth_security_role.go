@@ -3,7 +3,6 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"io"
 	"sort"
 
 	v2 "github.com/Keyfactor/keyfactor-go-client-sdk/v25/api/keyfactor/v2"
@@ -27,7 +26,7 @@ func (r resourceOAuthSecurityRoleType) GetSchema(_ context.Context) (tfsdk.Schem
 			"name": {
 				Type:        types.StringType,
 				Required:    true,
-				Description: "Description of the OAuth security role",
+				Description: "Name of the OAuth security role.",
 			},
 			"description": {
 				Type:        types.StringType,
@@ -109,14 +108,9 @@ func (r resourceOAuthSecurityRole) Read(
 				response.State.RemoveResource(ctx)
 				return
 			}
-			var body []byte
-			if httpReq != nil {
-				defer httpReq.Body.Close()
-				body, _ = io.ReadAll(httpReq.Body)
-			}
 			response.Diagnostics.AddError(
 				"Error reading security role",
-				fmt.Sprintf("Could not read OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+				fmt.Sprintf("Could not read OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), readErrorResponseBody(httpReq)),
 			)
 		} else {
 			response.Diagnostics.AddError(
@@ -131,7 +125,11 @@ func (r resourceOAuthSecurityRole) Read(
 		tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 	}
 
-	var result = mapOAuthSecurityRole(ctx, remoteState)
+	result, mapErr := mapOAuthSecurityRole(ctx, remoteState)
+	if mapErr != nil {
+		response.Diagnostics.AddError("Error reading security role", mapErr.Error())
+		return
+	}
 	tflog.Debug(ctx, "Data source was able to read OAuth security role resource from remote source using ID")
 
 	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
@@ -165,7 +163,10 @@ func (r resourceOAuthSecurityRole) Update(
 	roleId := int32(state.ID.Value)
 
 	var permissions []string
-	plan.Permissions.ElementsAs(ctx, &permissions, false)
+	response.Diagnostics.Append(plan.Permissions.ElementsAs(ctx, &permissions, false)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	sort.Strings(permissions)
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
@@ -176,14 +177,9 @@ func (r resourceOAuthSecurityRole) Update(
 	// all claim associations.
 	currentRole, httpGet, errGet := api.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 	if errGet != nil {
-		var body []byte
-		if httpGet != nil {
-			defer httpGet.Body.Close()
-			body, _ = io.ReadAll(httpGet.Body)
-		}
 		response.Diagnostics.AddError(
 			"Error reading security role before update",
-			fmt.Sprintf("Could not read OAuth security role ID %d before update, unexpected error: %s. Details %s", roleId, errGet.Error(), string(body)),
+			fmt.Sprintf("Could not read OAuth security role ID %d before update, unexpected error: %s. Details %s", roleId, errGet.Error(), readErrorResponseBody(httpGet)),
 		)
 		return
 	}
@@ -210,20 +206,18 @@ func (r resourceOAuthSecurityRole) Update(
 
 	updateResponse, http, err := req.Execute()
 	if err != nil {
-		var body []byte
-		if http != nil {
-			defer http.Body.Close()
-			body, _ = io.ReadAll(http.Body)
-		}
-
 		response.Diagnostics.AddError(
 			"Error updating security role",
-			fmt.Sprintf("Could not update OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+			fmt.Sprintf("Could not update OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), readErrorResponseBody(http)),
 		)
 		return
 	}
 
-	var result = mapOAuthSecurityRole(ctx, updateResponse)
+	result, mapErr := mapOAuthSecurityRole(ctx, updateResponse)
+	if mapErr != nil {
+		response.Diagnostics.AddError("Error updating security role", mapErr.Error())
+		return
+	}
 	tflog.Debug(ctx, "Saving OAuth security role resource information into state...")
 
 	ok = updateState(ctx, &response.State, &response.Diagnostics, result)
@@ -256,15 +250,9 @@ func (r resourceOAuthSecurityRole) Delete(
 	http, err := req.Execute()
 
 	if err != nil {
-		var body []byte
-		if http != nil {
-			defer http.Body.Close()
-			body, _ = io.ReadAll(http.Body)
-		}
-
 		response.Diagnostics.AddError(
 			"Error deleting security role",
-			fmt.Sprintf("Could not delete OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
+			fmt.Sprintf("Could not delete OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), readErrorResponseBody(http)),
 		)
 		return
 	}
@@ -299,7 +287,10 @@ func (r resourceOAuthSecurityRole) Create(
 	tflog.Debug(ctx, fmt.Sprintf("Creating OAuth security role with name: %s", roleName))
 
 	var permissions []string
-	plan.Permissions.ElementsAs(ctx, &permissions, false)
+	response.Diagnostics.Append(plan.Permissions.ElementsAs(ctx, &permissions, false)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 	sort.Strings(permissions)
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
@@ -317,28 +308,21 @@ func (r resourceOAuthSecurityRole) Create(
 
 	createResponse, http, err := req.Execute()
 	if err != nil {
-		var body []byte
-		if http != nil {
-			defer http.Body.Close()
-			body, _ = io.ReadAll(http.Body)
-		}
 		response.Diagnostics.AddError(
 			"Error creating security role",
-			fmt.Sprintf("Could not create OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), string(body)),
+			fmt.Sprintf("Could not create OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), readErrorResponseBody(http)),
 		)
 		return
 	}
 
-	if createResponse.Id == nil {
-		response.Diagnostics.AddError(
-			"Error creating security role",
-			"API response missing Id field : role may have been created remotely but cannot be tracked in state.",
-		)
+	// mapOAuthSecurityRole rejects a response without an Id (requireSecurityRoleID), so no separate
+	// nil check is needed before it.
+	result, mapErr := mapOAuthSecurityRole(ctx, createResponse)
+	if mapErr != nil {
+		response.Diagnostics.AddError("Error creating security role", mapErr.Error())
 		return
 	}
-	tflog.Debug(ctx, fmt.Sprintf("Successfully created OAuth security role. Role ID: %d", *createResponse.Id))
-
-	var result = mapOAuthSecurityRole(ctx, createResponse)
+	tflog.Debug(ctx, fmt.Sprintf("Successfully created OAuth security role. Role ID: %d", result.ID.Value))
 
 	tflog.Debug(ctx, "Saving OAuth security role resource information into state...")
 
@@ -363,7 +347,7 @@ func (r resourceOAuthSecurityRole) ImportState(
 
 	tflog.SetField(ctx, "role_name", roleName)
 
-	remoteRoleQuery, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
+	remoteRoleQuery, caseInsensitive, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
 
 	if err != nil {
 		response.Diagnostics.AddError(
@@ -373,16 +357,17 @@ func (r resourceOAuthSecurityRole) ImportState(
 		return
 	}
 
-	if remoteRoleQuery.Id == nil {
-		response.Diagnostics.AddError(
-			"Error importing security role",
-			fmt.Sprintf("Query for role %s returned a response with no Id.", roleName),
-		)
+	if caseInsensitive {
+		summary, detail := caseInsensitiveMatchWarning("import ID", "role", roleName, remoteRoleQuery.GetName())
+		response.Diagnostics.AddWarning(summary, detail)
+	}
+
+	roleId, idErr := requireSecurityRoleID(roleName, remoteRoleQuery.Id)
+	if idErr != nil {
+		response.Diagnostics.AddError("Error importing security role", idErr.Error())
 		return
 	}
-	tflog.Debug(ctx, fmt.Sprintf("Successfully queried security role %s. Role ID: %d", roleName, *remoteRoleQuery.Id))
-
-	roleId := *remoteRoleQuery.Id
+	tflog.Debug(ctx, fmt.Sprintf("Successfully queried security role %s. Role ID: %d", roleName, roleId))
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
 	req := api.NewGetSecurityRolesByIdRequest(ctx, roleId)
@@ -399,21 +384,13 @@ func (r resourceOAuthSecurityRole) ImportState(
 				response.State.RemoveResource(ctx)
 				return
 			}
-			var body []byte
-			if httpReq != nil {
-				defer httpReq.Body.Close()
-				body, _ = io.ReadAll(httpReq.Body)
-			}
-			response.Diagnostics.AddError(
-				"Error importing security role",
-				fmt.Sprintf("Could not import OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), string(body)),
-			)
-		} else {
-			response.Diagnostics.AddError(
-				"Error importing security role",
-				fmt.Sprintf("Could not import OAuth security role ID %d , unexpected error: %s", roleId, err.Error()),
-			)
 		}
+		// readErrorResponseBody is nil-safe: the SDK returns a nil *http.Response when the request
+		// fails before any response is received.
+		response.Diagnostics.AddError(
+			"Error importing security role",
+			fmt.Sprintf("Could not import OAuth security role ID %d , unexpected error: %s. Details %s ", roleId, err.Error(), readErrorResponseBody(httpReq)),
+		)
 		return
 	}
 
@@ -421,7 +398,11 @@ func (r resourceOAuthSecurityRole) ImportState(
 		tflog.Debug(ctx, fmt.Sprintf("HTTP Status code: %d", httpReq.StatusCode))
 	}
 
-	var result = mapOAuthSecurityRole(ctx, remoteState)
+	result, mapErr := mapOAuthSecurityRole(ctx, remoteState)
+	if mapErr != nil {
+		response.Diagnostics.AddError("Error importing security role", mapErr.Error())
+		return
+	}
 	tflog.Debug(ctx, "Data source was able to import state of OAuth security role resource from remote source using ID")
 
 	ok := updateState(ctx, &response.State, &response.Diagnostics, result)

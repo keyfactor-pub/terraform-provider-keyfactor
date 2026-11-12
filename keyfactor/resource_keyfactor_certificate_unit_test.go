@@ -8,8 +8,12 @@ import (
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // certUpdateMockAuthConfig implements api.AuthConfig for httptest-backed unit
@@ -153,4 +157,76 @@ func TestUnitKeyfactorCertificateResource_UpdateNilGetResponse(t *testing.T) {
 		t.Logf("diagnostics: %+v", resp.Diagnostics)
 		t.Fatalf("expected a %q error diagnostic", ERR_SUMMARY_CERTIFICATE_RESOURCE_READ)
 	}
+}
+
+// ---- Class A/B: SAN diagnostics are reported and enrollment stops before issuing anything. ----
+
+// illTypedSANs is a SAN list whose elements cannot be converted to strings.
+func illTypedSANs() types.List {
+	return types.List{ElemType: types.Int64Type, Elems: []attr.Value{types.Int64{Value: 1}}}
+}
+
+func goodSANs(vals ...string) types.List {
+	elems := make([]attr.Value, 0, len(vals))
+	for _, v := range vals {
+		elems = append(elems, types.String{Value: v})
+	}
+	return types.List{ElemType: types.StringType, Elems: elems}
+}
+
+// parseSans used to overwrite its diagnostics on every call, so an error in dns_sans was dropped
+// whenever ip_sans/uri_sans parsed fine.
+func TestUnitParseSans_ReportsAnErrorFromAnyListNotOnlyTheLast(t *testing.T) {
+	r := resourceCommandCertificate{}
+	for name, plan := range map[string]CommandCertificate{
+		"dns": {DNSSANs: illTypedSANs(), IPSANs: goodSANs("10.0.0.1"), URISANs: goodSANs("spiffe://x")},
+		"ip":  {DNSSANs: goodSANs("a.example"), IPSANs: illTypedSANs(), URISANs: goodSANs("spiffe://x")},
+		"uri": {DNSSANs: goodSANs("a.example"), IPSANs: goodSANs("10.0.0.1"), URISANs: illTypedSANs()},
+	} {
+		plan := plan
+		t.Run(name, func(t *testing.T) {
+			_, _, _, diags := r.parseSans(context.Background(), &plan)
+			assert.True(t, diags.HasError(), "the %s_sans conversion error must not be dropped", name)
+		})
+	}
+
+	_, _, _, diags := r.parseSans(context.Background(), &CommandCertificate{
+		DNSSANs: goodSANs("a.example"), IPSANs: goodSANs("10.0.0.1"), URISANs: types.List{Null: true, ElemType: types.StringType},
+	})
+	assert.False(t, diags.HasError(), "well-typed and null lists are fine: %v", diags)
+}
+
+// enrollPFXV2 / enrollCSR must stop at a SAN error instead of enrolling with the SANs missing.
+// (The provider here has no client, so carrying on would panic.)
+func TestUnitEnroll_UnreadableSANsStopBeforeEnrolling(t *testing.T) {
+	ctx := context.Background()
+	r := resourceCommandCertificate{}
+
+	t.Run("pfx", func(t *testing.T) {
+		plan := &CommandCertificate{
+			CommonName: types.String{Value: "cn.example"}, DNSSANs: illTypedSANs(),
+			IPSANs: goodSANs(), URISANs: goodSANs(), CertificateFormat: types.String{Value: "PFX"},
+			Metadata: types.Map{Null: true, ElemType: types.StringType},
+		}
+		var res *CommandCertificate
+		var diags diag.Diagnostics
+		require.NotPanics(t, func() { res, diags = r.enrollPFXV2(ctx, plan) })
+		assert.Nil(t, res)
+		require.True(t, diags.HasError())
+		assert.Contains(t, diags.Errors()[0].Detail(), "can't unmarshal", "the SAN conversion error itself must be what stops enrollment")
+	})
+	t.Run("csr", func(t *testing.T) {
+		plan := &CommandCertificate{
+			DNSSANs: illTypedSANs(), IPSANs: goodSANs(), URISANs: goodSANs(), CertificateFormat: types.String{Value: "PEM"},
+			Metadata: types.Map{Null: true, ElemType: types.StringType},
+		}
+		var res *CommandCertificate
+		var diags diag.Diagnostics
+		require.NotPanics(t, func() {
+			res, diags = r.enrollCSR(ctx, "-----BEGIN CERTIFICATE REQUEST-----\n-----END CERTIFICATE REQUEST-----", plan)
+		})
+		assert.Nil(t, res)
+		require.True(t, diags.HasError())
+		assert.Contains(t, diags.Errors()[0].Detail(), "can't unmarshal", "the SAN conversion error itself must be what stops enrollment")
+	})
 }

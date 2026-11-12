@@ -1399,3 +1399,30 @@ func TestUnitSecurityIdentityResource_UpdateSetIdentityRoleFailurePersistsState(
 // literally named "123") is covered by
 // TestUnitSecurityIdentityResource_ResolveDeclaredSecurityRoleNumericNameFallbackNoWarning
 // above, which also asserts no warning is emitted for that fallback path.
+
+// Class A: when listing identities fails, the data source Read reports the error and stops; it must
+// not carry on and write a state built from the (nil) result.
+func TestUnitSecurityIdentityDataSourceRead_ListErrorStopsWithoutWritingState(t *testing.T) {
+	ctx := context.Background()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	schema, d := dataSourceSecurityIdentityType{}.GetSchema(ctx)
+	assert.False(t, d.HasError())
+	cfg := tfsdk.Config{Schema: schema, Raw: stateWith(t, schema, SecurityIdentity{
+		ID:           types.Int64{Null: true},
+		AccountName:  types.String{Value: "DOMAIN\\someone"},
+		IdentityType: types.String{Null: true},
+		Roles:        types.List{Null: true, ElemType: types.StringType},
+		Valid:        types.Bool{Null: true},
+	}).Raw}
+	ds := dataSourceSecurityIdentity{p: provider{configured: true, client: newTemplateTestClient(srv)}}
+	resp := &tfsdk.ReadDataSourceResponse{State: emptyState(ctx, schema)}
+	ds.Read(ctx, tfsdk.ReadDataSourceRequest{Config: cfg}, resp)
+
+	assert.True(t, resp.Diagnostics.HasError())
+	assert.Len(t, resp.Diagnostics.Errors(), 1, "%v", resp.Diagnostics)
+	assert.True(t, resp.State.Raw.IsNull(), "no state may be written after a failed list")
+}

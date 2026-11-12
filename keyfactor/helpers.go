@@ -23,10 +23,12 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	mathRand "math/rand"
 
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"reflect"
@@ -257,8 +259,16 @@ func mapAuthenticationProviderType(id string, authScheme string, displayName str
 	}
 }
 
-// Maps an OAuth Security Role from a SecuritySecurityRolesSecurityRoleResponse response model
-func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesSecurityRoleResponse) OAuthSecurityRole {
+// Maps an OAuth Security Role from a SecuritySecurityRolesSecurityRoleResponse response model.
+// The SDK models Id and Immutable as optional pointers. A role without an Id cannot be tracked in
+// state (a zero ID would silently alias a different role), so it is returned as an error, via the
+// same requireSecurityRoleID check the lookups use. A missing Immutable is kept null instead of
+// being flattened to false (a known value Command never sent).
+func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesSecurityRoleResponse) (OAuthSecurityRole, error) {
+	roleId, err := requireSecurityRoleID(data.GetName(), data.Id)
+	if err != nil {
+		return OAuthSecurityRole{}, err
+	}
 	var permissionValues []attr.Value
 	sort.Strings(data.Permissions)
 	for _, perm := range data.Permissions {
@@ -266,16 +276,21 @@ func mapOAuthSecurityRole(ctx context.Context, data *kfv2.SecuritySecurityRolesS
 		permissionValues = append(permissionValues, types.String{Value: perm})
 	}
 
+	immutable := types.Bool{Null: true}
+	if data.Immutable != nil {
+		immutable = types.Bool{Value: *data.Immutable}
+	}
+
 	var result = OAuthSecurityRole{
-		ID:              types.Int64{Value: int64(*data.Id)},
+		ID:              types.Int64{Value: int64(roleId)},
 		Name:            getStringType(data.Name.Get()),
 		Description:     getStringType(data.Description.Get()),
 		EmailAddress:    getStringType(data.EmailAddress.Get()),
-		Immutable:       types.Bool{Value: *data.Immutable},
+		Immutable:       immutable,
 		Permissions:     types.Set{ElemType: types.StringType, Elems: permissionValues},
 		PermissionSetId: getStringType(data.PermissionSetId),
 	}
-	return result
+	return result, nil
 }
 
 func mapOAuthSecurityClaim(
@@ -2177,12 +2192,13 @@ func searchCertificatesForOrphanRecovery(
 	sdkClient *keyfactor.APIClient,
 	commonName string,
 ) ([]api.GetCertificateResponse, error) {
-	if sdkClient == nil || sdkClient.V1 == nil {
-		return nil, fmt.Errorf("keyfactor SDK client is not configured")
+	// Input validation first (no client needed), then client configuration.
+	if err := validatePQLStringLiteral("common name", commonName); err != nil {
+		return nil, fmt.Errorf("orphan-recovery search cannot safely construct a PQL query for this common name: %s; use `terraform import` to adopt the certificate manually if it exists", err.Error())
 	}
 
-	if strings.Contains(commonName, `"`) {
-		return nil, fmt.Errorf("orphan-recovery search cannot safely construct a PQL query for a common name containing double-quote characters; use `terraform import` to adopt the certificate manually if it exists")
+	if sdkClient == nil || sdkClient.V1 == nil {
+		return nil, fmt.Errorf("keyfactor SDK client is not configured")
 	}
 
 	query := fmt.Sprintf(`IssuedCN -eq "%s"`, commonName)
@@ -2988,6 +3004,7 @@ func forceIfTrue(ctx context.Context, state attr.Value, config attr.Value, path 
 			"Value conversion error",
 			"Unable to convert value to bool",
 		)
+		return false, diags
 	}
 
 	var forceRenewal bool
@@ -3016,7 +3033,7 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	claimType string,
 	claimValue string,
 	authenticationScheme string,
-) (*kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, error) {
+) (claim *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, caseInsensitive bool, err error) {
 	tflog.Debug(
 		ctx,
 		fmt.Sprintf(
@@ -3027,9 +3044,13 @@ func getSecurityClaimByTypeAndValueAndScheme(
 		),
 	)
 
+	if err := validatePQLStringLiteral("claim value", claimValue); err != nil {
+		return nil, false, err
+	}
+
 	claimTypeEnum, err := kfv1.ParseCSSCMSCoreEnumsClaimType(claimType)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	tflog.Debug(ctx, fmt.Sprintf("Claim type %s has been parsed to %d", claimType, *claimTypeEnum))
@@ -3042,32 +3063,186 @@ func getSecurityClaimByTypeAndValueAndScheme(
 	response, _, err := api.GetSecurityClaimsExecute(req)
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if len(response) == 0 {
-		return nil, fmt.Errorf("No security claim found with claimType %s and claimValue %s", claimType, claimValue)
+		return nil, false, fmt.Errorf("%w: claimType %s and claimValue %s", errSecurityClaimNotFound, claimType, claimValue)
 	}
 
-	var result *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse
-
-	for _, claim := range response {
-		if claim.Provider != nil && claim.Provider.AuthenticationScheme.Get() != nil && *claim.Provider.AuthenticationScheme.Get() == authenticationScheme {
-			result = &claim
-			break
-		}
+	result, caseInsensitive, err := selectSecurityClaimByValueAndScheme(response, claimValue, authenticationScheme, claimType)
+	if err != nil {
+		return nil, false, err
 	}
 
 	if result == nil {
-		return nil, fmt.Errorf(
-			"No security claim found with claimType %s and claimValue %s and authenticationScheme %s",
+		return nil, false, fmt.Errorf(
+			"%w: claimType %s and claimValue %s and authenticationScheme %s",
+			errSecurityClaimNotFound,
 			claimType,
 			claimValue,
 			authenticationScheme,
 		)
 	}
 
-	return result, nil
+	return result, caseInsensitive, nil
+}
+
+// errSecurityClaimNotFound is returned (wrapped with %w) by getSecurityClaimByTypeAndValueAndScheme
+// when no claim matches the requested type, value and authentication scheme. Callers use
+// errors.Is to distinguish "not found" from a failed API call.
+var errSecurityClaimNotFound = errors.New("no security claim found")
+
+// securityClaimDataSourceReadError maps an error from getSecurityClaimByTypeAndValueAndScheme to
+// the diagnostic summary/detail shown by the OAuth security claim data source.
+func securityClaimDataSourceReadError(err error, claimType, claimValue, authenticationScheme string) (summary, detail string) {
+	if errors.Is(err, errSecurityClaimNotFound) {
+		return "OAuth security claim not found",
+			fmt.Sprintf("Unable to find OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. %s", claimValue, claimType, authenticationScheme, err.Error())
+	}
+	return "Error reading OAuth security claim",
+		fmt.Sprintf("Error while trying to read OAuth security claim '%s' with claimType '%s' for scheme '%s' from Keyfactor. Read failed. %s", claimValue, claimType, authenticationScheme, err.Error())
+}
+
+// validatePQLStringLiteral rejects values that cannot be safely embedded in a double-quoted
+// Command query (PQL) string literal. Command's escaping rules are unverified, so this is
+// deliberately conservative: it rejects double quotes and a trailing backslash (which could
+// escape the closing quote).
+func validatePQLStringLiteral(field, v string) error {
+	if strings.Contains(v, `"`) {
+		return fmt.Errorf("%s %q contains a double quote, which cannot be safely used in a Command query", field, v)
+	}
+	if strings.HasSuffix(v, `\`) {
+		return fmt.Errorf("%s %q ends with a backslash, which cannot be safely used in a Command query", field, v)
+	}
+	return nil
+}
+
+// pickPreferExactCase is the matching rule shared by the claim and role selectors. candidate reports
+// an item's key and whether the item is eligible at all (ineligible items are ignored). The first
+// eligible item whose key equals want exactly wins (caseInsensitive false). Otherwise, if exactly
+// one eligible item's key equals want case-insensitively, it is returned with caseInsensitive true so
+// the caller can warn that the configured value differs in case from the one that matched. It
+// returns (nil, false, n) when n > 1 eligible items match only case-insensitively (ambiguous; the
+// caller reports the error) and (nil, false, 0) when none match. ambiguous is non-zero only when no
+// item is returned.
+func pickPreferExactCase[T any](items []T, want string, candidate func(*T) (string, bool)) (item *T, caseInsensitive bool, ambiguous int) {
+	var folded []*T
+	for i := range items {
+		key, ok := candidate(&items[i])
+		if !ok || !strings.EqualFold(key, want) {
+			continue
+		}
+		if key == want {
+			return &items[i], false, 0
+		}
+		folded = append(folded, &items[i])
+	}
+	if len(folded) == 1 {
+		return folded[0], true, 0
+	}
+	return nil, false, len(folded)
+}
+
+// caseInsensitiveMatchWarning builds the warning diagnostic for a lookup that resolved only through
+// the case-insensitive fallback: field is the configured attribute (or import ID), kind the object
+// type ("claim" or "role"), configured the configured value and matched the value that was found.
+func caseInsensitiveMatchWarning(field, kind, configured, matched string) (summary, detail string) {
+	return fmt.Sprintf("OAuth security %s matched case-insensitively", kind),
+		fmt.Sprintf(
+			"%s %q matched existing %s %q case-insensitively. Use the exact casing %q to avoid this warning.",
+			field, configured, kind, matched, matched,
+		)
+}
+
+// securityClaimTypeMatches reports whether a claim returned by the claims query has the requested
+// claim type. The request encodes the type as its enum integer (ClaimType -eq <n>), and the
+// response's ClaimType is a string that may carry either the enum name ("OAuthSubject", compared
+// case-insensitively) or the enum number as text ("5"); both are accepted. A claim returned without
+// a ClaimType cannot be checked and is accepted, since the server-side query already filtered on the
+// type. wantType must be a name accepted by ParseCSSCMSCoreEnumsClaimType.
+func securityClaimTypeMatches(remote *string, wantType string) bool {
+	if remote == nil {
+		return true
+	}
+	want, err := kfv1.ParseCSSCMSCoreEnumsClaimType(wantType)
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(*remote), wantType) {
+		return true
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(*remote))
+	return err == nil && n == int(*want)
+}
+
+// selectSecurityClaimByValueAndScheme returns the claim whose claim type is claimType (see
+// securityClaimTypeMatches), whose provider authentication scheme equals authenticationScheme and
+// whose value matches claimValue. An exact-case value match is preferred; otherwise a single
+// case-insensitive match is accepted and caseInsensitive is true. Returns nil, false, nil if none
+// match. The server-side query is not trusted to have filtered by value or type.
+//
+// Verified against Command 25.5 (kfclab, 2026-11-09): the `ClaimValue -eq` query matches
+// case-insensitively, and Command refuses to create a second claim whose value differs only by
+// case for the same claim type and provider (HTTP 400 "Claim definitions must be unique by the
+// combination of claim type, claim value, and provider."). A case-insensitive match within one
+// scheme is therefore always the same claim, so the fallback cannot resolve to a different
+// principal. The multi-match error below is defensive only (unreachable against a Command that
+// enforces that uniqueness); if a Command version ever allows case-variant coexistence, drop the
+// case-insensitive fallback and require an exact-case match.
+func selectSecurityClaimByValueAndScheme(
+	claims []kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse,
+	claimValue string,
+	authenticationScheme string,
+	claimType string,
+) (claim *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse, caseInsensitive bool, err error) {
+	claim, caseInsensitive, folded := pickPreferExactCase(claims, claimValue, func(c *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse) (string, bool) {
+		v := c.ClaimValue.Get()
+		if v == nil {
+			return "", false
+		}
+		if !securityClaimTypeMatches(c.ClaimType.Get(), claimType) {
+			return "", false
+		}
+		if c.Provider == nil || c.Provider.AuthenticationScheme.Get() == nil || *c.Provider.AuthenticationScheme.Get() != authenticationScheme {
+			return "", false
+		}
+		return *v, true
+	})
+	if folded > 1 {
+		return nil, false, fmt.Errorf("claim value %q is ambiguous: %d claims match case-insensitively for scheme %q and none match exactly", claimValue, folded, authenticationScheme)
+	}
+	return claim, caseInsensitive, nil
+}
+
+// selectSecurityRoleByExactName returns the role whose name equals roleName. An exact-case
+// match is preferred; otherwise a single case-insensitive match is accepted and caseInsensitive is
+// true. Multiple case-insensitive matches with no exact one return an ambiguity error. Returns
+// nil, false, nil if none match.
+//
+// Verified against Command 25.5 (kfclab, 2026-11-09): the v2 `Name -eq` query matches
+// case-insensitively, and Command refuses to create a second role whose name differs only by
+// case (HTTP 400 "The 'Name' field must be unique per 'SecurityRole'."). A case-insensitive match
+// is therefore always the same role, so the fallback cannot resolve to a different role. The
+// multi-match error is defensive only; if a Command version ever allows case-variant coexistence,
+// drop the case-insensitive fallback and require an exact-case match. Because the server-side
+// filter is applied (a non-matching name returns an empty list) and names are unique, the
+// first-page-only query returns at most one role, so no pagination is needed.
+func selectSecurityRoleByExactName(
+	roles []kfv2.SecuritySecurityRolesSecurityRoleQueryResponse,
+	roleName string,
+) (role *kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, caseInsensitive bool, err error) {
+	role, caseInsensitive, folded := pickPreferExactCase(roles, roleName, func(r *kfv2.SecuritySecurityRolesSecurityRoleQueryResponse) (string, bool) {
+		n := r.Name.Get()
+		if n == nil {
+			return "", false
+		}
+		return *n, true
+	})
+	if folded > 1 {
+		return nil, false, fmt.Errorf("security role name %q is ambiguous: %d roles match case-insensitively and none match exactly", roleName, folded)
+	}
+	return role, caseInsensitive, nil
 }
 
 // The v2 APIClient exposes a method to query a role by name.  This function will query the security roles and filter security roles by name.
@@ -3075,8 +3250,12 @@ func getSecurityRoleByName(
 	ctx context.Context,
 	apiClient *keyfactor.APIClient,
 	roleName string,
-) (*kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, error) {
+) (role *kfv2.SecuritySecurityRolesSecurityRoleQueryResponse, caseInsensitive bool, err error) {
 	tflog.Debug(ctx, fmt.Sprintf("Getting security role from remote source. Role Name: %s", roleName))
+
+	if err := validatePQLStringLiteral("security role name", roleName); err != nil {
+		return nil, false, err
+	}
 
 	api := apiClient.V2.SecurityRolesApi
 	req := api.
@@ -3086,16 +3265,20 @@ func getSecurityRoleByName(
 	response, _, err := req.Execute()
 
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	if len(response) == 0 {
-		return nil, fmt.Errorf("No security role found with name %s", roleName)
+	// Do not trust the query to have filtered exactly: prefer an exact-case name match, otherwise accept
+	// a single case-insensitive match. An empty response and a response with no matching name both
+	// yield a nil role here, so one not-found check covers both.
+	role, caseInsensitive, err = selectSecurityRoleByExactName(response, roleName)
+	if err != nil {
+		return nil, false, err
 	}
-
-	// Command should not allow multiple security roles with the same name. Not going to code logic around multiple results.
-
-	return &response[0], nil
+	if role == nil {
+		return nil, false, fmt.Errorf("No security role found with name %s", roleName)
+	}
+	return role, caseInsensitive, nil
 }
 
 // Queries security permissions by name and returns the first matching permission set.
@@ -3144,6 +3327,70 @@ func getSecurityPermissionSetByName(
 // Returns a pointer to the input object
 func ptr[T any](v T) *T {
 	return &v
+}
+
+// mapOAuthSecurityClaimQueryResult maps a claim returned by the claims query to the data source's
+// state. Every field of the SDK response is an optional pointer or nullable, so each is read nil-safely:
+// description and id become null when absent; absent provider sub-fields become empty strings, matching
+// mapOAuthSecurityClaim. The three Required attributes (claim_type, claim_value,
+// provider_authentication_scheme) always keep the configured values: Terraform rejects a data source
+// result that changes a configured attribute ("Provider produced invalid object"), and the lookup
+// can legitimately return different text for them (claim_value is matched case-insensitively, the
+// remote claim_type may be spelled by name or number, and the scheme is compared against the
+// remote's own spelling). The nested provider object still carries the remote provider details.
+func mapOAuthSecurityClaimQueryResult(
+	remote *kfv1.SecurityRoleClaimDefinitionsRoleClaimDefinitionQueryResponse,
+	configured OAuthSecurityClaim,
+) OAuthSecurityClaim {
+	id := types.Int64{Null: true}
+	if remote.Id != nil {
+		id = types.Int64{Value: int64(*remote.Id)}
+	}
+
+	providerId, providerScheme, providerDisplayName := "", "", ""
+	if remote.Provider != nil {
+		if remote.Provider.Id != nil {
+			providerId = *remote.Provider.Id
+		}
+		if v := remote.Provider.AuthenticationScheme.Get(); v != nil {
+			providerScheme = *v
+		}
+		if v := remote.Provider.DisplayName.Get(); v != nil {
+			providerDisplayName = *v
+		}
+	}
+
+	return OAuthSecurityClaim{
+		ID:                           id,
+		Description:                  getStringType(remote.Description.Get()),
+		ClaimType:                    configured.ClaimType,
+		ClaimValue:                   configured.ClaimValue,
+		ProviderAuthenticationScheme: configured.ProviderAuthenticationScheme,
+		Provider:                     mapAuthenticationProviderType(providerId, providerScheme, providerDisplayName),
+	}
+}
+
+// requireSecurityRoleID returns the role ID from a security role query result, or an error if Command
+// returned the role without one (the SDK models Id as an optional pointer; dereferencing nil would
+// panic the provider).
+func requireSecurityRoleID(roleName string, id *int32) (int32, error) {
+	if id == nil {
+		return 0, fmt.Errorf("Command returned the security role %q without an ID, so it cannot be read by ID", roleName)
+	}
+	return *id, nil
+}
+
+// readErrorResponseBody returns the body of an SDK error response for inclusion in a diagnostic, and
+// closes it. It is safe to call with a nil response or a nil body: the SDK returns a nil
+// *http.Response when the request fails before any response is received (DNS, TLS, connection
+// refused), and dereferencing it would panic the provider.
+func readErrorResponseBody(resp *http.Response) string {
+	if resp == nil || resp.Body == nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	return string(body)
 }
 
 // Converts a pointer to a string to a types.String object.

@@ -73,7 +73,7 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 			"properties": {
 				Type:        types.MapType{ElemType: types.StringType},
 				Optional:    true,
-				Description: "Certificate properties specific to certificate store type configured as key-value pairs. NOTE: Special properties 'ServerUsername' and 'ServerPassword' are required for some store types and should not be declared in this attribute and have their own dedicated values. See store type documentation for more information.",
+				Description: "Certificate properties specific to certificate store type configured as key-value pairs. NOTE: Special properties `ServerUsername` and `ServerPassword` are required for some store types and should not be declared in this attribute and have their own dedicated values. See store type documentation for more information.",
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"agent_identifier": {
@@ -125,24 +125,24 @@ func (r resourceCertificateStoreType) GetSchema(_ context.Context) (tfsdk.Schema
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "The password to access the contents of the certificate store. In Keyfactor Command this is the 'StorePassword' field. field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
+				Description: "The password to access the contents of the certificate store. In Keyfactor Command this is the `StorePassword` field found in the store type `Properties`. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
 				//PlanModifiers: []tfsdk.AttributePlanModifier{tfsdk.RequiresReplace()},
 			},
 			"server_username": {
 				Type:        types.StringType,
 				Optional:    true,
-				Description: "The username to access the host of the certificate store. In Keyfactor Command this is the 'ServerUsername' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
+				Description: "The username to access the host of the certificate store. In Keyfactor Command this is the `ServerUsername` field found in the store type `Properties`. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
 			},
 			"server_password": {
 				Type:        types.StringType,
 				Optional:    true,
 				Sensitive:   true,
-				Description: "The password to access the host of the certificate store. In Keyfactor Command this is the 'ServerUsername' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
+				Description: "The password to access the host of the certificate store. In Keyfactor Command this is the `ServerPassword` field found in the store type `Properties`. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
 			},
 			"server_use_ssl": {
 				Type:        types.BoolType,
 				Optional:    true,
-				Description: "Indicates whether the certificate store host requires SSL. In Keyfactor Command this is the 'ServerUseSsl' field found in the store type 'Properties'. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
+				Description: "Indicates whether the certificate store host requires SSL. In Keyfactor Command this is the `ServerUseSsl` field found in the store type `Properties`. Whether this is required and what format will vary based on store type definitions, please review the store type documentation for more information.",
 			},
 		},
 		Description: "Used to manage Keyfactor Command certificate stores using the `/CertificateStores` API, which " +

@@ -115,3 +115,36 @@ lifecycle: lab-apply lab-update lab-import-all lab-reconcile lab-drift-check lab
 
 .PHONY: build init validate plan apply import-all reconcile drift-check destroy clean all demo-no-destroy \
         lab-plan lab-apply lab-update lab-import-all lab-reconcile lab-drift-check lab-destroy lifecycle
+
+# ---------------------------------------------------------------------------
+# Opt-in PR #228 lab check (NOT part of `lifecycle`; self-cleaning)
+# ---------------------------------------------------------------------------
+## lab-import-name-check: PR #228 check -- keyfactor_oauth_security_role imports by NAME (not ID), plans clean
+##   afterwards, and a differently-cased name still imports (Command role names are case-insensitive) with a
+##   WARNING naming both the supplied and the actual value. Applies, runs both imports, destroys.
+lab-import-name-check:
+	@set -e; LOG=$$(mktemp); trap 'rm -f "$$LOG"' EXIT; \
+	 echo "==> [1/7] apply"; \
+	 $(LAB_ENV) $(MAKE) --no-print-directory apply SUFFIX=$(SUFFIX) >/dev/null; \
+	 NAME=$$($(LAB_ENV) $(UNSET_BASIC) $(TF) output -raw role_name); UPPER=$$(echo "$$NAME" | tr 'a-z' 'A-Z'); \
+	 echo "    role name: $$NAME  (case variant: $$UPPER)"; \
+	 RC=0; \
+	 echo "==> [2/7] state rm role; import by exact NAME"; \
+	 $(LAB_ENV) $(UNSET_BASIC) $(TF) state rm keyfactor_oauth_security_role.demo | tail -1; \
+	 $(LAB_ENV) $(UNSET_BASIC) $(TF) import -no-color -var="suffix=$(SUFFIX)" keyfactor_oauth_security_role.demo "$$NAME" > "$$LOG" 2>&1 || RC=$$?; \
+	 echo "    import exit $$RC"; grep -nE "Import successful|Warning|Error|imported" "$$LOG" | cut -c1-250 || true; \
+	 echo "==> [3/7] plan after name import (expect No changes)"; \
+	 $(LAB_ENV) $(UNSET_BASIC) $(TF) plan -no-color -detailed-exitcode -var="suffix=$(SUFFIX)" > "$$LOG" 2>&1 || true; \
+	 grep -nE "No changes|Plan:|will be|must be|~ |Error" "$$LOG" | cut -c1-250 || true; \
+	 echo "==> [4/7] state rm role; import by CASE-VARIANT name $$UPPER"; \
+	 $(LAB_ENV) $(UNSET_BASIC) $(TF) state rm keyfactor_oauth_security_role.demo | tail -1; \
+	 $(LAB_ENV) $(UNSET_BASIC) $(TF) import -no-color -var="suffix=$(SUFFIX)" keyfactor_oauth_security_role.demo "$$UPPER" > "$$LOG" 2>&1 || RC=$$?; \
+	 echo "    import exit $$RC"; grep -nE -A6 "Warning|Error" "$$LOG" | cut -c1-300 || true; \
+	 echo "==> [5/7] plan after case-variant import (expect No changes)"; \
+	 $(LAB_ENV) $(UNSET_BASIC) $(TF) plan -no-color -detailed-exitcode -var="suffix=$(SUFFIX)" > "$$LOG" 2>&1 || true; \
+	 grep -nE "No changes|Plan:|will be|must be|~ |Error" "$$LOG" | cut -c1-250 || true; \
+	 echo "==> [6/7] destroy"; \
+	 $(LAB_ENV) $(MAKE) --no-print-directory destroy SUFFIX=$(SUFFIX) 2>&1 | grep -E "Destroy complete|Error"; \
+	 echo "==> [7/7] done (import exits accumulated: $$RC)"; exit $$RC
+
+.PHONY: lab-import-name-check

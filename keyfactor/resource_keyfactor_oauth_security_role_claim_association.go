@@ -3,7 +3,6 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 
@@ -37,7 +36,7 @@ func (r resourceOAuthSecurityRoleClaimAssociationType) GetSchema(_ context.Conte
 				Description:   "Internal ID of the OAuth security claim. Changing this value forces a new resource.",
 			},
 		},
-		Description: "Used to associate an existing OAuth security claim with an existing OAuth security claim resource using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+",
+		Description: "Used to associate an existing OAuth security claim with an existing OAuth security role using the V1 `/Security/Claims/` and V2 `/Security/Roles` APIs. This resource is compatible with Keyfactor Command versions 11+",
 	}, nil
 }
 
@@ -206,15 +205,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Delete(
 			return
 		}
 
-		var body []byte
-		if httpResp != nil {
-			defer httpResp.Body.Close()
-			body, _ = io.ReadAll(httpResp.Body)
-		}
-
 		response.Diagnostics.AddError(
 			"Error updating security role claim association.",
-			fmt.Sprintf("Could not update OAuth security role assocation on role ID %d to delete claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), string(body)),
+			fmt.Sprintf("Could not update OAuth security role assocation on role ID %d to delete claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), readErrorResponseBody(httpResp)),
 		)
 		return
 	}
@@ -329,15 +322,9 @@ func (r resourceOAuthSecurityRoleClaimAssociation) Create(
 
 	_, httpResp, err = updateReq.Execute()
 	if err != nil {
-		var body []byte
-		if httpResp != nil {
-			defer httpResp.Body.Close()
-			body, _ = io.ReadAll(httpResp.Body)
-		}
-
 		response.Diagnostics.AddError(
 			"Error creating security role claim association.",
-			fmt.Sprintf("Could not create OAuth security role assocation on role ID %d to add claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), string(body)),
+			fmt.Sprintf("Could not create OAuth security role assocation on role ID %d to add claim ID %d, unexpected error: %s. Details %s ", roleId, claimId, err.Error(), readErrorResponseBody(httpResp)),
 		)
 		return
 	}

@@ -2,9 +2,9 @@ package keyfactor
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -18,7 +18,7 @@ func (r dataSourceOAuthSecurityClaimType) GetSchema(_ context.Context) (tfsdk.Sc
 			"id": {
 				Type:        types.Int64Type,
 				Computed:    true,
-				Description: "Internal ID of the role.",
+				Description: "Internal ID of the claim.",
 			},
 			"description": {
 				Type:        types.StringType,
@@ -76,29 +76,21 @@ func (r dataSourceOauthSecurityClaim) Read(ctx context.Context, request tfsdk.Re
 	authenticationScheme := data.ProviderAuthenticationScheme.Value
 	tflog.SetField(ctx, "claim_type", claimType)
 
-	remoteState, err := getSecurityClaimByTypeAndValueAndScheme(ctx, r.p.sdkClient, claimType, claimValue, authenticationScheme)
-	if remoteState == nil {
-		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unable to find OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme))
-		return
-	}
-
+	remoteState, caseInsensitive, err := getSecurityClaimByTypeAndValueAndScheme(ctx, r.p.sdkClient, claimType, claimValue, authenticationScheme)
 	if err != nil {
-		response.Diagnostics.AddError("Unknown OAuth security claim error.", fmt.Sprintf("Unknown error while trying to import OAuth security claim '%s' with claimType '%s' for scheme '%s' on Keyfactor. Read failed. ", claimValue, claimType, authenticationScheme)+err.Error())
+		summary, detail := securityClaimDataSourceReadError(err, claimType, claimValue, authenticationScheme)
+		response.Diagnostics.AddError(summary, detail)
 		return
 	}
 
 	tflog.Debug(ctx, "Data source was able to pull OAuth security claim from remote source")
 
-	provider := *remoteState.Provider
-
-	var result = OAuthSecurityClaim{
-		ID:                           types.Int64{Value: int64(*remoteState.Id)},
-		Description:                  types.String{Value: *remoteState.Description.Get()},
-		ClaimType:                    types.String{Value: *remoteState.ClaimType.Get()},
-		ClaimValue:                   types.String{Value: *remoteState.ClaimValue.Get()},
-		ProviderAuthenticationScheme: types.String{Value: *provider.AuthenticationScheme.Get()},
-		Provider:                     mapAuthenticationProviderType(*provider.Id, *provider.AuthenticationScheme.Get(), *provider.DisplayName.Get()),
+	if caseInsensitive {
+		summary, detail := caseInsensitiveMatchWarning("claim_value", "claim", claimValue, remoteState.GetClaimValue())
+		response.Diagnostics.AddAttributeWarning(path.Root("claim_value"), summary, detail)
 	}
+
+	var result = mapOAuthSecurityClaimQueryResult(remoteState, *data)
 
 	tflog.Debug(ctx, "Saving OAuth security claim to state")
 

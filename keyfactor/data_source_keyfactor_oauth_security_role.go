@@ -3,9 +3,9 @@ package keyfactor
 import (
 	"context"
 	"fmt"
-	"io"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -75,7 +75,7 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 	}
 
 	roleName := data.Name.Value
-	role, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
+	role, caseInsensitive, err := getSecurityRoleByName(ctx, r.p.sdkClient, roleName)
 	if err != nil {
 		response.Diagnostics.AddError(
 			"Error reading OAuth security role",
@@ -84,27 +84,44 @@ func (r dataSourceOauthSecurityRole) Read(ctx context.Context, request tfsdk.Rea
 		return
 	}
 
-	roleId := int32(*role.Id)
+	if caseInsensitive {
+		summary, detail := caseInsensitiveMatchWarning("name", "role", roleName, role.GetName())
+		response.Diagnostics.AddAttributeWarning(path.Root("name"), summary, detail)
+	}
+
+	roleId, err := requireSecurityRoleID(roleName, role.Id)
+	if err != nil {
+		response.Diagnostics.AddError("Error reading OAuth security role", err.Error())
+		return
+	}
 
 	tflog.Debug(ctx, "Data source was able to identify OAuth security role from remote source")
 	tflog.Debug(ctx, fmt.Sprintf("Querying security role by ID %d", roleId))
 
 	api := r.p.sdkClient.V2.SecurityRolesApi
-	remoteState, httpReq, err := api.NewGetSecurityRolesByIdRequest(ctx, int32(*role.Id)).Execute()
+	remoteState, httpReq, err := api.NewGetSecurityRolesByIdRequest(ctx, roleId).Execute()
 	if err != nil {
-		defer httpReq.Body.Close()
-		body, _ := io.ReadAll(httpReq.Body)
-
 		response.Diagnostics.AddError(
 			"Error reading security role",
-			fmt.Sprintf("Could not read OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), string(body)),
+			fmt.Sprintf("Could not read OAuth security role %s , unexpected error: %s. Details %s ", roleName, err.Error(), readErrorResponseBody(httpReq)),
 		)
 		return
 	}
 
 	tflog.Debug(ctx, "Data source was able to resource OAuth security role from remote source using ID")
 
-	var result = mapOAuthSecurityRole(ctx, remoteState)
+	result, mapErr := mapOAuthSecurityRole(ctx, remoteState)
+	if mapErr != nil {
+		response.Diagnostics.AddError("Error reading security role", mapErr.Error())
+		return
+	}
+	// name is Required, so it is always known here. The lookup is case-insensitive (Command's
+	// `Name -eq` filter ignores case, and Command rejects role names that differ only by case, so a
+	// case-insensitive match is always the same role), which means the remote name can differ in
+	// case from the configured one. Terraform rejects a data source result whose configured
+	// attribute differs from the configuration ("Provider produced invalid object"), so the
+	// configured value is kept.
+	result.Name = data.Name
 
 	tflog.Debug(ctx, "Saving OAuth security role data source information into state...")
 

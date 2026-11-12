@@ -7,6 +7,7 @@ import (
 	"github.com/Keyfactor/keyfactor-go-client/v3/api"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -28,7 +29,14 @@ func (r resourceCertificateTemplateRoleBindingType) GetSchema(_ context.Context)
 			"role_name": {
 				Type:        types.StringType,
 				Required:    true,
-				Description: "An string associated with a Keyfactor security role being attached. This is just the name field found on Keyfactor.",
+				Description: "An string associated with a Keyfactor security role being attached. This is just the name field found on Keyfactor. Changing this to a different role forces the binding to be replaced; a change that only differs in letter case (Command matches role names case-insensitively) is applied in place.",
+				PlanModifiers: []tfsdk.AttributePlanModifier{
+					tfsdk.RequiresReplaceIf(
+						roleNameRequiresReplace,
+						"Triggers resource replacement when 'role_name' changes to a different role (a case-only change does not).",
+						"Triggers resource replacement when `role_name` changes to a different role (a case-only change does not).",
+					),
+				},
 			},
 			"template_short_names": {
 				Type:        types.ListType{ElemType: types.StringType},
@@ -36,10 +44,8 @@ func (r resourceCertificateTemplateRoleBindingType) GetSchema(_ context.Context)
 				Description: "A list of certificate template short name in Keyfactor that the role will be attached to.",
 			},
 		},
-		Description: "Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the `/Templates` PUT API.",
-		MarkdownDescription: `
-Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the "/Templates" PUT API. On Keyfactor Command v25.0+, enrollment patterns provide an additional enrollment-configuration layer alongside certificate templates.
-`,
+		Description:         "Grants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the `/Templates` PUT API.",
+		MarkdownDescription: "\nGrants a Keyfactor security role enrollment permissions on one or more certificate templates by managing the template's allowed requesters list via the `/Templates` PUT API. On Keyfactor Command v25.0+, enrollment patterns provide an additional enrollment-configuration layer alongside certificate templates.\n",
 	}, nil
 }
 
@@ -88,12 +94,13 @@ func (r resourceCertificateTemplateRoleBinding) Create(
 	var validTemplateIds []int
 	var apiDiags []diag.Diagnostic
 
-	diags = plan.TemplateNames.ElementsAs(ctx, &templateNames, true)
+	response.Diagnostics.Append(plan.TemplateNames.ElementsAs(ctx, &templateNames, true)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 
-	tNameStr := strings.Join(templateNames, "-")
-
-	hid := fmt.Sprintf("%s-%s", roleName, tNameStr)
-	ctx = tflog.SetField(ctx, "role_binding_id", hid)
+	bindingID := templateRoleBindingID(roleName, templateNames)
+	ctx = tflog.SetField(ctx, "role_binding_id", bindingID.Value)
 
 	// List all templates
 	kfTemplates, err := kfClient.GetTemplates()
@@ -104,15 +111,15 @@ func (r resourceCertificateTemplateRoleBinding) Create(
 		)
 		return
 	}
-	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)
+	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames, templateNameSidePlan)
 	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", validTemplateIds))
 	response.Diagnostics.Append(apiDiags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	// Create role binding
-	diags = setRoleAllowedRequester(ctx, kfClient, roleName, validTemplateIds, []int{}, "create")
+	// Create role binding: attach the role to every template in the plan.
+	diags = setRoleAllowedRequester(ctx, kfClient, roleName, uniqueInts(validTemplateIds), nil)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -120,7 +127,7 @@ func (r resourceCertificateTemplateRoleBinding) Create(
 
 	// Set state
 	result := CertificateTemplateRoleBinding{
-		ID:            types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
+		ID:            bindingID,
 		RoleName:      plan.RoleName,
 		TemplateNames: plan.TemplateNames,
 	}
@@ -152,22 +159,45 @@ func (r resourceCertificateTemplateRoleBinding) Read(
 	tflog.Info(ctx, "Create called on certificate template role binding.")
 
 	var templateNames []string
-	var validTemplateIds []int
-	var apiDiags []diag.Diagnostic
-	diags = state.TemplateNames.ElementsAs(ctx, &templateNames, true)
-	kfTemplates, err := kfClient.GetTemplates()
-	if err != nil {
-		return
-	}
-	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)
-	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", validTemplateIds))
-	response.Diagnostics.Append(apiDiags...)
+	response.Diagnostics.Append(state.TemplateNames.ElementsAs(ctx, &templateNames, true)...)
 	if response.Diagnostics.HasError() {
 		return
 	}
+	kfTemplates, err := kfClient.GetTemplates()
+	if err != nil {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_TEMPLATE_READ,
+			"There was an error getting templates from Keyfactor Command: "+err.Error(),
+		)
+		return
+	}
 
-	hid := fmt.Sprintf("%v%v", roleName, templateNames)
-	ctx = tflog.SetField(ctx, "role_binding_id", hid)
+	// Keep the stored id when there is one: it was assigned by Create/ImportState/Update with
+	// templateRoleBindingID, and rewriting a computed id during refresh would only add noise. An
+	// empty id (for example a state written before the id existed) is recomputed with the same helper.
+	if state.ID.Null || state.ID.Unknown || state.ID.Value == "" {
+		state.ID = templateRoleBindingID(roleName, templateNames)
+	}
+	ctx = tflog.SetField(ctx, "role_binding_id", state.ID.Value)
+
+	// A template that no longer exists in Command can no longer carry the binding, so drop it from
+	// state: the next plan then shows the drift (the configuration still lists the template) instead
+	// of silently reporting no changes.
+	if !state.TemplateNames.Null && !state.TemplateNames.Unknown {
+		keptNames, droppedNames := partitionTemplateNamesByExistence(kfTemplates, templateNames)
+		if len(droppedNames) > 0 {
+			response.Diagnostics.AddWarning(
+				"Template(s) no longer exist in Keyfactor Command; removed from state.",
+				"The following template(s) in the role binding for role "+roleName+" were not found in Keyfactor Command (they may have been deleted) and have been removed from state: "+
+					strings.Join(droppedNames, ", ")+". The next plan will show the difference from the configuration.",
+			)
+			elems := make([]attr.Value, 0, len(keptNames))
+			for _, n := range keptNames {
+				elems = append(elems, types.String{Value: n})
+			}
+			state.TemplateNames = types.List{ElemType: types.StringType, Elems: elems}
+		}
+	}
 
 	// Set state
 	diags = response.State.Set(ctx, &state)
@@ -209,26 +239,38 @@ func (r resourceCertificateTemplateRoleBinding) Update(
 	var planTemplateNames []string
 	var stateValidTemplateIds []int
 	var apiDiags []diag.Diagnostic
-	diags = state.TemplateNames.ElementsAs(ctx, &stateTemplateNames, true)
-	diags = plan.TemplateNames.ElementsAs(ctx, &planTemplateNames, true)
-	kfTemplates, err := kfClient.GetTemplates()
-	if err != nil {
+	response.Diagnostics.Append(state.TemplateNames.ElementsAs(ctx, &stateTemplateNames, true)...)
+	response.Diagnostics.Append(plan.TemplateNames.ElementsAs(ctx, &planTemplateNames, true)...)
+	if response.Diagnostics.HasError() {
 		return
 	}
-	stateValidTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, stateTemplateNames)
-	planValidTemplateIds, apiDiags := verifyTemplateNames(ctx, kfTemplates, planTemplateNames)
-	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", stateValidTemplateIds))
+	kfTemplates, err := kfClient.GetTemplates()
+	if err != nil {
+		response.Diagnostics.AddError(
+			ERR_SUMMARY_TEMPLATE_READ,
+			"There was an error getting templates from Keyfactor Command: "+err.Error(),
+		)
+		return
+	}
+	stateValidTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, stateTemplateNames, templateNameSideState)
 	response.Diagnostics.Append(apiDiags...)
+	planValidTemplateIds, planApiDiags := verifyTemplateNames(ctx, kfTemplates, planTemplateNames, templateNameSidePlan)
+	response.Diagnostics.Append(planApiDiags...)
+	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", stateValidTemplateIds))
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	// Set binding ID
-	hid := fmt.Sprintf("%v%v", roleName, stateTemplateNames)
-	ctx = tflog.SetField(ctx, "role_binding_id", hid)
+	// The binding id is derived from the role and the template list, so it is recomputed from the
+	// planned values (the same helper Create and ImportState use). A stale id kept from state would
+	// no longer match what Create/ImportState would produce for this configuration.
+	bindingID := templateRoleBindingID(plan.RoleName.Value, planTemplateNames)
+	ctx = tflog.SetField(ctx, "role_binding_id", bindingID.Value)
 
-	// Set role allowed requester
-	diags = setRoleAllowedRequester(ctx, kfClient, roleName, stateValidTemplateIds, planValidTemplateIds, "update")
+	// Attach the role only to templates that are new in the plan and detach it only from templates
+	// that left the plan; templates present on both sides need no call at all.
+	additions, removals := diffTemplateIDSets(stateValidTemplateIds, planValidTemplateIds)
+	diags = setRoleAllowedRequester(ctx, kfClient, roleName, additions, removals)
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -236,7 +278,7 @@ func (r resourceCertificateTemplateRoleBinding) Update(
 
 	// Set state
 	result := CertificateTemplateRoleBinding{
-		ID:            state.ID,
+		ID:            bindingID,
 		RoleName:      plan.RoleName,
 		TemplateNames: plan.TemplateNames,
 	}
@@ -254,6 +296,10 @@ func (r resourceCertificateTemplateRoleBinding) Delete(
 ) {
 	var state CertificateTemplateRoleBinding
 	diags := request.State.Get(ctx, &state)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 
 	kfClient := r.p.client
 	roleName := state.RoleName.Value
@@ -264,9 +310,12 @@ func (r resourceCertificateTemplateRoleBinding) Delete(
 	var apiDiags []diag.Diagnostic
 
 	diags = state.TemplateNames.ElementsAs(ctx, &templateNames, true)
+	response.Diagnostics.Append(diags...)
+	if response.Diagnostics.HasError() {
+		return
+	}
 
-	hid := fmt.Sprintf("%v%v", roleName, templateNames)
-	ctx = tflog.SetField(ctx, "role_binding_id", hid)
+	ctx = tflog.SetField(ctx, "role_binding_id", templateRoleBindingID(roleName, templateNames).Value)
 
 	// List all templates
 	kfTemplates, err := kfClient.GetTemplates()
@@ -277,15 +326,15 @@ func (r resourceCertificateTemplateRoleBinding) Delete(
 		)
 		return
 	}
-	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames)
+	validTemplateIds, apiDiags = verifyTemplateNames(ctx, kfTemplates, templateNames, templateNameSideState)
 	tflog.Debug(ctx, fmt.Sprintf("Valid template IDs: %v", validTemplateIds))
 	response.Diagnostics.Append(apiDiags...)
 	if response.Diagnostics.HasError() {
 		return
 	}
 
-	// Create role binding
-	diags = setRoleAllowedRequester(ctx, kfClient, roleName, validTemplateIds, []int{}, "destroy")
+	// Destroy only ever detaches the role; it never attaches it to anything.
+	diags = setRoleAllowedRequester(ctx, kfClient, roleName, nil, uniqueInts(validTemplateIds))
 	response.Diagnostics.Append(diags...)
 	if response.Diagnostics.HasError() {
 		return
@@ -343,17 +392,13 @@ func (r resourceCertificateTemplateRoleBinding) ImportState(
 		}
 	}
 
-	// Recompute the stable ID hash (same algorithm as Create).
-	tNameStr := strings.Join(templateNames, "-")
-	hid := fmt.Sprintf("%s-%s", roleName, tNameStr)
-
 	elems := make([]attr.Value, 0, len(templateNames))
 	for _, n := range templateNames {
 		elems = append(elems, types.String{Value: n})
 	}
 
 	result := CertificateTemplateRoleBinding{
-		ID:            types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))},
+		ID:            templateRoleBindingID(roleName, templateNames),
 		RoleName:      types.String{Value: roleName},
 		TemplateNames: types.List{ElemType: types.StringType, Elems: elems},
 	}
@@ -362,7 +407,46 @@ func (r resourceCertificateTemplateRoleBinding) ImportState(
 	response.Diagnostics.Append(diags2...)
 }
 
-func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateResponse, templateNames []string) (
+// templateRoleBindingID is the single definition of the keyfactor_template_role_binding resource
+// id: the hex SHA-256 of "<role>-<template1>-<template2>...". Create, Update, Read (when the state
+// has no id) and ImportState all use it, so every code path agrees on the format.
+func templateRoleBindingID(roleName string, templateNames []string) types.String {
+	hid := fmt.Sprintf("%s-%s", roleName, strings.Join(templateNames, "-"))
+	return types.String{Value: fmt.Sprintf("%x", sha256.Sum256([]byte(hid)))}
+}
+
+// templateNameSide says where a list of template names passed to verifyTemplateNames came from.
+type templateNameSide int
+
+const (
+	// templateNameSidePlan: names the user configured. A name that matches no template is an error.
+	templateNameSidePlan templateNameSide = iota
+	// templateNameSideState: names recorded in prior state. A name that matches no template means
+	// the template was deleted in Command; there is nothing left to bind or un-bind for it, so it
+	// is skipped with a warning rather than blocking the operation.
+	templateNameSideState
+)
+
+// findTemplateByName returns the first template whose common name equals name, compared
+// case-insensitively (the way Command resolves template names), or nil when name is empty or
+// matches no template. It is the single matching rule shared by verifyTemplateNames and
+// partitionTemplateNamesByExistence.
+func findTemplateByName(templates []api.GetTemplateResponse, name string) *api.GetTemplateResponse {
+	if name == "" {
+		return nil
+	}
+	for i := range templates {
+		if strings.EqualFold(templates[i].CommonName, name) {
+			return &templates[i]
+		}
+	}
+	return nil
+}
+
+// verifyTemplateNames resolves template names to template IDs. An empty name is an error on
+// either side. A name that matches no template is an error for plan-side names and a warning
+// (the name is skipped) for state-side names.
+func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateResponse, templateNames []string, side templateNameSide) (
 	[]int,
 	[]diag.Diagnostic,
 ) {
@@ -371,22 +455,71 @@ func verifyTemplateNames(ctx context.Context, templates []api.GetTemplateRespons
 	for _, templateName := range templateNames {
 		if templateName == "" {
 			diags.AddError("Error empty template name.", "Template name provided")
+			continue
 		}
-		found := false
-		for _, template := range templates {
-			if strings.EqualFold(template.CommonName, templateName) {
-				//result.Elems = append(result.Elems, types.Int64{Value: int64(template.Id)})
-				result = append(result, template.Id)
-				found = true
-				break
+		if template := findTemplateByName(templates, templateName); template != nil {
+			result = append(result, template.Id)
+		} else {
+			if side == templateNameSideState {
+				diags.AddWarning(
+					"Template name not found; skipping.",
+					"Template name "+templateName+" from the existing binding was not found in Keyfactor Command (it may have been deleted); there is nothing to un-bind for it, so it is skipped.",
+				)
+			} else {
+				diags.AddError(
+					"Template not found in Keyfactor Command.",
+					"Template '"+templateName+"' listed in template_short_names does not exist in Keyfactor Command "+
+						"(it may have been deleted or renamed, or the name is misspelled). Remove it from "+
+						"template_short_names, or recreate the template, and apply again.",
+				)
 			}
-		}
-		if !found {
-			diags.AddError("Error template name not found.", "Template name "+templateName+" not found")
 		}
 
 	}
 	return result, diags
+}
+
+// roleNameRequiresReplace is the tfsdk.RequiresReplaceIfFunc for role_name. Command matches
+// security role names case-insensitively (and refuses two roles whose names differ only by case),
+// so a change that differs only in letter case still names the same role and is applied in place.
+// Any other change, including an unknown value, replaces the binding.
+func roleNameRequiresReplace(_ context.Context, state, config attr.Value, _ path.Path) (bool, diag.Diagnostics) {
+	stateStr, sOk := state.(types.String)
+	configStr, cOk := config.(types.String)
+	if !sOk || !cOk {
+		return true, nil
+	}
+	return roleNameChangeRequiresReplace(stateStr, configStr), nil
+}
+
+// roleNamesEqual reports whether two security role names refer to the same role. Command matches
+// role names case-insensitively, so an allowed-requester entry written with different casing than
+// the configured role_name is still the same role.
+func roleNamesEqual(a, b string) bool {
+	return strings.EqualFold(a, b)
+}
+
+// roleNameChangeRequiresReplace reports whether moving role_name from state to config names a
+// different role. Values are compared case-insensitively.
+func roleNameChangeRequiresReplace(state, config types.String) bool {
+	if state.Null || state.Unknown || config.Null || config.Unknown {
+		return !(state.Null == config.Null && state.Unknown == config.Unknown)
+	}
+	return !strings.EqualFold(state.Value, config.Value)
+}
+
+// partitionTemplateNamesByExistence splits templateNames into the names that match an existing
+// template (case-insensitively, the way Command resolves template names) and the names that do not.
+// Order is preserved and the kept names keep their original (configured) casing.
+func partitionTemplateNamesByExistence(templates []api.GetTemplateResponse, templateNames []string) (kept []string, dropped []string) {
+	for _, name := range templateNames {
+		if findTemplateByName(templates, name) != nil {
+			kept = append(kept, name)
+		} else {
+			dropped = append(dropped, name)
+		}
+	}
+	return kept, dropped
 }
 
 // buildTemplateRoleBindingUpdateArg constructs an api.UpdateTemplateArg that
@@ -497,133 +630,78 @@ func buildTemplateRoleBindingUpdateArg(template *api.GetTemplateResponse, allowe
 	}
 }
 
-/*
- * The resourceTemplateAttachRoleUpdate function is responsible for updating a Keyfactor security role.
- */
+// diffTemplateIDSets returns the template IDs that are in plan but not in state (additions) and the
+// IDs that are in state but not in plan (removals). Duplicates are collapsed and order is preserved.
+func diffTemplateIDSets(state, plan []int) (additions, removals []int) {
+	for _, id := range uniqueInts(plan) {
+		if !Contains(state, id) {
+			additions = append(additions, id)
+		}
+	}
+	for _, id := range uniqueInts(state) {
+		if !Contains(plan, id) {
+			removals = append(removals, id)
+		}
+	}
+	return additions, removals
+}
+
+// uniqueInts returns ids with duplicates removed, preserving the order of first occurrence.
+func uniqueInts(ids []int) []int {
+	seen := make(map[int]struct{}, len(ids))
+	var out []int
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+// setRoleAllowedRequester attaches roleName to the templates in additions and detaches it from the
+// templates in removals. Callers pass exactly what has to change: Create passes the planned set as
+// additions, Update passes the plan/state difference, and Destroy passes the bound set as removals
+// only. A template is never touched unless it is listed here, and each attach/detach sends a PUT only
+// when the template's allowed-requester list or enforcement actually has to change (see
+// addAllowedRequesterToTemplate and removeRoleFromTemplate). Every template is attempted; all errors
+// are returned together.
 func setRoleAllowedRequester(
 	ctx context.Context,
 	kfClient *api.Client,
 	roleName string,
-	stateTemplateSet []int,
-	planTemplateSet []int,
-	caller string,
+	additions []int,
+	removals []int,
 ) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	ctx = tflog.SetField(ctx, "role_name", roleName)
-	tflog.Debug(ctx, "Setting Keyfactor role with name to be allowed requester for the following templates:")
-
-	templateList := stateTemplateSet
 	tflog.Debug(
-		ctx, "Template IDs: ", map[string]interface{}{
-			"template_ids": templateList,
+		ctx, "Setting Keyfactor role allowed requester bindings", map[string]interface{}{
+			"additions": additions,
+			"removals":  removals,
 		},
 	)
 
-	// First thing to do is blindly attach the passed role as an allowed requester to each of the template IDs passed in
-	// the Set.
-	if len(templateList) > 0 {
-		for _, template := range templateList {
-			tempCtx := tflog.SetField(ctx, "template_id", template)
-			tempCtx = tflog.SetField(tempCtx, "role_name", roleName)
-			tflog.Info(tempCtx, "Attaching role to template ID ")
-			err := addAllowedRequesterToTemplate(ctx, kfClient, roleName, strconv.Itoa(template))
-			if err != nil {
-				tflog.Error(tempCtx, "Error attaching role to template")
-				diags = append(diags, err...)
-			}
-		}
-	}
-
-	if diags != nil {
-		return diags
-	}
-
-	// Then, build a list of all templates that the role is attached to as an allowed requester
-	tflog.Debug(ctx, "Building list of templates that the role is attached to as an allowed requester")
-	err, roleAttachments := findTemplateRoleAttachments(ctx, kfClient, roleName)
-	if err != nil {
-		return err
-	}
-
-	// Finally, find the difference between stateTemplateSet and roleAttachments. Recall that Terraform acts as the primary
-	// manager of the role roleName, and Terraform is calling this function to explicitly set the allowed requesters.
-
-	tflog.Debug(ctx, "Finding difference between stateTemplateSet and roleAttachments")
-	list := make(map[string]struct{}, len(templateList))
-	for _, x := range templateList {
-		list[strconv.Itoa(x)] = struct{}{}
-	}
-	var diff []int
-	for _, x := range roleAttachments {
-		if _, found := list[strconv.Itoa(x.(int))]; !found {
-			tflog.Debug(
-				ctx, "Found difference between stateTemplateSet and roleAttachments", map[string]interface{}{
-					"template_id": x,
-				},
-			)
-			diff = append(diff, x.(int))
-		}
-	}
-	additions := []int{}
-	removals := []int{}
-
-	for _, templateId := range planTemplateSet {
-		if !Contains(stateTemplateSet, templateId) {
-			additions = append(additions, templateId)
-		}
-	}
-
-	for _, templateId := range stateTemplateSet {
-		if !Contains(planTemplateSet, templateId) {
-			removals = append(removals, templateId)
-		}
-	}
-
-	if caller == "destroy" {
-		removals = append(removals, additions...)
-		additions = []int{}
-	} else if caller == "create" {
-		additions = append(additions, removals...)
-		removals = []int{}
-	}
-
-	tflog.Debug(ctx, "Adding difference between stateTemplateSet and roleAttachments")
 	for _, template := range additions {
 		tempCtx := tflog.SetField(ctx, "template_id", template)
-		tempCtx = tflog.SetField(tempCtx, "role_name", roleName)
 		tflog.Info(tempCtx, "Attaching role to template ID ")
-		aErr := addAllowedRequesterToTemplate(ctx, kfClient, roleName, strconv.Itoa(template))
-		if aErr != nil {
+		if aErr := addAllowedRequesterToTemplate(ctx, kfClient, roleName, strconv.Itoa(template)); aErr != nil {
 			tflog.Error(tempCtx, "Error attaching role to template")
 			diags = append(diags, aErr...)
 		}
 	}
 
-	tflog.Debug(ctx, "Removing difference between stateTemplateSet and roleAttachments")
 	for _, template := range removals {
 		tempCtx := tflog.SetField(ctx, "template_id", template)
-		tempCtx = tflog.SetField(tempCtx, "role_name", roleName)
 		tflog.Info(tempCtx, "Detaching role from template ID ")
-		rErr := removeRoleFromTemplate(ctx, kfClient, roleName, template)
-		if rErr != nil {
+		if rErr := removeRoleFromTemplate(ctx, kfClient, roleName, template); rErr != nil {
 			tflog.Error(tempCtx, "Error detaching role from template")
 			diags = append(diags, rErr...)
 		}
 	}
 
-	tflog.Debug(ctx, "Removing difference between stateTemplateSet and roleAttachments")
-	//for _, template := range diff {
-	//	tempCtx := tflog.SetField(ctx, "template_id", template)
-	//	tflog.Debug(tempCtx, "Removing role from template")
-	//	err = removeRoleFromTemplate(ctx, kfClient, roleName, template)
-	//	if err != nil {
-	//		tflog.Error(tempCtx, "Error removing role from template")
-	//		diags = append(diags, err...)
-	//	}
-	//}
-	//
-	//tflog.Info(ctx, "Finished binding roles to templates")
 	return diags
 }
 
@@ -667,35 +745,19 @@ func addAllowedRequesterToTemplate(
 				},
 			)
 			diags.AddError("Error fetching templates from Keyfactor", err2.Error())
+			return diags
 		}
 		tflog.Debug(ctx, "Finding template in returned templates")
-		for template := range templates {
-			tflog.Debug(
-				ctx, "Looking up template", map[string]interface{}{
-					"template": template,
-				},
+		found := findTemplateByName(templates, templateId)
+		if found == nil {
+			diags.AddError(
+				"Template not found in Keyfactor Command.",
+				"Template '"+templateId+"' does not exist in Keyfactor Command.",
 			)
-			kfTemplate, err3 := kfClient.GetTemplate(template)
-			if err3 != nil {
-				tflog.Error(
-					ctx, "Error fetching template from Keyfactor", map[string]interface{}{
-						"error": err3,
-					},
-				)
-				diags.AddError("Error fetching template from Keyfactor", err3.Error())
-				continue
-			}
-			tflog.Debug(
-				ctx, "Found template", map[string]interface{}{
-					"template": kfTemplate,
-				},
-			)
-			if kfTemplate.CommonName == templateId {
-				tflog.Debug(ctx, "Found matching template.")
-				templateIdNumber = kfTemplate.Id
-				break
-			}
+			return diags
 		}
+		templateIdNumber = found.Id
+		ctx = tflog.SetField(ctx, "template_id", templateIdNumber)
 	}
 
 	tflog.Debug(ctx, "Fetching template from Keyfactor")
@@ -710,37 +772,38 @@ func addAllowedRequesterToTemplate(
 		return diags
 	}
 
-	// Check if role is already assigned as an allowed requester for the template, and
-	var newAllowedRequester []string
-	for _, name := range template.AllowedRequesters {
-		if name == roleName {
-			tflog.Warn(
-				ctx,
-				"Keyfactor security role is already listed as an allowed requester for template.",
-				map[string]interface{}{
-					"role":     roleName,
-					"template": template.CommonName,
-					"name":     name,
-				},
-			)
-			return diags
-		}
-		tflog.Debug(
-			ctx, "Adding role to allowed requesters", map[string]interface{}{
+	// The role only counts as already attached when it is listed AND Command actually enforces the
+	// list: while UseAllowedRequesters is false the list is ignored, so the role grants nothing and
+	// the template must still be updated to switch enforcement on.
+	roleListed := allowedRequestersContainRole(template.AllowedRequesters, roleName)
+	if roleListed && template.UseAllowedRequesters {
+		tflog.Warn(
+			ctx,
+			"Keyfactor security role is already listed as an allowed requester for template.",
+			map[string]interface{}{
 				"role":     roleName,
 				"template": template.CommonName,
 			},
 		)
-		newAllowedRequester = append(newAllowedRequester, name)
+		return diags
 	}
+	tflog.Debug(
+		ctx, "Adding role to allowed requesters", map[string]interface{}{
+			"role":                   roleName,
+			"template":               template.CommonName,
+			"already_listed":         roleListed,
+			"use_allowed_requesters": template.UseAllowedRequesters,
+		},
+	)
+	newAllowedRequester := append([]string(nil), template.AllowedRequesters...)
 
-	// If it's not already added, create update context to add role to template.
-
-	newAllowedRequester = append(newAllowedRequester, roleName)
-	useAllowedRequesters := false
-	if len(newAllowedRequester) > 0 {
-		useAllowedRequesters = true
+	// Append the role unless it is already listed (listed but not enforced): the existing list is
+	// kept as is, so no duplicate entry is created.
+	if !roleListed {
+		newAllowedRequester = append(newAllowedRequester, roleName)
 	}
+	// The role is now in the list, so enforcement must be on for it to take effect.
+	useAllowedRequesters := true
 	// Fill required fields with information retrieved from the get request above
 	tflog.Debug(ctx, "Creating update context to add role to template")
 	updateContext := buildTemplateRoleBindingUpdateArg(template, newAllowedRequester, useAllowedRequesters)
@@ -786,26 +849,27 @@ func removeRoleFromTemplate(
 			},
 		)
 		diags.AddError("Error fetching template from Keyfactor", err.Error())
+		return diags
+	}
+
+	// A role that is not listed needs no change: PUT /Templates is a full-replace endpoint, so
+	// sending one anyway would only risk clobbering the template for no benefit.
+	if !allowedRequestersContainRole(template.AllowedRequesters, roleName) {
+		tflog.Debug(ctx, "Role is not listed as an allowed requester for the template; nothing to remove.")
+		return diags
 	}
 
 	// Rebuild allowed requester list without roleName
-	var newAllowedRequester []string
 	tflog.Debug(ctx, "Rebuild allowed requester list without roleName")
-	for _, name := range template.AllowedRequesters {
-		if name != roleName {
-			tflog.Trace(
-				ctx, "Adding role to allowed requesters", map[string]interface{}{
-					"allowed_requester": newAllowedRequester,
-					"name":              name,
-				},
-			)
-			newAllowedRequester = append(newAllowedRequester, name)
-		}
-	}
+	newAllowedRequester := allowedRequestersWithoutRole(template.AllowedRequesters, roleName)
 
-	useAllowedRequesters := false
-	if len(newAllowedRequester) > 0 {
-		useAllowedRequesters = true
+	// Preserve the template's own UseAllowedRequesters choice: the template's administrator decides
+	// whether the list is enforced, and removing one role must not switch enforcement ON for a
+	// template that had it off. The one exception is an emptied list: with enforcement on and nobody
+	// left in the list, nobody could enroll, so enforcement is switched off in that case only.
+	useAllowedRequesters := template.UseAllowedRequesters
+	if len(newAllowedRequester) == 0 {
+		useAllowedRequesters = false
 	}
 	// Fill required fields with information retrieved from the get request above --
 	// see buildTemplateRoleBindingUpdateArg for why every representable field
@@ -869,7 +933,7 @@ func findTemplateRoleAttachments(ctx context.Context, kfClient *api.Client, role
 		// We only want to check the allowed requester list if UseAllowedRequesters is true
 		if template.UseAllowedRequesters {
 			for _, role := range template.AllowedRequesters {
-				if role == roleName {
+				if roleNamesEqual(role, roleName) {
 					templateRoleAttachmentList = append(templateRoleAttachmentList, template.Id)
 				}
 			}
@@ -877,4 +941,27 @@ func findTemplateRoleAttachments(ctx context.Context, kfClient *api.Client, role
 	}
 
 	return diags, templateRoleAttachmentList
+}
+
+// allowedRequestersContainRole reports whether role is already in a template's allowed-requesters
+// list. Names are compared case-insensitively (see roleNamesEqual).
+func allowedRequestersContainRole(allowedRequesters []string, role string) bool {
+	for _, name := range allowedRequesters {
+		if roleNamesEqual(name, role) {
+			return true
+		}
+	}
+	return false
+}
+
+// allowedRequestersWithoutRole returns a copy of allowedRequesters with every entry naming role
+// (case-insensitively) removed, preserving the order of the remaining entries.
+func allowedRequestersWithoutRole(allowedRequesters []string, role string) []string {
+	var out []string
+	for _, name := range allowedRequesters {
+		if !roleNamesEqual(name, role) {
+			out = append(out, name)
+		}
+	}
+	return out
 }

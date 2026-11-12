@@ -31,6 +31,14 @@ var errCertificateStoreNotFound = errors.New("certificate store not found")
 // an exact 404 test.
 var storeNotFoundStatusPrefix = regexp.MustCompile(`^404 - Unknown error connecting to Keyfactor `)
 
+// storeNotFoundMessageFragment is the (lower-case) wording of Command's real 404 body for
+// GET CertificateStores/{id} (observed on Command 25.5): {"ErrorCode":"0xA0130000","Message":"Unable to
+// locate a certificate store with the given Id or store path and client machine."}. The go client
+// surfaces only the Message of a JSON error body, and that wording matches none of isNotFoundError's
+// patterns. It is matched here, in the store classifier only, rather than broadening isNotFoundError
+// (whose other callers would change behaviour).
+const storeNotFoundMessageFragment = "unable to locate a certificate store"
+
 // isStoreNotFoundError reports whether err, returned by a certificate store GET by ID, means the store
 // does not exist (HTTP 404), as opposed to a failure that says nothing about the store (network, auth,
 // 5xx). It uses isNotFoundError's conservative matching (a JSON 404 body such as "... does not exist"
@@ -40,7 +48,9 @@ func isStoreNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return isNotFoundError(err) || storeNotFoundStatusPrefix.MatchString(err.Error())
+	return isNotFoundError(err) ||
+		storeNotFoundStatusPrefix.MatchString(err.Error()) ||
+		strings.Contains(strings.ToLower(err.Error()), storeNotFoundMessageFragment)
 }
 
 // deploymentTargetLabel renders a deployment's destination for diagnostics: the quoted store ID, with

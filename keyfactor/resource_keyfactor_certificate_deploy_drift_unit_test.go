@@ -65,7 +65,7 @@ func (f *fakeDeployCommand) server(t *testing.T) *httptest.Server {
 			if f.storeStatus != 0 && f.storeStatus != http.StatusOK {
 				msg := "store read failed"
 				if f.storeStatus == http.StatusNotFound {
-					msg = "Certificate store with id of 'store-1' does not exist"
+					msg = "Unable to locate a certificate store with the given Id or store path and client machine."
 				}
 				fail(f.storeStatus, msg)
 				return
@@ -312,6 +312,7 @@ func TestUnitIsStoreNotFoundError(t *testing.T) {
 	}{
 		"nil":                           {nil, false},
 		"JSON 404 body, does not exist": {errors.New("Certificate store with id of 'x' does not exist"), true},
+		"real Command 404 Message":      {errors.New("Unable to locate a certificate store with the given Id or store path and client machine."), true},
 		"JSON 404 body, not found":      {errors.New("Certificate Store not found."), true},
 		"non-JSON 404 fallback":         {errors.New("404 - Unknown error connecting to Keyfactor CertificateStores/x, please check your connection."), true},
 		"5xx fallback with 404 in path": {errors.New("500 - Unknown error connecting to Keyfactor CertificateStores/1404, please check your connection."), false},

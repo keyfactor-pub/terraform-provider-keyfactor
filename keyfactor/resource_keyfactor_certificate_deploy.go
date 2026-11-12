@@ -3,7 +3,9 @@ package keyfactor
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -17,14 +19,94 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
+// errCertificateStoreNotFound marks a store read that Command answered with "no such store", as
+// opposed to any other failure, so callers can tell a store deleted out of band from a transient
+// error (check with errors.Is). The original error text is kept in the wrapping error's message.
+var errCertificateStoreNotFound = errors.New("certificate store not found")
+
+// storeNotFoundStatusPrefix matches the go client's fallback error for an HTTP 404 whose body is not
+// the usual JSON error object ("404 - Unknown error connecting to Keyfactor <endpoint>, ..."). Unlike
+// the same fallback for other statuses (where "404" can be a digit run inside the endpoint), the
+// leading number here is the response status code itself, so anchoring at the start of the message is
+// an exact 404 test.
+var storeNotFoundStatusPrefix = regexp.MustCompile(`^404 - Unknown error connecting to Keyfactor `)
+
+// isStoreNotFoundError reports whether err, returned by a certificate store GET by ID, means the store
+// does not exist (HTTP 404), as opposed to a failure that says nothing about the store (network, auth,
+// 5xx). It uses isNotFoundError's conservative matching (a JSON 404 body such as "... does not exist"
+// or "... not found") plus the anchored 404 fallback above; any other error, including the generic
+// "Unknown error connecting" fallback of a non-404 status, is not a confirmed not-found.
+func isStoreNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return isNotFoundError(err) || storeNotFoundStatusPrefix.MatchString(err.Error())
+}
+
+// deploymentTargetLabel renders a deployment's destination for diagnostics: the quoted store ID, with
+// the alias in parentheses only when the deployment has one (alias-less deployments, such as
+// K8SSecret, are matched by certificate ID and have no alias to show).
+func deploymentTargetLabel(storeId, alias string) string {
+	if alias == "" {
+		return fmt.Sprintf("'%s'", storeId)
+	}
+	return fmt.Sprintf("'%s (%s)'", storeId, alias)
+}
+
+// aliasParenthetical renders " (alias)" for a deployment with an alias and "" for an alias-less one.
+func aliasParenthetical(alias string) string {
+	if alias == "" {
+		return ""
+	}
+	return " (" + alias + ")"
+}
+
+// removedFromStoreWarningDetail is the Read warning for a deployment that is no longer in its store.
+// It keeps the phrases "no longer in store" and "redeployed" (the lab-ipk-oob-check demo target greps
+// for them) and omits the alias clause for alias-less deployments.
+func removedFromStoreWarningDetail(certificateId int64, storeId, alias string) string {
+	aliasClause := ""
+	if alias != "" {
+		aliasClause = fmt.Sprintf(" (alias '%s')", alias)
+	}
+	return fmt.Sprintf(
+		"Certificate '%d' is no longer in store '%s'%s; it will be redeployed on the next apply.",
+		certificateId, storeId, aliasClause,
+	)
+}
+
+// storeNotFoundDiagnostic builds the Read error for a deployment whose certificate store no longer
+// exists in Command. Read keeps the prior state (the deployment's fate is unknown), so the detail says
+// how to get out of that state.
+func storeNotFoundDiagnostic(certificateId int64, storeId, alias string) (summary, detail string) {
+	aliasClause := ""
+	if alias != "" {
+		aliasClause = fmt.Sprintf(" with alias '%s'", alias)
+	}
+	return "Certificate store not found.",
+		fmt.Sprintf(
+			"The certificate store '%s', to which certificate '%d'%s is deployed, cannot be found in Keyfactor Command. "+
+				"It was most likely deleted outside Terraform. The deployment's state has been kept. "+
+				"Either restore the store, or remove this deployment from your configuration and from state "+
+				"(`terraform state rm <address of this keyfactor_certificate_deployment>`). "+
+				"`terraform destroy` refreshes state first and fails with this error as well, so run it with `-refresh=false` "+
+				"or remove the deployment from state first.",
+			storeId, certificateId, aliasClause,
+		)
+}
+
 // storeHasInventorySchedule reports whether the certificate store storeId has any
 // inventory schedule configured (Immediate, Interval, Daily, or ExactlyOnce). When
 // the store read itself fails, readErr is returned and hasSchedule is always false :
 // callers must distinguish "store read failed" from "store genuinely has no
-// schedule" in their own logging/diagnostics rather than conflating the two.
+// schedule" in their own logging/diagnostics rather than conflating the two. A store
+// that does not exist is returned as an error wrapping errCertificateStoreNotFound.
 func storeHasInventorySchedule(conn *api.Client, storeId string) (hasSchedule bool, readErr error) {
 	storeResp, err := conn.GetCertificateStoreByID(storeId)
 	if err != nil {
+		if isStoreNotFoundError(err) {
+			return false, fmt.Errorf("%w: %s", errCertificateStoreNotFound, err.Error())
+		}
 		return false, err
 	}
 	sched := storeResp.InventorySchedule
@@ -203,13 +285,14 @@ func (r resourceCommandCertificateDeploymentType) GetSchema(_ context.Context) (
 			"*NOTE:* If the certificate is removed from the store outside Terraform, the next refresh removes the deployment from state " +
 			"(with a warning) and the next apply redeploys it. This is only detected when the store has an inventory schedule " +
 			"configured in Command, because the store inventory is what shows the removal; for a store without one the provider " +
-			"cannot tell a removed entry from one that has not been inventoried yet, so no drift is reported.",
+			"cannot tell a removed entry from one that has not been inventoried yet, so no drift is reported." +
+			" The store inventory is only as current as the last inventory job the orchestrator ran, so a removal is not noticed until after the next inventory, and a deployment whose store has not been inventoried since it was deployed (or whose inventory is partial) can be reported as removed and redeployed on the next apply.",
 		MarkdownDescription: "\nUsed to schedule a certificate deployment(/management) job on Keyfactor Command using the `/OrchestratorJobs/Custom`\n" +
 			"API to deploy certificates to `keyfactor_certificate_store` resources.\n\n" +
 			"!> **Warning:** Orchestrator agent jobs are run asynchronously outside of Terraform, and depend on orchestrator agent check in schedules. A `keyfactor_certificate_deployment` *will not finish* successfully until the destination certificate store's certificate inventory has been updated to include the deployed certificate.\n\n" +
 			"~> **Note:** `lifecycle { create_before_destroy = true }` is not supported for any replacement that keeps the same certificate and alias in the same store (for example a change to `include_private_key`, `redeploy` or `key_password`). Creating the replacement adopts the existing store entry, and the old instance's delete then removes that entry, leaving the store without the certificate. Use the default replacement order (destroy, then create) for this resource.\n\n" +
 			"~> **Note:** `terraform apply -replace` (or `terraform taint`) on a deployment whose state has `skip_removal = true` and `include_private_key = false` is not supported: Terraform plans it without consulting the provider, the delete step does not remove the existing store entry, and the replacement's create step then refuses that entry because it may contain the private key. Set `skip_removal = false` and apply it first. Replacements the provider can see in the plan (a change to `certificate_id`, `certificate_store_id`, `certificate_alias`, `key_password`, `redeploy` or `include_private_key`) are rejected at plan time in that situation.\n\n" +
-			"~> **Note:** If the certificate is removed from the store outside Terraform, the next refresh removes the deployment from state (with a warning) and the next apply redeploys it. This is only detected when the store has an inventory schedule configured in Command, because the store inventory is what shows the removal; for a store without one the provider cannot tell a removed entry from one that has not been inventoried yet, so no drift is reported.\n",
+			"~> **Note:** If the certificate is removed from the store outside Terraform, the next refresh removes the deployment from state (with a warning) and the next apply redeploys it. This is only detected when the store has an inventory schedule configured in Command, because the store inventory is what shows the removal; for a store without one the provider cannot tell a removed entry from one that has not been inventoried yet, so no drift is reported. The store inventory is only as current as the last inventory job the orchestrator ran, so a removal is not noticed until after the next inventory, and a deployment whose store has not been inventoried since it was deployed (or whose inventory is partial) can be reported as removed and redeployed on the next apply.\n",
 	}, nil
 }
 
@@ -300,10 +383,9 @@ func (r resourceCommandCertificateDeployment) Create(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unknown error during read status of deployment of certificate '%v' to store '%s (%s)': ",
+				"Unknown error during read status of deployment of certificate '%v' to store %s: ",
 				certificateId,
-				storeId,
-				certificateAlias,
+				deploymentTargetLabel(storeId, certificateAlias),
 			)+err.Error(),
 		)
 		// certificateData is nil: nothing below can be decided without it.
@@ -319,11 +401,11 @@ func (r resourceCommandCertificateDeployment) Create(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unable to read the inventory of store '%s' to check whether certificate '%v' (%s) is already deployed; "+
+				"Unable to read the inventory of store '%s' to check whether certificate '%v'%s is already deployed; "+
 					"no deployment job was submitted: ",
 				storeId,
 				certificateId,
-				certificateAlias,
+				aliasParenthetical(certificateAlias),
 			)+presenceErr.Error(),
 		)
 		return
@@ -348,7 +430,7 @@ func (r resourceCommandCertificateDeployment) Create(
 	if alreadyDeployed {
 		response.Diagnostics.AddWarning(
 			"Duplicate deployment.",
-			fmt.Sprintf("Certificate '%v' is already deployed to '%s (%s)'", certificateId, storeId, certificateAlias),
+			fmt.Sprintf("Certificate '%v' is already deployed to %s", certificateId, deploymentTargetLabel(storeId, certificateAlias)),
 		)
 	} else {
 		addErr := addCertificateToStore(ctx, kfClient, jobParams, &plan)
@@ -356,9 +438,9 @@ func (r resourceCommandCertificateDeployment) Create(
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
 				fmt.Sprintf(
-					"Unknown error during deploy of certificate '%v'(%s) to store '%s': ",
+					"Unknown error during deploy of certificate '%v'%s to store '%s': ",
 					certificateId,
-					certificateAlias,
+					aliasParenthetical(certificateAlias),
 					storeId,
 				)+addErr.Error(),
 			)
@@ -403,10 +485,9 @@ func (r resourceCommandCertificateDeployment) Create(
 				response.Diagnostics.AddError(
 					"Deployment validation error.",
 					fmt.Sprintf(
-						"Unknown error during validation of deploy of certificate '%v' to store '%s (%s)': ",
+						"Unknown error during validation of deploy of certificate '%v' to store %s: ",
 						certificateId,
-						storeId,
-						certificateAlias,
+						deploymentTargetLabel(storeId, certificateAlias),
 					)+vErr2.Error(),
 				)
 			}
@@ -450,7 +531,7 @@ func (r resourceCommandCertificateDeployment) Read(
 	ctx = tflog.SetField(ctx, "certificate_id", certificateId)
 	ctx = tflog.SetField(ctx, "certificate_store_id", storeId)
 	ctx = tflog.SetField(ctx, "certificate_alias", certificateAlias)
-	tflog.Info(ctx, "Create called on certificate deployment resource")
+	tflog.Info(ctx, "Read called on certificate deployment resource")
 
 	// Get certificate context
 	args := &api.GetCertificateContextArgs{
@@ -470,10 +551,9 @@ func (r resourceCommandCertificateDeployment) Read(
 			response.Diagnostics.AddWarning(
 				"Certificate deployment not found.",
 				fmt.Sprintf(
-					"Certificate '%d' deployed to store '%s (%s)' was not found in Keyfactor Command, removing from state: ",
+					"Certificate '%d' deployed to store %s was not found in Keyfactor Command, removing from state: ",
 					certificateId,
-					storeId,
-					certificateAlias,
+					deploymentTargetLabel(storeId, certificateAlias),
 				)+err.Error(),
 			)
 			response.State.RemoveResource(ctx)
@@ -482,10 +562,9 @@ func (r resourceCommandCertificateDeployment) Read(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unknown error during read status of deployment of certificate '%d' to store '%s (%s)': ",
+				"Unknown error during read status of deployment of certificate '%d' to store %s: ",
 				certificateId,
-				storeId,
-				certificateAlias,
+				deploymentTargetLabel(storeId, certificateAlias),
 			)+err.Error(),
 		)
 		// certificateData is nil: nothing below can be decided without it.
@@ -498,15 +577,24 @@ func (r resourceCommandCertificateDeployment) Read(
 	// Drift: the certificate exists in Command but is no longer in this store/alias (removed out of
 	// band). Drop the deployment from state so the plan shows a create and the next apply redeploys.
 	gone, goneErr := deploymentRemovedFromStore(ctx, kfClient, storeId, certificateAlias, certificateData)
+	if errors.Is(goneErr, errCertificateStoreNotFound) {
+		// The store itself is gone (deleted out of band): the deployment's fate cannot be decided and
+		// the store cannot be redeployed to, so fail loudly, keep the prior state, and say how to recover.
+		summary, detail := storeNotFoundDiagnostic(certificateId, storeId, certificateAlias)
+		response.Diagnostics.AddError(
+			summary,
+			detail+" Command responded: "+strings.TrimPrefix(goneErr.Error(), errCertificateStoreNotFound.Error()+": "),
+		)
+		return
+	}
 	if goneErr != nil {
 		// Transient or unexplained failure: say nothing about the deployment, keep the prior state.
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unable to determine whether certificate '%d' is still deployed to store '%s (%s)': ",
+				"Unable to determine whether certificate '%d' is still deployed to store %s: ",
 				certificateId,
-				storeId,
-				certificateAlias,
+				deploymentTargetLabel(storeId, certificateAlias),
 			)+goneErr.Error(),
 		)
 		return
@@ -514,12 +602,7 @@ func (r resourceCommandCertificateDeployment) Read(
 	if gone {
 		response.Diagnostics.AddWarning(
 			"Certificate deployment not found in store.",
-			fmt.Sprintf(
-				"Certificate '%d' is no longer in store '%s' (alias '%s'); it will be redeployed on the next apply.",
-				certificateId,
-				storeId,
-				certificateAlias,
-			),
+			removedFromStoreWarningDetail(certificateId, storeId, certificateAlias),
 		)
 		response.State.RemoveResource(ctx)
 		return
@@ -596,10 +679,9 @@ func (r resourceCommandCertificateDeployment) Update(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unknown error during read status of deployment of certificate '%d' to store '%s (%s)': ",
+				"Unknown error during read status of deployment of certificate '%d' to store %s: ",
 				certificateId,
-				storeId,
-				certificateAlias,
+				deploymentTargetLabel(storeId, certificateAlias),
 			)+err.Error(),
 		)
 		// certificateData is nil: nothing below can be decided without it.
@@ -612,11 +694,11 @@ func (r resourceCommandCertificateDeployment) Update(
 		response.Diagnostics.AddError(
 			"Deployment read error.",
 			fmt.Sprintf(
-				"Unable to read the inventory of store '%s' to check whether certificate '%d' (%s) is already deployed; "+
+				"Unable to read the inventory of store '%s' to check whether certificate '%d'%s is already deployed; "+
 					"no deployment job was submitted: ",
 				storeId,
 				certificateId,
-				certificateAlias,
+				aliasParenthetical(certificateAlias),
 			)+presenceErr.Error(),
 		)
 		return
@@ -630,9 +712,9 @@ func (r resourceCommandCertificateDeployment) Update(
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
 				fmt.Sprintf(
-					"Unknown error during deploy of certificate '%v'(%s) to store '%s': ",
+					"Unknown error during deploy of certificate '%v'%s to store '%s': ",
 					certificateId,
-					certificateAlias,
+					aliasParenthetical(certificateAlias),
 					storeId,
 				)+addErr.Error(),
 			)
@@ -654,10 +736,9 @@ func (r resourceCommandCertificateDeployment) Update(
 			response.Diagnostics.AddError(
 				"Deployment validation error.",
 				fmt.Sprintf(
-					"Unknown error during validation of deploy of certificate '%d' to store '%s (%s)': ",
+					"Unknown error during validation of deploy of certificate '%d' to store %s: ",
 					certificateId,
-					storeId,
-					certificateAlias,
+					deploymentTargetLabel(storeId, certificateAlias),
 				)+vErr2.Error(),
 			)
 		}
@@ -797,10 +878,9 @@ func (r resourceCommandCertificateDeployment) Delete(
 			response.Diagnostics.AddWarning(
 				"Certificate deployment not found.",
 				fmt.Sprintf(
-					"Certificate deployment '%v' to store '%s (%s)' not found, removing from state.",
+					"Certificate deployment '%v' to store %s not found, removing from state.",
 					certificateId,
-					storeId,
-					certificateAlias,
+					deploymentTargetLabel(storeId, certificateAlias),
 				),
 			)
 			response.State.RemoveResource(ctx)
@@ -809,10 +889,9 @@ func (r resourceCommandCertificateDeployment) Delete(
 		response.Diagnostics.AddError(
 			"Certificate deployment error",
 			fmt.Sprintf(
-				"Unknown error during removal of certificate '%d' from store '%s (%s)': ",
+				"Unknown error during removal of certificate '%d' from store %s: ",
 				certificateId,
-				storeId,
-				certificateAlias,
+				deploymentTargetLabel(storeId, certificateAlias),
 			)+err.Error(),
 		)
 		return
@@ -832,10 +911,9 @@ func (r resourceCommandCertificateDeployment) Delete(
 			response.Diagnostics.AddError(
 				"Certificate deployment error",
 				fmt.Sprintf(
-					"Unknown error during removal of certificate '%d' from store '%s (%s)': ",
+					"Unknown error during removal of certificate '%d' from store %s: ",
 					certificateId,
-					storeId,
-					certificateAlias,
+					deploymentTargetLabel(storeId, certificateAlias),
 				)+validateErr.Error(),
 			)
 			break
@@ -1092,9 +1170,9 @@ func validateUndeployment(
 	}
 	if deployed {
 		return fmt.Errorf(
-			"unable to remove certificate '%s'(%s) from Keyfactor Command store %v",
+			"unable to remove certificate '%s'%s from Keyfactor Command store %v",
 			certObj.Thumbprint,
-			certAlias,
+			aliasParenthetical(certAlias),
 			storeId,
 		)
 	}
@@ -1369,13 +1447,13 @@ func includePrivateKeyReplaceBlockedBySkipRemoval(stateSkip types.Bool) bool {
 func existingEntryPrivateKeyDiagnostic(certificateId interface{}, storeId, certificateAlias string) (summary, detail string) {
 	return "Existing deployment may contain the private key.",
 		fmt.Sprintf(
-			"Certificate '%v' is already deployed to '%s (%s)' and include_private_key = false was requested. "+
+			"Certificate '%v' is already deployed to %s and include_private_key = false was requested. "+
 				"The existing store entry may contain the private key, and it cannot be stripped in place. "+
 				"Remove the entry from the store first, or set include_private_key = true (or remove the attribute). "+
 				"Note: changing include_private_key is not supported with lifecycle { create_before_destroy = true }, "+
 				"because the replacement is created while the old entry still exists; the replace must delete the "+
 				"existing deployment first (the default).",
-			certificateId, storeId, certificateAlias,
+			certificateId, deploymentTargetLabel(storeId, certificateAlias),
 		)
 }
 

@@ -3,6 +3,7 @@ package keyfactor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -62,7 +63,11 @@ func (f *fakeDeployCommand) server(t *testing.T) *httptest.Server {
 			_ = json.NewEncoder(w).Encode(api.GetCertificateResponse{Id: 7, Thumbprint: "AABBCC", Locations: f.locations})
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/CertificateStores/"):
 			if f.storeStatus != 0 && f.storeStatus != http.StatusOK {
-				fail(f.storeStatus, "store read failed")
+				msg := "store read failed"
+				if f.storeStatus == http.StatusNotFound {
+					msg = "Certificate store with id of 'store-1' does not exist"
+				}
+				fail(f.storeStatus, msg)
 				return
 			}
 			resp := api.GetCertificateStoreResponse{Id: "store-1"}
@@ -259,5 +264,115 @@ func TestUnitDeploymentDescription_DocumentsDriftAndInventoryScheduleCondition(t
 	for name, desc := range map[string]string{"Description": schema.Description, "MarkdownDescription": schema.MarkdownDescription} {
 		assert.Contains(t, desc, "removed from the store outside Terraform", name)
 		assert.Contains(t, desc, "inventory schedule", name)
+	}
+}
+
+// ---- Read: store deleted out of band, alias-less rendering ----
+
+// Bug class: a store/object "not found" surfaced as a generic read error. The certificate still exists
+// in Command but its store was deleted out of band: Read must fail (the deployment's fate is unknown and
+// it cannot be redeployed), keep the prior state, and say explicitly that the store cannot be found,
+// naming the store and the deployment and how to recover.
+func TestUnitDeploymentRead_StoreDeletedOutOfBandIsAnExplicitStoreNotFoundError(t *testing.T) {
+	f := &fakeDeployCommand{
+		storeStatus: http.StatusNotFound,
+		locations:   []api.CertificateLocations{locationOf("other-store", "alias", 0)},
+	}
+
+	resp, before := f.read(t)
+
+	require.True(t, resp.Diagnostics.HasError(), "%v", resp.Diagnostics)
+	require.Len(t, resp.Diagnostics.Errors(), 1, "%v", resp.Diagnostics)
+	e := resp.Diagnostics.Errors()[0]
+	assert.Equal(t, "Certificate store not found.", e.Summary())
+	assert.Contains(t, e.Detail(), "'store-1'")
+	assert.Contains(t, e.Detail(), "certificate '7'")
+	assert.Contains(t, e.Detail(), "alias 'alias'")
+	assert.Contains(t, e.Detail(), "terraform state rm")
+	assert.Contains(t, e.Detail(), "-refresh=false")
+	assert.False(t, resp.State.Raw.IsNull(), "the prior state must be kept")
+	assert.True(t, before.Raw.Equal(resp.State.Raw))
+	assert.Empty(t, resp.Diagnostics.Warnings(), "%v", resp.Diagnostics)
+}
+
+// A store read failing for any other reason keeps the generic read error (not the store-not-found one).
+func TestUnitDeploymentRead_OtherStoreReadErrorKeepsGenericSummary(t *testing.T) {
+	f := &fakeDeployCommand{storeStatus: http.StatusInternalServerError}
+
+	resp, _ := f.read(t)
+
+	require.Len(t, resp.Diagnostics.Errors(), 1, "%v", resp.Diagnostics)
+	assert.Equal(t, "Deployment read error.", resp.Diagnostics.Errors()[0].Summary())
+}
+
+func TestUnitIsStoreNotFoundError(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		want bool
+	}{
+		"nil":                           {nil, false},
+		"JSON 404 body, does not exist": {errors.New("Certificate store with id of 'x' does not exist"), true},
+		"JSON 404 body, not found":      {errors.New("Certificate Store not found."), true},
+		"non-JSON 404 fallback":         {errors.New("404 - Unknown error connecting to Keyfactor CertificateStores/x, please check your connection."), true},
+		"5xx fallback with 404 in path": {errors.New("500 - Unknown error connecting to Keyfactor CertificateStores/1404, please check your connection."), false},
+		"500 message":                   {errors.New("An error occurred."), false},
+		"auth failure":                  {errors.New("401 - Unauthorized: Access is denied due to invalid credentials"), false},
+		"network":                       {errors.New("dial tcp: connection refused"), false},
+	} {
+		t.Run(name, func(t *testing.T) { assert.Equal(t, tc.want, isStoreNotFoundError(tc.err)) })
+	}
+}
+
+// Bug class: an empty alias rendered as "(alias ”)" / "'store ()'" in deployment diagnostics.
+func TestUnitDeploymentDiagnostics_AliasLessAreRenderedWithoutEmptyAlias(t *testing.T) {
+	assert.Equal(t, "'s1 (a1)'", deploymentTargetLabel("s1", "a1"))
+	assert.Equal(t, "'s1'", deploymentTargetLabel("s1", ""))
+	assert.Equal(t, " (a1)", aliasParenthetical("a1"))
+	assert.Equal(t, "", aliasParenthetical(""))
+
+	with := removedFromStoreWarningDetail(7, "s1", "a1")
+	assert.Equal(t, "Certificate '7' is no longer in store 's1' (alias 'a1'); it will be redeployed on the next apply.", with)
+	without := removedFromStoreWarningDetail(7, "s1", "")
+	assert.Equal(t, "Certificate '7' is no longer in store 's1'; it will be redeployed on the next apply.", without)
+	for _, d := range []string{with, without} {
+		assert.Contains(t, d, "no longer in store")
+		assert.Contains(t, d, "redeployed")
+	}
+
+	_, detail := storeNotFoundDiagnostic(7, "s1", "")
+	assert.NotContains(t, detail, "alias")
+}
+
+// An alias-less deployment removed from its store yields the warning without an empty alias clause.
+func TestUnitDeploymentRead_AliasLessRemovalWarningHasNoEmptyAlias(t *testing.T) {
+	ctx := context.Background()
+	schema, d := resourceCommandCertificateDeploymentType{}.GetSchema(ctx)
+	require.False(t, d.HasError())
+	p := deploymentPlanFor()
+	p.CertificateAlias = types.String{Null: true}
+	st := stateWith(t, schema, p)
+	f := &fakeDeployCommand{
+		schedule:  true,
+		locations: []api.CertificateLocations{locationOf("other-store", "secret-a", 0)},
+		inventory: []api.CertStoreInventory{{Name: "secret-a", Certificates: []api.InventoriedCertificate{{Id: 99}}}},
+	}
+	res := resourceCommandCertificateDeployment{p: provider{configured: true, client: newTemplateTestClient(f.server(t))}}
+	resp := &tfsdk.ReadResourceResponse{State: st}
+	res.Read(ctx, tfsdk.ReadResourceRequest{State: st}, resp)
+
+	require.Len(t, resp.Diagnostics.Warnings(), 1, "%v", resp.Diagnostics)
+	detail := resp.Diagnostics.Warnings()[0].Detail()
+	assert.NotContains(t, detail, "alias")
+	assert.Contains(t, detail, "no longer in store 'store-1'")
+	assert.Contains(t, detail, "redeployed")
+}
+
+// The resource description documents the inventory-lag limitation of drift detection.
+func TestUnitDeploymentDescription_DocumentsInventoryLagLimitation(t *testing.T) {
+	schema, d := resourceCommandCertificateDeploymentType{}.GetSchema(context.Background())
+	require.False(t, d.HasError())
+	for name, desc := range map[string]string{"Description": schema.Description, "MarkdownDescription": schema.MarkdownDescription} {
+		assert.Contains(t, desc, "as current as the last inventory job", name)
+		assert.Contains(t, desc, "reported as removed and redeployed", name)
 	}
 }
